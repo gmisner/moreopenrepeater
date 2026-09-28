@@ -95,6 +95,20 @@
           </div>
         </div>
 
+        <div class="card listen-card">
+          <div class="card-header">
+            <h2>Listen live</h2>
+            <div class="listen-controls">
+              <div class="segmented" id="listen-source" role="group" aria-label="Audio to listen to">
+                <button type="button" data-source="tx" class="active" title="Everything the repeater transmits">On air</button>
+                <button type="button" data-source="rx" title="Everything the receiver hears, repeated or not">Receiver</button>
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" id="listen-toggle">Listen</button>
+            </div>
+          </div>
+          <p id="listen-status" class="muted small">Streams the repeater's audio to this browser (needs live audio running).</p>
+        </div>
+
         <div class="card">
           <div class="card-header">
             <h2>Recent activity</h2>

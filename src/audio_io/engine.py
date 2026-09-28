@@ -43,8 +43,12 @@ class AudioEngine:
         ptt_output: Optional[Callable[[bool], None]] = None,
         cos_input: Optional[Callable[[], bool]] = None,
         stream_factory: Callable[..., AudioStream] = AudioStream,
+        on_audio: Optional[Callable[[np.ndarray, np.ndarray], None]] = None,
     ) -> None:
+        """`on_audio(received, transmitted)` sees every processing block, on
+        the worker thread -- it must be quick."""
         self.processor = processor
+        self._on_audio = on_audio
         self.block_size = block_size
         self._on_events = on_events
         self._input_device = input_device
@@ -129,6 +133,8 @@ class AudioEngine:
             chunk = self._rx_pending[: self.block_size]
             self._rx_pending = self._rx_pending[self.block_size :]
             result = self.processor.process(chunk)
+            if self._on_audio is not None:
+                self._on_audio(chunk, result.out)
             self._tx_pending = np.concatenate([self._tx_pending, self._tx_resampler.process(result.out)])
             self._set_transmitting(result.transmitting)
             if result.events:

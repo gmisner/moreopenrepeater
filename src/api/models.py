@@ -319,6 +319,7 @@ class AudioEngineResponse(BaseModel):
     dropped_input_blocks: int
     starved_output_blocks: int
     hardware_ptt: bool
+    listeners: int = 0
 
 
 class LoginRequest(BaseModel):

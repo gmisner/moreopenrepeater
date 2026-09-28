@@ -43,6 +43,7 @@ from .auth import (
     verify_credentials,
 )
 from .live_audio import LiveAudio, cm108_from_env, list_audio_devices
+from .monitor import MonitorSource
 from .recordings import RecordingInfo, RecordingStore
 from .logging_config import configure_logging
 from .models import (
@@ -669,15 +670,42 @@ def create_app(
         with log_path.open() as f:
             return [line.rstrip("\n") for line in collections.deque(f, maxlen=lines)]
 
-    @app.websocket("/ws/status")
-    async def ws_status(websocket: WebSocket) -> None:
+    def websocket_allowed(websocket: WebSocket) -> bool:
+        if auth_settings is None:
+            return True
         # WebSocket handshakes aren't subject to CORS, so a page on another
         # origin could otherwise open this with the user's session cookie.
         origin = websocket.headers.get("origin")
-        if auth_settings is not None and origin and urlsplit(origin).netloc != websocket.headers.get("host"):
+        if origin and urlsplit(origin).netloc != websocket.headers.get("host"):
+            return False
+        return authenticated_username(websocket) is not None
+
+    @app.websocket("/ws/audio")
+    async def ws_audio(websocket: WebSocket, source: MonitorSource = "tx") -> None:
+        """Binary frames of 16-bit little-endian mono PCM at the processing rate."""
+        if not websocket_allowed(websocket):
             await websocket.close(code=1008)
             return
-        if auth_settings is not None and authenticated_username(websocket) is None:
+        await websocket.accept()
+        queue = live_audio.monitor.subscribe(source)
+
+        async def send_frames() -> None:
+            await websocket.send_json({"sample_rate": renderer.sample_rate, "source": source})
+            while True:
+                await websocket.send_bytes(await queue.get())
+
+        # Frames may never come (engine off), so watch for the disconnect separately.
+        sender = asyncio.create_task(send_frames())
+        try:
+            while (await websocket.receive())["type"] != "websocket.disconnect":
+                pass
+        finally:
+            sender.cancel()
+            live_audio.monitor.unsubscribe(queue)
+
+    @app.websocket("/ws/status")
+    async def ws_status(websocket: WebSocket) -> None:
+        if not websocket_allowed(websocket):
             await websocket.close(code=1008)
             return
         await websocket.accept()

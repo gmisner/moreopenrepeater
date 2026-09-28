@@ -33,6 +33,7 @@ from controller.state_machine import RECEIVING, RepeaterConfig
 from playout.renderer import RECORDING_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
+from .monitor import AudioMonitor
 from .recordings import RecordingStore
 from .service import RepeaterService
 
@@ -90,6 +91,7 @@ class LiveAudio:
         self._parrot_armed_at: Optional[float] = None
         self._parrot_recording = False
         self._capture_started_at: Optional[float] = None
+        self.monitor = AudioMonitor()
 
     @property
     def hardware_ptt(self) -> bool:
@@ -136,6 +138,7 @@ class LiveAudio:
             "dropped_input_blocks": engine.dropped_input_blocks if engine else 0,
             "starved_output_blocks": engine.starved_output_blocks if engine else 0,
             "hardware_ptt": self.hardware_ptt,
+            "listeners": self.monitor.listener_count,
         }
 
     # -- AudioOutput --------------------------------------------------------
@@ -244,6 +247,7 @@ class LiveAudio:
             output_device=config.audio_output_device or None,
             ptt_output=self._cm108.set_ptt if self._cm108 else None,
             cos_input=self._cm108.read_cos if self._cm108 and cos_source == "cm108" else None,
+            on_audio=self.monitor.feed,
         )
         try:
             engine.start()

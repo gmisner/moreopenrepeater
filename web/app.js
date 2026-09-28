@@ -4,6 +4,7 @@ import { initAssets, loadAssets } from "./js/assets.js";
 import { initAudio } from "./js/audio.js";
 import { initBackup } from "./js/backup.js";
 import { initConfig, loadConfig } from "./js/config.js";
+import { initListen } from "./js/listen.js";
 import { initLogs } from "./js/logs.js";
 import { initMacros, loadMacros } from "./js/macros.js";
 import { initRouter } from "./js/router.js";
@@ -22,6 +23,7 @@ async function main() {
   initConfig();
   initAssets();
   initAudio();
+  initListen();
   initMacros();
   initAnnouncements();
   initWeather();

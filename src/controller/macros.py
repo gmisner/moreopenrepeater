@@ -10,20 +10,35 @@ the API/dashboard (JSON in, JSON out) rather than only at startup in Python.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Literal, Optional, get_args
 
-from .events import ControllerCommand, SendLinkCommand
+from .events import ControllerCommand, RunAction, SendLinkCommand
+
+# "link" sends `command` to the network link layer; the rest run locally,
+# with `command` as their argument where one is needed:
+#   time          speak the time              announcement  play announcement <id>
+#   weather       speak active NWS alerts     say           speak <text>
+#   id            station ID now              parrot        play the next transmission back
+#   tx_disable / tx_enable   turn the transmitter off/on (put a secret code in the pattern)
+MacroAction = Literal[
+    "link", "time", "weather", "id", "announcement", "say", "parrot", "tx_disable", "tx_enable"
+]
+MACRO_ACTIONS: tuple[str, ...] = get_args(MacroAction)
+ACTIONS_NEEDING_ARGUMENT = frozenset({"link", "announcement", "say"})
 
 
 @dataclass(frozen=True)
 class Macro:
     pattern: str
     description: str
-    command: str
+    command: str = ""
     node_id: str = ""
+    action: MacroAction = "link"
 
     def build_command(self) -> ControllerCommand:
-        return SendLinkCommand(node_id=self.node_id, command=self.command)
+        if self.action == "link":
+            return SendLinkCommand(node_id=self.node_id, command=self.command)
+        return RunAction(action=self.action, argument=self.command)
 
 
 class DTMFCommandDecoder:

@@ -72,4 +72,13 @@ class SendLinkCommand:
     command: str
 
 
-ControllerCommand = Union[AssertPTT, PlayAudio, SendLinkCommand]
+@dataclass(frozen=True)
+class RunAction:
+    """A local repeater function triggered by a DTMF macro (talking clock,
+    transmitter disable, ...). The service layer carries it out."""
+
+    action: str
+    argument: str = ""
+
+
+ControllerCommand = Union[AssertPTT, PlayAudio, SendLinkCommand, RunAction]

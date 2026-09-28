@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { loadConfig } from "./config.js";
 import { store } from "./store.js";
 import { escapeHtml } from "./ui.js";
 
@@ -54,6 +55,9 @@ function recordChanges(prev, next) {
   if (prev.cos_active !== next.cos_active) addActivity(next.cos_active ? "Carrier detected (COS on)" : "Carrier dropped (COS off)", "cos");
   if (prev.ptt_active !== next.ptt_active) addActivity(next.ptt_active ? "Transmitter keyed (PTT on)" : "Transmitter unkeyed (PTT off)", "ptt");
   if (prev.last_clip !== next.last_clip && next.last_clip) addActivity(`Played clip: ${next.last_clip}`, "clip");
+  if (prev.transmitter_enabled !== next.transmitter_enabled) {
+    addActivity(next.transmitter_enabled ? "Transmitter turned on" : "Transmitter turned off", "ptt");
+  }
   const before = new Set(prev.linked_nodes);
   const after = new Set(next.linked_nodes);
   for (const node of after) if (!before.has(node)) addActivity(`Node ${node} linked`, "link");
@@ -62,7 +66,10 @@ function recordChanges(prev, next) {
 
 export function applyStatus(status) {
   recordChanges(previous, status);
+  // Switched over the air: refresh the settings forms too.
+  if (previous && previous.transmitter_enabled !== status.transmitter_enabled) loadConfig().catch(() => {});
   previous = status;
+  document.getElementById("tx-disabled-tag").hidden = status.transmitter_enabled;
 
   setStateBadge(stateValue, status.state);
   stateDescription.textContent = STATE_DESCRIPTIONS[status.state] ?? "";

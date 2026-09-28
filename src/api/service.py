@@ -27,6 +27,7 @@ from controller.events import (
     LinkStateChanged,
     PlayAudio,
     RemoteKeyed,
+    RunAction,
     SendLinkCommand,
 )
 from controller.macros import Macro
@@ -39,6 +40,14 @@ from .activity import ActivityRecorder
 from .persistence import StateStore
 
 _logger = logging.getLogger("moreopenrepeater.service")
+
+WEATHER_SUMMARY_MAX = 3
+
+
+def talking_clock_text(now: datetime) -> str:
+    hour = now.hour % 12 or 12
+    minutes = "o'clock" if now.minute == 0 else f"{now.minute:02d}" if now.minute >= 10 else f"oh {now.minute}"
+    return f"The time is {hour} {minutes} {'A M' if now.hour < 12 else 'P M'}."
 
 _CONFIG_FIELDS = {f.name for f in dataclasses.fields(RepeaterConfig)}
 _MACRO_FIELDS = {f.name for f in dataclasses.fields(Macro)}
@@ -72,6 +81,7 @@ class AudioOutput(Protocol):
     def set_ptt(self, active: bool) -> None: ...
     def set_repeating(self, repeating: bool) -> None: ...
     def play(self, clip: str) -> None: ...
+    def arm_parrot(self) -> None: ...
 
 
 @dataclasses.dataclass(frozen=True)
@@ -83,6 +93,7 @@ class StatusSnapshot:
     linked_nodes: list[str]
     last_clip: Optional[str]
     timestamp: float
+    transmitter_enabled: bool = True
 
 
 class RepeaterService:
@@ -158,6 +169,7 @@ class RepeaterService:
             linked_nodes=sorted(self.linked_nodes),
             last_clip=self.last_clip,
             timestamp=self._clock(),
+            transmitter_enabled=self.controller.config.transmitter_enabled,
         )
 
     def subscribe(self) -> "asyncio.Queue[StatusSnapshot]":
@@ -175,6 +187,7 @@ class RepeaterService:
 
     def _apply_commands(self, commands: list[ControllerCommand]) -> None:
         now = self._wall_clock().timestamp()
+        actions: list[RunAction] = []
         for command in commands:
             if isinstance(command, AssertPTT):
                 if self.activity is not None and command.active != self.ptt_active:
@@ -190,6 +203,8 @@ class RepeaterService:
                     self.audio_output.play(command.clip)
             elif isinstance(command, SendLinkCommand):
                 self._link_command_sink(command)
+            elif isinstance(command, RunAction):
+                actions.append(command)
         filtered = self.controller.kerchunks_filtered
         if filtered > self._kerchunks_filtered and self.activity is not None:
             self.activity.kerchunk_filtered(now)
@@ -202,6 +217,69 @@ class RepeaterService:
                 self.audio_output.set_repeating(state == RECEIVING)
             self._last_state = state
         self._notify()
+        # After the state bookkeeping above, since actions can change config
+        # (and so re-enter this method).
+        for action in actions:
+            self._run_action(action)
+
+    def _run_action(self, action: RunAction) -> None:
+        _logger.info("DTMF action %s(%r)", action.action, action.argument)
+        if action.action == "tx_disable":
+            self.update_config(transmitter_enabled=False)
+        elif action.action == "tx_enable":
+            self.update_config(transmitter_enabled=True)
+            self.speak(TTS_PREFIX + "Transmitter enabled")
+        elif action.action == "time":
+            self.speak(TTS_PREFIX + talking_clock_text(self._wall_clock()))
+        elif action.action == "weather":
+            self.speak(TTS_PREFIX + self.weather_summary_text())
+        elif action.action == "id":
+            self.speak("id")
+        elif action.action == "say" and action.argument:
+            self.speak(TTS_PREFIX + action.argument)
+        elif action.action == "announcement":
+            announcement = next((a for a in self.scheduler.list() if a.id == action.argument), None)
+            if announcement is None:
+                _logger.warning("DTMF macro refers to unknown announcement %r", action.argument)
+            else:
+                self.speak(self.announcement_clip(announcement))
+        elif action.action == "parrot":
+            if self.audio_output is None:
+                _logger.warning("parrot needs live audio, which isn't running")
+            else:
+                self.audio_output.arm_parrot()
+        else:
+            _logger.warning("DTMF action %s(%r) did nothing", action.action, action.argument)
+
+    def speak(self, clip: str) -> None:
+        """Queue `clip` like an announcement, rendering it off the event loop
+        first so the controller knows how long to hold PTT."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if self.renderer is None or loop is None:
+            self.queue_announcement(clip)
+            return
+        config = self.controller.config
+
+        def rendered(future: "asyncio.Future") -> None:
+            if future.exception() is not None:
+                _logger.error("couldn't render %s: %s", clip, future.exception())
+            elif not self.queue_announcement(clip):
+                _logger.warning("announcement queue full; dropped %s", clip)
+
+        loop.run_in_executor(None, self.renderer.render, clip, config).add_done_callback(rendered)
+
+    def weather_summary_text(self) -> str:
+        config = self.controller.config
+        if config.wx_lat is None or config.wx_lon is None:
+            return "Weather alerts are not set up."
+        if not self.weather_alerts:
+            return "There are no active weather alerts."
+        count = len(self.weather_alerts)
+        intro = "There is one active weather alert." if count == 1 else f"There are {count} active weather alerts."
+        return " ".join([intro] + [speech_text(a) for a in self.weather_alerts[:WEATHER_SUMMARY_MAX]])
 
     def handle_audio_events(self, events: list[ControllerEvent]) -> None:
         """Carrier / CTCSS / DTMF detected by the live audio engine."""
@@ -256,9 +334,10 @@ class RepeaterService:
     def update_config(self, **overrides: object) -> RepeaterConfig:
         _logger.info("update_config(%s)", overrides)
         new_config = dataclasses.replace(self.controller.config, **overrides)
-        self.controller.update_config(new_config, self._clock())
+        commands = self.controller.update_config(new_config, self._clock())
         self._persist()
         self._config_changed()
+        self._apply_commands(commands)
         return new_config
 
     def list_macros(self) -> list[Macro]:

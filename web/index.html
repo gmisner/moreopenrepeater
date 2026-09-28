@@ -59,6 +59,7 @@
             <span class="label">Controller state</span>
             <span id="state-value" class="state-badge state-unknown">--</span>
             <span id="state-description" class="muted"></span>
+            <a id="tx-disabled-tag" class="tag tag-danger" href="#timing" hidden>transmitter off</a>
           </div>
           <div class="card indicators-card">
             <div class="indicator" id="ptt-indicator">
@@ -147,6 +148,11 @@
           <p class="muted">Core repeater timers and access control.</p>
         </header>
         <form class="card config-form" data-config-form>
+          <label class="switch">
+            <input type="checkbox" name="transmitter_enabled" />
+            <span class="switch-track"></span>
+            <span>Transmitter enabled <small class="muted">&mdash; off stops all transmissions; DTMF still works</small></span>
+          </label>
           <div class="form-grid">
             <label>Courtesy tone duration
               <span class="input-unit"><input type="number" step="0.1" min="0.1" name="courtesy_tone_duration" required /><span>s</span></span>
@@ -380,13 +386,14 @@
       <section class="view" data-view="macros" data-title="DTMF macros" hidden>
         <header class="view-header">
           <h1>DTMF macros</h1>
-          <p class="muted">Digit patterns users can key in over the air, dispatched to the link layer
-            (e.g. <code>*81</code> &rarr; <code>disconnect_all</code>).</p>
+          <p class="muted">Digit patterns users can key in over the air: repeater functions like a talking
+            clock, or commands for the link layer (e.g. <code>*81</code> &rarr; <code>disconnect_all</code>). For
+            control-operator functions, put a secret code in the pattern (e.g. <code>*99</code> + your PIN).</p>
         </header>
         <div class="card">
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Pattern</th><th>Description</th><th>Command</th><th>Node</th><th></th></tr></thead>
+              <thead><tr><th>Pattern</th><th>Description</th><th>Action</th><th>Details</th><th></th></tr></thead>
               <tbody id="macros-tbody"></tbody>
             </table>
           </div>
@@ -398,14 +405,33 @@
             <label>Pattern
               <input type="text" name="pattern" placeholder="*81" pattern="[0-9A-Da-d*#]+" title="DTMF digits: 0-9, A-D, * and #" required />
             </label>
-            <label>Command
-              <input type="text" name="command" placeholder="disconnect_all" required />
+            <label>Action
+              <select name="action">
+                <option value="link">Link command</option>
+                <option value="time">Talking clock</option>
+                <option value="weather">Weather alerts</option>
+                <option value="id">Station ID now</option>
+                <option value="announcement">Play an announcement</option>
+                <option value="say">Say text</option>
+                <option value="parrot">Parrot (play next transmission back)</option>
+                <option value="tx_disable">Transmitter off</option>
+                <option value="tx_enable">Transmitter on</option>
+              </select>
             </label>
             <label>Description
               <input type="text" name="description" placeholder="Disconnect all links" />
             </label>
-            <label>Node ID
+            <label data-macro-arg="link">Command
+              <input type="text" name="command" placeholder="disconnect_all" />
+            </label>
+            <label data-macro-arg="link">Node ID
               <input type="text" name="node_id" placeholder="(optional)" />
+            </label>
+            <label data-macro-arg="announcement">Announcement
+              <select name="announcement_id"></select>
+            </label>
+            <label data-macro-arg="say" class="span-2">Text to say
+              <input type="text" name="say_text" placeholder="Club meeting Thursday at 7" />
             </label>
           </div>
           <div class="form-actions">

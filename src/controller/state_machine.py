@@ -51,6 +51,9 @@ class RepeaterConfig:
     id_audio_duration: float = 3.0
     require_ctcss_hz: Optional[float] = None
     kerchunk_delay: float = 0.0  # carrier must last this long before keying up from idle; 0 = off
+    # Off: nothing transmits (no repeat, IDs or announcements), but DTMF is
+    # still decoded so a control operator can turn it back on over the air.
+    transmitter_enabled: bool = True
     callsign: str = ""
     id_mode: Literal["voice", "cw", "both"] = "voice"
     cw_wpm: float = 20.0
@@ -135,7 +138,7 @@ class RepeaterController:
     def queued_announcements(self) -> list[str]:
         return list(self._announcements)
 
-    def update_config(self, config: RepeaterConfig, now: float) -> None:
+    def update_config(self, config: RepeaterConfig, now: float) -> list[ControllerCommand]:
         """Apply new settings to derived state too, so an edit takes effect
         now rather than at the next ID or the next CTCSS change."""
         previous = self.config
@@ -144,6 +147,11 @@ class RepeaterController:
             self._id_due_at = now + config.id_interval
         if config.require_ctcss_hz != previous.require_ctcss_hz:
             self._ctcss_present = config.require_ctcss_hz is None or self._last_ctcss_hz == config.require_ctcss_hz
+        if previous.transmitter_enabled and not config.transmitter_enabled:
+            self._keyup_at = None
+            if self.state != IDLE:
+                return self._enter_idle(now)
+        return []
 
     def handle_event(self, event: ControllerEvent, now: float) -> list[ControllerCommand]:
         commands: list[ControllerCommand] = []
@@ -195,6 +203,9 @@ class RepeaterController:
 
         self._dtmf.tick(now)
 
+        if not self.config.transmitter_enabled:
+            return commands
+
         if self.state in (IDLE, HANG_TIME) and now >= self._id_due_at:
             commands += self._enter_id(now)
 
@@ -207,6 +218,8 @@ class RepeaterController:
 
     def _on_cos_changed(self, active: bool, now: float, remote: bool = False) -> list[ControllerCommand]:
         if active:
+            if not self.config.transmitter_enabled:
+                return []
             if not remote and not self._ctcss_present:
                 return []  # squelch open but wrong/no CTCSS -- ignore
             if self.state == IDLE and not remote and self.config.kerchunk_delay > 0:

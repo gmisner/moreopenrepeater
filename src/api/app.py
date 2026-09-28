@@ -469,7 +469,7 @@ def create_app(
 
     @app.post("/api/macros", response_model=list[MacroResponse], dependencies=auth_dependencies)
     async def add_macro(body: MacroCreateRequest) -> list[MacroResponse]:
-        macro = Macro(pattern=body.pattern, description=body.description, command=body.command, node_id=body.node_id)
+        macro = Macro(**body.model_dump())
         return [_macro_response(m) for m in service.add_macro(macro)]
 
     @app.delete("/api/macros/{pattern}", response_model=list[MacroResponse], dependencies=auth_dependencies)

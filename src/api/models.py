@@ -6,6 +6,8 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from controller.macros import ACTIONS_NEEDING_ARGUMENT, MacroAction
+
 CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
 WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
 CosSource = Literal["vox", "ctcss", "cm108"]
@@ -19,6 +21,7 @@ class StatusResponse(BaseModel):
     linked_nodes: list[str]
     last_clip: Optional[str]
     timestamp: float
+    transmitter_enabled: bool = True
 
 
 class ConfigResponse(BaseModel):
@@ -29,6 +32,7 @@ class ConfigResponse(BaseModel):
     id_audio_duration: float
     require_ctcss_hz: Optional[float]
     kerchunk_delay: float
+    transmitter_enabled: bool
     callsign: str
     id_mode: Literal["voice", "cw", "both"]
     cw_wpm: float
@@ -74,6 +78,7 @@ class ConfigUpdateRequest(BaseModel):
     require_ctcss_hz: Optional[float] = None
     clear_require_ctcss_hz: bool = False
     kerchunk_delay: Optional[float] = Field(default=None, ge=0, le=3)
+    transmitter_enabled: Optional[bool] = None
     callsign: Optional[str] = None
     id_mode: Optional[Literal["voice", "cw", "both"]] = None
     cw_wpm: Optional[float] = Field(default=None, gt=0)
@@ -140,13 +145,21 @@ class MacroResponse(BaseModel):
     description: str
     command: str
     node_id: str
+    action: MacroAction
 
 
 class MacroCreateRequest(BaseModel):
-    pattern: str = Field(min_length=1)
+    pattern: str = Field(min_length=1, pattern=r"^[0-9A-D*#]+$")
     description: str = ""
-    command: str = Field(min_length=1)
+    command: str = ""
     node_id: str = ""
+    action: MacroAction = "link"
+
+    @model_validator(mode="after")
+    def _command_when_needed(self) -> "MacroCreateRequest":
+        if self.action in ACTIONS_NEEDING_ARGUMENT and not self.command.strip():
+            raise ValueError(f"a {self.action!r} macro needs a command")
+        return self
 
 
 MAX_ANNOUNCEMENT_LENGTH = 2000

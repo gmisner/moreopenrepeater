@@ -125,6 +125,40 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
 .card-header h2 { margin: 0; }
 
+/* ---------- activity ---------- */
+
+.view-header-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.segmented button {
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.86rem;
+}
+.segmented button:last-child { border-right: none; }
+.segmented button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+.stats-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.stats-grid .card { padding: 0.9rem 1rem; }
+.stat { display: flex; flex-direction: column; gap: 0.2rem; }
+.stat-value { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-note { font-size: 0.78rem; color: var(--muted); }
+
+.chart svg { display: block; overflow: visible; }
+.chart .bar-rx { fill: var(--accent); }
+.chart .bar-tx { fill: var(--accent-soft); }
+.chart .bar-rx:hover, .chart .bar-tx:hover { opacity: 0.8; }
+.chart .axis { fill: var(--muted); font-size: 10px; font-family: var(--mono); }
+.chart .gridline { stroke: var(--border); stroke-width: 1; }
+.chart-legend { display: flex; align-items: center; gap: 0.4rem; margin: 0.6rem 0 0; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-left: 0.6rem; }
+.swatch:first-child { margin-left: 0; }
+.swatch-rx { background: var(--accent); }
+.swatch-tx { background: var(--accent-soft); border: 1px solid var(--accent); }
+
 /* ---------- status ---------- */
 
 .state-card { display: flex; flex-direction: column; gap: 0.35rem; justify-content: center; }

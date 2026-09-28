@@ -22,6 +22,7 @@
       </div>
       <nav class="nav" id="nav">
         <a href="#/dashboard" data-nav="dashboard">Dashboard</a>
+        <a href="#/activity" data-nav="activity">Activity</a>
         <span class="nav-group">Repeater</span>
         <a href="#/timing" data-nav="timing">Timing</a>
         <a href="#/identification" data-nav="identification">Identification</a>
@@ -100,6 +101,42 @@
           </div>
           <ol id="activity-list" class="activity"></ol>
           <p id="activity-empty" class="muted small">State changes will appear here as they happen.</p>
+        </div>
+      </section>
+
+      <!-- Activity (usage statistics) -->
+      <section class="view" data-view="activity" data-title="Activity" hidden>
+        <header class="view-header view-header-row">
+          <div>
+            <h1>Activity</h1>
+            <p class="muted">How much the repeater gets used. Recorded automatically and kept for about a year.</p>
+          </div>
+          <div class="segmented" id="usage-range" role="group" aria-label="Time range">
+            <button type="button" data-days="1">24 h</button>
+            <button type="button" data-days="7" class="active">7 days</button>
+            <button type="button" data-days="30">30 days</button>
+            <button type="button" data-days="90">90 days</button>
+          </div>
+        </header>
+        <div class="stats-grid" id="usage-stats"></div>
+        <div class="card">
+          <h2>User airtime by hour of day</h2>
+          <div class="chart" id="usage-by-hour"></div>
+        </div>
+        <div class="card" id="usage-daily-card">
+          <h2>Airtime per day</h2>
+          <div class="chart" id="usage-by-day"></div>
+          <p class="chart-legend small muted"><span class="swatch swatch-rx"></span>Users <span class="swatch swatch-tx"></span>Transmitter keyed (incl. hang time, IDs, announcements)</p>
+        </div>
+        <div class="card">
+          <h2>Recent transmissions</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>When</th><th>Length</th><th></th></tr></thead>
+              <tbody id="usage-tbody"></tbody>
+            </table>
+          </div>
+          <p id="usage-empty" class="muted small">No transmissions recorded yet. Try the Simulator.</p>
         </div>
       </section>
 

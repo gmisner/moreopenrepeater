@@ -35,6 +35,7 @@ from controller.state_machine import RepeaterConfig, RepeaterController
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, ClipRenderer
 from wx.nws import AlertTracker, WeatherAlert, meets_severity, parse_alerts, speech_text
 
+from .activity import ActivityRecorder
 from .persistence import StateStore
 
 _logger = logging.getLogger("moreopenrepeater.service")
@@ -87,6 +88,7 @@ class RepeaterService:
         renderer: Optional[ClipRenderer] = None,
         announcements: Optional[list[Announcement]] = None,
         wall_clock: Callable[[], datetime] = datetime.now,
+        activity: Optional[ActivityRecorder] = None,
     ) -> None:
         """`clock` is monotonic and drives the controller's timers;
         `wall_clock` is naive local time and drives scheduled announcements."""
@@ -95,6 +97,7 @@ class RepeaterService:
         self._link_command_sink = link_command_sink
         self._state_store = state_store
         self.renderer = renderer
+        self.activity = activity
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
         if saved is not None:
@@ -115,11 +118,15 @@ class RepeaterService:
         self.ctcss_hz: Optional[float] = None
         self.linked_nodes: set[str] = set()
         self.last_clip: Optional[str] = None
+        self._last_state = self.controller.state
         self._subscribers: set["asyncio.Queue[StatusSnapshot]"] = set()
 
     @property
     def config(self) -> RepeaterConfig:
         return self.controller.config
+
+    def wall_now(self) -> datetime:
+        return self._wall_clock()
 
     def set_link_command_sink(self, sink: Callable[[SendLinkCommand], None]) -> None:
         self._link_command_sink = sink
@@ -157,13 +164,23 @@ class RepeaterService:
             queue.put_nowait(snapshot)
 
     def _apply_commands(self, commands: list[ControllerCommand]) -> None:
+        now = self._wall_clock().timestamp()
         for command in commands:
             if isinstance(command, AssertPTT):
+                if self.activity is not None and command.active != self.ptt_active:
+                    self.activity.ptt_changed(command.active, now)
                 self.ptt_active = command.active
             elif isinstance(command, PlayAudio):
                 self.last_clip = command.clip
+                if self.activity is not None:
+                    self.activity.clip_played(command.clip, now)
             elif isinstance(command, SendLinkCommand):
                 self._link_command_sink(command)
+        state = self.controller.state
+        if state != self._last_state:
+            if self.activity is not None:
+                self.activity.state_changed(self._last_state, state, now)
+            self._last_state = state
         self._notify()
 
     def tick(self) -> None:

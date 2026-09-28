@@ -8,11 +8,12 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, NamedTuple, Optional
 from urllib.parse import urlsplit
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,6 +31,7 @@ from playout.tts import TTSError, detect_tts
 from playout.wav import encode_wav
 from wx.nws import fetch_active_alerts, speech_text
 
+from .activity import RETENTION_DAYS, ActivityRecorder, ActivityStore, summarize
 from .assets import AssetKind, AudioAssetStore
 from .auth import (
     SESSION_COOKIE_NAME,
@@ -42,6 +44,7 @@ from .auth import (
 )
 from .logging_config import configure_logging
 from .models import (
+    ActivitySummaryResponse,
     AnnouncementFields,
     AnnouncementResponse,
     AssetResponse,
@@ -59,6 +62,7 @@ from .models import (
     SnapshotImportRequest,
     SnapshotModel,
     StatusResponse,
+    TransmissionResponse,
     TTSInfoResponse,
     WeatherAlertResponse,
     WeatherStatusResponse,
@@ -87,6 +91,7 @@ def _resolve_log_path(env: dict, repo_data_dir: Path) -> Path:
 
 DEFAULT_DATA_DIR = _resolve_data_dir(os.environ, _REPO_DATA_DIR)
 DEFAULT_STATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "state.json"
+DEFAULT_ACTIVITY_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "activity.db"
 DEFAULT_LOG_PATH = _resolve_log_path(os.environ, _REPO_DATA_DIR)
 TICK_INTERVAL_SECONDS = 0.05
 APRS_DISABLED_POLL_SECONDS = 5.0
@@ -200,15 +205,19 @@ def create_app(
     state_store: Optional[StateStore] = None,
     renderer: Optional[ClipRenderer] = None,
     fetch_weather: Callable[..., dict] = fetch_active_alerts,
+    activity_store: Optional[ActivityStore] = None,
 ) -> FastAPI:
-    """`state_store` defaults to None (in-memory only) so tests never touch
-    the real `data/state.json`; the module-level `app` below opts in.
+    """`state_store` and `activity_store` default to in-memory so tests never
+    touch the real files under `data/`; the module-level `app` below opts in.
     `fetch_weather(lat, lon, contact)` is swappable so tests stay offline."""
     assets_store = assets_store or AudioAssetStore(DEFAULT_DATA_DIR)
     renderer = renderer or ClipRenderer(assets_store.path_for, tts=detect_tts())
     service = service or RepeaterService(state_store=state_store)
     if service.renderer is None:
         service.renderer = renderer
+    if service.activity is None:
+        service.activity = ActivityRecorder(activity_store or ActivityStore())
+    activity_store = service.activity.store
     log_path = log_path or DEFAULT_LOG_PATH
     link_settings = link_settings if link_settings is not None else link_settings_from_env()
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
@@ -352,6 +361,7 @@ def create_app(
             tasks.append(asyncio.create_task(aprs_beacon_loop()))
             tasks.append(asyncio.create_task(announcement_loop()))
             tasks.append(asyncio.create_task(weather_loop()))
+            activity_store.prune((datetime.now() - timedelta(days=RETENTION_DAYS)).timestamp())
             loop = asyncio.get_running_loop()
             loop.run_in_executor(None, renderer.warm, service.config)
             service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
@@ -522,6 +532,19 @@ def create_app(
             raise HTTPException(status_code=503, detail=str(error))
         return _status_response(service.snapshot())
 
+    @app.get("/api/activity/summary", response_model=ActivitySummaryResponse, dependencies=auth_dependencies)
+    def activity_summary(days: int = Query(default=7, ge=1, le=RETENTION_DAYS)) -> dict:
+        until = service.wall_now()
+        since = until - timedelta(days=days)
+        return summarize(activity_store.rows(since.timestamp(), until.timestamp()), since, until)
+
+    @app.get("/api/activity/transmissions", response_model=list[TransmissionResponse], dependencies=auth_dependencies)
+    def recent_transmissions(limit: int = Query(default=50, ge=1, le=500)) -> list[TransmissionResponse]:
+        return [
+            TransmissionResponse(started_at=datetime.fromtimestamp(r.started_at), duration=r.duration, timed_out=r.timed_out)
+            for r in activity_store.recent("rx", limit)
+        ]
+
     @app.get("/api/snapshot", response_model=SnapshotModel, dependencies=auth_dependencies)
     def get_snapshot() -> SnapshotModel:
         return SnapshotModel(**service.export_snapshot())
@@ -638,7 +661,7 @@ def create_app(
     return app
 
 
-app = create_app(state_store=StateStore(DEFAULT_STATE_PATH))
+app = create_app(state_store=StateStore(DEFAULT_STATE_PATH), activity_store=ActivityStore(DEFAULT_ACTIVITY_PATH))
 
 
 def main() -> None:

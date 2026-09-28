@@ -223,6 +223,34 @@ class WeatherStatusResponse(BaseModel):
     alerts: list[WeatherAlertResponse]
 
 
+class ActivityDay(BaseModel):
+    date: str
+    rx_seconds: float
+    tx_seconds: float
+    rx_count: int
+
+
+class ActivitySummaryResponse(BaseModel):
+    since: datetime
+    until: datetime
+    rx_seconds: float
+    rx_count: int
+    kerchunks: int
+    timeouts: int
+    longest_rx_seconds: float
+    tx_seconds: float
+    ids: int
+    announcements: int
+    by_hour: list[float]
+    by_day: list[ActivityDay]
+
+
+class TransmissionResponse(BaseModel):
+    started_at: datetime
+    duration: float
+    timed_out: bool
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str

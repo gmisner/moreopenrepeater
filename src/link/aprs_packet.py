@@ -92,10 +92,12 @@ _WEATHER_FIELDS = {
 
 _COMMENT_TELEMETRY = re.compile(r"\|[!-{]{4,14}\|")  # base-91 "|ss1122|"
 _DAO = re.compile(r"![Ww][!-{]{2}!")  # extra position precision
+_SOFTWARE_TAG = re.compile(r"\{[A-Za-z0-9@]{2,6}\}$")  # e.g. UI-View's "{UIV32N}"
 
 
 def _clean_comment(comment: str) -> str:
-    return _DAO.sub("", _COMMENT_TELEMETRY.sub("", comment)).strip()
+    comment = _DAO.sub("", _COMMENT_TELEMETRY.sub("", comment)).strip()
+    return _SOFTWARE_TAG.sub("", comment).strip()
 
 
 def _uncompressed(body: str) -> Optional[tuple[float, float, str, str, str]]:
@@ -167,8 +169,15 @@ def _weather(comment: str) -> tuple[dict, str]:
     return weather, comment
 
 
+def _altitude(comment: str) -> tuple[Optional[float], str]:
+    m = _ALTITUDE.search(comment)
+    if not m:
+        return None, comment
+    return int(m.group(1)) * FEET_TO_M, comment[: m.start()] + comment[m.end() :]
+
+
 def _extensions(comment: str) -> tuple[Optional[int], Optional[float], Optional[float], str]:
-    course = speed = altitude = None
+    course = speed = None
     m = _COURSE_SPEED.match(comment)
     if m:
         c, s = int(m.group(1)), int(m.group(2))
@@ -176,10 +185,7 @@ def _extensions(comment: str) -> tuple[Optional[int], Optional[float], Optional[
             course = c
         speed = s * KNOTS_TO_KMH
         comment = comment[7:]
-    m = _ALTITUDE.search(comment)
-    if m:
-        altitude = int(m.group(1)) * FEET_TO_M
-        comment = comment[: m.start()] + comment[m.end() :]
+    altitude, comment = _altitude(comment)
     return course, speed, altitude, comment
 
 
@@ -190,7 +196,8 @@ def _position(name: str, source: str, body: str, kind: str = "station", killed: 
         weather = None
         if code == "_":
             weather, comment = _weather(comment)
-            course = speed = altitude = None
+            course = speed = None
+            altitude, comment = _altitude(comment)
         else:
             course, speed, altitude, comment = _extensions(comment)
     else:
@@ -201,10 +208,8 @@ def _position(name: str, source: str, body: str, kind: str = "station", killed: 
         weather = None
         if code == "_":
             weather, comment = _weather(comment)
-        m = _ALTITUDE.search(comment)
-        if m and altitude is None:
-            altitude = int(m.group(1)) * FEET_TO_M
-            comment = comment[: m.start()] + comment[m.end() :]
+        if altitude is None:
+            altitude, comment = _altitude(comment)
     if abs(lat) < 1e-6 and abs(lon) < 1e-6:
         return None  # "0,0": no GPS fix
     return AprsPosition(

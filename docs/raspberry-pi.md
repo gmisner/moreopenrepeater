@@ -193,6 +193,26 @@ sudo -u moreopenrepeater .venv/bin/pip install -e .   # picks up any new/changed
 sudo systemctl restart moreopenrepeater
 ```
 
+## Repeaters without internet
+
+The repeater itself never needs the internet. These optional features do, and each
+one is off until you turn it on:
+
+- **APRS beaconing** and the **APRS map** connect to an APRS-IS server
+  (`rotate.aprs2.net` by default). The map only receives. If the connection
+  drops, it retries (backing off to every two minutes), and the APRS map page says it isn't
+  connected. With no internet at all, you can point the APRS server setting at a
+  local APRS-IS server (for example `aprsc` fed by your own RF iGate).
+- **Map tiles** come from OpenStreetMap, loaded by the browser, not the Pi. If the
+  browser can't reach them, the map shows range rings on a plain background.
+  Clear the "Map tiles" setting to always use that, or point it at a tile server
+  on your own network.
+- **Weather alerts** come from `api.weather.gov` (US only). Alert areas on the
+  map need one extra request per affected NWS zone, and only when the map is on.
+
+`data/aprs.db` holds the stations the map has heard. It's safe to delete; it
+refills as new reports arrive.
+
 ## Still not covered here
 
 - The live audio engine is tested with synthetic signals and against Mac

@@ -193,6 +193,14 @@ several phases (see the plan file for the full breakdown):
 - **NWS weather alerts**: polls active alerts for the repeater's location, announces
   new ones at or above a chosen severity, optionally repeats them, and shows the
   current alerts on the dashboard with a Play button.
+- **APRS map** (optional, needs internet): shows stations heard on APRS-IS within a
+  set range of the repeater, with trails for moving stations, weather-station
+  readings, and filters for repeaters, digipeaters, mobiles, fixed stations and
+  weather. Active NWS alert areas are drawn on the same map. A DTMF macro can say
+  how many stations are nearby and which is closest. It only receives; nothing is
+  transmitted. Without internet, leave it off: the rest of the repeater doesn't
+  depend on it. If the map tiles can't be reached, it falls back to range rings
+  only, and the tile URL can point at your own tile server.
 - **Airtime statistics**: every transmission, ID and announcement is logged to
   SQLite (`data/activity.db`, 400 days kept). The Activity page charts usage by hour
   and day, and counts kerchunks and timeouts.
@@ -206,8 +214,9 @@ several phases (see the plan file for the full breakdown):
 - **CTCSS encode**: an optional sub-audible tone on everything transmitted, with
   received audio high-passed so an incoming tone isn't repeated alongside it.
 - **DTMF local control**: macros can speak the time, read the weather alerts, play
-  an announcement or any text, send the ID, start a parrot test, or turn the
-  transmitter off and on (with a PIN in the macro code).
+  an announcement or any text, send the ID, start a parrot test, say which APRS
+  stations are nearby, or turn the transmitter off and on (with a PIN in the macro
+  code).
 - **Parrot / echo test**: after the parrot macro, the next transmission is recorded
   instead of repeated, then played back.
 - **Recordings**: optionally save every repeated transmission, with playback on the
@@ -284,7 +293,7 @@ step: a sidebar app with separate views for Dashboard (live state, linked
 nodes, and a recent-activity feed), Activity (airtime charts), Timing,
 Identification, Audio & tones (sounds, clip library and the live radio
 interface), DTMF macros (add/edit/rename/delete), Announcements, Weather
-alerts, APRS, Simulator, Logs (filter/level/pause), Backup & restore, and for
+alerts, APRS, APRS map, Simulator, Logs (filter/level/pause), Backup & restore, and for
 admins Users and Audit log. Each settings view saves only
 its own fields through `PUT /api/config`, with unsaved-change tracking.
 Verified live in a real browser: login rejection/acceptance, WebSocket via

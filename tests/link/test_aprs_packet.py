@@ -119,3 +119,15 @@ def test_third_party_is_unwrapped():
 )
 def test_ignored_or_malformed(line):
     assert parse_packet(line) is None
+
+
+def test_software_tags_are_stripped_from_comments():
+    p = parse_packet("KB7KFC-3>APRS:=3310.00N/11150.00W_/South Chandler weather {UIV32N}")
+    assert p is not None and p.comment == "/South Chandler weather"
+    p = parse_packet("SOMTNX>APLRG1:!3320.00N/11205.00W#LoRa Digi de N7UV{T36M}")
+    assert p is not None and p.comment == "LoRa Digi de N7UV"
+
+
+def test_weather_symbol_without_weather_still_reads_altitude():
+    p = parse_packet("K7PMV-Y>APDG03:!3310.00N\\11150.00W_/A=00000070cm MMDVM Voice (C4FM) 441.00000MHz")
+    assert p is not None and p.altitude_m == 0 and p.comment == "70cm MMDVM Voice (C4FM) 441.00000MHz"

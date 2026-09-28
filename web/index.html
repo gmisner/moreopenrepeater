@@ -32,6 +32,7 @@
         <a href="#/announcements" data-nav="announcements">Announcements</a>
         <a href="#/weather" data-nav="weather">Weather alerts</a>
         <a href="#/aprs" data-nav="aprs">APRS</a>
+        <a href="#/map" data-nav="map">APRS map</a>
         <span class="nav-group">Tools</span>
         <a href="#/simulator" data-nav="simulator">Simulator</a>
         <a href="#/logs" data-nav="logs">Logs</a>
@@ -659,6 +660,74 @@
             <button type="submit" class="btn btn-primary">Save</button>
           </div>
         </form>
+        <form class="card config-form" data-config-form>
+          <div class="card-header"><h2>Map</h2><a href="#/map" class="small">Open the map</a></div>
+          <label class="switch">
+            <input type="checkbox" name="aprs_map_enabled" />
+            <span class="switch-track"></span>
+            <span>Map nearby APRS stations</span>
+          </label>
+          <p class="muted small">Receives position reports from the APRS-IS server above, centered on the latitude and
+            longitude above (or the weather alert location). Needs an internet connection, or a local APRS-IS server.
+            Nothing is transmitted.</p>
+          <div class="form-grid">
+            <label>Range
+              <span class="input-unit"><input type="number" step="1" min="1" max="500" name="aprs_map_radius_km" required /><span>km</span></span>
+            </label>
+            <label>Keep stations for
+              <span class="input-unit"><input type="number" step="0.25" min="0.25" max="48" name="aprs_map_hours" required /><span>h</span></span>
+            </label>
+            <label>Distances in
+              <select name="distance_units">
+                <option value="mi">Miles</option>
+                <option value="km">Kilometers</option>
+              </select>
+            </label>
+            <label class="span-2">Map tiles
+              <input type="text" name="aprs_map_tiles" placeholder="blank = no background map" />
+              <small>A <code>{z}/{x}/{y}</code> tile URL. Leave blank on repeaters without internet to show range rings only,
+                or point it at your own tile server.</small>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="aprs-tiles-default">Use OpenStreetMap</button>
+            <span class="spacer"></span>
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- APRS map -->
+      <section class="view" data-view="map" data-title="APRS map" hidden>
+        <header class="view-header">
+          <h1>APRS map</h1>
+          <p class="muted">Stations heard on APRS-IS near the repeater, with active weather alert areas.</p>
+        </header>
+        <div class="card" id="map-setup" hidden>
+          <p id="map-setup-text" class="muted"></p>
+          <a href="#/aprs" class="btn btn-ghost btn-sm">APRS settings</a>
+        </div>
+        <div class="card map-card" id="map-card">
+          <div class="map-toolbar">
+            <span id="map-status" class="muted small">Loading…</span>
+            <span class="spacer"></span>
+            <div class="chips" id="map-filters"></div>
+          </div>
+          <div id="map" class="map"></div>
+          <p id="map-tile-note" class="muted small" hidden></p>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2>Stations</h2><span id="map-count" class="muted small"></span></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Station</th><th>Type</th><th>Distance</th><th>Heard</th><th>Comment</th></tr></thead>
+              <tbody id="map-tbody"></tbody>
+            </table>
+          </div>
+          <p id="map-empty" class="muted small">No stations heard yet.</p>
+        </div>
       </section>
 
       <!-- Simulator -->

@@ -7,6 +7,7 @@ import { initBackup } from "./js/backup.js";
 import { initConfig, loadConfig } from "./js/config.js";
 import { initListen } from "./js/listen.js";
 import { initLogs } from "./js/logs.js";
+import { initMap } from "./js/map.js";
 import { initMacros, loadMacros } from "./js/macros.js";
 import { initRouter } from "./js/router.js";
 import { initSession } from "./js/session.js";
@@ -29,6 +30,7 @@ async function main() {
   initMacros();
   initAnnouncements();
   initWeather();
+  initMap();
   initUsage();
   initSimulator();
   initLogs();

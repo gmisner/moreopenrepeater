@@ -177,6 +177,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 .state-courtesy_tone, .state-hang_time { color: var(--accent); }
 .state-timeout { color: var(--red); }
 .state-transmitting_id, .state-announcing { color: var(--amber); }
+.state-patch { color: var(--green); }
 
 .indicators-card { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
 .indicator {

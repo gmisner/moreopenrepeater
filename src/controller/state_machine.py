@@ -5,7 +5,7 @@ timers via tick(now) -- there are no threads and no real time.sleep, so the
 whole thing can be driven deterministically from tests with a fake clock.
 
 Implemented as an explicit hand-rolled state machine rather than a generic
-FSM library: with seven states and a handful of transitions, an explicit
+FSM library: with eight states and a handful of transitions, an explicit
 dispatch is easier to read, easier to test exhaustively, and avoids an
 extra dependency for logic this size.
 """
@@ -26,6 +26,7 @@ from .events import (
     PlayAudio,
     RemoteKeyed,
 )
+from .autopatch import AutopatchDialer
 from .macros import DTMFCommandDecoder, Macro
 
 IDLE = "idle"
@@ -35,6 +36,7 @@ HANG_TIME = "hang_time"
 TIMEOUT = "timeout"
 TRANSMITTING_ID = "transmitting_id"
 ANNOUNCING = "announcing"
+PATCH = "patch"  # autopatch call: transmitter held up carrying the phone audio
 
 MAX_QUEUED_ANNOUNCEMENTS = 10
 ANNOUNCEMENT_FALLBACK_DURATION = 10.0
@@ -101,6 +103,16 @@ class RepeaterConfig:
     tx_ctcss_level_db: float = -20.0
     record_transmissions: bool = False
     recording_retention_days: float = 7.0
+    autopatch_enabled: bool = False
+    autopatch_access_code: str = "*6"
+    autopatch_hangup_code: str = "#"
+    # Asterisk channel to call; {number} is replaced with the dialed digits.
+    autopatch_dial_string: str = "PJSIP/{number}@trunk"
+    autopatch_caller_id: str = ""
+    autopatch_allowed: str = "911 NXXNXXXXXX"  # dialplan patterns, see controller.autopatch
+    autopatch_blocked: str = "900XXXXXXX NXX976XXXX"
+    autopatch_max_call_seconds: float = 180.0
+    autopatch_ring_seconds: float = 30.0
 
 
 class RepeaterController:
@@ -118,6 +130,8 @@ class RepeaterController:
         self._clip_duration = clip_duration
         self.state = IDLE
         self._dtmf = DTMFCommandDecoder(macros or [])
+        self._patch_dialer = AutopatchDialer()
+        self._local_carrier = False
         self._ctcss_present = config.require_ctcss_hz is None
         self._last_ctcss_hz: Optional[float] = None
         self._tot_deadline: Optional[float] = None
@@ -151,6 +165,41 @@ class RepeaterController:
     def queued_announcements(self) -> list[str]:
         return list(self._announcements)
 
+    @property
+    def carrier_present(self) -> bool:
+        """A local user is transmitting (carrier with the right CTCSS tone)."""
+        return self._local_carrier and self._ctcss_present
+
+    def set_patch_call_active(self, active: bool) -> None:
+        """While a call is ringing or up, the hangup code ends it and the
+        access code doesn't start another."""
+        self._patch_dialer.call_active = active
+        self._patch_dialer.reset()
+
+    def start_patch(self, now: float) -> list[ControllerCommand]:
+        """Hold the transmitter up for an autopatch call until `end_patch`.
+        Local users are still repeated over the call audio."""
+        if not self.config.transmitter_enabled:
+            return []
+        self._keyup_at = None
+        if self.state == TRANSMITTING_ID:
+            self._resume_state_after_id = PATCH
+            return []
+        self._set_state(PATCH)
+        self._state_deadline = None
+        self._tot_deadline = None
+        return [AssertPTT(active=True)]
+
+    def end_patch(self, now: float) -> list[ControllerCommand]:
+        if self.state == TRANSMITTING_ID and self._resume_state_after_id == PATCH:
+            self._resume_state_after_id = IDLE
+            return []
+        if self.state != PATCH:
+            return []
+        if self.carrier_present:
+            return self._enter_receiving(now)
+        return self._enter_courtesy_tone(now)
+
     def update_config(self, config: RepeaterConfig, now: float) -> list[ControllerCommand]:
         """Apply new settings to derived state too, so an edit takes effect
         now rather than at the next ID or the next CTCSS change."""
@@ -170,7 +219,12 @@ class RepeaterController:
         commands: list[ControllerCommand] = []
 
         if isinstance(event, COSChanged):
+            self._local_carrier = event.active
             commands += self._on_cos_changed(event.active, now)
+            if not event.active and self.config.autopatch_enabled:
+                patch_command = self._patch_dialer.carrier_dropped(self.config.autopatch_access_code)
+                if patch_command is not None:
+                    commands.append(patch_command)
         elif isinstance(event, CTCSSChanged):
             self._last_ctcss_hz = event.tone_hz
             self._ctcss_present = (
@@ -180,6 +234,12 @@ class RepeaterController:
             command = self._dtmf.handle_digit(event.digit, now)
             if command is not None:
                 commands.append(command)
+            if self.config.autopatch_enabled:
+                patch_command = self._patch_dialer.handle_digit(
+                    event.digit, now, self.config.autopatch_access_code, self.config.autopatch_hangup_code
+                )
+                if patch_command is not None:
+                    commands.append(patch_command)
         elif isinstance(event, RemoteKeyed):
             if event.keyed:
                 self._remote_keyed.add(event.node_id)
@@ -215,11 +275,12 @@ class RepeaterController:
                 commands += self._finish_announcement(now)
 
         self._dtmf.tick(now)
+        self._patch_dialer.tick(now)
 
         if not self.config.transmitter_enabled:
             return commands
 
-        if self.state in (IDLE, HANG_TIME) and now >= self._id_due_at:
+        if self.state in (IDLE, HANG_TIME, PATCH) and now >= self._id_due_at:
             commands += self._enter_id(now)
 
         if self.state == IDLE and self._announcements and self._keyup_at is None:
@@ -303,6 +364,9 @@ class RepeaterController:
         if target == IDLE:
             self._state_deadline = None
             return [AssertPTT(active=False)]
+        if target == PATCH:
+            self._state_deadline = None
+            return []
         self._state_deadline = now + self.config.hang_time  # resume hang_time countdown
         return []
 

@@ -221,6 +221,10 @@ several phases (see the plan file for the full breakdown):
   an announcement or any text, send the ID, start a parrot test, say which APRS
   stations are nearby, or turn the transmitter off and on (with a PIN in the macro
   code).
+- **Autopatch**: users dial phone calls over the air (`*6` + number, `#` to hang up)
+  through a SIP trunk on the local Asterisk, with allowed/blocked number patterns,
+  a time limit, and a dashboard page to watch, place or hang up calls. See
+  [docs/autopatch.md](docs/autopatch.md).
 - **Parrot / echo test**: after the parrot macro, the next transmission is recorded
   instead of repeated, then played back.
 - **Recordings**: optionally save every repeated transmission, with playback on the

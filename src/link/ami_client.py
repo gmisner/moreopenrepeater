@@ -92,9 +92,15 @@ class AMIClient:
         self._pending.clear()
 
     async def send_action(self, fields: AMIMessage) -> AMIMessage:
+        """Send an action and wait for its Response. A caller-chosen
+        ActionID is kept, for matching later events that echo it (e.g. an
+        async Originate's OriginateResponse)."""
         assert self._writer is not None
-        action_id = str(next(self._action_ids))
+        action_id = str(fields.get("ActionID") or f"mor-{next(self._action_ids)}")
         fields = {**fields, "ActionID": action_id}
+        for key, value in fields.items():
+            if any(c in f"{key}{value}" for c in "\r\n"):
+                raise ValueError(f"AMI header {key!r} contains a line break")
 
         future: "asyncio.Future[AMIMessage]" = asyncio.get_running_loop().create_future()
         self._pending[action_id] = future

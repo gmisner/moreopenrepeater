@@ -14,7 +14,7 @@ import dataclasses
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Callable, Optional, Protocol
+from typing import Callable, Optional, Protocol, Union
 
 from controller.announcements import Announcement, AnnouncementScheduler, announcement_from_dict
 from controller.events import (
@@ -23,7 +23,9 @@ from controller.events import (
     CTCSSChanged,
     ControllerCommand,
     ControllerEvent,
+    DialPatch,
     DTMFDigit,
+    HangupPatch,
     LinkStateChanged,
     PlayAudio,
     RemoteKeyed,
@@ -31,7 +33,8 @@ from controller.events import (
     SendLinkCommand,
 )
 from controller.macros import Macro
-from controller.state_machine import RECEIVING, RepeaterConfig, RepeaterController
+from controller.state_machine import PATCH, RECEIVING, RepeaterConfig, RepeaterController
+from audio_io.patch import PatchAudio
 
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, ClipRenderer
 from wx.nws import AlertTracker, WeatherAlert, meets_severity, parse_alerts, speech_text
@@ -82,6 +85,14 @@ class AudioOutput(Protocol):
     def set_repeating(self, repeating: bool) -> None: ...
     def play(self, clip: str) -> None: ...
     def arm_parrot(self) -> bool: ...
+    def set_patch(self, patch: Optional[PatchAudio]) -> None: ...
+
+
+class PatchCalls(Protocol):
+    """Places and ends autopatch calls (`api.autopatch.Autopatch`)."""
+
+    def dial(self, number: str, actor: str) -> Optional[str]: ...
+    def hangup(self, reason: str) -> None: ...
 
 
 @dataclasses.dataclass(frozen=True)
@@ -118,6 +129,7 @@ class RepeaterService:
         self.renderer = renderer
         self.activity = activity
         self.audio_output: Optional[AudioOutput] = None
+        self.autopatch: Optional[PatchCalls] = None
         self.audit_hook: Optional[Callable[[str, str, str], None]] = None  # (actor, action, detail)
         self.aprs_summary: Optional[Callable[[], str]] = None
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
@@ -141,6 +153,7 @@ class RepeaterService:
         self.linked_nodes: set[str] = set()
         self.last_clip: Optional[str] = None
         self._last_state = self.controller.state
+        self._repeating = False
         self._kerchunks_filtered = 0
         self._subscribers: set["asyncio.Queue[StatusSnapshot]"] = set()
 
@@ -150,6 +163,13 @@ class RepeaterService:
 
     def wall_now(self) -> datetime:
         return self._wall_clock()
+
+    @property
+    def repeating(self) -> bool:
+        """Whether received audio should go out the transmitter: normally
+        while RECEIVING, and during an autopatch call whenever a user talks."""
+        state = self.controller.state
+        return state == RECEIVING or (state == PATCH and self.controller.carrier_present)
 
     def set_link_command_sink(self, sink: Callable[[SendLinkCommand], None]) -> None:
         self._link_command_sink = sink
@@ -189,7 +209,7 @@ class RepeaterService:
 
     def _apply_commands(self, commands: list[ControllerCommand]) -> None:
         now = self._wall_clock().timestamp()
-        actions: list[RunAction] = []
+        actions: list[Union[RunAction, DialPatch, HangupPatch]] = []
         for command in commands:
             if isinstance(command, AssertPTT):
                 if self.activity is not None and command.active != self.ptt_active:
@@ -205,7 +225,7 @@ class RepeaterService:
                     self.audio_output.play(command.clip)
             elif isinstance(command, SendLinkCommand):
                 self._link_command_sink(command)
-            elif isinstance(command, RunAction):
+            elif isinstance(command, (RunAction, DialPatch, HangupPatch)):
                 actions.append(command)
         filtered = self.controller.kerchunks_filtered
         if filtered > self._kerchunks_filtered and self.activity is not None:
@@ -215,14 +235,40 @@ class RepeaterService:
         if state != self._last_state:
             if self.activity is not None:
                 self.activity.state_changed(self._last_state, state, now)
-            if self.audio_output is not None:
-                self.audio_output.set_repeating(state == RECEIVING)
             self._last_state = state
+        repeating = self.repeating
+        if repeating != self._repeating:
+            self._repeating = repeating
+            if self.audio_output is not None:
+                self.audio_output.set_repeating(repeating)
         self._notify()
         # After the state bookkeeping above, since actions can change config
         # (and so re-enter this method).
         for action in actions:
-            self._run_action(action)
+            if isinstance(action, RunAction):
+                self._run_action(action)
+            else:
+                self._run_patch_command(action)
+
+    def _run_patch_command(self, command: Union[DialPatch, HangupPatch]) -> None:
+        if isinstance(command, HangupPatch):
+            if self.autopatch is not None:
+                self.autopatch.hangup("hung up by a user")
+            return
+        _logger.info("autopatch dial requested over DTMF")
+        if self.autopatch is None:
+            self.speak(TTS_PREFIX + "Autopatch is not available.")
+            return
+        self.autopatch.dial(command.number, "DTMF")
+
+    def begin_patch(self) -> None:
+        """An autopatch call started: hold the transmitter up for it."""
+        self.controller.set_patch_call_active(True)
+        self._apply_commands(self.controller.start_patch(self._clock()))
+
+    def end_patch(self) -> None:
+        self.controller.set_patch_call_active(False)
+        self._apply_commands(self.controller.end_patch(self._clock()))
 
     def _run_action(self, action: RunAction) -> None:
         _logger.info("DTMF action %s(%r)", action.action, action.argument)

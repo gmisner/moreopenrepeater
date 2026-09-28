@@ -43,6 +43,7 @@ from .auth import (
     parse_basic_auth_header,
     verify_credentials,
 )
+from .autopatch import Autopatch, patch_settings_from_env
 from .aprs_map import AprsReceiver, StationStore, bearing_degrees, distance_km, map_center, spoken_summary
 from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
 from .audit import AuditEntry, AuditLog, describe_config_change
@@ -62,6 +63,8 @@ from .models import (
     AudioDeviceResponse,
     AudioEngineResponse,
     AudioPreviewRequest,
+    AutopatchDialRequest,
+    AutopatchStatusResponse,
     ConfigResponse,
     ConfigUpdateRequest,
     LoginRequest,
@@ -272,6 +275,7 @@ def create_app(
     users: Optional[UserStore] = None,
     audit: Optional[AuditLog] = None,
     aprs_stations: Optional[StationStore] = None,
+    autopatch: Optional[Autopatch] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -289,6 +293,7 @@ def create_app(
     live_audio = live_audio or LiveAudio(
         service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings
     )
+    autopatch = autopatch or Autopatch(service, patch_settings_from_env(os.environ))
     log_path = log_path or DEFAULT_LOG_PATH
     link_settings = link_settings if link_settings is not None else link_settings_from_env()
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
@@ -499,9 +504,11 @@ def create_app(
             if link_settings is not None:
                 tasks.append(asyncio.create_task(node_link_loop()))
             live_audio.attach(loop)
+            await autopatch.start()
         yield
         for task in tasks:
             task.cancel()
+        await autopatch.stop()
         live_audio.shutdown()
 
     app = FastAPI(title="moreopenrepeater API", lifespan=lifespan)
@@ -748,6 +755,23 @@ def create_app(
     @app.get("/api/audio/engine", response_model=AudioEngineResponse, dependencies=auth_dependencies)
     def get_audio_engine() -> dict:
         return live_audio.status()
+
+    @app.get("/api/autopatch", response_model=AutopatchStatusResponse, dependencies=auth_dependencies)
+    def get_autopatch() -> dict:
+        return autopatch.status()
+
+    @app.post("/api/autopatch/dial", response_model=AutopatchStatusResponse, dependencies=auth_dependencies)
+    async def autopatch_dial(body: AutopatchDialRequest, request: Request) -> dict:
+        request.state.audit_detail = body.number
+        error = autopatch.dial(body.number, request.state.identity.username or "local")
+        if error is not None:
+            raise HTTPException(status_code=409, detail=error)
+        return autopatch.status()
+
+    @app.post("/api/autopatch/hangup", response_model=AutopatchStatusResponse, dependencies=auth_dependencies)
+    async def autopatch_hangup(request: Request) -> dict:
+        autopatch.hangup(f"hung up from the dashboard by {request.state.identity.username or 'local'}")
+        return autopatch.status()
 
     @app.get("/api/assets", response_model=list[AssetResponse], dependencies=auth_dependencies)
     def list_assets() -> list[AssetResponse]:

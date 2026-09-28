@@ -81,4 +81,16 @@ class RunAction:
     argument: str = ""
 
 
-ControllerCommand = Union[AssertPTT, PlayAudio, SendLinkCommand, RunAction]
+@dataclass(frozen=True)
+class DialPatch:
+    """Place an autopatch phone call (digits only, not yet checked against the allowed numbers)."""
+
+    number: str
+
+
+@dataclass(frozen=True)
+class HangupPatch:
+    """End the autopatch call in progress."""
+
+
+ControllerCommand = Union[AssertPTT, PlayAudio, SendLinkCommand, RunAction, DialPatch, HangupPatch]

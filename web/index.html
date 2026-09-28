@@ -31,6 +31,7 @@
         <a href="#/macros" data-nav="macros">DTMF macros</a>
         <a href="#/announcements" data-nav="announcements">Announcements</a>
         <a href="#/weather" data-nav="weather">Weather alerts</a>
+        <a href="#/autopatch" data-nav="autopatch">Autopatch</a>
         <a href="#/aprs" data-nav="aprs">APRS</a>
         <a href="#/map" data-nav="map">APRS map</a>
         <span class="nav-group">Tools</span>
@@ -621,6 +622,76 @@
           </div>
           <p id="wx-empty" class="muted small">No active alerts at or above the chosen severity.</p>
         </div>
+      </section>
+
+      <!-- Autopatch -->
+      <section class="view" data-view="autopatch" data-title="Autopatch" hidden>
+        <header class="view-header">
+          <h1>Autopatch</h1>
+          <p class="muted">Let users place phone calls through the repeater. Calls go out through the Asterisk
+            sidecar's SIP trunk; see the <a href="https://github.com/gmisner/moreopenrepeater/blob/main/docs/autopatch.md" target="_blank" rel="noopener">setup guide</a>.</p>
+        </header>
+        <div class="card">
+          <div class="card-header"><h2>Call</h2></div>
+          <p id="patch-status" class="muted">Loading&hellip;</p>
+          <div class="form-actions">
+            <span class="input-action">
+              <input type="tel" id="patch-number" placeholder="Number to call" inputmode="numeric" autocomplete="off" />
+              <button type="button" class="btn btn-ghost" id="patch-dial">Test call</button>
+            </span>
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-danger" id="patch-hangup" hidden>Hang up</button>
+          </div>
+          <small class="muted">A test call goes out over the air like a DTMF-dialed one, and follows the same rules.</small>
+        </div>
+        <form class="card config-form" data-config-form>
+          <label class="switch">
+            <input type="checkbox" name="autopatch_enabled" />
+            <span class="switch-track"></span>
+            <span>Allow autopatch calls</span>
+          </label>
+          <div class="form-grid">
+            <label>Access code
+              <input type="text" name="autopatch_access_code" required pattern="[0-9A-D*]{1,8}" autocomplete="off" />
+              <small>Users send this, the number, then # (or just unkey). Don't start a DTMF macro with it.</small>
+            </label>
+            <label>Hang-up code
+              <input type="text" name="autopatch_hangup_code" required pattern="[0-9A-D*#]{1,8}" autocomplete="off" />
+              <small>Ends the call while one is up.</small>
+            </label>
+            <label class="span-2">Allowed numbers
+              <input type="text" name="autopatch_allowed" autocomplete="off" />
+              <small>Patterns separated by spaces: X is any digit, N is 2&ndash;9, Z is 1&ndash;9.
+                <code>911 NXXNXXXXXX</code> allows 911 and 10-digit local numbers, but not 1+ long distance.</small>
+            </label>
+            <label class="span-2">Blocked numbers
+              <input type="text" name="autopatch_blocked" autocomplete="off" />
+              <small>Checked after the allowed list, e.g. <code>900XXXXXXX</code> for premium-rate numbers.</small>
+            </label>
+            <label>Maximum call length
+              <span class="input-unit"><input type="number" step="30" min="30" max="3600" name="autopatch_max_call_seconds" required /><span>s</span></span>
+              <small>Users hear a warning 30 seconds before the end.</small>
+            </label>
+            <label>Ring for
+              <span class="input-unit"><input type="number" step="5" min="5" max="120" name="autopatch_ring_seconds" required /><span>s</span></span>
+            </label>
+            <label class="span-2">Dial string
+              <input type="text" name="autopatch_dial_string" required autocomplete="off" />
+              <small>The Asterisk channel to call; <code>{number}</code> becomes the dialed digits.
+                For a PJSIP trunk named <code>voipms</code>: <code>PJSIP/{number}@voipms</code>.</small>
+            </label>
+            <label>Caller ID
+              <input type="text" name="autopatch_caller_id" placeholder="e.g. &quot;W1AW Repeater&quot; &lt;8605550100&gt;" autocomplete="off" />
+              <small>Your provider may only allow numbers on your account.</small>
+            </label>
+          </div>
+          <div class="form-actions">
+            <span class="spacer"></span>
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
       </section>
 
       <!-- APRS -->

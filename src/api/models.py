@@ -79,6 +79,15 @@ class ConfigResponse(BaseModel):
     tx_ctcss_level_db: float
     record_transmissions: bool
     recording_retention_days: float
+    autopatch_enabled: bool
+    autopatch_access_code: str
+    autopatch_hangup_code: str
+    autopatch_dial_string: str
+    autopatch_caller_id: str
+    autopatch_allowed: str
+    autopatch_blocked: str
+    autopatch_max_call_seconds: float
+    autopatch_ring_seconds: float
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -149,6 +158,40 @@ class ConfigUpdateRequest(BaseModel):
     tx_ctcss_level_db: Optional[float] = Field(default=None, ge=-40, le=-6)
     record_transmissions: Optional[bool] = None
     recording_retention_days: Optional[float] = Field(default=None, ge=0.1, le=365)
+    autopatch_enabled: Optional[bool] = None
+    # "#" ends the phone number, so it can't be part of the access code.
+    autopatch_access_code: Optional[str] = Field(default=None, pattern=r"^[0-9A-D*]{1,8}$")
+    autopatch_hangup_code: Optional[str] = Field(default=None, pattern=r"^[0-9A-D*#]{1,8}$")
+    # These go into AMI header lines, so no line breaks.
+    autopatch_dial_string: Optional[str] = Field(default=None, max_length=200, pattern=r"^[^\r\n]*\{number\}[^\r\n]*$")
+    autopatch_caller_id: Optional[str] = Field(default=None, max_length=80, pattern=r"^[^\r\n]*$")
+    autopatch_allowed: Optional[str] = Field(default=None, max_length=500, pattern=r"^[0-9XNZxnz,\s]*$")
+    autopatch_blocked: Optional[str] = Field(default=None, max_length=500, pattern=r"^[0-9XNZxnz,\s]*$")
+    autopatch_max_call_seconds: Optional[float] = Field(default=None, ge=30, le=3600)
+    autopatch_ring_seconds: Optional[float] = Field(default=None, ge=5, le=120)
+
+
+class AutopatchDialRequest(BaseModel):
+    number: str = Field(min_length=1, max_length=15, pattern=r"^[0-9]+$")
+
+
+class AutopatchCallResponse(BaseModel):
+    number: str
+    actor: str
+    state: Literal["dialing", "connected", "ended"]
+    started_at: float
+    connected_at: Optional[float]
+    ended_at: Optional[float]
+    result: str
+
+
+class AutopatchStatusResponse(BaseModel):
+    available: bool  # Asterisk is configured and the AudioSocket server is listening
+    configured: bool
+    error: Optional[str]
+    enabled: bool
+    call: Optional[AutopatchCallResponse]
+    last_call: Optional[AutopatchCallResponse]
 
 
 class SimulateCOSRequest(BaseModel):

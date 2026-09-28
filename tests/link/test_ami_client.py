@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from link.ami_client import AMIClient
 
 
@@ -148,3 +150,15 @@ async def _read_block(reader: asyncio.StreamReader) -> dict[str, str]:
             return message
         key, _, value = line.partition(": ")
         message[key] = value
+
+
+def test_ami_client_refuses_header_values_with_line_breaks():
+    """A line break would end the header early and let the rest of the
+    value inject a second action."""
+    async def run():
+        client = AMIClient("127.0.0.1", 0, username="admin", secret="secret")
+        client._writer = object()  # never reached
+        with pytest.raises(ValueError):
+            await client.send_action({"Action": "Originate", "Channel": "PJSIP/1@t\r\nAction: Command"})
+
+    asyncio.run(run())

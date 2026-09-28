@@ -11,6 +11,7 @@ const STATE_DESCRIPTIONS = {
   timeout: "Timed out — waiting for the user to unkey",
   transmitting_id: "Transmitting station ID",
   announcing: "Playing a scheduled announcement",
+  patch: "Autopatch phone call in progress",
 };
 const MAX_ACTIVITY = 50;
 

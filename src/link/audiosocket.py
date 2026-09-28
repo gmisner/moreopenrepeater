@@ -14,6 +14,7 @@ keep sending audio or otherwise keep the connection active.
 """
 from __future__ import annotations
 
+import asyncio
 import struct
 from dataclasses import dataclass
 from enum import IntEnum
@@ -60,6 +61,14 @@ def read_frame(recv: Callable[[int], bytes]) -> Frame:
     header = _recv_exact(recv, HEADER_SIZE)
     _, length = _HEADER.unpack(header)
     payload = _recv_exact(recv, length) if length else b""
+    return decode_frame(header, payload)
+
+
+async def read_frame_async(reader: asyncio.StreamReader) -> Frame:
+    """`read_frame` for asyncio streams; raises IncompleteReadError at EOF."""
+    header = await reader.readexactly(HEADER_SIZE)
+    _, length = _HEADER.unpack(header)
+    payload = await reader.readexactly(length) if length else b""
     return decode_frame(header, payload)
 
 

@@ -71,6 +71,12 @@ in the details from your account:
 | Telnyx | `sip.telnyx.com` | a Credentials connection's username | +1 + 10 digits | on |
 | Twilio Elastic SIP Trunking | the trunk's termination URI, `yourtrunk.pstn.twilio.com` | a user from the trunk's credential list | +1 + 10 digits | off |
 
+For Twilio, also turn on **Symmetric RTP** in the trunk's General settings
+in the Twilio Console. It's off on trunks made since mid-2025, and without it
+calls behind a home router connect with no audio from the phone side. To try
+the line before setting a caller ID, test call Twilio's "Play" number,
+650 489 4546: it records a few seconds and plays them back.
+
 For another provider, choose **Other** and use its Asterisk (PJSIP) guide.
 **Number format** only changes 10-digit numbers (and 11-digit 1+ numbers);
 911 and other short codes always go out as dialed.
@@ -117,10 +123,12 @@ authenticated beyond an unguessable per-call ID.
 ### Calls connect but there's no audio
 
 That's usually the router between Asterisk and the provider. The phone line
-already uses the common settings for Asterisk behind NAT. If audio is still
-one-way or missing, add your public address and local network to the
-transport section in `pjsip.conf` (the controller never rewrites a transport
-once it exists):
+already uses the common settings for Asterisk behind NAT, which work when the
+provider sends audio back to wherever Asterisk's audio comes from (Twilio
+calls this Symmetric RTP; see above). If the provider can't, forward UDP
+ports 10000-20000 on your router to Asterisk, then add your public address
+and local network to the transport section in `pjsip.conf` (the controller
+never rewrites a transport once it exists):
 
 ```ini
 [mor-transport-udp]

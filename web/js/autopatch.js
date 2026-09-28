@@ -37,7 +37,7 @@ const PROVIDERS = {
     placeholder: "yourtrunk.pstn.twilio.com",
     prefix: "+1",
     registers: false,
-    hint: "The trunk's termination URI, and a user from its credential list. Caller ID must be a Twilio or verified number, like +18605550100.",
+    hint: "The trunk's termination URI, and a user from its credential list. Turn on Symmetric RTP in the trunk's settings. Caller ID must be a Twilio or verified number, like +18605550100.",
   },
   other: {
     placeholder: "sip.example.com",

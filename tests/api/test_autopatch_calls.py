@@ -144,7 +144,7 @@ def test_answered_call_bridges_audio_until_the_far_end_hangs_up():
         await wait_until(lambda: patch.call and patch.call.state == "connected")
 
         originate = ami.actions[0]
-        assert originate["Channel"] == "PJSIP/8605551234@trunk"
+        assert originate["Channel"] == "PJSIP/8605551234@mor-trunk"
         assert originate["Application"] == "AudioSocket"
         assert originate["Data"] == f"{originate['ChannelId']},127.0.0.1:9092"
         assert originate["Async"] == "true"
@@ -199,6 +199,43 @@ def test_busy_line():
         assert patch.last_call.result == "busy"
         assert spoken(service) == ["The line is busy."]
         assert service.controller.state != PATCH
+        await patch.stop()
+
+    asyncio.run(scenario())
+
+
+def test_sip_busy_comes_from_the_hangup_cause():
+    async def scenario():
+        service, patch, ami, _ = make()
+
+        def busy(action):
+            call_id = action["ChannelId"]
+            ami.push(Event="OriginateResponse", ActionID=action["ActionID"], Response="Failure", Reason="0")
+            ami.push(Event="Hangup", Uniqueid=call_id, Channel=CHANNEL, Cause="17")  # arrives after
+
+        ami.on_originate = busy
+        await patch.start()
+        patch.dial("8605551234", "DTMF")
+        await wait_until(lambda: patch.call is None)
+        assert patch.last_call.result == "busy"
+        assert spoken(service) == ["The line is busy."]
+        await patch.stop()
+
+    asyncio.run(scenario())
+
+
+def test_ten_digit_numbers_get_the_trunks_prefix():
+    async def scenario():
+        service, patch, ami, _ = make()
+        service.update_config(autopatch_dial_string="PJSIP/{number}@mor-trunk", autopatch_ten_digit_prefix="+1")
+        ami.on_originate = lambda a: ami.push(
+            Event="OriginateResponse", ActionID=a["ActionID"], Response="Failure", Reason="5"
+        )
+        await patch.start()
+        patch.dial("8605551234", "DTMF")
+        await wait_until(lambda: patch.call is None)
+        assert ami.actions[0]["Channel"] == "PJSIP/+18605551234@mor-trunk"
+        assert patch.last_call.number == "8605551234"
         await patch.stop()
 
     asyncio.run(scenario())

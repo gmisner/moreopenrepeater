@@ -32,7 +32,7 @@ import numpy as np
 
 from audio_io.patch import PatchAudio
 from audio_io.resample import StreamResampler
-from controller.autopatch import number_allowed
+from controller.autopatch import format_number, number_allowed
 from controller.state_machine import RepeaterConfig
 from link.ami_client import AMIClient, AMIMessage
 from link.audiosocket import FrameType, encode_frame, read_frame_async
@@ -88,6 +88,10 @@ _FAILURES = {
     "8": ("couldn't be completed", "The call could not be completed."),  # congestion
 }
 _UNCOMPLETED = ("couldn't be completed", "The call could not be completed.")
+# A SIP call that fails reports Reason 0; the channel's Hangup event carries
+# the Q.850 cause instead (17 user busy, 18 no user responding, 19 no answer).
+_CAUSES = {"17": _FAILURES["5"], "18": _FAILURES["3"], "19": _FAILURES["3"]}
+HANGUP_CAUSE_WAIT = 1.0
 
 
 class CallFailed(Exception):
@@ -230,7 +234,8 @@ class Autopatch:
         answered: "asyncio.Future[tuple]" = loop.create_future()
         originated: "asyncio.Future[AMIMessage]" = loop.create_future()
         self._waiting[call_id] = answered
-        channel: dict[str, Optional[str]] = {"name": None}
+        channel: dict[str, Optional[str]] = {"name": None, "cause": None}
+        hung_up = asyncio.Event()
         dialing_audio = asyncio.create_task(self._dialing_audio(patch, call.number, config))
         ami: Optional[AMIClient] = None
         watcher: Optional[asyncio.Task] = None
@@ -244,11 +249,13 @@ class Autopatch:
                 self.settings.ami_host, self.settings.ami_port, self.settings.ami_username, self.settings.ami_secret
             )
             await asyncio.wait_for(ami.connect(), AMI_TIMEOUT)
-            watcher = asyncio.create_task(self._watch(ami, call_id, originated, channel))
+            watcher = asyncio.create_task(self._watch(ami, call_id, originated, channel, hung_up))
             action: AMIMessage = {
                 "Action": "Originate",
                 "ActionID": call_id,
-                "Channel": config.autopatch_dial_string.replace("{number}", call.number),
+                "Channel": config.autopatch_dial_string.replace(
+                    "{number}", format_number(call.number, config.autopatch_ten_digit_prefix)
+                ),
                 "Application": "AudioSocket",
                 "Data": f"{call_id},{self.settings.address}",
                 "Timeout": str(int(config.autopatch_ring_seconds * 1000)),
@@ -263,7 +270,14 @@ class Autopatch:
                 raise CallFailed(*_UNCOMPLETED)
             result = await asyncio.wait_for(originated, config.autopatch_ring_seconds + AMI_TIMEOUT)
             if result.get("Response") != "Success":
-                raise CallFailed(*_FAILURES.get(str(result.get("Reason")), _UNCOMPLETED))
+                failure = _FAILURES.get(str(result.get("Reason")))
+                if failure is None:
+                    try:
+                        await asyncio.wait_for(hung_up.wait(), HANGUP_CAUSE_WAIT)
+                    except asyncio.TimeoutError:
+                        pass
+                    failure = _CAUSES.get(str(channel["cause"]), _UNCOMPLETED)
+                raise CallFailed(*failure)
             connection = await asyncio.wait_for(answered, ANSWER_TO_CONNECT_TIMEOUT)
             dialing_audio.cancel()
             call.state = "connected"
@@ -307,10 +321,20 @@ class Autopatch:
             self._service.end_patch()
             self._service.speak(TTS_PREFIX + speech)
 
-    async def _watch(self, ami: AMIClient, call_id: str, originated: "asyncio.Future[AMIMessage]", channel: dict) -> None:
+    async def _watch(
+        self,
+        ami: AMIClient,
+        call_id: str,
+        originated: "asyncio.Future[AMIMessage]",
+        channel: dict,
+        hung_up: asyncio.Event,
+    ) -> None:
         async for event in ami.events():
             if event.get("Uniqueid") == call_id and isinstance(event.get("Channel"), str):
                 channel["name"] = event["Channel"]
+                if event.get("Event") == "Hangup":
+                    channel["cause"] = event.get("Cause")
+                    hung_up.set()
             if event.get("Event") == "OriginateResponse" and event.get("ActionID") == call_id and not originated.done():
                 originated.set_result(event)
         if not originated.done():

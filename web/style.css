@@ -317,6 +317,7 @@ input[type="file"] { padding: 0.4rem; }
 .level-readout { display: flex; align-items: center; gap: 0.5rem; margin: 0.55rem 0 0.9rem; }
 
 .switch { flex-direction: row; align-items: center; gap: 0.65rem; cursor: pointer; color: var(--text); margin-bottom: 1.1rem; }
+.form-grid + .switch { margin-top: 1.1rem; }
 .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .switch-track {
   position: relative;

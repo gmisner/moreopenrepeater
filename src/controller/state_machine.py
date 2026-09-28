@@ -107,7 +107,8 @@ class RepeaterConfig:
     autopatch_access_code: str = "*6"
     autopatch_hangup_code: str = "#"
     # Asterisk channel to call; {number} is replaced with the dialed digits.
-    autopatch_dial_string: str = "PJSIP/{number}@trunk"
+    autopatch_dial_string: str = "PJSIP/{number}@mor-trunk"  # the trunk the dashboard sets up
+    autopatch_ten_digit_prefix: str = ""  # "", "1" or "+1"; see controller.autopatch.format_number
     autopatch_caller_id: str = ""
     autopatch_allowed: str = "911 NXXNXXXXXX"  # dialplan patterns, see controller.autopatch
     autopatch_blocked: str = "900XXXXXXX NXX976XXXX"

@@ -27,6 +27,9 @@ Lima forwards the VM's AMI port to 127.0.0.1:5038 on the Mac, and the VM
 reaches the Mac as host.lima.internal (192.168.5.2), so:
 
     MOREOPENREPEATER_AMI_SECRET=... PYTHONPATH=src .venv/bin/python spikes/autopatch_asl3_spike.py
+
+SPIKE_DIAL_STRING=PJSIP/{number}@mor-trunk calls through the SIP trunk
+instead, against the fake provider set up by sip_trunk_asl3_spike.py.
 """
 from __future__ import annotations
 
@@ -92,7 +95,7 @@ async def wait_for(condition, timeout):
 async def main():
     config = RepeaterConfig(
         autopatch_enabled=True,
-        autopatch_dial_string="Local/{number}@patchtest",
+        autopatch_dial_string=os.environ.get("SPIKE_DIAL_STRING", "Local/{number}@patchtest"),
         autopatch_allowed="NXXXXXX",
         autopatch_ring_seconds=8,
     )

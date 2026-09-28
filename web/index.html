@@ -628,8 +628,8 @@
       <section class="view" data-view="autopatch" data-title="Autopatch" hidden>
         <header class="view-header">
           <h1>Autopatch</h1>
-          <p class="muted">Let users place phone calls through the repeater. Calls go out through the Asterisk
-            sidecar's SIP trunk; see the <a href="https://github.com/gmisner/moreopenrepeater/blob/main/docs/autopatch.md" target="_blank" rel="noopener">setup guide</a>.</p>
+          <p class="muted">Let users place phone calls through the repeater. Calls go out through a SIP phone line
+            in the Asterisk sidecar; see the <a href="https://github.com/gmisner/moreopenrepeater/blob/main/docs/autopatch.md" target="_blank" rel="noopener">setup guide</a>.</p>
         </header>
         <div class="card">
           <div class="card-header"><h2>Call</h2></div>
@@ -643,6 +643,70 @@
             <button type="button" class="btn btn-danger" id="patch-hangup" hidden>Hang up</button>
           </div>
           <small class="muted">A test call goes out over the air like a DTMF-dialed one, and follows the same rules.</small>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2>Phone line</h2><span id="trunk-pill" class="pill pill-off" hidden></span></div>
+          <p id="trunk-status" class="muted">Loading&hellip;</p>
+          <div class="form-actions" id="trunk-modules" hidden>
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-primary" id="trunk-enable">Turn on SIP in Asterisk</button>
+          </div>
+          <form id="trunk-form" hidden>
+            <div class="form-grid">
+              <label>Provider
+                <select name="provider">
+                  <option value="voipms">VoIP.ms</option>
+                  <option value="telnyx">Telnyx</option>
+                  <option value="twilio">Twilio Elastic SIP Trunking</option>
+                  <option value="other">Other</option>
+                </select>
+                <small id="trunk-provider-hint"></small>
+              </label>
+              <label>Server
+                <input type="text" name="server" required autocomplete="off" spellcheck="false" pattern="[A-Za-z0-9]([A-Za-z0-9.\-]*[A-Za-z0-9])?" />
+              </label>
+              <label>Username
+                <input type="text" name="username" required autocomplete="off" spellcheck="false" pattern="[A-Za-z0-9._~+\-]+" />
+              </label>
+              <label>Password
+                <input type="password" name="password" autocomplete="new-password" />
+              </label>
+              <label>Number format
+                <select name="ten_digit_prefix">
+                  <option value="">As dialed</option>
+                  <option value="1">1 + 10 digits</option>
+                  <option value="+1">+1 + 10 digits</option>
+                </select>
+                <small>How 10-digit numbers are sent. 911 always goes out as dialed.</small>
+              </label>
+              <label>Login name
+                <input type="text" name="auth_username" autocomplete="off" spellcheck="false" pattern="[A-Za-z0-9._~+\-]*" placeholder="Same as username" />
+                <small>Only if the provider gives a separate one.</small>
+              </label>
+              <label>Port
+                <input type="number" name="port" min="1" max="65535" required />
+              </label>
+              <label>Transport
+                <select name="transport">
+                  <option value="udp">UDP</option>
+                  <option value="tcp">TCP</option>
+                </select>
+              </label>
+            </div>
+            <label class="switch">
+              <input type="checkbox" name="registers" />
+              <span class="switch-track"></span>
+              <span>Register with the provider</span>
+            </label>
+            <div class="form-actions">
+              <button type="button" class="btn btn-ghost" id="trunk-remove" hidden>Remove</button>
+              <span class="spacer"></span>
+              <button type="submit" class="btn btn-primary">Save phone line</button>
+            </div>
+            <small class="muted">Saving writes the line to Asterisk's <code>pjsip.conf</code>, in sections named
+              <code>mor-trunk&hellip;</code>, and points autopatch at it. Other settings in that file are kept, but
+              Asterisk removes its comments.</small>
+          </form>
         </div>
         <form class="card config-form" data-config-form>
           <label class="switch">
@@ -678,7 +742,7 @@
             <label class="span-2">Dial string
               <input type="text" name="autopatch_dial_string" required autocomplete="off" />
               <small>The Asterisk channel to call; <code>{number}</code> becomes the dialed digits.
-                For a PJSIP trunk named <code>voipms</code>: <code>PJSIP/{number}@voipms</code>.</small>
+                <code>PJSIP/{number}@mor-trunk</code> is the phone line above; change this only to use a trunk set up by hand.</small>
             </label>
             <label>Caller ID
               <input type="text" name="autopatch_caller_id" placeholder="e.g. &quot;W1AW Repeater&quot; &lt;8605550100&gt;" autocomplete="off" />

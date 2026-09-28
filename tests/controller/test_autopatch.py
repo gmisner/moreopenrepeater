@@ -1,4 +1,4 @@
-from controller.autopatch import AutopatchDialer, matches, number_allowed, valid_patterns
+from controller.autopatch import AutopatchDialer, format_number, matches, number_allowed, valid_patterns
 from controller.events import AssertPTT, COSChanged, DialPatch, DTMFDigit, HangupPatch, PlayAudio
 from controller.state_machine import (
     COURTESY_TONE,
@@ -41,6 +41,16 @@ def test_pattern_validation():
     assert valid_patterns("911, nxxnxxxxxx\nZXX")
     assert valid_patterns("")
     assert not valid_patterns("911 1-800")
+
+
+def test_ten_digit_prefix_leaves_short_codes_alone():
+    assert format_number("8605551234", "") == "8605551234"
+    assert format_number("8605551234", "1") == "18605551234"
+    assert format_number("8605551234", "+1") == "+18605551234"
+    assert format_number("18605551234", "+1") == "+18605551234"
+    assert format_number("18605551234", "1") == "18605551234"
+    assert format_number("911", "+1") == "911"
+    assert format_number("5551234", "1") == "5551234"
 
 
 def test_access_code_number_and_pound_dials():

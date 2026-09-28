@@ -11,7 +11,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, NamedTuple, Optional
+from typing import Awaitable, Callable, NamedTuple, Optional
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
@@ -44,6 +44,8 @@ from .auth import (
     verify_credentials,
 )
 from .autopatch import Autopatch, patch_settings_from_env
+from .sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
+from .sip_trunk import AsteriskSetupError, SipTrunk, TrunkSettings
 from .aprs_map import AprsReceiver, StationStore, bearing_degrees, distance_km, map_center, spoken_summary
 from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
 from .audit import AuditEntry, AuditLog, describe_config_change
@@ -79,6 +81,8 @@ from .models import (
     SimulateCTCSSRequest,
     SimulateDTMFRequest,
     SimulateRemoteKeyedRequest,
+    SipTrunkRequest,
+    SipTrunkStatusResponse,
     SnapshotImportRequest,
     SnapshotModel,
     StatusResponse,
@@ -276,6 +280,7 @@ def create_app(
     audit: Optional[AuditLog] = None,
     aprs_stations: Optional[StationStore] = None,
     autopatch: Optional[Autopatch] = None,
+    sip_trunk: Optional[SipTrunk] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -294,6 +299,7 @@ def create_app(
         service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings
     )
     autopatch = autopatch or Autopatch(service, patch_settings_from_env(os.environ))
+    sip_trunk = sip_trunk or SipTrunk(autopatch.settings)
     log_path = log_path or DEFAULT_LOG_PATH
     link_settings = link_settings if link_settings is not None else link_settings_from_env()
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
@@ -772,6 +778,55 @@ def create_app(
     async def autopatch_hangup(request: Request) -> dict:
         autopatch.hangup(f"hung up from the dashboard by {request.state.identity.username or 'local'}")
         return autopatch.status()
+
+    async def trunk_status() -> dict:
+        config = service.config
+        return {
+            **await sip_trunk.status(),
+            "in_use": config.autopatch_dial_string == TRUNK_DIAL_STRING,
+            "ten_digit_prefix": config.autopatch_ten_digit_prefix,
+        }
+
+    async def change_trunk(change: Awaitable[None]) -> dict:
+        try:
+            await change
+        except AsteriskSetupError as error:
+            raise HTTPException(status_code=502, detail=str(error))
+        return await trunk_status()
+
+    def no_call_in_progress() -> None:
+        if autopatch.call is not None:
+            raise HTTPException(status_code=409, detail="Hang up the call first.")
+
+    @app.get("/api/autopatch/trunk", response_model=SipTrunkStatusResponse, dependencies=auth_dependencies)
+    async def get_trunk() -> dict:
+        return await trunk_status()
+
+    @app.post("/api/autopatch/trunk/modules", response_model=SipTrunkStatusResponse, dependencies=admin_dependencies)
+    async def enable_trunk_modules() -> dict:
+        return await change_trunk(sip_trunk.enable_modules())
+
+    @app.put("/api/autopatch/trunk", response_model=SipTrunkStatusResponse, dependencies=admin_dependencies)
+    async def put_trunk(body: SipTrunkRequest, request: Request) -> dict:
+        no_call_in_progress()
+        request.state.audit_detail = f"{body.username}@{body.server}" + (", new password" if body.password else "")
+        trunk = TrunkSettings(
+            server=body.server,
+            port=body.port,
+            transport=body.transport,
+            username=body.username,
+            auth_username=body.auth_username,
+            password=body.password or None,
+            registers=body.registers,
+        )
+        status = await change_trunk(sip_trunk.save(trunk))
+        service.update_config(autopatch_dial_string=TRUNK_DIAL_STRING, autopatch_ten_digit_prefix=body.ten_digit_prefix)
+        return {**status, "in_use": True, "ten_digit_prefix": body.ten_digit_prefix}
+
+    @app.delete("/api/autopatch/trunk", response_model=SipTrunkStatusResponse, dependencies=admin_dependencies)
+    async def delete_trunk() -> dict:
+        no_call_in_progress()
+        return await change_trunk(sip_trunk.remove())
 
     @app.get("/api/assets", response_model=list[AssetResponse], dependencies=auth_dependencies)
     def list_assets() -> list[AssetResponse]:

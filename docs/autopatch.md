@@ -18,107 +18,128 @@ in progress, has a **Hang up** button, and can place a test call.
 ## How it works
 
 Calls go out through the Asterisk that already runs beside the controller
-for AllStarLink. Any Asterisk with the AudioSocket modules works (tested
-with ASL3's Asterisk 22); app_rpt isn't involved:
+for AllStarLink. Any Asterisk with the PJSIP and AudioSocket modules works
+(tested with ASL3's Asterisk 22); app_rpt isn't involved:
 
-1. The controller asks Asterisk over AMI to call `PJSIP/<number>@<trunk>`.
+1. The controller asks Asterisk over AMI to call the number on the phone
+   line (a SIP trunk from a provider such as VoIP.ms).
 2. When the far end answers, Asterisk runs `AudioSocket()`, which connects
    back to the controller (port 9092 by default) and carries the call audio.
 3. The controller bridges that audio to the radio.
 
+The phone line itself is set up from the dashboard too, over the same AMI
+connection, so nothing in `/etc/asterisk` needs editing by hand.
+
 ## Setup
 
-### 1. A SIP trunk
+### 1. Connect the controller to Asterisk
 
-Sign up with a SIP trunk provider (VoIP.ms, Twilio Elastic SIP Trunking,
-Telnyx, and so on) and get the server name, username and password. Add the
-trunk to `/etc/asterisk/pjsip.conf`. A registration-based example, named
-`trunk`:
-
-```ini
-[trunk-reg]
-type = registration
-outbound_auth = trunk-auth
-server_uri = sip:chicago.voip.ms
-client_uri = sip:123456@chicago.voip.ms
-
-[trunk-auth]
-type = auth
-auth_type = userpass
-username = 123456
-password = your-sip-password
-
-[trunk]
-type = aor
-contact = sip:chicago.voip.ms
-
-[trunk]
-type = endpoint
-context = from-trunk
-disallow = all
-allow = ulaw
-outbound_auth = trunk-auth
-aors = trunk
-from_user = 123456
-```
-
-Your provider's own Asterisk guide has the exact values. The controller only
-places outgoing calls, so `from-trunk` can be an empty context.
-
-Reload with `asterisk -rx "pjsip reload"`, and check it registered with
-`asterisk -rx "pjsip show registrations"`.
-
-### 2. Asterisk modules
-
-Load AudioSocket at startup by adding these to `/etc/asterisk/modules.conf`:
-
-```ini
-load = res_audiosocket.so
-load = app_audiosocket.so
-```
-
-Then restart Asterisk, or load them now:
+In `/etc/moreopenrepeater/env`, set the AMI login (on ASL3, the `admin`
+user and the secret from `/etc/asterisk/manager.conf`):
 
 ```sh
-sudo asterisk -rx "module load res_audiosocket.so"
-sudo asterisk -rx "module load app_audiosocket.so"
+MOREOPENREPEATER_AMI_HOST=127.0.0.1
+MOREOPENREPEATER_AMI_USER=admin
+MOREOPENREPEATER_AMI_SECRET=the-secret-from-manager.conf
 ```
 
-### 3. An AMI user
-
-The controller needs an AMI login with `originate` and `call` permission,
-in `/etc/asterisk/manager.conf` (the ASL3 `admin` user already has them):
+and restart the service. ASL3's `admin` login can do everything autopatch
+needs. A login of your own needs at least:
 
 ```ini
 [moreopenrepeater]
 secret = a-long-random-secret
-read = call,originate
-write = call,originate,system
+read = call,config,system
+write = call,config,system,originate
 ```
 
-### 4. Point the controller at Asterisk
+### 2. Turn on SIP
 
-In `/etc/moreopenrepeater/env`:
+Open the **Autopatch** page. On ASL3, the **Phone line** card says SIP is
+turned off, because ASL3 ships with Asterisk's SIP (PJSIP) and RTP modules
+not loaded. **Turn on SIP in Asterisk** loads them, along with AudioSocket,
+and adds them to `modules.conf` so they load whenever Asterisk starts.
 
-```sh
-MOREOPENREPEATER_AMI_HOST=127.0.0.1
-MOREOPENREPEATER_AMI_USER=moreopenrepeater
-MOREOPENREPEATER_AMI_SECRET=a-long-random-secret
-```
+### 3. Set up the phone line
 
-Restart the service. The Autopatch page should no longer say Asterisk isn't
-connected. If Asterisk runs somewhere else (another machine or a container),
-also set `MOREOPENREPEATER_AUDIOSOCKET_LISTEN=0.0.0.0:9092` and
+Sign up with a SIP trunk provider, then pick it under **Provider** and fill
+in the details from your account:
+
+| Provider | Server | Username | Number format | Register |
+| --- | --- | --- | --- | --- |
+| VoIP.ms | the server (point of presence) your account uses, e.g. `atlanta.voip.ms` | 6-digit account ID, or a sub-account like `123456_repeater` | 1 + 10 digits | on |
+| Telnyx | `sip.telnyx.com` | a Credentials connection's username | +1 + 10 digits | on |
+| Twilio Elastic SIP Trunking | the trunk's termination URI, `yourtrunk.pstn.twilio.com` | a user from the trunk's credential list | +1 + 10 digits | off |
+
+For another provider, choose **Other** and use its Asterisk (PJSIP) guide.
+**Number format** only changes 10-digit numbers (and 11-digit 1+ numbers);
+911 and other short codes always go out as dialed.
+
+**Save phone line** writes it to Asterisk and points autopatch at it (the
+dial string becomes `PJSIP/{number}@mor-trunk`). The card then shows
+whether the provider accepted the registration:
+
+- **Registered**: ready for calls.
+- **Rejected**: the provider turned down the username or password. Fix them
+  and save again.
+- **Not registered**: no answer yet. Asterisk retries every minute; check the
+  server name, and that the network allows outgoing SIP (UDP port 5060).
+
+For a provider without registration (Twilio), the card shows whether
+Asterisk can reach the server instead.
+
+The line is kept in `/etc/asterisk/pjsip.conf`, in sections named
+`mor-trunk`, `mor-trunk-auth`, `mor-trunk-aor` and `mor-trunk-reg`, plus a
+`mor-transport-udp` (or `-tcp`) transport if the file had none. Other
+sections in the file are left alone, but Asterisk removes the file's
+comments when it saves it -- on ASL3, that's all of the stock file, which is
+only commented-out samples. The SIP password is stored there and never shown
+on the dashboard. ASL3 leaves the file readable by every user on the
+machine; if others can log in, `sudo chmod 640 /etc/asterisk/pjsip.conf`
+(Asterisk keeps that when it saves). Only admins can change the phone line,
+and not during a call.
+
+### 4. Turn autopatch on
+
+In the settings below the phone line, set a **Caller ID** your provider
+allows (usually a number on your account; Twilio wants `+1` and 10 digits),
+turn on **Allow autopatch calls**, and save. Use **Test call** to try it.
+
+### Asterisk on another machine
+
+Everything above works over the network, except that Asterisk has to reach
+the controller for the call audio. Set
+`MOREOPENREPEATER_AUDIOSOCKET_LISTEN=0.0.0.0:9092` and
 `MOREOPENREPEATER_AUDIOSOCKET_ADDRESS=<controller's address>:9092`, and
 firewall port 9092 to only that Asterisk. The audio isn't encrypted or
 authenticated beyond an unguessable per-call ID.
 
-### 5. Dashboard settings
+### Calls connect but there's no audio
 
-On the Autopatch page, set the **Dial string** to your trunk
-(`PJSIP/{number}@trunk` for the example above; some providers want
-`PJSIP/+1{number}@trunk`), set a **Caller ID** your provider allows, and turn
-on **Allow autopatch calls**. Use **Test call** to try it.
+That's usually the router between Asterisk and the provider. The phone line
+already uses the common settings for Asterisk behind NAT. If audio is still
+one-way or missing, add your public address and local network to the
+transport section in `pjsip.conf` (the controller never rewrites a transport
+once it exists):
+
+```ini
+[mor-transport-udp]
+type = transport
+protocol = udp
+bind = 0.0.0.0
+external_media_address = 203.0.113.10
+external_signaling_address = 203.0.113.10
+local_net = 192.168.1.0/24
+```
+
+and restart Asterisk. `asterisk -rx "pjsip set logger on"` shows the SIP
+messages.
+
+### Using a trunk set up by hand
+
+To use a PJSIP endpoint you configured yourself, set the **Dial string** to
+`PJSIP/{number}@<your endpoint>` and leave the phone line empty. The modules
+still need to be on (step 2).
 
 ## Which numbers can be dialed
 
@@ -162,5 +183,9 @@ exten => _X.,1,Answer()
 Load `app_echo.so` if needed, set the dial string to
 `Local/{number}@patchtest`, add `NXXXXXX` to the allowed numbers, and call
 555-1234: you hear "hello world", then your own transmissions echoed back.
-555-0000 is busy. `spikes/autopatch_asl3_spike.py` runs the same checks from a
-script.
+555-0000 is busy. Saving a phone line sets the dial string back to the trunk.
+
+`spikes/autopatch_asl3_spike.py` runs the same checks from a script, and
+`spikes/sip_trunk_asl3_spike.py` sets up a fake SIP provider in the same
+Asterisk, so the phone line, registration and calls can be tried over real
+SIP.

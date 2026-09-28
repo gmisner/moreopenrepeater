@@ -43,6 +43,19 @@ def number_allowed(number: str, allowed: str, blocked: str) -> bool:
     )
 
 
+def format_number(number: str, ten_digit_prefix: str) -> str:
+    """What the trunk is sent. Providers differ on North American numbers:
+    some want 1 + ten digits, some E.164 (+1 + ten digits). Only full
+    numbers change, so 911 and other short codes go out as dialed."""
+    if not ten_digit_prefix:
+        return number
+    if len(number) == 10:
+        return ten_digit_prefix + number
+    if len(number) == 11 and number.startswith("1"):
+        return ten_digit_prefix.removesuffix("1") + number
+    return number
+
+
 class AutopatchDialer:
     def __init__(self, interdigit_timeout: float = 5.0) -> None:
         self._interdigit_timeout = interdigit_timeout

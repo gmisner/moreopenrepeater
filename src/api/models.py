@@ -83,6 +83,7 @@ class ConfigResponse(BaseModel):
     autopatch_access_code: str
     autopatch_hangup_code: str
     autopatch_dial_string: str
+    autopatch_ten_digit_prefix: str
     autopatch_caller_id: str
     autopatch_allowed: str
     autopatch_blocked: str
@@ -164,6 +165,7 @@ class ConfigUpdateRequest(BaseModel):
     autopatch_hangup_code: Optional[str] = Field(default=None, pattern=r"^[0-9A-D*#]{1,8}$")
     # These go into AMI header lines, so no line breaks.
     autopatch_dial_string: Optional[str] = Field(default=None, max_length=200, pattern=r"^[^\r\n]*\{number\}[^\r\n]*$")
+    autopatch_ten_digit_prefix: Optional[Literal["", "1", "+1"]] = None
     autopatch_caller_id: Optional[str] = Field(default=None, max_length=80, pattern=r"^[^\r\n]*$")
     autopatch_allowed: Optional[str] = Field(default=None, max_length=500, pattern=r"^[0-9XNZxnz,\s]*$")
     autopatch_blocked: Optional[str] = Field(default=None, max_length=500, pattern=r"^[0-9XNZxnz,\s]*$")
@@ -192,6 +194,40 @@ class AutopatchStatusResponse(BaseModel):
     enabled: bool
     call: Optional[AutopatchCallResponse]
     last_call: Optional[AutopatchCallResponse]
+
+
+class SipTrunkRequest(BaseModel):
+    # These are written into pjsip.conf and SIP URIs.
+    server: str = Field(max_length=253, pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$")
+    port: int = Field(default=5060, ge=1, le=65535)
+    transport: Literal["udp", "tcp"] = "udp"
+    username: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._~+-]+$")
+    auth_username: str = Field(default="", max_length=64, pattern=r"^[A-Za-z0-9._~+-]*$")
+    # Blank keeps the saved one. Asterisk trims surrounding spaces from values.
+    password: str = Field(default="", max_length=128, pattern=r"^(?:[!-~](?:[ -~]*[!-~])?)?$")
+    registers: bool = True
+    ten_digit_prefix: Literal["", "1", "+1"] = ""
+
+
+class SipTrunkSettings(BaseModel):
+    server: str
+    port: int
+    transport: Literal["udp", "tcp"]
+    username: str
+    auth_username: str
+    has_password: bool
+    registers: bool
+
+
+class SipTrunkStatusResponse(BaseModel):
+    configured: bool  # the AMI settings are there
+    error: Optional[str]
+    missing_modules: list[str]
+    trunk: Optional[SipTrunkSettings]
+    registration: Optional[str]  # Registered, Unregistered, Rejected, ...; None when not registering
+    reachability: Optional[str]  # Reachable, Unreachable, ... from Asterisk's OPTIONS pings
+    in_use: bool  # the autopatch dial string points at this trunk
+    ten_digit_prefix: str
 
 
 class SimulateCOSRequest(BaseModel):

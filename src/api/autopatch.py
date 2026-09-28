@@ -16,6 +16,12 @@ A call goes like this:
      We hang up by sending AudioSocket's hangup frame once connected, or an
      AMI Hangup of the ringing channel.
 
+A call in arrives the other way round: Asterisk's `mor-incoming` context
+(see sip_trunk) answers and connects to our server under a UUID we've never
+seen. If AMI shows a channel in that context running AudioSocket with that
+UUID, it's a real call: the caller keys in the access code, then the
+repeater announces the call and bridges it like one going out.
+
 Only app_audiosocket from the dialplan is used -- not app_rpt -- so none of
 this depends on the app_rpt audio bridging issue noted in the README.
 """
@@ -48,6 +54,9 @@ AMI_TIMEOUT = 10.0
 ANSWER_TO_CONNECT_TIMEOUT = 10.0  # answered -> AudioSocket connects back
 TIME_WARNING_SECONDS = 30.0
 UUID_TIMEOUT = 5.0
+INCOMING_CONTEXT = "mor-incoming"
+PIN_TRIES = 3
+PIN_DIGIT_TIMEOUT = 10.0
 
 
 class PatchSettings(NamedTuple):
@@ -103,13 +112,20 @@ class CallFailed(Exception):
 
 @dataclass
 class CallRecord:
-    number: str
+    number: str  # the caller's, for a call in ("" when unknown)
     actor: str
     started_at: float
     state: str = "dialing"  # dialing | connected | ended
     connected_at: Optional[float] = None
     ended_at: Optional[float] = None
     result: str = ""
+    direction: str = "outgoing"  # outgoing | incoming
+
+    @property
+    def who(self) -> str:
+        if self.direction == "outgoing":
+            return self.number
+        return f"a call from {self.number or 'an unknown number'}"
 
 
 def ringback(rate: int) -> np.ndarray:
@@ -125,6 +141,153 @@ def _to_pcm(samples: np.ndarray) -> bytes:
 
 def _from_pcm(payload: bytes) -> np.ndarray:
     return np.frombuffer(payload, dtype="<i2").astype(np.float32) / 32768
+
+
+async def ami_list(ami: AMIClient, fields: AMIMessage) -> Optional[list[AMIMessage]]:
+    """A list action's events, or None if Asterisk has nothing to list."""
+    action_id = f"mor-list-{uuid.uuid4().hex}"
+    response = await asyncio.wait_for(ami.send_action({**fields, "ActionID": action_id}), AMI_TIMEOUT)
+    if response.get("Response") != "Success":
+        return None
+    items: list[AMIMessage] = []
+
+    async def collect() -> None:
+        async for event in ami.events():
+            if event.get("ActionID") != action_id:
+                continue
+            if event.get("EventList") == "Complete":
+                return
+            items.append(event)
+
+    await asyncio.wait_for(collect(), AMI_TIMEOUT)
+    return items
+
+
+class PhoneLine:
+    """One AudioSocket connection: a 20 ms frame of 8 kHz audio each way
+    (silence when there's nothing to send, which also keeps AudioSocket's
+    2-second inactivity timer happy), and the caller's keypresses.
+
+    Until `connect`, the caller hears only what `say` plays; after, the
+    patch carries audio both ways."""
+
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, rate: int) -> None:
+        self._reader = reader
+        self._writer = writer
+        self._rate = rate
+        self._patch: Optional[PatchAudio] = None
+        self._prompt = np.zeros(0, dtype=np.float32)  # at PHONE_RATE
+        self._prompt_done: Optional["asyncio.Future[None]"] = None
+        self._digits: "asyncio.Queue[str]" = asyncio.Queue()
+        self._tasks: list[asyncio.Task] = []
+
+    def start(self) -> None:
+        self._tasks = [asyncio.create_task(self._send()), asyncio.create_task(self._receive())]
+
+    def connect(self, patch: PatchAudio) -> None:
+        self._patch = patch
+
+    async def wait_closed(self) -> None:
+        """Until the far end hangs up or the connection drops."""
+        done, _ = await asyncio.wait(self._tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            if not task.cancelled() and task.exception() is not None:
+                _logger.info("AudioSocket connection ended: %r", task.exception())
+
+    @property
+    def closed(self) -> bool:
+        return any(task.done() for task in self._tasks)
+
+    async def say(self, samples: np.ndarray) -> None:
+        """Play `samples` (at the processing rate) to the caller, and wait for them to finish."""
+        resampler = StreamResampler(self._rate, PHONE_RATE)
+        tail = np.zeros(self._rate // 10, dtype=np.float32)  # flushes the resampler's filter
+        self._prompt = np.concatenate([self._prompt, resampler.process(samples), resampler.process(tail)])
+        if self._prompt_done is None or self._prompt_done.done():
+            self._prompt_done = asyncio.get_running_loop().create_future()
+        closed = asyncio.ensure_future(self.wait_closed())
+        try:
+            await asyncio.wait({self._prompt_done, closed}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            closed.cancel()
+
+    async def read_digits(self, count: int, timeout: float) -> Optional[str]:
+        """Up to `count` keypresses, ending early on #; None if the caller
+        hangs up or stops pressing keys."""
+        digits = ""
+        closed = asyncio.ensure_future(self.wait_closed())
+        try:
+            while len(digits) < count:
+                digit = asyncio.ensure_future(self._digits.get())
+                done, _ = await asyncio.wait({digit, closed}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+                if digit not in done:
+                    digit.cancel()
+                    return None
+                if digit.result() == "#":
+                    break
+                digits += digit.result()
+        finally:
+            closed.cancel()
+        return digits
+
+    def clear_digits(self) -> None:
+        while not self._digits.empty():
+            self._digits.get_nowait()
+
+    async def close(self) -> None:
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        try:
+            self._writer.write(encode_frame(FrameType.HANGUP))
+            await self._writer.drain()
+            self._writer.close()
+        except (OSError, ConnectionError):
+            pass
+
+    async def _send(self) -> None:
+        loop = asyncio.get_running_loop()
+        resampler = StreamResampler(self._rate, PHONE_RATE)
+        silence = np.zeros(int(self._rate * FRAME_SECONDS), dtype=np.float32)
+        frame = int(PHONE_RATE * FRAME_SECONDS)
+        radio = np.zeros(0, dtype=np.float32)
+        next_at = loop.time()
+        while True:
+            frames: list[np.ndarray] = []
+            if self._patch is None:
+                frames.append(np.zeros(frame, dtype=np.float32))
+            else:
+                block = self._patch.take_radio()
+                radio = np.concatenate([radio, resampler.process(block if block is not None else silence)])
+                while len(radio) >= frame:
+                    frames.append(radio[:frame])
+                    radio = radio[frame:]
+            for out in frames:
+                if len(self._prompt):
+                    out = np.zeros(frame, dtype=np.float32)
+                    piece, self._prompt = self._prompt[:frame], self._prompt[frame:]
+                    out[: len(piece)] = piece
+                    if not len(self._prompt) and self._prompt_done is not None and not self._prompt_done.done():
+                        self._prompt_done.set_result(None)
+                self._writer.write(encode_frame(FrameType.AUDIO, _to_pcm(out)))
+            await self._writer.drain()
+            next_at += FRAME_SECONDS
+            await asyncio.sleep(max(0.0, next_at - loop.time()))
+
+    async def _receive(self) -> None:
+        resampler = StreamResampler(PHONE_RATE, self._rate)
+        while True:
+            try:
+                frame = await read_frame_async(self._reader)
+            except asyncio.IncompleteReadError:
+                return
+            if frame.type == FrameType.AUDIO:
+                if self._patch is not None:
+                    self._patch.add_phone(resampler.process(_from_pcm(frame.payload)))
+            elif frame.type == FrameType.DTMF:
+                self._digits.put_nowait(frame.payload.decode("ascii", "replace")[:1])
+            elif frame.type in (FrameType.HANGUP, FrameType.ERROR):
+                return
 
 
 class Autopatch:
@@ -240,6 +403,7 @@ class Autopatch:
         ami: Optional[AMIClient] = None
         watcher: Optional[asyncio.Task] = None
         connection: Optional[tuple] = None
+        line: Optional[PhoneLine] = None
         speech = "Autopatch ended."
         _logger.info("autopatch dialing %s (%s)", call.number, call.actor)
         self._audit(call.actor, "Autopatch call", call.number)
@@ -284,7 +448,10 @@ class Autopatch:
             call.connected_at = self._clock()
             _logger.info("autopatch call to %s connected", call.number)
             reader, writer, _done = connection
-            call.result = await self._bridge(reader, writer, patch, config.autopatch_max_call_seconds)
+            line = PhoneLine(reader, writer, self.rate)
+            line.connect(patch)
+            line.start()
+            call.result = await self._talk(line, config.autopatch_max_call_seconds)
             if call.result == "time limit reached":
                 speech = "Time limit reached. Autopatch ended."
         except CallFailed as failure:
@@ -300,7 +467,7 @@ class Autopatch:
             dialing_audio.cancel()
             self._waiting.pop(call_id, None)
             if connection is not None:
-                await self._close_socket(connection)
+                await self._close_socket(connection, line)
             elif ami is not None and channel["name"] and (originated.cancelled() or not originated.done()):
                 await self._ami_hangup(ami, channel["name"])  # still ringing
             if watcher is not None:
@@ -310,16 +477,19 @@ class Autopatch:
                     await ami.close()
                 except OSError:
                     pass
-            self._set_patch(None)
-            call.state = "ended"
-            call.ended_at = self._clock()
-            self.call = None
-            self.last_call = call
-            talk_time = f", {round(call.ended_at - call.connected_at)}s" if call.connected_at else ""
-            _logger.info("autopatch call to %s ended: %s", call.number, call.result)
-            self._audit(call.actor, "Autopatch ended", f"{call.number}: {call.result}{talk_time}")
-            self._service.end_patch()
-            self._service.speak(TTS_PREFIX + speech)
+            self._finish(call, speech)
+
+    def _finish(self, call: CallRecord, speech: str) -> None:
+        self._set_patch(None)
+        call.state = "ended"
+        call.ended_at = self._clock()
+        self.call = None
+        self.last_call = call
+        talk_time = f", {round(call.ended_at - call.connected_at)}s" if call.connected_at else ""
+        _logger.info("autopatch %s ended: %s", call.who, call.result)
+        self._audit(call.actor, "Autopatch ended", f"{call.who}: {call.result}{talk_time}")
+        self._service.end_patch()
+        self._service.speak(TTS_PREFIX + speech)
 
     async def _watch(
         self,
@@ -346,14 +516,17 @@ class Autopatch:
         except (OSError, ConnectionError, asyncio.TimeoutError):
             _logger.warning("couldn't hang up %s", channel)
 
-    async def _close_socket(self, connection: tuple) -> None:
+    async def _close_socket(self, connection: tuple, line: Optional[PhoneLine]) -> None:
         _reader, writer, done = connection
-        try:
-            writer.write(encode_frame(FrameType.HANGUP))
-            await writer.drain()
-            writer.close()
-        except (OSError, ConnectionError):
-            pass
+        if line is not None:
+            await line.close()
+        else:
+            try:
+                writer.write(encode_frame(FrameType.HANGUP))
+                await writer.drain()
+                writer.close()
+            except (OSError, ConnectionError):
+                pass
         if not done.done():
             done.set_result(None)
 
@@ -365,17 +538,32 @@ class Autopatch:
     async def _dialing_audio(self, patch: PatchAudio, number: str, config: RepeaterConfig) -> None:
         """What the repeater hears until the far end answers: the number read
         back, then ringback."""
-        renderer = self._service.renderer
-        if renderer is not None:
-            text = TTS_PREFIX + "Dialing " + " ".join(number)
-            try:
-                spoken = await asyncio.get_running_loop().run_in_executor(None, renderer.render, text, config)
-                await self._feed(patch, spoken)
-            except Exception:
-                _logger.warning("couldn't render the dialing announcement", exc_info=True)
+        await self._announce(patch, "Dialing " + " ".join(number), config)
         ring = ringback(self.rate)
         while True:
             await self._feed(patch, ring)
+
+    async def _render(self, text: str, config: RepeaterConfig) -> Optional[np.ndarray]:
+        renderer = self._service.renderer
+        if renderer is None:
+            return None
+        try:
+            return await asyncio.get_running_loop().run_in_executor(None, renderer.render, TTS_PREFIX + text, config)
+        except Exception:
+            _logger.warning("couldn't render %r", text, exc_info=True)
+            return None
+
+    async def _announce(self, patch: PatchAudio, text: str, config: RepeaterConfig) -> None:
+        """Say `text` over the air, through the patch."""
+        spoken = await self._render(text, config)
+        if spoken is not None:
+            await self._feed(patch, spoken)
+
+    async def _say(self, line: PhoneLine, text: str) -> None:
+        """Say `text` to the caller."""
+        spoken = await self._render(text, self._service.config)
+        if spoken is not None:
+            await line.say(spoken)
 
     async def _feed(self, patch: PatchAudio, samples: np.ndarray) -> None:
         """Add local audio to the phone side in real time, as if the phone sent it."""
@@ -387,9 +575,8 @@ class Autopatch:
             next_at += FRAME_SECONDS
             await asyncio.sleep(max(0.0, next_at - loop.time()))
 
-    async def _bridge(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, patch: PatchAudio, limit: float) -> str:
-        sender = asyncio.create_task(self._send_radio(writer, patch))
-        receiver = asyncio.create_task(self._receive_phone(reader, patch))
+    async def _talk(self, line: PhoneLine, limit: float) -> str:
+        """Until the far end hangs up or the time limit; returns which."""
         loop = asyncio.get_running_loop()
         warning = (
             loop.call_later(limit - TIME_WARNING_SECONDS, self._time_warning)
@@ -397,16 +584,11 @@ class Autopatch:
             else None
         )
         try:
-            done, _ = await asyncio.wait({sender, receiver}, timeout=limit, return_when=asyncio.FIRST_COMPLETED)
-            if not done:
-                return "time limit reached"
-            for task in done:
-                if task.exception() is not None:
-                    _logger.info("AudioSocket connection ended: %r", task.exception())
+            await asyncio.wait_for(line.wait_closed(), limit)
             return "the other party hung up"
+        except asyncio.TimeoutError:
+            return "time limit reached"
         finally:
-            sender.cancel()
-            receiver.cancel()
             if warning is not None:
                 warning.cancel()
 
@@ -415,36 +597,115 @@ class Autopatch:
         if output is not None:
             output.play(TTS_PREFIX + f"{int(TIME_WARNING_SECONDS)} seconds remaining.")
 
-    async def _send_radio(self, writer: asyncio.StreamWriter, patch: PatchAudio) -> None:
-        """One frame of received radio audio every 20 ms. Silence when there's
-        none, which also keeps AudioSocket's 2-second inactivity timer happy."""
-        loop = asyncio.get_running_loop()
-        resampler = StreamResampler(self.rate, PHONE_RATE)
-        silence = np.zeros(int(self.rate * FRAME_SECONDS), dtype=np.float32)
-        frame = int(PHONE_RATE * FRAME_SECONDS)
-        pending = np.zeros(0, dtype=np.float32)
-        next_at = loop.time()
-        while True:
-            block = patch.take_radio()
-            pending = np.concatenate([pending, resampler.process(block if block is not None else silence)])
-            while len(pending) >= frame:
-                writer.write(encode_frame(FrameType.AUDIO, _to_pcm(pending[:frame])))
-                pending = pending[frame:]
-            await writer.drain()
-            next_at += FRAME_SECONDS
-            await asyncio.sleep(max(0.0, next_at - loop.time()))
+    # -- a call in -----------------------------------------------------------
 
-    async def _receive_phone(self, reader: asyncio.StreamReader, patch: PatchAudio) -> None:
-        resampler = StreamResampler(PHONE_RATE, self.rate)
-        while True:
+    def _incoming_refusal(self) -> Optional[tuple[str, str]]:
+        """Why a call in can't go on the air, and what the caller hears; None if it can."""
+        config = self._service.config
+        closed = "This repeater isn't taking phone calls. Goodbye."
+        if not config.autopatch_enabled or not config.autopatch_incoming_enabled:
+            return "calls in are turned off", closed
+        if not config.autopatch_incoming_pin:
+            return "no access code is set", closed
+        if not config.transmitter_enabled:
+            return "the transmitter is off", "The repeater can't take calls right now. Goodbye."
+        if self.call is not None:
+            return "a call is already in progress", "The repeater is on another call. Please try again later."
+        return None
+
+    async def _find_incoming(self, call_id: str) -> Optional[str]:
+        """The caller's number ("" if unknown) if `call_id` is a call in, else None."""
+        if self.settings is None:
+            return None
+        s = self.settings
+        ami = self._ami_factory(s.ami_host, s.ami_port, s.ami_username, s.ami_secret)
+        try:
+            await asyncio.wait_for(ami.connect(), AMI_TIMEOUT)
+            channels = await ami_list(ami, {"Action": "CoreShowChannels"}) or []
+        except (OSError, ConnectionError, asyncio.TimeoutError) as error:
+            _logger.warning("couldn't look up AudioSocket call %s: %r", call_id, error)
+            return None
+        finally:
             try:
-                frame = await read_frame_async(reader)
-            except asyncio.IncompleteReadError:
-                return
-            if frame.type == FrameType.AUDIO:
-                patch.add_phone(resampler.process(_from_pcm(frame.payload)))
-            elif frame.type in (FrameType.HANGUP, FrameType.ERROR):
-                return
+                await ami.close()
+            except OSError:
+                pass
+        for channel in channels:
+            if (
+                channel.get("Context") == INCOMING_CONTEXT
+                and channel.get("Application") == "AudioSocket"
+                and str(channel.get("ApplicationData", "")).lower().startswith(call_id + ",")
+            ):
+                number = str(channel.get("CallerIDNum") or "")
+                return "" if number == "<unknown>" else number
+        return None
+
+    async def _answer(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, caller: str) -> None:
+        line = PhoneLine(reader, writer, self.rate)
+        line.start()
+        try:
+            if await self._screen(line, caller):
+                await self._run_incoming(line, caller)
+        finally:
+            await line.close()
+
+    async def _screen(self, line: PhoneLine, caller: str) -> bool:
+        """The access code, and whether the repeater can take the call; True to put it on the air."""
+        who = f"call from {caller or 'an unknown number'}"
+        _logger.info("autopatch %s", who)
+        refusal = self._incoming_refusal()
+        if refusal is None:
+            pin = self._service.config.autopatch_incoming_pin
+            entered: Optional[str] = None
+            for attempt in range(PIN_TRIES):
+                if attempt:
+                    line.clear_digits()
+                await self._say(line, "Enter the access code, then press pound." if attempt == 0 else "Wrong code. Try again.")
+                entered = await line.read_digits(len(pin), PIN_DIGIT_TIMEOUT)
+                if entered is None or entered == pin:
+                    break
+            if line.closed:
+                self._audit("phone", "Autopatch refused", f"{who}: hung up before entering the access code")
+                return False
+            if entered is None:
+                refusal = ("no access code entered", "Goodbye.")
+            elif entered != pin:
+                refusal = ("wrong access code", "Wrong code. Goodbye.")
+            else:
+                refusal = self._incoming_refusal()  # things may have changed while they keyed it in
+        if refusal is not None:
+            reason, speech = refusal
+            _logger.info("autopatch %s refused: %s", who, reason)
+            self._audit("phone", "Autopatch refused", f"{who}: {reason}")
+            await self._say(line, speech)
+            return False
+        return True
+
+    async def _run_incoming(self, line: PhoneLine, caller: str) -> None:
+        config = self._service.config
+        now = self._clock()
+        call = CallRecord(number=caller, actor="phone", started_at=now, state="connected", connected_at=now, direction="incoming")
+        self.call = call
+        self._hangup_reason = None
+        self._task = asyncio.current_task()
+        patch = PatchAudio(self.rate)
+        self._service.begin_patch()
+        self._set_patch(patch)
+        speech = "Autopatch ended."
+        self._audit(call.actor, "Autopatch call", call.who)
+        try:
+            await asyncio.gather(self._say(line, "You're on the air."), self._announce(patch, "Incoming phone call.", config))
+            line.connect(patch)
+            call.result = await self._talk(line, config.autopatch_max_call_seconds)
+            if call.result == "time limit reached":
+                speech = "Time limit reached. Autopatch ended."
+        except asyncio.CancelledError:
+            call.result = self._hangup_reason or "hung up"
+        except (OSError, ConnectionError) as error:
+            _logger.error("autopatch %s failed: %r", call.who, error)
+            call.result = "the connection failed"
+        finally:
+            self._finish(call, speech)
 
     # -- AudioSocket server --------------------------------------------------
 
@@ -455,20 +716,26 @@ class Autopatch:
         except (OSError, ValueError, asyncio.TimeoutError, asyncio.IncompleteReadError):
             call_id = None
         waiting = self._waiting.get(call_id) if call_id else None
-        if waiting is None or waiting.done():
+        if waiting is not None and not waiting.done():
+            done: "asyncio.Future[None]" = asyncio.get_running_loop().create_future()
+            waiting.set_result((reader, writer, done))
+            await done  # the call owns the connection until it ends
+            return
+        caller = await self._find_incoming(call_id) if call_id else None
+        if caller is None:
             _logger.warning("AudioSocket connection for unknown call %s; hanging up", call_id)
             writer.write(encode_frame(FrameType.HANGUP))
             writer.close()
             return
-        done: "asyncio.Future[None]" = asyncio.get_running_loop().create_future()
-        waiting.set_result((reader, writer, done))
-        await done  # the call owns the connection until it ends
+        await self._answer(reader, writer, caller)
 
     def _config_changed(self, config: RepeaterConfig) -> None:
         if not config.autopatch_enabled:
             self.hangup("autopatch was turned off")
         elif not config.transmitter_enabled:
             self.hangup("the transmitter was turned off")
+        elif not config.autopatch_incoming_enabled and self.call is not None and self.call.direction == "incoming":
+            self.hangup("calls in were turned off")
 
     def _audit(self, actor: str, action: str, detail: str) -> None:
         if self._service.audit_hook is not None:

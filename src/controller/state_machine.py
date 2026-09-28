@@ -114,6 +114,8 @@ class RepeaterConfig:
     autopatch_blocked: str = "900XXXXXXX NXX976XXXX"
     autopatch_max_call_seconds: float = 180.0
     autopatch_ring_seconds: float = 30.0
+    autopatch_incoming_enabled: bool = False  # answer calls to the phone line
+    autopatch_incoming_pin: str = ""  # callers key it in; calls aren't answered without one
     backup_enabled: bool = False  # scheduled backups to the backup folder
     backup_interval_hours: float = 24.0
     backup_keep: int = 7

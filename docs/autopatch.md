@@ -12,6 +12,9 @@ default) ends the call, and so does the far end hanging up or the time
 limit (users hear a warning 30 seconds before). The transmitter stays keyed
 for the whole call, and the station ID still goes out on schedule.
 
+Calls can come in too: someone who calls the phone line's number and keys in
+an access code is put on the air (see [Calls in](#calls-in)).
+
 Settings are on the dashboard's **Autopatch** page, which also shows the call
 in progress, has a **Hang up** button, and can place a test call.
 
@@ -57,8 +60,10 @@ write = call,config,system,originate
 
 Open the **Autopatch** page. On ASL3, the **Phone line** card says SIP is
 turned off, because ASL3 ships with Asterisk's SIP (PJSIP) and RTP modules
-not loaded. **Turn on SIP in Asterisk** loads them, along with AudioSocket,
-and adds them to `modules.conf` so they load whenever Asterisk starts.
+not loaded. **Turn on SIP in Asterisk** loads them, along with AudioSocket
+and the few modules calls in need (`res_pjsip_endpoint_identifier_ip`,
+`pbx_config`, `func_md5`), and adds them to `modules.conf` so they load
+whenever Asterisk starts.
 
 ### 3. Set up the phone line
 
@@ -95,8 +100,9 @@ For a provider without registration (Twilio), the card shows whether
 Asterisk can reach the server instead.
 
 The line is kept in `/etc/asterisk/pjsip.conf`, in sections named
-`mor-trunk`, `mor-trunk-auth`, `mor-trunk-aor` and `mor-trunk-reg`, plus a
-`mor-transport-udp` (or `-tcp`) transport if the file had none. Other
+`mor-trunk`, `mor-trunk-auth`, `mor-trunk-aor`, `mor-trunk-identify` and
+`mor-trunk-reg`, plus a `mor-transport-udp` (or `-tcp`) transport if the file
+had none. Other
 sections in the file are left alone, but Asterisk removes the file's
 comments when it saves it -- on ASL3, that's all of the stock file, which is
 only commented-out samples. The SIP password is stored there and never shown
@@ -149,6 +155,56 @@ To use a PJSIP endpoint you configured yourself, set the **Dial string** to
 `PJSIP/{number}@<your endpoint>` and leave the phone line empty. The modules
 still need to be on (step 2).
 
+## Calls in
+
+With **Answer calls to the phone line** on (in the **Calls in** card) and an
+access code of 4 to 8 digits set, calls to the line's number are answered:
+
+1. The caller hears "Enter the access code, then press pound." They get
+   three tries.
+2. The repeater says "Incoming phone call" on the air, and the caller hears
+   "You're on the air."
+3. From there it's like a call out: the caller is heard over the repeater,
+   whoever transmits is heard on the phone, and the hang-up code, the time
+   limit, or the caller hanging up ends it.
+
+A caller is told the repeater can't take the call, and hung up on, if calls
+in or autopatch are off, no access code is set, the transmitter is off, or
+another call is up. Every call and refusal is in the audit log with the
+caller's number.
+
+### Getting calls to Asterisk
+
+Save the phone line first (a line saved by an earlier version says **Save it
+again to answer calls in**). Saving adds:
+
+- a `mor-trunk-identify` section to `pjsip.conf`, which tells Asterisk that
+  calls from the server, and from the addresses in **Calls in come from**,
+  are the provider's. Calls from anywhere else are refused.
+- a `mor-incoming` context that answers and hands the call to the
+  controller. It goes in `custom/extensions.conf`, which ASL3's
+  `extensions.conf` includes, so the node's own dialplan isn't touched;
+  without that include (Asterisk other than ASL3) it goes in
+  `extensions.conf`. Asterisk rewrites whichever file it saves, keeping
+  settings and comments but not the file's formatting.
+
+Then the provider has to route the number to you:
+
+- **VoIP.ms**: set the DID's routing to the SIP account or sub-account the
+  phone line registers as. Calls arrive over the registration, so no router
+  changes are needed.
+- **Telnyx**: assign the number to the Credentials connection. Same as
+  VoIP.ms: they arrive over the registration.
+- **Twilio**: there's no registration, so Twilio needs an address it can
+  reach. In the trunk's **Origination** settings, add an origination URI of
+  `sip:<your public IP address or hostname>:5060`, and forward UDP port 5060
+  on your router to Asterisk. Choosing Twilio as the provider fills in
+  **Calls in come from** with Twilio's signaling addresses; keep them, since
+  calls can come from any of its regions.
+
+With a port forwarded, SIP scanners will find Asterisk. They match no
+endpoint, so Asterisk refuses them, but they fill its log.
+
 ## Which numbers can be dialed
 
 **Allowed numbers** and **Blocked numbers** are patterns in Asterisk's
@@ -170,9 +226,14 @@ allowed list.
 - US amateur rules (Part 97) prohibit business communications over the air,
   including on autopatch. Many clubs limit autopatch to members or to
   emergencies; the access code is the usual gate.
-- Calls, refusals and outcomes are in the audit log, with the number dialed.
+- Calls, refusals and outcomes are in the audit log, with the number dialed
+  or the caller's number.
 - Turning the transmitter off (over DTMF or the dashboard) or turning
-  autopatch off hangs up any call in progress.
+  autopatch off hangs up any call in progress; turning calls in off hangs up
+  a call in.
+- A caller on the air is heard by everyone listening, with no control
+  operator keying them up. Give the access code only to people you'd hand a
+  radio.
 
 ## Testing without a trunk
 

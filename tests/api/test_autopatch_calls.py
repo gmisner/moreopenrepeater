@@ -3,7 +3,7 @@ import uuid
 
 import numpy as np
 
-from api.autopatch import Autopatch, PatchSettings, patch_settings_from_env
+from api.autopatch import Autopatch, CallRecord, PatchSettings, patch_settings_from_env
 from api.service import RepeaterService
 from controller.state_machine import IDLE, PATCH, RepeaterConfig
 from link.audiosocket import FrameType, encode_frame, read_frame_async
@@ -19,16 +19,21 @@ class FakeAMI:
     def __init__(self, on_originate):
         self.on_originate = on_originate
         self.actions = []
+        self.channels = []  # CoreShowChannel events
         self.closed = False
         self._events = asyncio.Queue()
 
     async def connect(self):
-        pass
+        self._events = asyncio.Queue()  # each connection is a new one
 
     async def send_action(self, fields):
         self.actions.append(fields)
         if fields["Action"] == "Originate":
             asyncio.get_running_loop().call_soon(self.on_originate, fields)
+        if fields["Action"] == "CoreShowChannels":
+            for channel in self.channels:
+                self.push(Event="CoreShowChannel", ActionID=fields["ActionID"], **channel)
+            self.push(Event="CoreShowChannelsComplete", ActionID=fields["ActionID"], EventList="Complete")
         return {"Response": "Success", "ActionID": fields.get("ActionID", "")}
 
     async def events(self):
@@ -82,12 +87,16 @@ class FakePhone:
                     return
                 self.received.append(np.frombuffer(frame.payload, "<i2"))
         except asyncio.IncompleteReadError:
-            pass
+            self.got_hangup.set()
 
     def say(self, level, frames=10):
         pcm = np.full(160, int(level * 32767), dtype="<i2").tobytes()
         for _ in range(frames):
             self.writer.write(encode_frame(FrameType.AUDIO, pcm))
+
+    def press(self, keys):
+        for key in keys:
+            self.writer.write(encode_frame(FrameType.DTMF, key.encode()))
 
     def hang_up(self):
         self.writer.write(encode_frame(FrameType.HANGUP))
@@ -338,5 +347,174 @@ def test_dial_without_asterisk_configured():
         await patch.start()
         assert patch.dial("911", "DTMF") == "Autopatch is not available."
         assert patch.status()["available"] is False
+
+    asyncio.run(scenario())
+
+
+CALLER = "+16025550100"
+
+
+def make_incoming(**config):
+    service, patch, ami, audio = make(autopatch_incoming_enabled=True, autopatch_incoming_pin="1234", **config)
+    audits = []
+    service.audit_hook = lambda actor, action, detail: audits.append((actor, action, detail))
+    return service, patch, ami, audio, audits
+
+
+def ring_in(ami, patch, caller=CALLER, context="mor-incoming"):
+    """A call in, as Asterisk's mor-incoming dialplan hands it over."""
+    call_id = str(uuid.uuid4())
+    ami.channels.append({
+        "Channel": "PJSIP/mor-trunk-00000002",
+        "Context": context,
+        "Application": "AudioSocket",
+        "ApplicationData": f"{call_id},127.0.0.1:9092",
+        "CallerIDNum": caller,
+    })
+    return FakePhone(patch.listen_port, call_id)
+
+
+def refusals(audits):
+    return [detail for _, action, detail in audits if action == "Autopatch refused"]
+
+
+def test_call_in_with_the_access_code_goes_on_the_air():
+    async def scenario():
+        service, patch, ami, audio, audits = make_incoming()
+        await patch.start()
+        phone = ring_in(ami, patch)
+        await phone.connect()
+        await asyncio.sleep(0.05)
+        assert patch.call is None  # not until the code
+        phone.press("1234")
+        await wait_until(lambda: patch.call is not None)
+        assert (patch.call.direction, patch.call.number, patch.call.state) == ("incoming", CALLER, "connected")
+        assert service.controller.state == PATCH
+        assert ("phone", "Autopatch call", f"a call from {CALLER}") in audits
+
+        bridge = audio.patches[0]
+        phone.say(0.5)
+        await asyncio.sleep(0.1)
+        radio = np.full(320, 0.25, dtype=np.float32)
+        heard = np.concatenate([bridge.exchange(radio, carrier=True) for _ in range(8)])
+        assert heard.max() > 0.3
+        await wait_until(lambda: any(frame.max() > 5000 for frame in phone.received))
+
+        phone.hang_up()
+        await wait_until(lambda: patch.call is None)
+        assert patch.last_call.result == "the other party hung up"
+        assert service.controller.state != PATCH
+        assert spoken(service) == ["Autopatch ended."]
+        await patch.stop()
+
+    asyncio.run(scenario())
+
+
+def test_access_code_gets_three_tries():
+    async def scenario():
+        _, patch, ami, _, audits = make_incoming()
+        await patch.start()
+        phone = ring_in(ami, patch)
+        await phone.connect()
+        phone.press("12#")  # # ends a short entry
+        phone.press("9999")
+        await asyncio.sleep(0.05)
+        phone.press("1234")
+        await wait_until(lambda: patch.call is not None)
+        patch.hangup("test over")
+        await wait_until(lambda: patch.call is None)
+
+        phone = ring_in(ami, patch)
+        await phone.connect()
+        phone.press("0000")
+        await asyncio.sleep(0.05)
+        phone.press("1111")
+        await asyncio.sleep(0.05)
+        phone.press("2222")
+        await asyncio.wait_for(phone.got_hangup.wait(), 2)
+        assert refusals(audits) == [f"call from {CALLER}: wrong access code"]
+        assert patch.last_call.result == "test over"
+        await patch.stop()
+
+    asyncio.run(scenario())
+
+
+def test_a_caller_who_keys_nothing_is_hung_up(monkeypatch):
+    monkeypatch.setattr("api.autopatch.PIN_DIGIT_TIMEOUT", 0.1)
+
+    async def scenario():
+        _, patch, ami, _, audits = make_incoming()
+        await patch.start()
+        phone = ring_in(ami, patch, caller="<unknown>")
+        await phone.connect()
+        await asyncio.wait_for(phone.got_hangup.wait(), 2)
+        assert refusals(audits) == ["call from an unknown number: no access code entered"]
+        await patch.stop()
+
+    asyncio.run(scenario())
+
+
+def test_calls_in_are_refused_when_off_busy_or_without_a_code():
+    async def scenario():
+        service, patch, ami, _, audits = make_incoming()
+        await patch.start()
+
+        async def call_in():
+            phone = ring_in(ami, patch)
+            await phone.connect()
+            phone.press("1234")
+            await asyncio.wait_for(phone.got_hangup.wait(), 2)
+
+        service.update_config(autopatch_incoming_enabled=False)
+        await call_in()
+        service.update_config(autopatch_incoming_enabled=True, autopatch_incoming_pin="")
+        await call_in()
+        service.update_config(autopatch_incoming_pin="1234", transmitter_enabled=False)
+        await call_in()
+        service.update_config(transmitter_enabled=True)
+        patch.call = CallRecord(number="911", actor="DTMF", started_at=0.0)
+        await call_in()
+        assert [r.split(": ")[1] for r in refusals(audits)] == [
+            "calls in are turned off",
+            "no access code is set",
+            "the transmitter is off",
+            "a call is already in progress",
+        ]
+        assert service.controller.state == IDLE
+        patch.call = None
+        await patch.stop()
+
+    asyncio.run(scenario())
+
+
+def test_only_mor_incoming_audiosocket_channels_are_calls_in():
+    async def scenario():
+        _, patch, ami, _, _ = make_incoming()
+        await patch.start()
+        phone = ring_in(ami, patch, context="default")
+        await phone.connect()
+        await asyncio.wait_for(phone.got_hangup.wait(), 2)
+        assert patch.last_call is None
+        await patch.stop()
+
+    asyncio.run(scenario())
+
+
+def test_hangup_code_and_switching_calls_in_off_end_a_call_in():
+    async def scenario():
+        service, patch, ami, _, _ = make_incoming()
+        await patch.start()
+        for end in (lambda: service.simulate_dtmf("#"), lambda: service.update_config(autopatch_incoming_enabled=False)):
+            service.update_config(autopatch_incoming_enabled=True)
+            phone = ring_in(ami, patch)
+            await phone.connect()
+            phone.press("1234")
+            await wait_until(lambda: patch.call is not None)
+            end()
+            await asyncio.wait_for(phone.got_hangup.wait(), 2)
+            await wait_until(lambda: patch.call is None)
+        assert patch.last_call.result == "calls in were turned off"
+        assert service.controller.state != PATCH
+        await patch.stop()
 
     asyncio.run(scenario())

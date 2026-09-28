@@ -15,8 +15,10 @@ from api.sip_trunk import (
     MODULES,
     SIP_MODULES,
     AsteriskSetupError,
+    TWILIO_SIGNALING,
     SipTrunk,
     TrunkSettings,
+    incoming_dialplan,
     parse_config,
 )
 
@@ -27,8 +29,14 @@ class FakeAsterisk:
     """Config files as [section name, [(key, value)]] lists, loaded modules,
     and just enough of AMI's config, module and PJSIP actions."""
 
-    def __init__(self, files=None, loaded=(), registration="Registered", contact="Reachable"):
-        self.files = files if files is not None else {"pjsip.conf": [], "modules.conf": [["modules", [("autoload", "no")]]]}
+    def __init__(self, files=None, loaded=(), registration="Registered", contact="Reachable", asl3=True):
+        self.files = files if files is not None else {
+            "pjsip.conf": [],
+            "modules.conf": [["modules", [("autoload", "no")]]],
+            "extensions.conf": [["default", [("exten", "i,1,Hangup")]]],
+        }
+        self.asl3 = asl3  # extensions.conf includes custom/extensions.conf, which needn't exist
+        self.dialplan = set()  # contexts loaded at the last dialplan reload
         self.loaded = set(loaded)
         self.unloadable = set()
         self.registration = registration
@@ -38,6 +46,11 @@ class FakeAsterisk:
 
     def client(self, *args):
         return FakeAMI(self)
+
+    def dialplan_sections(self):
+        """extensions.conf as Asterisk loads it, includes and all."""
+        included = self.files.get("custom/extensions.conf", []) if self.asl3 else []
+        return self.files["extensions.conf"] + included
 
 
 class FakeAMI:
@@ -65,7 +78,10 @@ class FakeAMI:
             return ok if fields["Module"] in a.loaded else {"Response": "Error", "Message": "Module not loaded"}
         if action == "ModuleLoad":
             if fields["LoadType"] == "reload":
-                a.reloads += 1
+                if fields["Module"] == "pbx_config.so":
+                    a.dialplan = {name for name, _ in a.dialplan_sections()}
+                else:
+                    a.reloads += 1
                 return ok
             if fields["Module"] in a.unloadable:
                 return {"Response": "Error", "Message": "Could not load module."}
@@ -75,14 +91,23 @@ class FakeAMI:
             if fields["Filename"] not in a.files:
                 return {"Response": "Error", "Message": "Config file not found"}
             response = dict(ok)
-            for i, (name, lines) in enumerate(a.files[fields["Filename"]]):
+            sections = a.dialplan_sections() if fields["Filename"] == "extensions.conf" else a.files[fields["Filename"]]
+            for i, (name, lines) in enumerate(sections):
                 response[f"Category-{i:06d}"] = name
                 for j, (key, value) in enumerate(lines):
                     response[f"Line-{i:06d}-{j:06d}"] = f"{key}={value}"
             return response
         if action == "CreateConfig":
+            if fields["Filename"].startswith("custom/") and not a.asl3:
+                return {"Response": "Error", "Message": "Failed to create file"}
             a.files[fields["Filename"]] = []
             return ok
+        if action == "ShowDialPlan":
+            if fields["Context"] not in a.dialplan:
+                return {"Response": "Error", "Message": f"Did not find context {fields['Context']}"}
+            self._events.put_nowait({"Event": "ListDialplan", "ActionID": fields["ActionID"], "Context": fields["Context"]})
+            self._events.put_nowait({"Event": "ShowDialPlanComplete", "ActionID": fields["ActionID"], "EventList": "Complete"})
+            return {**ok, "EventList": "start"}
         if action == "UpdateConfig":
             self._update(a.files[fields["SrcFilename"]], fields)
             return ok
@@ -190,7 +215,9 @@ def test_save_writes_the_trunk_and_keeps_other_sections():
     run(trunk.save(TrunkSettings("chicago.voip.ms", "123456_rpt", "pa;ss", port=5080)))
 
     names = [name for name, _ in asterisk.files["pjsip.conf"]]
-    assert names == ["my-phone", "mor-transport-udp", "mor-trunk-auth", "mor-trunk-aor", "mor-trunk", "mor-trunk-reg"]
+    assert names == [
+        "my-phone", "mor-transport-udp", "mor-trunk-auth", "mor-trunk-aor", "mor-trunk", "mor-trunk-identify", "mor-trunk-reg",
+    ]
     assert asterisk.files["pjsip.conf"][0] == other
     assert section(asterisk, "mor-trunk-auth")["password"] == "pa;ss"  # Asterisk escapes it when saving
     assert section(asterisk, "mor-trunk-aor")["contact"] == "sip:chicago.voip.ms:5080"
@@ -210,6 +237,8 @@ def test_save_writes_the_trunk_and_keeps_other_sections():
         "auth_username": "",
         "has_password": True,
         "registers": True,
+        "incoming_from": [],
+        "answers_calls": True,
     }
     assert (status["registration"], status["reachability"]) == ("Registered", "Reachable")
 
@@ -222,7 +251,7 @@ def test_resaving_replaces_the_trunk_keeps_the_password_and_reuses_the_transport
     run(trunk.save(TrunkSettings("abc.pstn.twilio.com", "bob", None, transport="udp", auth_username="bob-auth", registers=False)))
 
     names = [name for name, _ in asterisk.files["pjsip.conf"]]
-    assert names == ["transport-udp", "mor-trunk-auth", "mor-trunk-aor", "mor-trunk"]
+    assert names == ["transport-udp", "mor-trunk-auth", "mor-trunk-aor", "mor-trunk", "mor-trunk-identify"]
     assert section(asterisk, "mor-trunk-auth") == {
         "type": "auth", "auth_type": "userpass", "username": "bob-auth", "password": "secret",
     }
@@ -330,6 +359,63 @@ def test_trunk_request_validation():
         {"ten_digit_prefix": "011"},
     ):
         assert client.put("/api/autopatch/trunk", json={**TRUNK_BODY, **bad}).status_code == 422, bad
+
+
+def test_calls_in_match_the_trunk_from_the_server_and_listed_sources():
+    asterisk = FakeAsterisk(loaded=MODULES)
+    trunk = SipTrunk(SETTINGS, asterisk.client)
+    run(trunk.save(TrunkSettings("abc.pstn.twilio.com", "bob", "pw", registers=False, incoming_from=TWILIO_SIGNALING)))
+    identify = next(lines for name, lines in asterisk.files["pjsip.conf"] if name == "mor-trunk-identify")
+    assert identify[:2] == [("type", "identify"), ("endpoint", "mor-trunk")]
+    assert [v for k, v in identify if k == "match"] == ["abc.pstn.twilio.com", *TWILIO_SIGNALING]
+    assert section(asterisk, "mor-trunk")["context"] == "mor-incoming"
+    assert run(trunk.status())["trunk"]["incoming_from"] == list(TWILIO_SIGNALING)
+
+
+def test_calls_in_dialplan_goes_in_asl3s_custom_file():
+    asterisk = FakeAsterisk(loaded=MODULES)
+    stock = [list(s) for s in asterisk.files["extensions.conf"]]
+    trunk = SipTrunk(SETTINGS, asterisk.client)
+    run(trunk.save(TrunkSettings("sip.telnyx.com", "alice", "pw")))
+    run(trunk.save(TrunkSettings("sip.telnyx.com", "alice", None)))
+
+    assert asterisk.files["extensions.conf"] == stock
+    assert asterisk.files["custom/extensions.conf"] == [["mor-incoming", incoming_dialplan("127.0.0.1:9092")]]
+    assert "mor-incoming" in asterisk.dialplan
+    assert ("same", "n,AudioSocket(${MOR_ID:0:8}-${MOR_ID:8:4}-${MOR_ID:12:4}-${MOR_ID:16:4}-${MOR_ID:20:12},127.0.0.1:9092)") in (
+        incoming_dialplan("127.0.0.1:9092")
+    )
+    assert run(trunk.status())["trunk"]["answers_calls"] is True
+
+    run(trunk.remove())
+    assert asterisk.files["custom/extensions.conf"] == []
+    assert "mor-incoming" not in asterisk.dialplan
+
+
+def test_calls_in_dialplan_falls_back_to_extensions_conf():
+    asterisk = FakeAsterisk(loaded=MODULES, asl3=False)
+    run(SipTrunk(SETTINGS, asterisk.client).save(TrunkSettings("sip.telnyx.com", "alice", "pw")))
+    assert [name for name, _ in asterisk.files["extensions.conf"]] == ["default", "mor-incoming"]
+    assert "custom/extensions.conf" not in asterisk.files
+    assert "mor-incoming" in asterisk.dialplan
+
+
+def test_a_line_saved_before_calls_in_doesnt_answer():
+    asterisk = FakeAsterisk(loaded=MODULES)
+    trunk = SipTrunk(SETTINGS, asterisk.client)
+    run(trunk.save(TrunkSettings("sip.telnyx.com", "alice", "pw")))
+    del asterisk.files["custom/extensions.conf"]
+    asterisk.dialplan.clear()
+    assert run(trunk.status())["trunk"]["answers_calls"] is False
+
+
+def test_incoming_from_validation():
+    client, _, _ = make_client(FakeAsterisk(loaded=MODULES))
+    assert client.post("/api/autopatch/trunk/modules").status_code == 200
+    ok = client.put("/api/autopatch/trunk", json={**TRUNK_BODY, "incoming_from": ["54.172.60.0/30", "sip.example.com", "2001:db8::/32"]})
+    assert ok.status_code == 200 and ok.json()["trunk"]["incoming_from"] == ["54.172.60.0/30", "sip.example.com", "2001:db8::/32"]
+    for bad in (["a b"], ["1.2.3.4,5.6.7.8"], ["x\r\nAction: Command"], ["1.2.3.4"] * 33):
+        assert client.put("/api/autopatch/trunk", json={**TRUNK_BODY, "incoming_from": bad}).status_code == 422, bad
 
 
 def test_dial_string_names_the_endpoint():

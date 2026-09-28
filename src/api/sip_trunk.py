@@ -13,6 +13,13 @@ without file access to /etc/asterisk (or with Asterisk on another host):
     live in a file of their own, and Asterisk drops comments that aren't
     attached to a section when it saves -- which is all of ASL3's stock
     (settings-free) pjsip.conf.
+  * Calls in land in the `mor-incoming` dialplan context, which answers and
+    hands the call to our AudioSocket server under a UUID made from the
+    channel's unique ID; the controller looks the channel up over AMI to
+    tell it's a real call. The context goes in custom/extensions.conf, which
+    ASL3's extensions.conf includes, so saving doesn't rewrite the node's
+    own dialplan (Asterisk reformats the whole file it saves, includes and
+    all). Other Asterisk installs get it in extensions.conf.
 
 The SIP password is written to Asterisk and never read back out to the
 dashboard.
@@ -21,21 +28,35 @@ from __future__ import annotations
 
 import asyncio
 import re
-import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Callable, Optional
 
 from link.ami_client import AMIClient, AMIMessage
 
-from .autopatch import AMI_TIMEOUT, PatchSettings
+from .autopatch import AMI_TIMEOUT, INCOMING_CONTEXT, PatchSettings, ami_list
 
 ENDPOINT = "mor-trunk"
 DIAL_STRING = f"PJSIP/{{number}}@{ENDPOINT}"
 _AUTH = "mor-trunk-auth"
 _AOR = "mor-trunk-aor"
 _REGISTRATION = "mor-trunk-reg"
-TRUNK_SECTIONS = (ENDPOINT, _AUTH, _AOR, _REGISTRATION)
+_IDENTIFY = "mor-trunk-identify"
+TRUNK_SECTIONS = (ENDPOINT, _AUTH, _AOR, _REGISTRATION, _IDENTIFY)
+DIALPLAN_FILES = ("custom/extensions.conf", "extensions.conf")
+
+# Where providers send calls from, when that isn't the server's own address
+# (www.twilio.com/docs/sip-trunking/ip-addresses, "Regional signaling").
+TWILIO_SIGNALING = (
+    "54.172.60.0/30",
+    "54.244.51.0/30",
+    "54.171.127.192/30",
+    "35.156.191.128/30",
+    "54.65.63.192/30",
+    "54.169.127.128/30",
+    "54.252.254.64/30",
+    "177.71.206.192/30",
+)
 
 # Load order matters: each after what it depends on.
 SIP_MODULES = (
@@ -51,12 +72,14 @@ SIP_MODULES = (
     "res_pjsip_sdp_rtp.so",
     "res_pjsip_nat.so",
     "res_pjsip_caller_id.so",
+    "res_pjsip_endpoint_identifier_ip.so",  # identify sections, for calls in
     "res_pjsip_outbound_authenticator_digest.so",
     "res_pjsip_outbound_registration.so",
     "chan_pjsip.so",
 )
 AUDIOSOCKET_MODULES = ("res_audiosocket.so", "app_audiosocket.so")
-MODULES = SIP_MODULES + AUDIOSOCKET_MODULES
+DIALPLAN_MODULES = ("pbx_config.so", "func_md5.so")  # the incoming call context
+MODULES = SIP_MODULES + AUDIOSOCKET_MODULES + DIALPLAN_MODULES
 
 _LOAD_KEYS = ("load", "require", "preload", "preload-require")
 _URI = re.compile(r"^sip:(?:(?P<user>[^@]+)@)?(?P<host>[^:;]+)(?::(?P<port>\d+))?(?P<params>;.*)?$")
@@ -77,6 +100,7 @@ class TrunkSettings:
     transport: str = "udp"  # udp | tcp
     auth_username: str = ""  # when the provider's login differs from the account
     registers: bool = True
+    incoming_from: tuple[str, ...] = ()  # hosts or networks calls come from, besides the server
 
 
 def parse_config(response: AMIMessage) -> list[Section]:
@@ -110,7 +134,7 @@ def trunk_sections(trunk: TrunkSettings, transport: str, password: str) -> list[
         (ENDPOINT, [
             ("type", "endpoint"),
             ("transport", transport),
-            ("context", "mor-trunk-incoming"),  # calls in aren't supported; nothing answers
+            ("context", INCOMING_CONTEXT),
             ("disallow", "all"),
             ("allow", "ulaw"),
             ("outbound_auth", _AUTH),
@@ -120,6 +144,16 @@ def trunk_sections(trunk: TrunkSettings, transport: str, password: str) -> list[
             ("rtp_symmetric", "yes"),
             ("force_rport", "yes"),
             ("rewrite_contact", "yes"),
+        ]),
+        # Without this a call in matches no endpoint, since the provider's
+        # From user isn't "mor-trunk".
+        (_IDENTIFY, [
+            ("type", "identify"),
+            ("endpoint", ENDPOINT),
+            # SRV lookups need res_resolver_unbound, which ASL3 doesn't
+            # load; plain address lookups work without it.
+            ("srv_lookups", "no"),
+            *(("match", source) for source in (trunk.server, *trunk.incoming_from)),
         ]),
     ]
     if trunk.registers:
@@ -136,6 +170,20 @@ def trunk_sections(trunk: TrunkSettings, transport: str, password: str) -> list[
     return sections
 
 
+def incoming_dialplan(address: str) -> list[tuple[str, str]]:
+    """Answer any number the provider sends, then connect to our AudioSocket
+    server. AudioSocket needs a UUID, and Asterisk has no UUID function."""
+    call_id = "${MOR_ID:0:8}-${MOR_ID:8:4}-${MOR_ID:12:4}-${MOR_ID:16:4}-${MOR_ID:20:12}"
+    return [
+        ("exten", "_+X.,1,Goto(s,1)"),
+        ("exten", "_X.,1,Goto(s,1)"),
+        ("exten", "s,1,Answer()"),
+        ("same", "n,Set(MOR_ID=${MD5(${UNIQUEID})})"),
+        ("same", f"n,AudioSocket({call_id},{address})"),
+        ("same", "n,Hangup()"),
+    ]
+
+
 def read_trunk(sections: list[Section]) -> Optional[dict]:
     """The saved trunk, for the dashboard form (without the password)."""
     ours = {name: lines for name, lines in sections if name in TRUNK_SECTIONS}
@@ -150,6 +198,7 @@ def read_trunk(sections: list[Section]) -> Optional[dict]:
     if _REGISTRATION in ours:
         client = _URI.match(_get(ours[_REGISTRATION], "client_uri"))
         username = (client and client["user"]) or auth_username
+    matches = [value for key, value in ours.get(_IDENTIFY, []) if key == "match"]
     return {
         "server": contact["host"],
         "port": int(contact["port"] or 5060),
@@ -158,6 +207,8 @@ def read_trunk(sections: list[Section]) -> Optional[dict]:
         "auth_username": auth_username if auth_username != username else "",
         "has_password": bool(_get(auth, "password")),
         "registers": _REGISTRATION in ours,
+        "incoming_from": [source for source in matches if source != contact["host"]],
+        "answers_calls": _get(ours[ENDPOINT], "context") == INCOMING_CONTEXT,
     }
 
 
@@ -231,6 +282,7 @@ class SipTrunk:
                     if trunk["registers"]:
                         result["registration"] = await self._registration(ami)
                     result["reachability"] = await self._reachability(ami)
+                    trunk["answers_calls"] = trunk["answers_calls"] and await self._dialplan_loaded(ami)
         except AsteriskSetupError as error:
             result["error"] = str(error)
         return result
@@ -282,6 +334,7 @@ class SipTrunk:
                 # A rejected registration stops retrying, and a reload that
                 # leaves its section unchanged doesn't restart it.
                 await self._require(ami, {"Action": "PJSIPRegister", "Registration": _REGISTRATION})
+            await self._write_dialplan(ami)
 
     async def remove(self) -> None:
         async with self._lock, self._ami() as ami:
@@ -293,6 +346,51 @@ class SipTrunk:
                 await self._update(ami, "pjsip.conf", edits)
                 if "res_pjsip.so" not in await self._missing_modules(ami):
                     await self._reload_pjsip(ami)
+            if await self._remove_dialplan(ami):
+                await self._reload_dialplan(ami)
+
+    async def _write_dialplan(self, ami: AMIClient) -> None:
+        """Into the first file Asterisk's dialplan actually includes."""
+        assert self.settings is not None
+        await self._remove_dialplan(ami)
+        lines = incoming_dialplan(self.settings.address)
+        for filename in DIALPLAN_FILES:
+            response = await self._send(ami, {"Action": "GetConfig", "Filename": filename})
+            if response.get("Response") != "Success":
+                created = await self._send(ami, {"Action": "CreateConfig", "Filename": filename})
+                if created.get("Response") != "Success":
+                    continue  # no custom/ directory: not ASL3
+            edits = _Edits()
+            edits.section(INCOMING_CONTEXT, lines)
+            await self._update(ami, filename, edits)
+            await self._reload_dialplan(ami)
+            if await self._dialplan_loaded(ami):
+                return
+            await self._remove_dialplan(ami)
+        raise AsteriskSetupError(
+            f"Asterisk didn't load the {INCOMING_CONTEXT} dialplan for calls in. Check that extensions.conf is in use."
+        )
+
+    async def _remove_dialplan(self, ami: AMIClient) -> bool:
+        removed = False
+        for filename in DIALPLAN_FILES:
+            response = await self._send(ami, {"Action": "GetConfig", "Filename": filename})
+            if response.get("Response") != "Success":
+                continue
+            names = [name for name, _lines in parse_config(response)]
+            if INCOMING_CONTEXT in names:
+                edits = _Edits()
+                for _ in range(names.count(INCOMING_CONTEXT)):
+                    edits.add("DelCat", INCOMING_CONTEXT)
+                await self._update(ami, filename, edits)
+                removed = True
+        return removed
+
+    async def _reload_dialplan(self, ami: AMIClient) -> None:
+        await self._require(ami, {"Action": "ModuleLoad", "LoadType": "reload", "Module": "pbx_config.so"})
+
+    async def _dialplan_loaded(self, ami: AMIClient) -> bool:
+        return await self._list(ami, {"Action": "ShowDialPlan", "Context": INCOMING_CONTEXT}) is not None
 
     # -- AMI -----------------------------------------------------------------
 
@@ -377,23 +475,7 @@ class SipTrunk:
         await self._require(ami, {"Action": "ModuleLoad", "LoadType": "reload", "Module": "res_pjsip.so"})
 
     async def _list(self, ami: AMIClient, fields: AMIMessage) -> Optional[list[AMIMessage]]:
-        """A list action's events, or None if Asterisk has nothing to list."""
-        action_id = f"mor-list-{uuid.uuid4().hex}"
-        response = await self._send(ami, {**fields, "ActionID": action_id})
-        if response.get("Response") != "Success":
-            return None
-        items: list[AMIMessage] = []
-
-        async def collect() -> None:
-            async for event in ami.events():
-                if event.get("ActionID") != action_id:
-                    continue
-                if event.get("EventList") == "Complete":
-                    return
-                items.append(event)
-
-        await asyncio.wait_for(collect(), AMI_TIMEOUT)
-        return items
+        return await ami_list(ami, fields)
 
     async def _registration(self, ami: AMIClient) -> str:
         for event in await self._list(ami, {"Action": "PJSIPShowRegistrationsOutbound"}) or []:

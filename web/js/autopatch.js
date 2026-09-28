@@ -2,6 +2,7 @@ import { api } from "./api.js";
 import { loadConfig } from "./config.js";
 import { currentView, router } from "./router.js";
 import { session } from "./session.js";
+import { store } from "./store.js";
 import { escapeHtml, toast, toastError, withBusy } from "./ui.js";
 
 const REFRESH_MS = 1000;
@@ -19,6 +20,20 @@ const enableButton = document.getElementById("trunk-enable");
 const trunkForm = document.getElementById("trunk-form");
 const removeButton = document.getElementById("trunk-remove");
 const providerHint = document.getElementById("trunk-provider-hint");
+const incomingSwitch = document.querySelector('[name="autopatch_incoming_enabled"]');
+const incomingPin = document.querySelector('[name="autopatch_incoming_pin"]');
+
+// www.twilio.com/docs/sip-trunking/ip-addresses, "Regional signaling"
+const TWILIO_SIGNALING = [
+  "54.172.60.0/30",
+  "54.244.51.0/30",
+  "54.171.127.192/30",
+  "35.156.191.128/30",
+  "54.65.63.192/30",
+  "54.169.127.128/30",
+  "54.252.254.64/30",
+  "177.71.206.192/30",
+];
 
 const PROVIDERS = {
   voipms: {
@@ -37,7 +52,8 @@ const PROVIDERS = {
     placeholder: "yourtrunk.pstn.twilio.com",
     prefix: "+1",
     registers: false,
-    hint: "The trunk's termination URI, and a user from its credential list. Turn on Symmetric RTP in the trunk's settings. Caller ID must be a Twilio or verified number, like +18605550100.",
+    incoming: TWILIO_SIGNALING,
+    hint: "The trunk's termination URI, and a user from its credential list. Turn on Symmetric RTP in the trunk's settings. Caller ID must be a Twilio or verified number, like +18605550100. For calls in, set the trunk's origination URI to this Asterisk.",
   },
   other: {
     placeholder: "sip.example.com",
@@ -68,15 +84,18 @@ function describe(status) {
   }
   if (status.error) return escapeHtml(status.error);
   if (call) {
-    const number = `<strong>${escapeHtml(call.number)}</strong>`;
+    const number = `<strong>${escapeHtml(call.number || "an unknown number")}</strong>`;
+    const talking = clock(Date.now() / 1000 - call.connected_at);
+    if (call.direction === "incoming") return `On a call from ${number} for ${talking}.`;
     const by = call.actor === "DTMF" ? "over the air" : `by ${escapeHtml(call.actor)}`;
     if (call.state === "dialing") return `Dialing ${number} (started ${by})…`;
-    return `Connected to ${number} for ${clock(Date.now() / 1000 - call.connected_at)} (started ${by}).`;
+    return `Connected to ${number} for ${talking} (started ${by}).`;
   }
   const off = status.enabled ? "" : " Autopatch is turned off.";
   if (!last) return `No calls yet.${off}`;
   const talk = last.connected_at ? `, ${clock(last.ended_at - last.connected_at)}` : "";
-  return `Last call: ${escapeHtml(last.number)} at ${time(last.started_at)} — ${escapeHtml(last.result)}${talk}.${off}`;
+  const who = last.direction === "incoming" ? `from ${escapeHtml(last.number || "an unknown number")}` : escapeHtml(last.number);
+  return `Last call: ${who} at ${time(last.started_at)} — ${escapeHtml(last.result)}${talk}.${off}`;
 }
 
 function render(status) {
@@ -110,6 +129,7 @@ function chooseProvider() {
   else if (fixedServers.includes(elements.server.value)) elements.server.value = "";
   elements.ten_digit_prefix.value = provider.prefix;
   elements.registers.checked = provider.registers;
+  elements.incoming_from.value = (provider.incoming ?? []).join(" ");
   showProvider(elements.provider.value);
 }
 
@@ -120,6 +140,7 @@ function recognizeServer() {
   elements.provider.value = detected;
   elements.ten_digit_prefix.value = PROVIDERS[detected].prefix;
   elements.registers.checked = PROVIDERS[detected].registers;
+  elements.incoming_from.value = (PROVIDERS[detected].incoming ?? []).join(" ");
   showProvider(detected);
 }
 
@@ -129,6 +150,7 @@ function populateTrunk(trunk, prefix) {
   elements.provider.value = trunk ? providerFor(trunk.server) : "voipms";
   for (const name of ["server", "port", "transport", "username", "auth_username"]) elements[name].value = values[name];
   elements.registers.checked = values.registers;
+  elements.incoming_from.value = (values.incoming_from ?? []).join(" ");
   elements.password.value = "";
   elements.password.required = !trunk?.has_password;
   elements.password.placeholder = trunk?.has_password ? "Saved; leave blank to keep it" : "";
@@ -155,7 +177,11 @@ function describeTrunk(status) {
   if (status.error) return { text: escapeHtml(status.error) };
   const missing = status.missing_modules;
   if (missing.length) {
-    const what = missing.some((m) => SIP_MODULE.test(m)) ? "SIP" : "AudioSocket";
+    const what = missing.some((m) => SIP_MODULE.test(m))
+      ? "SIP"
+      : missing.some((m) => m.includes("audiosocket"))
+        ? "AudioSocket"
+        : "Part of the dialplan autopatch uses";
     const who = session?.role === "admin" ? "Turning it on" : "An admin can turn it on here, which";
     return {
       text: `${what} is turned off in Asterisk. ${who} also sets it to load whenever Asterisk starts.`,
@@ -167,7 +193,8 @@ function describeTrunk(status) {
     return { text: `No phone line yet. ${next}` };
   }
   const line = `<strong>${escapeHtml(trunk.username)}</strong> at <strong>${escapeHtml(trunk.server)}</strong>`;
-  const unused = status.in_use ? "" : " Autopatch isn't using it: the dial string below points somewhere else.";
+  let unused = status.in_use ? "" : " Autopatch isn't using it: the dial string below points somewhere else.";
+  if (!trunk.answers_calls) unused += " Save it again to answer calls in.";
   if (trunk.registers) {
     const registration = status.registration ?? "Unknown";
     if (registration === "Registered") return { text: `Registered as ${line}.${unused}`, pill: ["Registered", "on"] };
@@ -221,6 +248,7 @@ async function saveTrunk(event) {
           password: elements.password.value,
           registers: elements.registers.checked,
           ten_digit_prefix: elements.ten_digit_prefix.value,
+          incoming_from: elements.incoming_from.value.split(/[\s,]+/).filter(Boolean),
         },
       });
       trunkFormDirty = false;
@@ -280,7 +308,13 @@ async function dial() {
   }
 }
 
+function requirePin() {
+  incomingPin.required = incomingSwitch.checked;
+}
+
 export function initAutopatch() {
+  incomingSwitch.addEventListener("change", requirePin);
+  store.addEventListener("config", () => queueMicrotask(requirePin)); // after the form is filled in
   dialButton.addEventListener("click", dial);
   numberInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !dialButton.disabled) dial();

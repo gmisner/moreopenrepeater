@@ -943,6 +943,7 @@ def create_app(
             auth_username=body.auth_username,
             password=body.password or None,
             registers=body.registers,
+            incoming_from=tuple(body.incoming_from),
         )
         status = await change_trunk(sip_trunk.save(trunk))
         service.update_config(autopatch_dial_string=TRUNK_DIAL_STRING, autopatch_ten_digit_prefix=body.ten_digit_prefix)

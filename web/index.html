@@ -692,6 +692,11 @@
                   <option value="tcp">TCP</option>
                 </select>
               </label>
+              <label class="span-2">Calls in come from
+                <input type="text" name="incoming_from" autocomplete="off" spellcheck="false" placeholder="Just the server" />
+                <small>Addresses or networks (like <code>54.172.60.0/30</code>), separated by spaces, that your provider sends
+                  calls from besides the server. Asterisk ignores calls from anywhere else.</small>
+              </label>
             </div>
             <label class="switch">
               <input type="checkbox" name="registers" />
@@ -705,7 +710,8 @@
             </div>
             <small class="muted">Saving writes the line to Asterisk's <code>pjsip.conf</code>, in sections named
               <code>mor-trunk&hellip;</code>, and points autopatch at it. Other settings in that file are kept, but
-              Asterisk removes its comments.</small>
+              Asterisk removes its comments. Calls in are answered by a <code>mor-incoming</code> context in
+              <code>custom/extensions.conf</code> (or <code>extensions.conf</code> without AllStarLink).</small>
           </form>
         </div>
         <form class="card config-form" data-config-form>
@@ -749,6 +755,29 @@
               <small>Your provider may only allow numbers on your account.</small>
             </label>
           </div>
+          <div class="form-actions">
+            <span class="spacer"></span>
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+        <form class="card config-form" data-config-form>
+          <div class="card-header"><h2>Calls in</h2></div>
+          <label class="switch">
+            <input type="checkbox" name="autopatch_incoming_enabled" />
+            <span class="switch-track"></span>
+            <span>Answer calls to the phone line</span>
+          </label>
+          <div class="form-grid">
+            <label>Access code
+              <input type="text" name="autopatch_incoming_pin" pattern="[0-9]{4,8}" inputmode="numeric" autocomplete="off" placeholder="4 to 8 digits" />
+              <small>Callers key it in, then #. Calls aren't answered without one.</small>
+            </label>
+          </div>
+          <small class="muted">Callers get three tries at the code. Then the repeater says &ldquo;Incoming phone call&rdquo;
+            and puts them on the air, with the same time limit and hang-up code as calls out. Autopatch has to be allowed
+            above, and the provider has to be able to reach Asterisk; see the setup guide.</small>
           <div class="form-actions">
             <span class="spacer"></span>
             <span class="dirty-note">Unsaved changes</span>

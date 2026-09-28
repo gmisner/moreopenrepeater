@@ -1,6 +1,7 @@
 """Pydantic request/response models for the repeater API."""
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any, Literal, Optional
 
@@ -12,6 +13,9 @@ CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
 WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
 CosSource = Literal["vox", "ctcss", "cm108"]
 Role = Literal["admin", "operator", "viewer"]
+
+# A hostname, or an IPv4/IPv6 address with an optional /prefix, as PJSIP's identify `match` takes.
+_SOURCE = re.compile(r"^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|[0-9A-Fa-f:.]{2,45})(?:/\d{1,3})?$")
 
 
 class StatusResponse(BaseModel):
@@ -89,6 +93,8 @@ class ConfigResponse(BaseModel):
     autopatch_blocked: str
     autopatch_max_call_seconds: float
     autopatch_ring_seconds: float
+    autopatch_incoming_enabled: bool
+    autopatch_incoming_pin: str
     backup_enabled: bool
     backup_interval_hours: float
     backup_keep: int
@@ -175,6 +181,8 @@ class ConfigUpdateRequest(BaseModel):
     autopatch_blocked: Optional[str] = Field(default=None, max_length=500, pattern=r"^[0-9XNZxnz,\s]*$")
     autopatch_max_call_seconds: Optional[float] = Field(default=None, ge=30, le=3600)
     autopatch_ring_seconds: Optional[float] = Field(default=None, ge=5, le=120)
+    autopatch_incoming_enabled: Optional[bool] = None
+    autopatch_incoming_pin: Optional[str] = Field(default=None, pattern=r"^(?:[0-9]{4,8})?$")
     backup_enabled: Optional[bool] = None
     backup_interval_hours: Optional[float] = Field(default=None, ge=1, le=720)
     backup_keep: Optional[int] = Field(default=None, ge=1, le=100)
@@ -193,6 +201,7 @@ class AutopatchCallResponse(BaseModel):
     connected_at: Optional[float]
     ended_at: Optional[float]
     result: str
+    direction: Literal["outgoing", "incoming"]
 
 
 class AutopatchStatusResponse(BaseModel):
@@ -215,6 +224,16 @@ class SipTrunkRequest(BaseModel):
     password: str = Field(default="", max_length=128, pattern=r"^(?:[!-~](?:[ -~]*[!-~])?)?$")
     registers: bool = True
     ten_digit_prefix: Literal["", "1", "+1"] = ""
+    # Hostnames, IP addresses or networks (a.b.c.d/nn) calls in come from, besides the server.
+    incoming_from: list[str] = Field(default=[], max_length=32)
+
+    @field_validator("incoming_from")
+    @classmethod
+    def _sources(cls, sources: list[str]) -> list[str]:
+        for source in sources:
+            if not _SOURCE.match(source):
+                raise ValueError(f"{source!r} isn't a hostname, IP address or network")
+        return sources
 
 
 class SipTrunkSettings(BaseModel):
@@ -225,6 +244,8 @@ class SipTrunkSettings(BaseModel):
     auth_username: str
     has_password: bool
     registers: bool
+    incoming_from: list[str]
+    answers_calls: bool  # Asterisk has the dialplan for calls in (lines saved by older versions don't)
 
 
 class SipTrunkStatusResponse(BaseModel):

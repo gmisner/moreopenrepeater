@@ -1,0 +1,143 @@
+import dataclasses
+import tempfile
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from controller.state_machine import RepeaterConfig
+from playout.renderer import ClipRenderer, UnknownClipError
+from playout.tts import TTSError
+from playout.wav import encode_wav
+
+RATE = 8000
+
+
+class FakeTTS:
+    name = "fake"
+
+    def __init__(self, fail: bool = False):
+        self.calls: list[tuple[str, str]] = []
+        self.fail = fail
+
+    def synthesize(self, text, voice=""):
+        self.calls.append((text, voice))
+        if self.fail:
+            raise TTSError("boom")
+        return np.full(RATE, 0.1, dtype=np.float32), RATE  # 1 second of "speech"
+
+
+def make_renderer(tts=None, assets=None):
+    tmp = Path(tempfile.mkdtemp())
+    for asset_id, samples in (assets or {}).items():
+        (tmp / f"{asset_id}.wav").write_bytes(encode_wav(samples, RATE))
+    return ClipRenderer(lambda asset_id: tmp / f"{asset_id}.wav", tts=tts, sample_rate=RATE), tmp
+
+
+def config(**overrides):
+    return dataclasses.replace(RepeaterConfig(callsign="W1AW"), **overrides)
+
+
+def test_builtin_courtesy_tone_uses_style_and_duration():
+    renderer, _ = make_renderer()
+    samples = renderer.render("courtesy_tone", config(courtesy_tone_duration=0.25, courtesy_tone_style="chirp"))
+    assert abs(len(samples) - 2000) <= 2
+
+
+def test_assigned_courtesy_asset_replaces_the_builtin():
+    clip = np.full(123, 0.2, dtype=np.float32)
+    renderer, _ = make_renderer(assets={"abc": clip})
+    samples = renderer.render("courtesy_tone", config(courtesy_tone_asset_id="abc"))
+    assert len(samples) == 123
+
+
+def test_missing_asset_falls_back_to_builtin_tone():
+    renderer, _ = make_renderer()
+    samples = renderer.render("timeout_tone", config(timeout_tone_asset_id="deleted"))
+    assert len(samples) == int(0.75 * RATE)
+
+
+def test_cw_id_spells_the_callsign():
+    renderer, _ = make_renderer()
+    samples = renderer.render("id", config(id_mode="cw", cw_wpm=20))
+    # W(9) + gap(3) + 1(17) + gap(3) + A(5) + gap(3) + W(9) = 49 units of 60ms at 20 WPM.
+    assert abs(len(samples) / RATE - 49 * 0.06) < 0.01
+
+
+def test_voice_id_uses_tts_with_the_formatted_text():
+    tts = FakeTTS()
+    renderer, _ = make_renderer(tts=tts)
+    samples = renderer.render("id", config(id_mode="voice", voice_id_text="This is {callsign}", tts_voice="Alex"))
+    assert tts.calls == [("This is W 1 A W", "Alex")]
+    assert len(samples) == RATE
+    assert np.isclose(np.max(np.abs(samples)), 0.5)  # speech normalized to a consistent level
+
+
+def test_voice_id_prefers_an_uploaded_clip_over_tts():
+    tts = FakeTTS()
+    renderer, _ = make_renderer(tts=tts, assets={"myid": np.full(50, 0.3, dtype=np.float32)})
+    samples = renderer.render("id", config(id_mode="voice", id_asset_id="myid"))
+    assert len(samples) == 50
+    assert tts.calls == []
+
+
+def test_voice_id_falls_back_to_cw_without_tts():
+    renderer, _ = make_renderer(tts=None)
+    voice = renderer.render("id", config(id_mode="voice"))
+    cw = renderer.render("id", config(id_mode="cw"))
+    assert len(voice) == len(cw) > 0
+
+
+def test_voice_id_falls_back_to_cw_when_tts_fails():
+    renderer, _ = make_renderer(tts=FakeTTS(fail=True))
+    assert len(renderer.render("id", config(id_mode="voice"))) > 0
+
+
+def test_both_mode_is_voice_then_gap_then_cw():
+    renderer, _ = make_renderer(tts=FakeTTS())
+    cw_len = len(renderer.render("id", config(id_mode="cw")))
+    both = renderer.render("id", config(id_mode="both"))
+    assert len(both) == RATE + int(0.4 * RATE) + cw_len
+
+
+def test_empty_callsign_renders_silence_not_an_error():
+    renderer, _ = make_renderer()
+    assert len(renderer.render("id", config(callsign="", id_mode="cw"))) == 0
+
+
+def test_tts_clip_speaks_arbitrary_text():
+    tts = FakeTTS()
+    renderer, _ = make_renderer(tts=tts)
+    renderer.render("tts:Net tonight at 8", config())
+    assert tts.calls[0][0] == "Net tonight at 8"
+
+
+def test_asset_clip_plays_an_uploaded_file():
+    renderer, _ = make_renderer(assets={"xyz": np.zeros(77, dtype=np.float32)})
+    assert len(renderer.render("asset:xyz", config())) == 77
+
+
+@pytest.mark.parametrize("clip", ["nonsense", "asset:missing"])
+def test_unknown_clips_raise(clip):
+    renderer, _ = make_renderer()
+    with pytest.raises(UnknownClipError):
+        renderer.render(clip, config())
+
+
+def test_results_are_cached_until_relevant_config_changes():
+    tts = FakeTTS()
+    renderer, _ = make_renderer(tts=tts)
+    renderer.render("id", config(id_mode="voice"))
+    renderer.render("id", config(id_mode="voice", hang_time=9.0))  # irrelevant field
+    assert len(tts.calls) == 1
+    renderer.render("id", config(id_mode="voice", callsign="K1ABC"))
+    assert len(tts.calls) == 2
+
+
+def test_cached_duration_never_renders():
+    tts = FakeTTS()
+    renderer, _ = make_renderer(tts=tts)
+    assert renderer.cached_duration("id", config(id_mode="voice")) is None
+    assert tts.calls == []
+    renderer.warm(config(id_mode="voice"))
+    assert renderer.cached_duration("id", config(id_mode="voice")) == 1.0

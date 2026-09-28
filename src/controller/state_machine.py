@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional
 
 from .events import (
     AssertPTT,
@@ -53,6 +53,10 @@ class RepeaterConfig:
     courtesy_tone_asset_id: Optional[str] = None
     id_asset_id: Optional[str] = None
     timeout_tone_asset_id: Optional[str] = None
+    courtesy_tone_style: Literal["beep", "high_low", "low_high", "triple", "chirp"] = "beep"
+    voice_id_text: str = "{callsign} repeater"
+    id_phonetic: bool = False
+    tts_voice: str = ""
     aprs_enabled: bool = False
     aprs_server: str = "rotate.aprs2.net"
     aprs_port: int = 14580
@@ -69,11 +73,17 @@ class RepeaterController:
         config: RepeaterConfig,
         macros: Optional[list[Macro]] = None,
         now: float = 0.0,
+        clip_duration: Callable[[str], Optional[float]] = lambda clip: None,
     ) -> None:
+        """`clip_duration` reports how long a clip really plays when the
+        playout layer knows (e.g. a rendered voice ID); the ID state lasts
+        that long instead of the configured `id_audio_duration` guess."""
         self.config = config
+        self._clip_duration = clip_duration
         self.state = IDLE
         self._dtmf = DTMFCommandDecoder(macros or [])
         self._ctcss_present = config.require_ctcss_hz is None
+        self._last_ctcss_hz: Optional[float] = None
         self._tot_deadline: Optional[float] = None
         self._state_deadline: Optional[float] = None
         self._id_due_at = now + config.id_interval
@@ -88,12 +98,23 @@ class RepeaterController:
     def set_macros(self, macros: list[Macro]) -> None:
         self._dtmf.set_macros(macros)
 
+    def update_config(self, config: RepeaterConfig, now: float) -> None:
+        """Apply new settings to derived state too, so an edit takes effect
+        now rather than at the next ID or the next CTCSS change."""
+        previous = self.config
+        self.config = config
+        if config.id_interval != previous.id_interval:
+            self._id_due_at = now + config.id_interval
+        if config.require_ctcss_hz != previous.require_ctcss_hz:
+            self._ctcss_present = config.require_ctcss_hz is None or self._last_ctcss_hz == config.require_ctcss_hz
+
     def handle_event(self, event: ControllerEvent, now: float) -> list[ControllerCommand]:
         commands: list[ControllerCommand] = []
 
         if isinstance(event, COSChanged):
             commands += self._on_cos_changed(event.active, now)
         elif isinstance(event, CTCSSChanged):
+            self._last_ctcss_hz = event.tone_hz
             self._ctcss_present = (
                 self.config.require_ctcss_hz is None or event.tone_hz == self.config.require_ctcss_hz
             )
@@ -190,7 +211,7 @@ class RepeaterController:
     def _enter_id(self, now: float) -> list[ControllerCommand]:
         self._resume_state_after_id = self.state
         self._set_state(TRANSMITTING_ID)
-        self._state_deadline = now + self.config.id_audio_duration
+        self._state_deadline = now + (self._clip_duration("id") or self.config.id_audio_duration)
         self._id_due_at = now + self.config.id_interval
         return [AssertPTT(active=True), PlayAudio(clip="id")]
 

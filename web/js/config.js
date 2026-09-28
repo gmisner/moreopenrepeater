@@ -1,7 +1,7 @@
 import { api } from "./api.js";
-import { playCW } from "./cw.js";
+import { playClip } from "./player.js";
 import { store } from "./store.js";
-import { escapeHtml, formatDuration, toast, toastError } from "./ui.js";
+import { escapeHtml, formatDuration, toast, toastError, withBusy } from "./ui.js";
 
 // Optional fields the API only resets to None through an explicit
 // `clear_<field>: true`, since an omitted field means "leave unchanged".
@@ -108,17 +108,33 @@ async function save(form) {
   }
 }
 
-function initCWPreview() {
-  const button = document.getElementById("cw-preview");
-  button.addEventListener("click", () => {
-    const form = button.closest("form");
-    const callsign = form.elements.callsign.value.trim();
-    if (!callsign) {
-      toast("Enter a callsign first", "error");
-      return;
-    }
-    playCW(callsign, Number(form.elements.cw_wpm.value) || 20, Number(form.elements.cw_tone_hz.value) || 700);
-  });
+// Every settings form's current (possibly unsaved) values, so a preview
+// sounds like what would go out on air after pressing Save.
+export function unsavedConfig() {
+  return Object.assign({}, ...configForms.map(collect));
+}
+
+function initPreviews() {
+  for (const button of document.querySelectorAll("[data-preview-clip]")) {
+    button.addEventListener("click", () =>
+      withBusy(button, async () => {
+        try {
+          await playClip(button.dataset.previewClip, unsavedConfig());
+        } catch (error) {
+          toastError(error);
+        }
+      }),
+    );
+  }
+}
+
+async function loadTTSInfo() {
+  try {
+    const { engine } = await api("/api/audio/tts");
+    document.getElementById("tts-engine").textContent = engine ? `text-to-speech (${engine})` : "CW — no text-to-speech engine installed";
+  } catch {
+    // Informational only.
+  }
 }
 
 function initGeolocation() {
@@ -169,6 +185,7 @@ export function initConfig() {
   window.addEventListener("beforeunload", (event) => {
     if (configForms.some((f) => f.classList.contains("dirty"))) event.preventDefault();
   });
-  initCWPreview();
+  initPreviews();
   initGeolocation();
+  loadTTSInfo();
 }

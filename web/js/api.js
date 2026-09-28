@@ -15,7 +15,7 @@ function describeError(status, payload) {
   return `Request failed (${status})`;
 }
 
-export async function api(path, { method = "GET", json, body } = {}) {
+async function request(path, { method = "GET", json, body } = {}) {
   const init = { method, headers: {} };
   if (json !== undefined) {
     init.headers["Content-Type"] = "application/json";
@@ -28,9 +28,18 @@ export async function api(path, { method = "GET", json, body } = {}) {
     location.replace("/login");
     throw new ApiError(401, "Your session has expired");
   }
-  const payload = await response.json().catch(() => null);
   if (!response.ok) {
+    const payload = await response.json().catch(() => null);
     throw new ApiError(response.status, describeError(response.status, payload));
   }
-  return payload;
+  return response;
+}
+
+export async function api(path, options) {
+  const response = await request(path, options);
+  return response.json().catch(() => null);
+}
+
+export async function apiBlob(path, options) {
+  return (await request(path, options)).blob();
 }

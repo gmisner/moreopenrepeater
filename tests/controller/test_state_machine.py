@@ -125,3 +125,44 @@ def test_remote_keyed_triggers_receiving_without_ctcss_gate():
 
     controller.handle_event(RemoteKeyed(node_id="1998", keyed=False), now=1.0)
     assert controller.state == COURTESY_TONE
+
+
+def test_changing_id_interval_reschedules_the_next_id_immediately():
+    controller = RepeaterController(make_config(id_interval=600.0), now=0.0)
+
+    controller.update_config(make_config(id_interval=10.0), now=5.0)
+
+    controller.tick(now=14.9)
+    assert controller.state == IDLE
+    controller.tick(now=15.0)
+    assert controller.state == TRANSMITTING_ID
+
+
+def test_enabling_required_ctcss_closes_carrier_access_immediately():
+    controller = RepeaterController(make_config(), now=0.0)
+
+    controller.update_config(make_config(require_ctcss_hz=100.0), now=1.0)
+
+    controller.handle_event(COSChanged(active=True), now=1.1)
+    assert controller.state == IDLE
+
+
+def test_enabling_required_ctcss_honours_a_tone_already_present():
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.handle_event(CTCSSChanged(tone_hz=100.0), now=0.5)
+
+    controller.update_config(make_config(require_ctcss_hz=100.0), now=1.0)
+
+    controller.handle_event(COSChanged(active=True), now=1.1)
+    assert controller.state == RECEIVING
+
+
+def test_id_state_uses_the_reported_clip_duration_when_known():
+    controller = RepeaterController(
+        make_config(id_interval=10.0, id_audio_duration=0.5), now=0.0, clip_duration=lambda clip: 3.0
+    )
+    controller.tick(now=10.0)
+    controller.tick(now=12.9)
+    assert controller.state == TRANSMITTING_ID
+    controller.tick(now=13.0)
+    assert controller.state == IDLE

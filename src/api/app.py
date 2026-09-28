@@ -23,6 +23,9 @@ from controller.macros import Macro
 from controller.state_machine import RepeaterConfig
 from link.aprs_client import APRSClient, format_position_report, format_status_report
 from link.node_link import NodeLinkClient
+from playout.renderer import ClipRenderer, UnknownClipError
+from playout.tts import TTSError, detect_tts
+from playout.wav import encode_wav
 
 from .assets import AssetKind, AudioAssetStore
 from .auth import (
@@ -37,6 +40,7 @@ from .auth import (
 from .logging_config import configure_logging
 from .models import (
     AssetResponse,
+    AudioPreviewRequest,
     ConfigResponse,
     ConfigUpdateRequest,
     LoginRequest,
@@ -50,6 +54,7 @@ from .models import (
     SnapshotImportRequest,
     SnapshotModel,
     StatusResponse,
+    TTSInfoResponse,
 )
 from .persistence import StateStore
 from .service import RepeaterService, StatusSnapshot
@@ -80,6 +85,7 @@ TICK_INTERVAL_SECONDS = 0.05
 APRS_DISABLED_POLL_SECONDS = 5.0
 LINK_RECONNECT_DELAY_SECONDS = 5.0
 LOGIN_FAILURE_DELAY_SECONDS = 1.0
+MAX_PREVIEW_CLIP_LENGTH = 2000
 
 _aprs_logger = logging.getLogger("moreopenrepeater.aprs")
 _link_logger = logging.getLogger("moreopenrepeater.link")
@@ -128,6 +134,28 @@ def _asset_response(asset) -> AssetResponse:
     return AssetResponse(**dataclasses.asdict(asset))
 
 
+def _validated_config(values: dict) -> RepeaterConfig:
+    """Type-check a full config dict through the API model, turning bad
+    values into the same 422 FastAPI gives for a bad request body."""
+    try:
+        validated = ConfigResponse.model_validate({k: v for k, v in values.items() if k in ConfigResponse.model_fields})
+    except ValidationError as error:
+        raise RequestValidationError(error.errors()) from error
+    return RepeaterConfig(**validated.model_dump())
+
+
+def _apply_overrides(base: RepeaterConfig, overrides: dict) -> RepeaterConfig:
+    """Layer dashboard form values (including `clear_<field>` flags) over a config."""
+    merged = dataclasses.asdict(base)
+    for key, value in overrides.items():
+        if key.startswith("clear_"):
+            if value:
+                merged[key.removeprefix("clear_")] = None
+        else:
+            merged[key] = value
+    return _validated_config(merged)
+
+
 def create_app(
     service: Optional[RepeaterService] = None,
     start_background_tick: bool = True,
@@ -136,11 +164,15 @@ def create_app(
     link_settings: Optional[LinkSettings] = None,
     auth_settings: Optional[AuthSettings] = None,
     state_store: Optional[StateStore] = None,
+    renderer: Optional[ClipRenderer] = None,
 ) -> FastAPI:
     """`state_store` defaults to None (in-memory only) so tests never touch
     the real `data/state.json`; the module-level `app` below opts in."""
-    service = service or RepeaterService(state_store=state_store)
     assets_store = assets_store or AudioAssetStore(DEFAULT_DATA_DIR)
+    renderer = renderer or ClipRenderer(assets_store.path_for, tts=detect_tts())
+    service = service or RepeaterService(state_store=state_store)
+    if service.renderer is None:
+        service.renderer = renderer
     log_path = log_path or DEFAULT_LOG_PATH
     link_settings = link_settings if link_settings is not None else link_settings_from_env()
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
@@ -237,6 +269,9 @@ def create_app(
 
             tick_task = asyncio.create_task(tick_loop())
             aprs_task = asyncio.create_task(aprs_beacon_loop())
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, renderer.warm, service.config)
+            service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
             if link_settings is not None:
                 link_task = asyncio.create_task(node_link_loop())
         yield
@@ -249,6 +284,16 @@ def create_app(
 
     app = FastAPI(title="moreopenrepeater API", lifespan=lifespan)
     app.state.service = service
+
+    @app.middleware("http")
+    async def revalidate_static_files(request: Request, call_next):
+        # Without this, browsers heuristically cache app.js/style.css and
+        # keep running the old dashboard after an upgrade. "no-cache" still
+        # allows caching -- it just forces a cheap ETag revalidation (304).
+        response = await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", "no-cache")
+        return response
 
     @app.get("/api/session", response_model=SessionResponse)
     def get_session(request: Request) -> SessionResponse:
@@ -342,13 +387,30 @@ def create_app(
 
     @app.post("/api/snapshot", response_model=SnapshotModel, dependencies=auth_dependencies)
     async def post_snapshot(snapshot: SnapshotImportRequest) -> SnapshotModel:
-        merged = {**dataclasses.asdict(RepeaterConfig()), **snapshot.config}
-        try:
-            config = ConfigResponse.model_validate({k: v for k, v in merged.items() if k in ConfigResponse.model_fields})
-        except ValidationError as error:
-            raise RequestValidationError(error.errors()) from error
-        service.import_snapshot({"config": config.model_dump(), "macros": [m.model_dump() for m in snapshot.macros]})
+        config = _validated_config({**dataclasses.asdict(RepeaterConfig()), **snapshot.config})
+        service.import_snapshot(
+            {"config": dataclasses.asdict(config), "macros": [m.model_dump() for m in snapshot.macros]}
+        )
         return SnapshotModel(**service.export_snapshot())
+
+    @app.get("/api/audio/tts", response_model=TTSInfoResponse, dependencies=auth_dependencies)
+    def get_tts_info() -> TTSInfoResponse:
+        return TTSInfoResponse(engine=renderer.tts.name if renderer.tts is not None else None)
+
+    # Plain `def`: FastAPI runs it in a worker thread, so a slow TTS render
+    # doesn't stall the event loop (and with it the controller tick).
+    @app.post("/api/audio/preview", response_class=Response, dependencies=auth_dependencies)
+    def audio_preview(body: AudioPreviewRequest) -> Response:
+        if len(body.clip) > MAX_PREVIEW_CLIP_LENGTH:
+            raise HTTPException(status_code=400, detail="Text is too long to preview")
+        config = _apply_overrides(service.config, body.config)
+        try:
+            samples = renderer.render(body.clip, config)
+        except UnknownClipError:
+            raise HTTPException(status_code=404, detail=f"Unknown clip {body.clip!r}")
+        except TTSError as error:
+            raise HTTPException(status_code=503, detail=str(error))
+        return Response(encode_wav(samples, renderer.sample_rate), media_type="audio/wav")
 
     @app.get("/api/assets", response_model=list[AssetResponse], dependencies=auth_dependencies)
     def list_assets() -> list[AssetResponse]:

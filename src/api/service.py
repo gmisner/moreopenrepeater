@@ -30,6 +30,8 @@ from controller.events import (
 from controller.macros import Macro
 from controller.state_machine import RepeaterConfig, RepeaterController
 
+from playout.renderer import ClipRenderer
+
 from .persistence import StateStore
 
 _logger = logging.getLogger("moreopenrepeater.service")
@@ -75,16 +77,21 @@ class RepeaterService:
         clock: Callable[[], float] = time.monotonic,
         link_command_sink: Callable[[SendLinkCommand], None] = lambda command: None,
         state_store: Optional[StateStore] = None,
+        renderer: Optional[ClipRenderer] = None,
     ) -> None:
         self._clock = clock
         self._link_command_sink = link_command_sink
         self._state_store = state_store
+        self.renderer = renderer
+        self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
         if saved is not None:
             config = config_from_snapshot(saved)
             macros = macros_from_snapshot(saved)
             _logger.info("loaded saved state from %s", state_store.path)
-        self.controller = RepeaterController(config or RepeaterConfig(), macros=macros or [], now=clock())
+        self.controller = RepeaterController(
+            config or RepeaterConfig(), macros=macros or [], now=clock(), clip_duration=self._clip_duration
+        )
         self.ptt_active = False
         self.cos_active = False
         self.ctcss_hz: Optional[float] = None
@@ -98,6 +105,14 @@ class RepeaterService:
 
     def set_link_command_sink(self, sink: Callable[[SendLinkCommand], None]) -> None:
         self._link_command_sink = sink
+
+    def add_config_listener(self, listener: Callable[[RepeaterConfig], None]) -> None:
+        self._config_listeners.append(listener)
+
+    def _clip_duration(self, clip: str) -> Optional[float]:
+        if self.renderer is None:
+            return None
+        return self.renderer.cached_duration(clip, self.controller.config)
 
     def snapshot(self) -> StatusSnapshot:
         return StatusSnapshot(
@@ -173,9 +188,9 @@ class RepeaterService:
     def update_config(self, **overrides: object) -> RepeaterConfig:
         _logger.info("update_config(%s)", overrides)
         new_config = dataclasses.replace(self.controller.config, **overrides)
-        self.controller.config = new_config
+        self.controller.update_config(new_config, self._clock())
         self._persist()
-        self._notify()
+        self._config_changed()
         return new_config
 
     def list_macros(self) -> list[Macro]:
@@ -206,9 +221,14 @@ class RepeaterService:
         """Replace config and macros wholesale. Fields missing from `data`
         (e.g. a backup taken before a setting existed) get their defaults."""
         _logger.info("import_snapshot()")
-        self.controller.config = config_from_snapshot(data)
+        self.controller.update_config(config_from_snapshot(data), self._clock())
         self.controller.set_macros(macros_from_snapshot(data))
         self._persist()
+        self._config_changed()
+
+    def _config_changed(self) -> None:
+        for listener in self._config_listeners:
+            listener(self.controller.config)
         self._notify()
 
     def _persist(self) -> None:

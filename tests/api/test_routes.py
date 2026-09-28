@@ -279,3 +279,10 @@ def test_logs_endpoint_respects_the_lines_query_param():
     response = client.get("/api/logs", params={"lines": 3})
 
     assert len(response.json()) == 3
+
+
+def test_static_files_are_served_with_no_cache_so_upgrades_take_effect():
+    client, service, clock = make_client()
+
+    assert client.get("/style.css").headers["cache-control"] == "no-cache"
+    assert client.get("/").headers["cache-control"] == "no-cache"

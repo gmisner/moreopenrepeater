@@ -156,8 +156,9 @@
               <span class="input-unit"><input type="number" step="1" min="1" name="id_interval" required /><span>s</span></span>
               <small>FCC &sect;97.119 requires an ID at least every 10 minutes (600 s).</small>
             </label>
-            <label>ID audio duration
+            <label>ID length fallback
               <span class="input-unit"><input type="number" step="0.1" min="0.1" name="id_audio_duration" required /><span>s</span></span>
+              <small>Only used until the ID audio has been rendered and measured.</small>
             </label>
             <label>CW speed
               <span class="input-unit"><input type="number" step="1" min="1" max="60" name="cw_wpm" required /><span>WPM</span></span>
@@ -166,8 +167,26 @@
               <span class="input-unit"><input type="number" step="1" min="100" max="3000" name="cw_tone_hz" required /><span>Hz</span></span>
             </label>
           </div>
+          <h2 class="section-title">Voice ID</h2>
+          <p class="muted small">Spoken with <strong id="tts-engine">text-to-speech</strong> unless a voice ID clip
+            is assigned under Audio &amp; tones.</p>
+          <div class="form-grid">
+            <label class="span-2">What to say
+              <input type="text" name="voice_id_text" placeholder="{callsign} repeater" />
+              <small><code>{callsign}</code> is replaced with your callsign, spelled out.</small>
+            </label>
+            <label>Voice
+              <input type="text" name="tts_voice" placeholder="engine default" />
+              <small>e.g. <code>Samantha</code> for macOS, <code>en-us</code> for espeak-ng.</small>
+            </label>
+            <label class="switch switch-inline">
+              <input type="checkbox" name="id_phonetic" />
+              <span class="switch-track"></span>
+              <span>Spell callsign phonetically (Whiskey One Alpha&hellip;)</span>
+            </label>
+          </div>
           <div class="form-actions">
-            <button type="button" class="btn btn-ghost" id="cw-preview">&#9654; Preview CW ID</button>
+            <button type="button" class="btn btn-ghost" data-preview-clip="id">&#9654; Preview ID</button>
             <span class="spacer"></span>
             <span class="dirty-note">Unsaved changes</span>
             <button type="button" class="btn btn-ghost" data-reset>Discard</button>
@@ -180,13 +199,22 @@
       <section class="view" data-view="audio" data-title="Audio & tones" hidden>
         <header class="view-header">
           <h1>Audio &amp; tones</h1>
-          <p class="muted">Upload custom clips and choose which ones the repeater uses.
-            Storage and selection only for now &mdash; playback arrives once audio_io is wired in.</p>
+          <p class="muted">Choose the sounds the repeater transmits. Use the preview buttons to hear exactly
+            what goes out on the air, including unsaved changes.</p>
         </header>
         <form class="card config-form" data-config-form>
-          <h2>Assigned clips</h2>
+          <h2>Sounds</h2>
           <div class="form-grid">
-            <label>Courtesy tone
+            <label>Built-in courtesy tone
+              <select name="courtesy_tone_style">
+                <option value="beep">Beep</option>
+                <option value="high_low">High&ndash;low</option>
+                <option value="low_high">Low&ndash;high</option>
+                <option value="triple">Triple beep</option>
+                <option value="chirp">Chirp</option>
+              </select>
+            </label>
+            <label>Courtesy tone clip
               <select name="courtesy_tone_asset_id" data-asset-select="courtesy_tone"><option value="">(built-in)</option></select>
             </label>
             <label>Voice ID
@@ -197,6 +225,10 @@
             </label>
           </div>
           <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-preview-clip="courtesy_tone">&#9654; Courtesy tone</button>
+            <button type="button" class="btn btn-ghost" data-preview-clip="id">&#9654; ID</button>
+            <button type="button" class="btn btn-ghost" data-preview-clip="timeout_tone">&#9654; Timeout tone</button>
+            <span class="spacer"></span>
             <span class="dirty-note">Unsaved changes</span>
             <button type="button" class="btn btn-ghost" data-reset>Discard</button>
             <button type="submit" class="btn btn-primary">Save</button>

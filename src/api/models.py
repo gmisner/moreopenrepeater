@@ -5,6 +5,8 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
+
 
 class StatusResponse(BaseModel):
     state: str
@@ -30,6 +32,10 @@ class ConfigResponse(BaseModel):
     courtesy_tone_asset_id: Optional[str]
     id_asset_id: Optional[str]
     timeout_tone_asset_id: Optional[str]
+    courtesy_tone_style: CourtesyToneStyle
+    voice_id_text: str
+    id_phonetic: bool
+    tts_voice: str
     aprs_enabled: bool
     aprs_server: str
     aprs_port: int
@@ -58,6 +64,10 @@ class ConfigUpdateRequest(BaseModel):
     clear_courtesy_tone_asset_id: bool = False
     clear_id_asset_id: bool = False
     clear_timeout_tone_asset_id: bool = False
+    courtesy_tone_style: Optional[CourtesyToneStyle] = None
+    voice_id_text: Optional[str] = None
+    id_phonetic: Optional[bool] = None
+    tts_voice: Optional[str] = None
     aprs_enabled: Optional[bool] = None
     aprs_server: Optional[str] = None
     aprs_port: Optional[int] = Field(default=None, gt=0)
@@ -113,6 +123,18 @@ class SnapshotImportRequest(BaseModel):
 
     config: dict[str, Any]
     macros: list[MacroCreateRequest] = []
+
+
+class AudioPreviewRequest(BaseModel):
+    """Render `clip` as it would sound with `config` (unsaved dashboard
+    edits) layered over the saved configuration."""
+
+    clip: str = Field(min_length=1)
+    config: dict[str, Any] = {}
+
+
+class TTSInfoResponse(BaseModel):
+    engine: Optional[str]
 
 
 class LoginRequest(BaseModel):

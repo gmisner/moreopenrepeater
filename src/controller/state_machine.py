@@ -50,6 +50,7 @@ class RepeaterConfig:
     id_interval: float = 600.0
     id_audio_duration: float = 3.0
     require_ctcss_hz: Optional[float] = None
+    kerchunk_delay: float = 0.0  # carrier must last this long before keying up from idle; 0 = off
     callsign: str = ""
     id_mode: Literal["voice", "cw", "both"] = "voice"
     cw_wpm: float = 20.0
@@ -107,6 +108,8 @@ class RepeaterController:
         self._resume_state_after_id = IDLE
         self._remote_keyed: set[str] = set()
         self._announcements: list[str] = []
+        self._keyup_at: Optional[float] = None  # carrier seen while idle; keys up then if it lasts
+        self.kerchunks_filtered = 0
 
     # -- public API -------------------------------------------------------
 
@@ -170,6 +173,11 @@ class RepeaterController:
     def tick(self, now: float) -> list[ControllerCommand]:
         commands: list[ControllerCommand] = []
 
+        if self._keyup_at is not None and now >= self._keyup_at:
+            self._keyup_at = None
+            if self.state == IDLE and self._ctcss_present:
+                commands += self._enter_receiving(now)
+
         if self.state == RECEIVING and self._tot_deadline is not None and now >= self._tot_deadline:
             commands += self._enter_timeout(now)
 
@@ -188,7 +196,7 @@ class RepeaterController:
         if self.state in (IDLE, HANG_TIME) and now >= self._id_due_at:
             commands += self._enter_id(now)
 
-        if self.state == IDLE and self._announcements:
+        if self.state == IDLE and self._announcements and self._keyup_at is None:
             commands += self._start_announcement(now)
 
         return commands
@@ -199,10 +207,18 @@ class RepeaterController:
         if active:
             if not remote and not self._ctcss_present:
                 return []  # squelch open but wrong/no CTCSS -- ignore
+            if self.state == IDLE and not remote and self.config.kerchunk_delay > 0:
+                self._keyup_at = now + self.config.kerchunk_delay
+                return []
             if self.state in (IDLE, HANG_TIME):
                 return self._enter_receiving(now)
             return []
 
+        if self._keyup_at is not None and not remote:
+            self._keyup_at = None
+            self.kerchunks_filtered += 1
+            _logger.info("kerchunk ignored (carrier shorter than %.2fs)", self.config.kerchunk_delay)
+            return []
         if self.state == RECEIVING:
             if self._tot_deadline is not None and now >= self._tot_deadline:
                 return self._enter_timeout(now)
@@ -246,6 +262,7 @@ class RepeaterController:
         return [PlayAudio(clip="timeout_tone"), AssertPTT(active=False)]
 
     def _enter_id(self, now: float) -> list[ControllerCommand]:
+        self._keyup_at = None
         self._resume_state_after_id = self.state
         self._set_state(TRANSMITTING_ID)
         self._state_deadline = now + (self._clip_duration("id") or self.config.id_audio_duration)

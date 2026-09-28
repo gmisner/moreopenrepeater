@@ -164,6 +164,10 @@
               <span class="input-unit"><input type="number" step="0.1" min="0" name="require_ctcss_hz" placeholder="disabled" /><span>Hz</span></span>
               <small>Leave blank for carrier access (no tone required).</small>
             </label>
+            <label>Kerchunk filter
+              <span class="input-unit"><input type="number" step="0.05" min="0" max="3" name="kerchunk_delay" required /><span>s</span></span>
+              <small>A key-up must last this long before the repeater comes up. 0 turns the filter off.</small>
+            </label>
           </div>
           <div class="form-actions">
             <span class="dirty-note">Unsaved changes</span>

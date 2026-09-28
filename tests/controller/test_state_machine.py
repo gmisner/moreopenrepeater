@@ -239,3 +239,57 @@ def test_key_up_during_announcement_is_ignored_like_during_id():
 
     assert controller.handle_event(COSChanged(active=True), now=0.5) == []
     assert controller.state == ANNOUNCING
+
+
+def test_kerchunk_filter_ignores_short_key_ups():
+    controller = RepeaterController(make_config(kerchunk_delay=0.3), now=0.0)
+
+    assert controller.handle_event(COSChanged(active=True), now=0.0) == []
+    controller.tick(now=0.1)
+    assert controller.state == IDLE
+    assert controller.handle_event(COSChanged(active=False), now=0.2) == []
+    controller.tick(now=1.0)
+
+    assert controller.state == IDLE
+    assert controller.kerchunks_filtered == 1
+
+
+def test_kerchunk_filter_keys_up_once_the_carrier_lasts():
+    controller = RepeaterController(make_config(kerchunk_delay=0.3), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+
+    assert controller.tick(now=0.25) == []
+    assert AssertPTT(active=True) in controller.tick(now=0.3)
+    assert controller.state == RECEIVING
+    # The timeout timer runs from key-up, not from first carrier.
+    controller.tick(now=5.2)
+    assert controller.state == RECEIVING
+
+
+def test_kerchunk_filter_does_not_delay_rekey_during_hang_time():
+    controller = RepeaterController(make_config(kerchunk_delay=0.3), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    controller.tick(now=0.3)
+    controller.handle_event(COSChanged(active=False), now=1.0)
+    controller.tick(now=1.2)
+    assert controller.state == HANG_TIME
+
+    controller.handle_event(COSChanged(active=True), now=1.5)
+    assert controller.state == RECEIVING
+
+
+def test_kerchunk_filter_does_not_delay_linked_nodes():
+    controller = RepeaterController(make_config(kerchunk_delay=0.3), now=0.0)
+    controller.handle_event(RemoteKeyed(node_id="2000", keyed=True), now=0.0)
+    assert controller.state == RECEIVING
+
+
+def test_announcement_waits_while_a_key_up_is_pending():
+    controller = RepeaterController(make_config(kerchunk_delay=0.3), now=0.0)
+    controller.queue_announcement("tts:net tonight")
+    controller.handle_event(COSChanged(active=True), now=0.0)
+
+    controller.tick(now=0.1)
+    assert controller.state == IDLE
+    controller.tick(now=0.3)
+    assert controller.state == RECEIVING

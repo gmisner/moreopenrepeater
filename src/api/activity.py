@@ -10,6 +10,7 @@ Row kinds:
   - "rx": a user transmission being repeated (duration; timed_out flag)
   - "tx": the transmitter keyed, for any reason (duration)
   - "id" / "announcement": something the repeater said on its own
+  - "kerchunk": a key-up too short to pass the kerchunk filter (never repeated)
 """
 from __future__ import annotations
 
@@ -109,6 +110,9 @@ class ActivityRecorder:
             return
         self.store.add(ActivityRow("id" if clip == "id" else "announcement", now, 0.0))
 
+    def kerchunk_filtered(self, now: float) -> None:
+        self.store.add(ActivityRow("kerchunk", now, 0.0))
+
 
 def summarize(rows: list[ActivityRow], since: datetime, until: datetime) -> dict:
     """Totals, plus user airtime by local hour of day and per local day."""
@@ -137,6 +141,7 @@ def summarize(rows: list[ActivityRow], since: datetime, until: datetime) -> dict
         "rx_seconds": sum(r.duration for r in rx),
         "rx_count": len(rx),
         "kerchunks": sum(1 for r in rx if r.duration < KERCHUNK_SECONDS),
+        "kerchunks_filtered": sum(1 for r in rows if r.kind == "kerchunk"),
         "timeouts": sum(1 for r in rx if r.timed_out),
         "longest_rx_seconds": max((r.duration for r in rx), default=0.0),
         "tx_seconds": sum(r.duration for r in rows if r.kind == "tx"),

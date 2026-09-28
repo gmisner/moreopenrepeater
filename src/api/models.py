@@ -28,6 +28,7 @@ class ConfigResponse(BaseModel):
     id_interval: float
     id_audio_duration: float
     require_ctcss_hz: Optional[float]
+    kerchunk_delay: float
     callsign: str
     id_mode: Literal["voice", "cw", "both"]
     cw_wpm: float
@@ -70,6 +71,7 @@ class ConfigUpdateRequest(BaseModel):
     id_audio_duration: Optional[float] = Field(default=None, gt=0)
     require_ctcss_hz: Optional[float] = None
     clear_require_ctcss_hz: bool = False
+    kerchunk_delay: Optional[float] = Field(default=None, ge=0, le=3)
     callsign: Optional[str] = None
     id_mode: Optional[Literal["voice", "cw", "both"]] = None
     cw_wpm: Optional[float] = Field(default=None, gt=0)
@@ -251,6 +253,7 @@ class ActivitySummaryResponse(BaseModel):
     rx_seconds: float
     rx_count: int
     kerchunks: int
+    kerchunks_filtered: int
     timeouts: int
     longest_rx_seconds: float
     tx_seconds: float

@@ -66,7 +66,11 @@ function renderSummary(s) {
     stat("User airtime", formatAirtime(s.rx_seconds), `${s.rx_count} transmissions`),
     stat("Transmitter on", formatAirtime(s.tx_seconds), "incl. tails, IDs, announcements"),
     stat("Longest", formatAirtime(s.longest_rx_seconds), "single transmission"),
-    stat("Kerchunks", String(s.kerchunks), KERCHUNK_NOTE + kerchunkShare),
+    stat(
+      "Kerchunks",
+      String(s.kerchunks),
+      KERCHUNK_NOTE + kerchunkShare + (s.kerchunks_filtered ? ` · ${s.kerchunks_filtered} more filtered out` : ""),
+    ),
     stat("Timeouts", String(s.timeouts), "timeout timer tripped"),
     stat("IDs / announcements", `${s.ids} / ${s.announcements}`),
   ].join("");

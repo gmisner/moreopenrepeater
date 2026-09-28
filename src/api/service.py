@@ -128,6 +128,7 @@ class RepeaterService:
         self.linked_nodes: set[str] = set()
         self.last_clip: Optional[str] = None
         self._last_state = self.controller.state
+        self._kerchunks_filtered = 0
         self._subscribers: set["asyncio.Queue[StatusSnapshot]"] = set()
 
     @property
@@ -189,6 +190,10 @@ class RepeaterService:
                     self.audio_output.play(command.clip)
             elif isinstance(command, SendLinkCommand):
                 self._link_command_sink(command)
+        filtered = self.controller.kerchunks_filtered
+        if filtered > self._kerchunks_filtered and self.activity is not None:
+            self.activity.kerchunk_filtered(now)
+        self._kerchunks_filtered = filtered
         state = self.controller.state
         if state != self._last_state:
             if self.activity is not None:

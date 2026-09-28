@@ -138,3 +138,18 @@ def test_transmissions_endpoint_lists_most_recent_first():
 
     assert [round(t["duration"]) for t in transmissions] == [3, 5]
     assert client.get("/api/activity/summary?days=0").status_code == 422
+
+
+def test_filtered_kerchunks_are_counted_separately():
+    client, service, clock = make_client()
+    client.put("/api/config", json={"kerchunk_delay": 0.5})
+
+    service.simulate_cos(True)
+    clock["wall"] += timedelta(seconds=0.2)
+    service.tick()
+    service.simulate_cos(False)
+    key(service, clock, 3.0)  # a real transmission still goes through
+
+    summary = client.get("/api/activity/summary?days=1").json()
+    assert summary["kerchunks_filtered"] == 1
+    assert summary["rx_count"] == 1

@@ -10,12 +10,15 @@ project's `>=3.11` requirement.
 
 ```
 sudo apt update
-sudo apt install -y python3-venv python3-dev libportaudio2
+sudo apt install -y python3-venv python3-dev libportaudio2 espeak-ng
 ```
 
 `libportaudio2` is PortAudio's runtime library, needed by `sounddevice`
 (`audio_io`'s stream layer) even before any real audio hardware is
-attached.
+attached. `espeak-ng` gives the voice ID, announcements and weather alerts
+a text-to-speech voice (`pico2wave` from `libttspico-utils` also works and
+sounds better, if your distribution has it). Without one, IDs fall back to
+CW and spoken announcements can't render.
 
 ## 2. Dedicated user + install location
 
@@ -57,6 +60,27 @@ sudo udevadm trigger
 access to.) Plug in the interface and confirm with
 `ls -l /dev/hidraw*` -- it should show `root audio` ownership, mode
 `crw-rw----`.
+
+Then point the service at it in the env file (next section):
+
+```
+MOREOPENREPEATER_CM108_HIDRAW=/dev/hidraw0
+```
+
+With that set, the live audio engine keys the radio through the CM108's
+GPIO3 (PTT) whenever it transmits, and "CM108 COS pin" (GPIO4) becomes
+available as the carrier-detect source.
+
+### Audio devices
+
+In the dashboard, open **Audio & tones → Radio interface**: pick the CM108
+as both input and output (it shows up as something like `USB Audio Device`),
+choose the carrier-detect source, and enable live audio. Without a COS wire,
+"Audio level (VOX)" works with a receiver whose squelch mutes its audio
+output; set the VOX threshold a few dB above the idle level shown on the
+meter. "CTCSS tone present" opens only when a sub-audible tone is decoded,
+which requires the receiver's audio to be unfiltered (discriminator or
+flat audio) so the tone reaches the sound card.
 
 ## 4. Configuration (systemd EnvironmentFile)
 
@@ -115,9 +139,12 @@ sudo systemctl restart moreopenrepeater
 
 ## Still not covered here
 
-- `audio_io`/`link` aren't both exercised on real repeater hardware end to
-  end yet -- see the README's architecture section and "Status" for what's
-  confirmed against real hardware/a real AllStarLink instance so far vs.
-  what's still simulated via the dashboard's `simulate_*` controls.
+- The live audio engine is tested with synthetic signals and against Mac
+  audio devices, but not yet with a CM108 and a real radio. Expect to tune
+  the VOX threshold and TX gain on first key-up, and check the "audio
+  glitches" count on the Radio interface card (dropped or late audio blocks)
+  under load on a Pi.
+- `link`'s AllStar audio path (`rxchannel=audiosocket`) is still open; see
+  the README's "Status".
 - No backup/restore automation beyond the dashboard's manual "Download
   configuration" snapshot -- back that up yourself before major changes.

@@ -22,7 +22,20 @@ with custom repeater-control logic (not a wrapper around Asterisk's `app_rpt`).
   direwolf/SvxLink/uridiag's real wire protocol (5-byte hidraw write/read,
   not the HIDIOCSFEATURE/HIDIOCGFEATURE ioctls). Linux-only at the hardware
   layer (`/dev/hidrawN`); the GPIO bit-packing logic is unit tested via a
-  fake in-memory device, no real hardware required.
+  fake in-memory device, no real hardware required. `AudioProcessor` is the
+  per-20 ms-block logic of a live repeater (software COS by audio level,
+  CTCSS or an external pin; DTMF; repeat audio with TX gain; clip playback),
+  with no threads or devices so it's tested on synthetic signals.
+  `AudioEngine` runs it against real devices: the PortAudio callback only
+  moves blocks, a worker thread does the processing, and PTT follows what
+  is actually being transmitted.
+- **`playout`** -- turns the controller's `PlayAudio` clip names into samples:
+  courtesy/timeout tones, CW or text-to-speech IDs (`say`, `espeak-ng` or
+  `pico2wave`, whichever is installed), uploaded clips, and spoken
+  announcements. Rendered clips are cached, so the controller knows each
+  clip's real length and the live engine can start it without delay.
+- **`wx`** -- National Weather Service active-alert polling
+  (`api.weather.gov`), severity filtering and alert-to-speech text.
 - **`link`** -- bridges to a local Asterisk + `app_rpt` sidecar process
   (used only as the AllStarLink/IAX2 network transport) via `AMIClient`
   (control events/actions) and `link.audiosocket` framing (raw PCM audio).
@@ -79,8 +92,11 @@ with custom repeater-control logic (not a wrapper around Asterisk's `app_rpt`).
   every 5s on a dropped connection. Deliberately not part of `RepeaterConfig`/
   the dashboard: AMI credentials are a deployment secret, not something a
   browser client should be able to read back via `GET /api/config`.
-  `audio_io` (real PTT/COS hardware) is still behind `simulate_cos`/
-  `simulate_ctcss` -- no CM108 hardware available to wire it in yet.
+  `audio_io` is wired in too: `api.live_audio.LiveAudio` starts the
+  `AudioEngine` when live audio is enabled on the dashboard, feeds detected
+  carrier/CTCSS/DTMF into the controller, and carries out its PTT and clip
+  commands (`MOREOPENREPEATER_CM108_HIDRAW` adds CM108 hardware PTT/COS).
+  The `simulate_*` controls keep working alongside it.
   Frontend (`web/`) is a plain HTML/JS dashboard (no build step) served by
   FastAPI's StaticFiles, driven by that same WebSocket. Manually verified
   live: COS key-up correctly drives the state machine through `receiving`
@@ -101,8 +117,7 @@ several phases (see the plan file for the full breakdown):
   keyed CW tone from text; `RepeaterConfig` gained `callsign`, `id_mode`
   (`voice`/`cw`/`both`), `cw_wpm`, `cw_tone_hz`, exposed through the config API/
   dashboard form. `controller`'s `_enter_id` is unchanged -- it still just emits
-  `PlayAudio(clip="id")`; which synthesis path actually runs is a concern for whatever
-  consumes that command once real audio playback exists.
+  `PlayAudio(clip="id")`, and `playout.renderer` decides how that clip sounds.
 - **Phase B -- DTMF macro management (done)**: `controller.macros.Macro` changed from
   holding a Python callable to plain JSON-serializable fields (`pattern`, `description`,
   `command`, `node_id`) so macros can be created/edited through the API, not just at
@@ -121,10 +136,8 @@ several phases (see the plan file for the full breakdown):
   for uploaded courtesy-tone/ID/timeout-tone/custom clips, exposed via `GET/POST
   /api/assets`, `DELETE /api/assets/{id}`, and `GET /api/assets/{id}/audio` (multipart
   upload -- added `python-multipart` as a dependency). `RepeaterConfig` gained
-  `courtesy_tone_asset_id`/`id_asset_id`/`timeout_tone_asset_id` so config already
-  records which clip to use once real playback exists -- storage/selection only for
-  now, not wired into playback (same open item as before: `audio_io`/`link` aren't
-  wired into `RepeaterService` yet). Dashboard has an upload form, a table with inline
+  `courtesy_tone_asset_id`/`id_asset_id`/`timeout_tone_asset_id`, which the renderer
+  uses in place of the built-in sounds. Dashboard has an upload form, a table with inline
   `<audio controls>` preview and delete, and the three config dropdowns populate from
   the live asset list. Manually verified live: uploaded a real .wav through the API,
   confirmed it rendered with a working preview player and appeared in the dropdown,
@@ -141,10 +154,8 @@ several phases (see the plan file for the full breakdown):
 - **Phase F -- auxiliary GPIO on `audio_io.cm108` (done)**: `CM108Interface` gained
   generic `set_gpio(pin, active)`/`read_gpio(pin)`; `set_ptt`/`read_cos` are now thin
   wrappers over them (`set_ptt(active)` == `set_gpio(self.ptt_pin, active)`),
-  backward-compatible with existing callers/tests. Driver-only change -- no new API/
-  dashboard feature, since `audio_io` isn't wired into `RepeaterService` yet and
-  there's nothing real for a UI toggle to control today; this just means that
-  follow-up work is additive instead of another refactor.
+  backward-compatible with existing callers/tests. Driver-only change -- no
+  dashboard control for the spare GPIO pins yet.
 - **Phase G -- APRS position/status beaconing (done)**: `link.aprs_client` implements
   APRS-IS login, the passcode checksum algorithm, and classic uncompressed
   position/status packet formatting -- verified against the official aprs-is.net spec,
@@ -161,8 +172,34 @@ several phases (see the plan file for the full breakdown):
   them from form submission entirely -- handled explicitly). Live beaconing against a
   real APRS-IS server was not exercised (optional per the plan, unlike the AllStar
   spike which was load-bearing for an architecture decision).
-- **EchoLink linking**: not planned yet -- comparable scope to the AllStar `link` work,
-  needs its own protocol research spike first.
+- **EchoLink linking**: researched in `docs/research/echolink.md`. The recommendation is
+  to enable `chan_echolink` in the existing Asterisk sidecar first (EchoLink stations
+  become ordinary app_rpt links, so `NodeLinkClient` should cover them), and write a
+  native Python client (estimated 3-5 weeks) only if that path's gaps matter. Either
+  way it's gated on getting a `-R` callsign validated by EchoLink.
+
+## Beyond OpenRepeater
+
+- **Persistent settings**: config, DTMF macros and announcements save to
+  `data/state.json` on every change and load at startup.
+- **Real transmit audio**: every clip the controller plays renders to real samples,
+  and the dashboard's preview buttons play exactly what would go out on air,
+  including unsaved changes.
+- **Text-to-speech voice ID**, using whichever TTS engine is installed. The ID text
+  can include `{callsign}`, which is spoken phonetically if you want it to be.
+- **Scheduled announcements**: interval ("every 30 minutes") or weekly ("Tuesdays at
+  19:55") messages, spoken or from an uploaded clip. They queue for a clear channel
+  and never interrupt a user.
+- **NWS weather alerts**: polls active alerts for the repeater's location, announces
+  new ones at or above a chosen severity, optionally repeats them, and shows the
+  current alerts on the dashboard with a Play button.
+- **Airtime statistics**: every transmission, ID and announcement is logged to
+  SQLite (`data/activity.db`, 400 days kept). The Activity page charts usage by hour
+  and day, and counts kerchunks and timeouts.
+- **Live audio on any sound device**, with software carrier detect (VOX or CTCSS)
+  for interfaces with no COS wire, a live level meter, and CM108 PTT/COS when one is
+  plugged in.
+- **CI**: GitHub Actions runs the test suite on Python 3.11-3.14.
 
 ### Why a local Asterisk sidecar for linking?
 
@@ -189,8 +226,9 @@ confirmed against a live two-node app_rpt link. Still open: the tighter
 `rxchannel=audiosocket` node-channel-driver integration (letting
 `audio_io` feed a node's actual audio, not just its control-plane events --
 blocked on an unresolved upstream app_rpt bug per the community's own
-testing), and wiring `audio_io` into `RepeaterService` in place of
-`simulate_cos`/`simulate_ctcss` (blocked on not having CM108 hardware yet).
+testing). `audio_io` now runs the repeater on real sound devices, verified
+on a Mac (BlackHole loopback and speakers); it hasn't been tried with a
+CM108 and a real radio yet.
 Raspberry Pi packaging is done too: `packaging/moreopenrepeater.service`
 (systemd unit), `packaging/moreopenrepeater.env.example` (config, incl. the
 new `MOREOPENREPEATER_HOST`/`_PORT`/`_DATA_DIR`/`_LOG_PATH`/`_AMI_*` env
@@ -222,10 +260,10 @@ by 1s.
 
 The dashboard (`web/`) is still plain HTML plus ES modules with no build
 step: a sidebar app with separate views for Dashboard (live state, linked
-nodes, and a recent-activity feed), Timing, Identification (with an
-in-browser CW ID preview using `dsp/morse.py`'s table/timing), Audio &
-tones, DTMF macros (add/edit/rename/delete), APRS, Simulator, Logs
-(filter/level/pause), and Backup & restore. Each settings view saves only
+nodes, and a recent-activity feed), Activity (airtime charts), Timing,
+Identification, Audio & tones (sounds, clip library and the live radio
+interface), DTMF macros (add/edit/rename/delete), Announcements, Weather
+alerts, APRS, Simulator, Logs (filter/level/pause), and Backup & restore. Each settings view saves only
 its own fields through `PUT /api/config`, with unsaved-change tracking.
 Verified live in a real browser: login rejection/acceptance, WebSocket via
 session cookie, every view's save round-tripping through the API, the
@@ -242,6 +280,27 @@ python3 -m venv .venv
 PYTHONPATH=src .venv/bin/python3 -m uvicorn api.app:app --reload
 # then open http://127.0.0.1:8000
 ```
+
+### Trying live audio on a Mac
+
+[BlackHole](https://github.com/ExistentialAudio/BlackHole) (`brew install
+blackhole-2ch`) is a virtual cable: whatever plays into it comes back out as
+an input. To check detection end to end:
+
+```
+.venv/bin/python scripts/loopback_test.py
+```
+
+This plays a voice burst, DTMF `147#` and a 100 Hz CTCSS tone into BlackHole
+and checks that the engine reports each one. To drive the whole repeater,
+choose BlackHole as the input on **Audio & tones → Radio interface**, your
+speakers as the output, and play audio into BlackHole from any app. Don't use
+BlackHole as the output too, or the repeater will hear its own courtesy tone
+and key itself.
+
+macOS gives silence to apps without Microphone permission, so the app running
+the server or script (Terminal, iTerm, Cursor...) needs it in System Settings
+› Privacy & Security › Microphone. Restart the app after granting it.
 
 For a real Raspberry Pi deployment (systemd service, not `--reload`), see
 `docs/raspberry-pi.md`.

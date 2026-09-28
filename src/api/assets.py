@@ -4,9 +4,8 @@ No database -- assets live under a data directory as `<id>.wav` with a JSON
 sidecar index for metadata, consistent with the project's general avoidance
 of a database for state this small and low-write-volume.
 
-This only manages storage; actually playing a selected asset during a
-transmission is out of scope until `audio_io`/`link` are wired into
-`RepeaterService` (already an open item -- see the README).
+This only manages storage; `playout.renderer.ClipRenderer` turns a selected
+asset into transmit audio.
 """
 from __future__ import annotations
 

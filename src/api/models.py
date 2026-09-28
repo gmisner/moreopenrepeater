@@ -67,6 +67,8 @@ class ConfigResponse(BaseModel):
     tx_gain_db: float
     tx_ctcss_hz: Optional[float]
     tx_ctcss_level_db: float
+    record_transmissions: bool
+    recording_retention_days: float
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -121,6 +123,8 @@ class ConfigUpdateRequest(BaseModel):
     tx_ctcss_hz: Optional[float] = Field(default=None, ge=60, le=260)
     clear_tx_ctcss_hz: bool = False
     tx_ctcss_level_db: Optional[float] = Field(default=None, ge=-40, le=-6)
+    record_transmissions: Optional[bool] = None
+    recording_retention_days: Optional[float] = Field(default=None, ge=0.1, le=365)
 
 
 class SimulateCOSRequest(BaseModel):
@@ -263,6 +267,12 @@ class ActivityDay(BaseModel):
     rx_seconds: float
     tx_seconds: float
     rx_count: int
+
+
+class RecordingResponse(BaseModel):
+    id: str
+    started_at: datetime
+    duration: float
 
 
 class ActivitySummaryResponse(BaseModel):

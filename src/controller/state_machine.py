@@ -88,6 +88,8 @@ class RepeaterConfig:
     tx_gain_db: float = 0.0
     tx_ctcss_hz: Optional[float] = None  # sub-audible tone added to everything transmitted
     tx_ctcss_level_db: float = -20.0
+    record_transmissions: bool = False
+    recording_retention_days: float = 7.0
 
 
 class RepeaterController:

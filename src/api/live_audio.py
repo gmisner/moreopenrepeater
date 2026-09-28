@@ -8,6 +8,9 @@
     rendered off the event loop first).
   - Forwards detected carrier / CTCSS / DTMF back to the service on the
     event loop thread.
+  - Records repeated transmissions (when turned on), and runs parrot: once
+    armed, the next transmission isn't repeated live but saved and played
+    back after the user unkeys.
 
 A CM108 USB interface, if `MOREOPENREPEATER_CM108_HIDRAW` names its
 /dev/hidrawN node (Linux), keys the radio's PTT and can supply COS.
@@ -16,8 +19,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
+import time
 from typing import Callable, Optional
+
+import numpy as np
 
 from audio_io.audio_stream import sd
 from audio_io.cm108 import CM108Interface, LinuxHidrawDevice
@@ -25,14 +30,19 @@ from audio_io.engine import AudioEngine
 from audio_io.processor import AudioProcessor, ProcessorSettings
 from controller.events import COSChanged, CTCSSChanged
 from controller.state_machine import RECEIVING, RepeaterConfig
-from playout.renderer import ClipRenderer, UnknownClipError
+from playout.renderer import RECORDING_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
+from .recordings import RecordingStore
 from .service import RepeaterService
 
 _logger = logging.getLogger("moreopenrepeater.audio")
 
 BLOCK_SECONDS = 0.02
+MIN_RECORDING_SECONDS = 1.0  # shorter captures are kerchunks, not worth keeping
+MAX_RECORDING_SECONDS = 300.0
+MAX_PARROT_SECONDS = 30.0
+PARROT_ARMED_SECONDS = 60.0  # give up waiting for the parrot transmission after this
 _RESTART_FIELDS = ("audio_enabled", "audio_input_device", "audio_output_device", "cos_source")
 # Same names on RepeaterConfig and ProcessorSettings; applied without a restart.
 _LIVE_FIELDS = ("vox_threshold_db", "vox_hold", "tx_gain_db", "tx_ctcss_hz", "tx_ctcss_level_db")
@@ -64,15 +74,22 @@ class LiveAudio:
         renderer: ClipRenderer,
         cm108: Optional[CM108Interface] = None,
         engine_factory: Callable[..., AudioEngine] = AudioEngine,
+        recordings: Optional[RecordingStore] = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._service = service
         self._renderer = renderer
         self._cm108 = cm108
         self._engine_factory = engine_factory
+        self._recordings = recordings
+        self._clock = clock
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._applied: Optional[RepeaterConfig] = None
         self.engine: Optional[AudioEngine] = None
         self.error: Optional[str] = None
+        self._parrot_armed_at: Optional[float] = None
+        self._parrot_recording = False
+        self._capture_started_at: Optional[float] = None
 
     @property
     def hardware_ptt(self) -> bool:
@@ -128,8 +145,41 @@ class LiveAudio:
             self.engine.processor.set_ptt(active)
 
     def set_repeating(self, repeating: bool) -> None:
-        if self.engine is not None:
-            self.engine.processor.set_repeating(repeating)
+        engine = self.engine
+        if engine is None:
+            return
+        processor = engine.processor
+        now = self._clock()
+        if repeating:
+            armed_at = self._parrot_armed_at
+            self._parrot_armed_at = None
+            self._parrot_recording = armed_at is not None and now - armed_at < PARROT_ARMED_SECONDS
+            if self._parrot_recording:
+                processor.start_capture(MAX_PARROT_SECONDS)
+                self._capture_started_at = now
+            else:
+                processor.set_repeating(True)
+                if self._recording_wanted():
+                    processor.start_capture(MAX_RECORDING_SECONDS)
+                    self._capture_started_at = now
+            return
+        processor.set_repeating(False)
+        if self._capture_started_at is None:
+            return
+        started_at, self._capture_started_at = self._capture_started_at, None
+        parrot, self._parrot_recording = self._parrot_recording, False
+        samples = processor.stop_capture()
+        if len(samples) < MIN_RECORDING_SECONDS * self._renderer.sample_rate:
+            return
+        if self._loop is not None:
+            self._loop.run_in_executor(None, self._save_recording, samples, started_at, parrot)
+
+    def arm_parrot(self) -> bool:
+        if self.engine is None or self._recordings is None or not self._recordings.enabled:
+            _logger.warning("parrot needs live audio and a recordings directory")
+            return False
+        self._parrot_armed_at = self._clock()
+        return True
 
     def play(self, clip: str) -> None:
         engine = self.engine
@@ -143,6 +193,23 @@ class LiveAudio:
             self._loop.run_in_executor(None, self._render_and_play, engine, clip, config)
 
     # -- internals ----------------------------------------------------------
+
+    def _recording_wanted(self) -> bool:
+        return (
+            self._service.config.record_transmissions
+            and self._recordings is not None
+            and self._recordings.enabled
+        )
+
+    def _save_recording(self, samples: np.ndarray, started_at: float, parrot: bool) -> None:
+        try:
+            info = self._recordings.save(samples, started_at)
+            self._recordings.prune_days(self._service.config.recording_retention_days)
+        except OSError:
+            _logger.exception("couldn't save recording")
+            return
+        if parrot and info is not None and self._loop is not None:
+            self._loop.call_soon_threadsafe(self._service.speak, RECORDING_PREFIX + info.id)
 
     def _render_and_play(self, engine: AudioEngine, clip: str, config: RepeaterConfig) -> None:
         try:
@@ -204,4 +271,6 @@ class LiveAudio:
                 released.append(CTCSSChanged(tone_hz=None))
             if released:
                 self._service.handle_audio_events(released)
+        self._capture_started_at = None
+        self._parrot_recording = False
         self.error = None

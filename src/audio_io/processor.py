@@ -91,6 +91,8 @@ class AudioProcessor:
         self._ctcss = CTCSSDetector(settings.sample_rate, magnitude_threshold=settings.ctcss_threshold)
         self._ctcss_pending: list[np.ndarray] = []
         self._dtmf = DTMFDetector(settings.sample_rate, magnitude_threshold=settings.dtmf_threshold)
+        self._capture: Optional[list[np.ndarray]] = None
+        self._capture_limit = 0
         self._subaudible_filter = StreamFIR(_highpass_kernel(_SUBAUDIBLE_CUTOFF_HZ / settings.sample_rate))
         self._ctcss_phase = 0.0
 
@@ -106,6 +108,17 @@ class AudioProcessor:
     def set_external_cos(self, active: bool) -> None:
         self._external_cos = active
 
+    def start_capture(self, max_seconds: float) -> None:
+        """Keep a copy of received audio (for recording or parrot)."""
+        self._capture_limit = int(max_seconds * self.settings.sample_rate)
+        self._capture = []
+
+    def stop_capture(self) -> np.ndarray:
+        captured, self._capture = self._capture, None
+        if not captured:
+            return np.zeros(0, dtype=np.float32)
+        return np.concatenate(captured)[: self._capture_limit]
+
     def play(self, samples: np.ndarray) -> None:
         self._clips.append(np.asarray(samples, dtype=np.float32))
 
@@ -119,6 +132,9 @@ class AudioProcessor:
         block = np.asarray(block, dtype=np.float32).reshape(-1)
         events: list[ControllerEvent] = []
         self.rx_level_db = level_db(block)
+        capture = self._capture
+        if capture is not None and len(capture) * len(block) < self._capture_limit:
+            capture.append(block.copy())
 
         tone = self._detect_ctcss(block)
         if tone != self.ctcss_hz:

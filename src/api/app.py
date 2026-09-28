@@ -43,6 +43,7 @@ from .auth import (
     verify_credentials,
 )
 from .live_audio import LiveAudio, cm108_from_env, list_audio_devices
+from .recordings import RecordingInfo, RecordingStore
 from .logging_config import configure_logging
 from .models import (
     ActivitySummaryResponse,
@@ -57,6 +58,7 @@ from .models import (
     LoginRequest,
     MacroCreateRequest,
     MacroResponse,
+    RecordingResponse,
     SessionResponse,
     SimulateCOSRequest,
     SimulateCTCSSRequest,
@@ -95,6 +97,7 @@ def _resolve_log_path(env: dict, repo_data_dir: Path) -> Path:
 DEFAULT_DATA_DIR = _resolve_data_dir(os.environ, _REPO_DATA_DIR)
 DEFAULT_STATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "state.json"
 DEFAULT_ACTIVITY_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "activity.db"
+DEFAULT_RECORDINGS_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "recordings"
 DEFAULT_LOG_PATH = _resolve_log_path(os.environ, _REPO_DATA_DIR)
 TICK_INTERVAL_SECONDS = 0.05
 APRS_DISABLED_POLL_SECONDS = 5.0
@@ -151,6 +154,12 @@ def _macro_response(macro: Macro) -> MacroResponse:
 
 def _asset_response(asset) -> AssetResponse:
     return AssetResponse(**dataclasses.asdict(asset))
+
+
+def _recording_response(recording: RecordingInfo) -> RecordingResponse:
+    return RecordingResponse(
+        id=recording.id, started_at=datetime.fromtimestamp(recording.started_at), duration=recording.duration
+    )
 
 
 def _announcement_response(service: RepeaterService, announcement: Announcement) -> AnnouncementResponse:
@@ -211,19 +220,24 @@ def create_app(
     activity_store: Optional[ActivityStore] = None,
     live_audio: Optional[LiveAudio] = None,
     audio_devices: Callable[[], list[dict]] = list_audio_devices,
+    recordings: Optional[RecordingStore] = None,
 ) -> FastAPI:
-    """`state_store` and `activity_store` default to in-memory so tests never
-    touch the real files under `data/`; the module-level `app` below opts in.
+    """`state_store`, `activity_store` and `recordings` default to in-memory
+    (or off) so tests never touch the real files under `data/`; the
+    module-level `app` below opts in.
     `fetch_weather(lat, lon, contact)` is swappable so tests stay offline."""
     assets_store = assets_store or AudioAssetStore(DEFAULT_DATA_DIR)
-    renderer = renderer or ClipRenderer(assets_store.path_for, tts=detect_tts())
+    recordings = recordings or RecordingStore(None)
+    renderer = renderer or ClipRenderer(assets_store.path_for, tts=detect_tts(), recording_path=recordings.path_for)
     service = service or RepeaterService(state_store=state_store)
     if service.renderer is None:
         service.renderer = renderer
     if service.activity is None:
         service.activity = ActivityRecorder(activity_store or ActivityStore())
     activity_store = service.activity.store
-    live_audio = live_audio or LiveAudio(service, renderer, cm108=cm108_from_env(os.environ))
+    live_audio = live_audio or LiveAudio(
+        service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings
+    )
     log_path = log_path or DEFAULT_LOG_PATH
     link_settings = link_settings if link_settings is not None else link_settings_from_env()
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
@@ -625,6 +639,29 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"No asset with id {asset_id!r}")
         return FileResponse(path, media_type="audio/wav")
 
+    def recording_path(recording_id: str) -> Path:
+        try:
+            path = recordings.path_for(recording_id)
+        except KeyError:
+            path = None
+        if path is None or not path.exists():
+            raise HTTPException(status_code=404, detail=f"No recording with id {recording_id!r}")
+        return path
+
+    @app.get("/api/recordings", response_model=list[RecordingResponse], dependencies=auth_dependencies)
+    def list_recordings(limit: int = 50) -> list[RecordingResponse]:
+        return [_recording_response(r) for r in recordings.list(limit)]
+
+    @app.get("/api/recordings/{recording_id}/audio", dependencies=auth_dependencies)
+    def get_recording_audio(recording_id: str) -> FileResponse:
+        return FileResponse(recording_path(recording_id), media_type="audio/wav")
+
+    @app.delete("/api/recordings/{recording_id}", dependencies=auth_dependencies)
+    def delete_recording(recording_id: str) -> dict:
+        recording_path(recording_id)
+        recordings.delete(recording_id)
+        return {"deleted": recording_id}
+
     @app.get("/api/logs", response_model=list[str], dependencies=auth_dependencies)
     def get_logs(lines: int = 200) -> list[str]:
         if not log_path.exists():
@@ -680,7 +717,11 @@ def create_app(
     return app
 
 
-app = create_app(state_store=StateStore(DEFAULT_STATE_PATH), activity_store=ActivityStore(DEFAULT_ACTIVITY_PATH))
+app = create_app(
+    state_store=StateStore(DEFAULT_STATE_PATH),
+    activity_store=ActivityStore(DEFAULT_ACTIVITY_PATH),
+    recordings=RecordingStore(DEFAULT_RECORDINGS_DIR),
+)
 
 
 def main() -> None:

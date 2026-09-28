@@ -139,6 +139,34 @@
           </div>
           <p id="usage-empty" class="muted small">No transmissions recorded yet. Try the Simulator.</p>
         </div>
+        <div class="card">
+          <h2>Recordings</h2>
+          <form class="config-form" data-config-form>
+            <label class="switch">
+              <input type="checkbox" name="record_transmissions" />
+              <span class="switch-track"></span>
+              <span>Record transmissions <small class="muted">&mdash; saves what the repeater hears (needs live audio)</small></span>
+            </label>
+            <div class="form-grid">
+              <label>Keep recordings for
+                <span class="input-unit"><input type="number" step="1" min="1" max="365" name="recording_retention_days" required /><span>days</span></span>
+                <small>Older recordings are deleted automatically. Parrot playbacks are kept here too.</small>
+              </label>
+            </div>
+            <div class="form-actions">
+              <span class="dirty-note">Unsaved changes</span>
+              <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+              <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+          </form>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>When</th><th>Length</th><th>Listen</th><th></th></tr></thead>
+              <tbody id="recordings-tbody"></tbody>
+            </table>
+          </div>
+          <p id="recordings-empty" class="muted small">No recordings yet.</p>
+        </div>
       </section>
 
       <!-- Timing -->

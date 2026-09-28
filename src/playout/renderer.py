@@ -5,7 +5,8 @@ Clip names are the strings carried by `PlayAudio(clip=...)`:
     using an assigned uploaded asset when there is one;
   - "asset:<id>" -- an uploaded clip, played as-is;
   - "tts:<text>" -- arbitrary text through the local TTS engine, with
-    "{callsign}" spelled out (announcements and weather alerts use this).
+    "{callsign}" spelled out (announcements and weather alerts use this);
+  - "recording:<id>" -- a saved transmission (parrot plays these back).
 
 Rendering can be slow (TTS spawns a subprocess), so results are cached and
 `cached_duration` only ever answers from the cache -- it's what the
@@ -31,6 +32,7 @@ from .wav import WavError, read_wav, resample
 
 ASSET_PREFIX = "asset:"
 TTS_PREFIX = "tts:"
+RECORDING_PREFIX = "recording:"
 BUILTIN_CLIPS = ("courtesy_tone", "id", "timeout_tone")
 SPEECH_PEAK = 0.5
 _GAP_SECONDS = 0.4
@@ -49,8 +51,10 @@ class ClipRenderer:
         tts: Optional[TTSEngine],
         sample_rate: int = 16000,
         cache_size: int = 32,
+        recording_path: Optional[Callable[[str], Path]] = None,
     ) -> None:
         self._asset_path = asset_path
+        self._recording_path = recording_path
         self.tts = tts
         self.sample_rate = sample_rate
         self._cache_size = cache_size
@@ -127,6 +131,8 @@ class ClipRenderer:
             return (ASSET_PREFIX, asset, self._asset_version(asset))
         if clip.startswith(TTS_PREFIX):
             return (TTS_PREFIX, clip.removeprefix(TTS_PREFIX), config.tts_voice, config.callsign, config.id_phonetic)
+        if clip.startswith(RECORDING_PREFIX) and self._recording_path is not None:
+            return (RECORDING_PREFIX, clip.removeprefix(RECORDING_PREFIX))
         raise UnknownClipError(clip)
 
     def _load_asset(self, asset_id: Optional[str]) -> Optional[np.ndarray]:
@@ -158,6 +164,11 @@ class ClipRenderer:
         if clip.startswith(TTS_PREFIX):
             text = format_voice_id(clip.removeprefix(TTS_PREFIX), config.callsign, config.id_phonetic)
             return self.speak(text, config.tts_voice)
+        if clip.startswith(RECORDING_PREFIX) and self._recording_path is not None:
+            try:
+                return read_wav(self._recording_path(clip.removeprefix(RECORDING_PREFIX)), self.sample_rate)
+            except (KeyError, OSError, WavError):
+                raise UnknownClipError(clip) from None
         raise UnknownClipError(clip)
 
     def _voice_id(self, config: RepeaterConfig) -> Optional[np.ndarray]:

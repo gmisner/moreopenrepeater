@@ -81,7 +81,7 @@ class AudioOutput(Protocol):
     def set_ptt(self, active: bool) -> None: ...
     def set_repeating(self, repeating: bool) -> None: ...
     def play(self, clip: str) -> None: ...
-    def arm_parrot(self) -> None: ...
+    def arm_parrot(self) -> bool: ...
 
 
 @dataclasses.dataclass(frozen=True)
@@ -246,8 +246,8 @@ class RepeaterService:
         elif action.action == "parrot":
             if self.audio_output is None:
                 _logger.warning("parrot needs live audio, which isn't running")
-            else:
-                self.audio_output.arm_parrot()
+            elif self.audio_output.arm_parrot():
+                self.speak(TTS_PREFIX + "Parrot ready. Key up and speak.")
         else:
             _logger.warning("DTMF action %s(%r) did nothing", action.action, action.argument)
 

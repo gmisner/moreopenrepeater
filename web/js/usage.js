@@ -1,6 +1,6 @@
 import { api } from "./api.js";
 import { currentView, router } from "./router.js";
-import { escapeHtml, formatTimestamp, toastError } from "./ui.js";
+import { escapeHtml, formatTimestamp, toast, toastError } from "./ui.js";
 
 const REFRESH_MS = 30_000;
 const CHART = { height: 150, left: 52, bottom: 20, top: 6 };
@@ -13,6 +13,8 @@ const byDayEl = document.getElementById("usage-by-day");
 const dailyCard = document.getElementById("usage-daily-card");
 const tbody = document.getElementById("usage-tbody");
 const empty = document.getElementById("usage-empty");
+const recordingsTbody = document.getElementById("recordings-tbody");
+const recordingsEmpty = document.getElementById("recordings-empty");
 
 let days = 7;
 
@@ -116,13 +118,48 @@ function renderTransmissions(transmissions) {
   }
 }
 
+let shownRecordings = "";
+
+function renderRecordings(recordings) {
+  // Re-rendering would stop a recording that's playing, so only redraw on change.
+  const ids = recordings.map((r) => r.id).join(",");
+  if (ids === shownRecordings) return;
+  shownRecordings = ids;
+  recordingsTbody.innerHTML = "";
+  recordingsEmpty.hidden = recordings.length > 0;
+  for (const r of recordings) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${escapeHtml(formatTimestamp(r.started_at))}</td>
+      <td>${formatAirtime(r.duration)}</td>
+      <td><audio controls preload="none" src="/api/recordings/${encodeURIComponent(r.id)}/audio"></audio></td>
+      <td class="row-actions"><button type="button" class="btn btn-danger btn-sm">Delete</button></td>
+    `;
+    row.querySelector("button").addEventListener("click", () => removeRecording(r));
+    recordingsTbody.appendChild(row);
+  }
+}
+
+async function removeRecording(recording) {
+  if (!confirm(`Delete the recording from ${formatTimestamp(recording.started_at)}?`)) return;
+  try {
+    await api(`/api/recordings/${encodeURIComponent(recording.id)}`, { method: "DELETE" });
+    toast("Recording deleted");
+    await load();
+  } catch (error) {
+    toastError(error);
+  }
+}
+
 async function load() {
-  const [summary, transmissions] = await Promise.all([
+  const [summary, transmissions, recordings] = await Promise.all([
     api(`/api/activity/summary?days=${days}`),
     api("/api/activity/transmissions?limit=25"),
+    api("/api/recordings?limit=50"),
   ]);
   renderSummary(summary);
   renderTransmissions(transmissions);
+  renderRecordings(recordings);
 }
 
 export function initUsage() {

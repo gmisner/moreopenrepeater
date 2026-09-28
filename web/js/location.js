@@ -47,9 +47,11 @@ export function parseLocation(text) {
 }
 
 function fill(form, latField, lonField, { lat, lon }) {
-  form.elements[latField].value = lat.toFixed(4);
-  form.elements[lonField].value = lon.toFixed(4);
-  form.classList.add("dirty");
+  for (const [field, value] of [[latField, lat], [lonField, lon]]) {
+    const input = form.elements[field];
+    input.value = value.toFixed(4);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
 }
 
 function geolocationError(error) {

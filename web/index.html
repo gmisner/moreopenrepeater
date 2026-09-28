@@ -28,6 +28,7 @@
         <a href="#/audio" data-nav="audio">Audio &amp; tones</a>
         <span class="nav-group">Features</span>
         <a href="#/macros" data-nav="macros">DTMF macros</a>
+        <a href="#/announcements" data-nav="announcements">Announcements</a>
         <a href="#/aprs" data-nav="aprs">APRS</a>
         <span class="nav-group">Tools</span>
         <a href="#/simulator" data-nav="simulator">Simulator</a>
@@ -300,6 +301,74 @@
         </form>
       </section>
 
+      <!-- Announcements -->
+      <section class="view" data-view="announcements" data-title="Announcements" hidden>
+        <header class="view-header">
+          <h1>Announcements</h1>
+          <p class="muted">Messages the repeater transmits on a schedule &mdash; net reminders, club news. They wait
+            for the channel to be clear and never interrupt a user or the station ID.</p>
+        </header>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Says</th><th>Schedule</th><th>Next</th><th></th></tr></thead>
+              <tbody id="announcements-tbody"></tbody>
+            </table>
+          </div>
+          <p id="announcements-empty" class="muted small">No announcements yet.</p>
+        </div>
+        <form id="announcement-form" class="card">
+          <h2 id="announcement-form-title">Add announcement</h2>
+          <div class="form-grid">
+            <label>Name
+              <input type="text" name="name" maxlength="100" placeholder="Net reminder" required />
+            </label>
+            <label>Audio
+              <select name="asset_id" id="announcement-asset"><option value="">Speak the message</option></select>
+              <small>Or play an uploaded clip (Audio &amp; tones &rarr; Library).</small>
+            </label>
+            <label class="span-2" id="announcement-message">Message
+              <input type="text" name="message" maxlength="2000" placeholder="The {callsign} net meets tonight at 8 pm on this repeater." />
+              <small>Spoken with text-to-speech. <code>{callsign}</code> is replaced with your callsign, spelled out.</small>
+            </label>
+            <label>Repeat
+              <select name="kind">
+                <option value="interval">Every few minutes</option>
+                <option value="weekly">At set times of day</option>
+              </select>
+            </label>
+            <label data-kind="interval">Every
+              <span class="input-unit"><input type="number" step="1" min="1" max="10080" name="every_minutes" value="60" /><span>min</span></span>
+            </label>
+            <label data-kind="weekly">Times
+              <input type="text" name="times" placeholder="08:00, 19:30" pattern="\s*\d{1,2}:\d{2}\s*(,\s*\d{1,2}:\d{2}\s*)*" title="24-hour times like 08:00, 19:30" />
+              <small>24-hour, station local time, comma-separated.</small>
+            </label>
+            <fieldset class="span-2 day-picker" data-kind="weekly">
+              <legend>Days</legend>
+              <label><input type="checkbox" name="days" value="0" checked />Mon</label>
+              <label><input type="checkbox" name="days" value="1" checked />Tue</label>
+              <label><input type="checkbox" name="days" value="2" checked />Wed</label>
+              <label><input type="checkbox" name="days" value="3" checked />Thu</label>
+              <label><input type="checkbox" name="days" value="4" checked />Fri</label>
+              <label><input type="checkbox" name="days" value="5" checked />Sat</label>
+              <label><input type="checkbox" name="days" value="6" checked />Sun</label>
+            </fieldset>
+            <label class="switch switch-inline">
+              <input type="checkbox" name="enabled" checked />
+              <span class="switch-track"></span>
+              <span>Enabled</span>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="announcement-preview">&#9654; Preview</button>
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-ghost" id="announcement-cancel" hidden>Cancel edit</button>
+            <button type="submit" class="btn btn-primary" id="announcement-submit">Add announcement</button>
+          </div>
+        </form>
+      </section>
+
       <!-- APRS -->
       <section class="view" data-view="aprs" data-title="APRS" hidden>
         <header class="view-header">
@@ -434,18 +503,18 @@
       <section class="view" data-view="backup" data-title="Backup & restore" hidden>
         <header class="view-header">
           <h1>Backup &amp; restore</h1>
-          <p class="muted">Save or restore the full configuration and DTMF macros as a JSON file.
+          <p class="muted">Save or restore the full configuration, DTMF macros and announcements as a JSON file.
             Audio clips aren't included.</p>
         </header>
         <div class="grid grid-2">
           <div class="card">
             <h2>Download backup</h2>
-            <p class="muted small">Exports the current configuration and macros.</p>
+            <p class="muted small">Exports the current configuration, macros and announcements.</p>
             <button type="button" class="btn btn-primary" id="snapshot-download">Download configuration</button>
           </div>
           <div class="card">
             <h2>Restore</h2>
-            <p class="muted small">Replaces the current configuration and all macros.</p>
+            <p class="muted small">Replaces the current configuration, macros and announcements.</p>
             <label class="btn file-btn">Choose backup file&hellip;
               <input type="file" id="snapshot-upload-input" accept="application/json,.json" />
             </label>

@@ -6,6 +6,7 @@ import collections
 import dataclasses
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import NamedTuple, Optional
@@ -18,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.requests import HTTPConnection
 
+from controller.announcements import Announcement
 from controller.events import SendLinkCommand
 from controller.macros import Macro
 from controller.state_machine import RepeaterConfig
@@ -39,6 +41,8 @@ from .auth import (
 )
 from .logging_config import configure_logging
 from .models import (
+    AnnouncementFields,
+    AnnouncementResponse,
     AssetResponse,
     AudioPreviewRequest,
     ConfigResponse,
@@ -86,8 +90,10 @@ APRS_DISABLED_POLL_SECONDS = 5.0
 LINK_RECONNECT_DELAY_SECONDS = 5.0
 LOGIN_FAILURE_DELAY_SECONDS = 1.0
 MAX_PREVIEW_CLIP_LENGTH = 2000
+ANNOUNCEMENT_POLL_SECONDS = 1.0
 
 _aprs_logger = logging.getLogger("moreopenrepeater.aprs")
+_announce_logger = logging.getLogger("moreopenrepeater.announcements")
 _link_logger = logging.getLogger("moreopenrepeater.link")
 _auth_logger = logging.getLogger("moreopenrepeater.auth")
 
@@ -132,6 +138,12 @@ def _macro_response(macro: Macro) -> MacroResponse:
 
 def _asset_response(asset) -> AssetResponse:
     return AssetResponse(**dataclasses.asdict(asset))
+
+
+def _announcement_response(service: RepeaterService, announcement: Announcement) -> AnnouncementResponse:
+    return AnnouncementResponse(
+        **dataclasses.asdict(announcement), next_run=service.next_announcement_run(announcement.id)
+    )
 
 
 def _validated_config(values: dict) -> RepeaterConfig:
@@ -256,31 +268,42 @@ def create_app(
                 _aprs_logger.exception("APRS beacon failed")
             await asyncio.sleep(config.aprs_beacon_interval)
 
+    async def render_and_queue(clip: str) -> None:
+        """Render off the event loop first, so the controller knows how long
+        the clip is (and a TTS failure surfaces here, not mid-transmission)."""
+        await asyncio.get_running_loop().run_in_executor(None, renderer.render, clip, service.config)
+        if not service.queue_announcement(clip):
+            raise HTTPException(status_code=429, detail="Too many announcements are already waiting to play")
+
+    async def announcement_loop() -> None:
+        while True:
+            await asyncio.sleep(ANNOUNCEMENT_POLL_SECONDS)
+            for clip in service.due_announcement_clips():
+                try:
+                    await render_and_queue(clip)
+                except (UnknownClipError, TTSError, HTTPException):
+                    _announce_logger.exception("couldn't play scheduled announcement %s", clip)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        tick_task: Optional[asyncio.Task] = None
-        aprs_task: Optional[asyncio.Task] = None
-        link_task: Optional[asyncio.Task] = None
+        tasks: list[asyncio.Task] = []
         if start_background_tick:
             async def tick_loop() -> None:
                 while True:
                     await asyncio.sleep(TICK_INTERVAL_SECONDS)
                     service.tick()
 
-            tick_task = asyncio.create_task(tick_loop())
-            aprs_task = asyncio.create_task(aprs_beacon_loop())
+            tasks.append(asyncio.create_task(tick_loop()))
+            tasks.append(asyncio.create_task(aprs_beacon_loop()))
+            tasks.append(asyncio.create_task(announcement_loop()))
             loop = asyncio.get_running_loop()
             loop.run_in_executor(None, renderer.warm, service.config)
             service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
             if link_settings is not None:
-                link_task = asyncio.create_task(node_link_loop())
+                tasks.append(asyncio.create_task(node_link_loop()))
         yield
-        if tick_task is not None:
-            tick_task.cancel()
-        if aprs_task is not None:
-            aprs_task.cancel()
-        if link_task is not None:
-            link_task.cancel()
+        for task in tasks:
+            task.cancel()
 
     app = FastAPI(title="moreopenrepeater API", lifespan=lifespan)
     app.state.service = service
@@ -381,6 +404,48 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"No macro with pattern {pattern!r}")
         return [_macro_response(m) for m in service.delete_macro(pattern)]
 
+    def find_announcement(announcement_id: str) -> Announcement:
+        for announcement in service.list_announcements():
+            if announcement.id == announcement_id:
+                return announcement
+        raise HTTPException(status_code=404, detail=f"No announcement with id {announcement_id!r}")
+
+    def save_announcement(announcement_id: str, body: AnnouncementFields) -> AnnouncementResponse:
+        if body.asset_id and not assets_store.path_for(body.asset_id).exists():
+            raise HTTPException(status_code=400, detail=f"No audio clip with id {body.asset_id!r}")
+        announcement = Announcement(id=announcement_id, **body.model_dump())
+        return _announcement_response(service, service.save_announcement(announcement))
+
+    @app.get("/api/announcements", response_model=list[AnnouncementResponse], dependencies=auth_dependencies)
+    def list_announcements() -> list[AnnouncementResponse]:
+        return [_announcement_response(service, a) for a in service.list_announcements()]
+
+    @app.post("/api/announcements", response_model=AnnouncementResponse, dependencies=auth_dependencies)
+    async def create_announcement(body: AnnouncementFields) -> AnnouncementResponse:
+        return save_announcement(uuid.uuid4().hex, body)
+
+    @app.put("/api/announcements/{announcement_id}", response_model=AnnouncementResponse, dependencies=auth_dependencies)
+    async def update_announcement(announcement_id: str, body: AnnouncementFields) -> AnnouncementResponse:
+        find_announcement(announcement_id)
+        return save_announcement(announcement_id, body)
+
+    @app.delete("/api/announcements/{announcement_id}", dependencies=auth_dependencies)
+    async def delete_announcement(announcement_id: str) -> dict:
+        find_announcement(announcement_id)
+        service.delete_announcement(announcement_id)
+        return {"deleted": announcement_id}
+
+    @app.post("/api/announcements/{announcement_id}/play", response_model=StatusResponse, dependencies=auth_dependencies)
+    async def play_announcement(announcement_id: str) -> StatusResponse:
+        clip = service.announcement_clip(find_announcement(announcement_id))
+        try:
+            await render_and_queue(clip)
+        except UnknownClipError:
+            raise HTTPException(status_code=404, detail="The announcement's audio clip no longer exists")
+        except TTSError as error:
+            raise HTTPException(status_code=503, detail=str(error))
+        return _status_response(service.snapshot())
+
     @app.get("/api/snapshot", response_model=SnapshotModel, dependencies=auth_dependencies)
     def get_snapshot() -> SnapshotModel:
         return SnapshotModel(**service.export_snapshot())
@@ -389,7 +454,11 @@ def create_app(
     async def post_snapshot(snapshot: SnapshotImportRequest) -> SnapshotModel:
         config = _validated_config({**dataclasses.asdict(RepeaterConfig()), **snapshot.config})
         service.import_snapshot(
-            {"config": dataclasses.asdict(config), "macros": [m.model_dump() for m in snapshot.macros]}
+            {
+                "config": dataclasses.asdict(config),
+                "macros": [m.model_dump() for m in snapshot.macros],
+                "announcements": [a.model_dump() for a in snapshot.announcements],
+            }
         )
         return SnapshotModel(**service.export_snapshot())
 

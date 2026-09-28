@@ -5,7 +5,7 @@ timers via tick(now) -- there are no threads and no real time.sleep, so the
 whole thing can be driven deterministically from tests with a fake clock.
 
 Implemented as an explicit hand-rolled state machine rather than a generic
-FSM library: with six states and a handful of transitions, an explicit
+FSM library: with seven states and a handful of transitions, an explicit
 dispatch is easier to read, easier to test exhaustively, and avoids an
 extra dependency for logic this size.
 """
@@ -34,6 +34,10 @@ COURTESY_TONE = "courtesy_tone"
 HANG_TIME = "hang_time"
 TIMEOUT = "timeout"
 TRANSMITTING_ID = "transmitting_id"
+ANNOUNCING = "announcing"
+
+MAX_QUEUED_ANNOUNCEMENTS = 10
+ANNOUNCEMENT_FALLBACK_DURATION = 10.0
 
 _logger = logging.getLogger("moreopenrepeater.controller")
 
@@ -89,6 +93,7 @@ class RepeaterController:
         self._id_due_at = now + config.id_interval
         self._resume_state_after_id = IDLE
         self._remote_keyed: set[str] = set()
+        self._announcements: list[str] = []
 
     # -- public API -------------------------------------------------------
 
@@ -97,6 +102,20 @@ class RepeaterController:
 
     def set_macros(self, macros: list[Macro]) -> None:
         self._dtmf.set_macros(macros)
+
+    def queue_announcement(self, clip: str) -> bool:
+        """Play `clip` the next time the channel is idle. Announcements never
+        interrupt a user or the ID; they wait their turn. Returns False (and
+        drops the clip) if too many are already waiting."""
+        if len(self._announcements) >= MAX_QUEUED_ANNOUNCEMENTS:
+            _logger.warning("announcement queue full; dropping %s", clip)
+            return False
+        self._announcements.append(clip)
+        return True
+
+    @property
+    def queued_announcements(self) -> list[str]:
+        return list(self._announcements)
 
     def update_config(self, config: RepeaterConfig, now: float) -> None:
         """Apply new settings to derived state too, so an edit takes effect
@@ -148,11 +167,16 @@ class RepeaterController:
                 commands += self._enter_idle(now)
             elif self.state == TRANSMITTING_ID:
                 commands += self._exit_id(now)
+            elif self.state == ANNOUNCING:
+                commands += self._finish_announcement(now)
 
         self._dtmf.tick(now)
 
         if self.state in (IDLE, HANG_TIME) and now >= self._id_due_at:
             commands += self._enter_id(now)
+
+        if self.state == IDLE and self._announcements:
+            commands += self._start_announcement(now)
 
         return commands
 
@@ -223,3 +247,15 @@ class RepeaterController:
             return [AssertPTT(active=False)]
         self._state_deadline = now + self.config.hang_time  # resume hang_time countdown
         return []
+
+    def _start_announcement(self, now: float) -> list[ControllerCommand]:
+        commands: list[ControllerCommand] = [] if self.state == ANNOUNCING else [AssertPTT(active=True)]
+        clip = self._announcements.pop(0)
+        self._set_state(ANNOUNCING)
+        self._state_deadline = now + (self._clip_duration(clip) or ANNOUNCEMENT_FALLBACK_DURATION)
+        return commands + [PlayAudio(clip=clip)]
+
+    def _finish_announcement(self, now: float) -> list[ControllerCommand]:
+        if self._announcements and now < self._id_due_at:
+            return self._start_announcement(now)  # back-to-back, without dropping PTT
+        return self._enter_idle(now)

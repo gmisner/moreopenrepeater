@@ -134,7 +134,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 .state-receiving { color: var(--green); }
 .state-courtesy_tone, .state-hang_time { color: var(--accent); }
 .state-timeout { color: var(--red); }
-.state-transmitting_id { color: var(--amber); }
+.state-transmitting_id, .state-announcing { color: var(--amber); }
 
 .indicators-card { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
 .indicator {
@@ -183,7 +183,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 .activity time { color: var(--muted); font-family: var(--mono); font-size: 0.8rem; min-width: 6.5rem; }
 .activity-receiving, .activity-cos { border-left-color: var(--green) !important; }
 .activity-ptt, .activity-timeout { border-left-color: var(--red) !important; }
-.activity-transmitting_id, .activity-clip { border-left-color: var(--amber) !important; }
+.activity-transmitting_id, .activity-announcing, .activity-clip { border-left-color: var(--amber) !important; }
 .activity-link, .activity-courtesy_tone, .activity-hang_time { border-left-color: var(--accent) !important; }
 
 .pill {
@@ -282,6 +282,22 @@ input[type="file"] { padding: 0.4rem; }
 .switch input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
 .switch-sm { margin: 0; font-size: 0.86rem; }
 .switch-inline { margin: 0; align-self: center; }
+
+.day-picker { display: flex; flex-wrap: wrap; gap: 0.4rem; border: none; padding: 0; margin: 0; }
+.day-picker legend { font-size: 0.86rem; color: var(--muted); margin-bottom: 0.35rem; padding: 0; }
+.day-picker label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+.day-picker label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.day-picker input { width: auto; margin: 0; accent-color: var(--accent); }
+[data-kind][hidden] { display: none !important; }
 
 .section-title { margin-top: 1.6rem; margin-bottom: 0.3rem; }
 .section-title + p { margin-top: 0; }

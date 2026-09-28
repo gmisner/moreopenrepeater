@@ -1,4 +1,5 @@
 import { api } from "./js/api.js";
+import { initAnnouncements, loadAnnouncements } from "./js/announcements.js";
 import { initAssets, loadAssets } from "./js/assets.js";
 import { initBackup } from "./js/backup.js";
 import { initConfig, loadConfig } from "./js/config.js";
@@ -18,6 +19,7 @@ async function main() {
   initConfig();
   initAssets();
   initMacros();
+  initAnnouncements();
   initSimulator();
   initLogs();
   initBackup();
@@ -26,7 +28,7 @@ async function main() {
     // Assets first so the clip dropdowns have options before config
     // values are applied to them.
     await loadAssets();
-    await Promise.all([loadConfig(), loadMacros(), api("/api/status").then(applyStatus)]);
+    await Promise.all([loadConfig(), loadMacros(), loadAnnouncements(), api("/api/status").then(applyStatus)]);
   } catch (error) {
     toastError(error);
   }

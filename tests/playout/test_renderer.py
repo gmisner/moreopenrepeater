@@ -112,6 +112,13 @@ def test_tts_clip_speaks_arbitrary_text():
     assert tts.calls[0][0] == "Net tonight at 8"
 
 
+def test_tts_clip_spells_out_the_callsign_placeholder():
+    tts = FakeTTS()
+    renderer, _ = make_renderer(tts=tts)
+    renderer.render("tts:This is {callsign}", config(callsign="W1AW", id_phonetic=True))
+    assert tts.calls[0][0] == "This is Whiskey one Alpha Whiskey"
+
+
 def test_asset_clip_plays_an_uploaded_file():
     renderer, _ = make_renderer(assets={"xyz": np.zeros(77, dtype=np.float32)})
     assert len(renderer.render("asset:xyz", config())) == 77

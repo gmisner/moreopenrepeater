@@ -9,6 +9,9 @@ from controller.events import (
 )
 from controller.macros import Macro
 from controller.state_machine import (
+    ANNOUNCING,
+    ANNOUNCEMENT_FALLBACK_DURATION,
+    MAX_QUEUED_ANNOUNCEMENTS,
     COURTESY_TONE,
     HANG_TIME,
     IDLE,
@@ -166,3 +169,73 @@ def test_id_state_uses_the_reported_clip_duration_when_known():
     assert controller.state == TRANSMITTING_ID
     controller.tick(now=13.0)
     assert controller.state == IDLE
+
+
+def test_announcement_plays_when_idle_for_its_clip_duration():
+    controller = RepeaterController(make_config(), now=0.0, clip_duration=lambda clip: 2.0)
+    controller.queue_announcement("tts:net tonight")
+
+    commands = controller.tick(now=0.1)
+    assert controller.state == ANNOUNCING
+    assert commands == [AssertPTT(active=True), PlayAudio(clip="tts:net tonight")]
+
+    assert controller.tick(now=2.0) == []
+    commands = controller.tick(now=2.1)
+    assert controller.state == IDLE
+    assert commands == [AssertPTT(active=False)]
+
+
+def test_announcement_waits_for_the_channel_to_clear():
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    controller.queue_announcement("tts:hello")
+
+    controller.tick(now=0.5)
+    assert controller.state == RECEIVING
+    controller.handle_event(COSChanged(active=False), now=1.0)
+    controller.tick(now=1.3)
+    assert controller.state == HANG_TIME  # not during hang time either
+
+    controller.tick(now=2.3)
+    assert controller.state == ANNOUNCING
+
+
+def test_queued_announcements_play_back_to_back_without_dropping_ptt():
+    controller = RepeaterController(make_config(), now=0.0, clip_duration=lambda clip: 1.0)
+    controller.queue_announcement("tts:one")
+    controller.queue_announcement("tts:two")
+
+    controller.tick(now=0.0)
+    commands = controller.tick(now=1.0)
+
+    assert controller.state == ANNOUNCING
+    assert commands == [PlayAudio(clip="tts:two")]
+
+
+def test_announcement_uses_fallback_duration_when_clip_length_unknown():
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.queue_announcement("tts:hello")
+
+    controller.tick(now=0.0)
+    controller.tick(now=ANNOUNCEMENT_FALLBACK_DURATION - 0.1)
+    assert controller.state == ANNOUNCING
+    controller.tick(now=ANNOUNCEMENT_FALLBACK_DURATION)
+    assert controller.state == IDLE
+
+
+def test_announcement_queue_is_bounded():
+    controller = RepeaterController(make_config(), now=0.0)
+    for i in range(MAX_QUEUED_ANNOUNCEMENTS):
+        assert controller.queue_announcement(f"tts:{i}")
+
+    assert not controller.queue_announcement("tts:overflow")
+    assert len(controller.queued_announcements) == MAX_QUEUED_ANNOUNCEMENTS
+
+
+def test_key_up_during_announcement_is_ignored_like_during_id():
+    controller = RepeaterController(make_config(), now=0.0, clip_duration=lambda clip: 1.0)
+    controller.queue_announcement("tts:hello")
+    controller.tick(now=0.0)
+
+    assert controller.handle_event(COSChanged(active=True), now=0.5) == []
+    assert controller.state == ANNOUNCING

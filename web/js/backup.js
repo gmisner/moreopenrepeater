@@ -1,3 +1,4 @@
+import { loadAnnouncements } from "./announcements.js";
 import { api } from "./api.js";
 import { store } from "./store.js";
 import { toast, toastError, withBusy } from "./ui.js";
@@ -35,12 +36,15 @@ export function initBackup() {
       return;
     }
     const macroCount = snapshot.macros?.length ?? 0;
-    if (!confirm(`Restore "${file.name}"? This replaces the current configuration and all macros (${macroCount} in backup).`)) return;
+    const announcementCount = snapshot.announcements?.length ?? 0;
+    const counts = `${macroCount} macros and ${announcementCount} announcements in backup`;
+    if (!confirm(`Restore "${file.name}"? This replaces the current configuration, macros and announcements (${counts}).`)) return;
     try {
       const applied = await api("/api/snapshot", { method: "POST", json: snapshot });
       for (const form of document.querySelectorAll("[data-config-form]")) form.classList.remove("dirty");
       store.set("config", applied.config);
       store.set("macros", applied.macros);
+      await loadAnnouncements();
       toast("Configuration restored");
     } catch (error) {
       toastError(error);

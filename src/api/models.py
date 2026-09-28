@@ -1,9 +1,10 @@
 """Pydantic request/response models for the repeater API."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
 
@@ -111,9 +112,58 @@ class MacroCreateRequest(BaseModel):
     node_id: str = ""
 
 
+MAX_ANNOUNCEMENT_LENGTH = 2000
+
+
+class AnnouncementFields(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    message: str = Field(default="", max_length=MAX_ANNOUNCEMENT_LENGTH)
+    asset_id: Optional[str] = None
+    kind: Literal["interval", "weekly"] = "interval"
+    every_minutes: int = Field(default=60, ge=1, le=7 * 24 * 60)
+    times: list[str] = []
+    days: list[int] = [0, 1, 2, 3, 4, 5, 6]
+    enabled: bool = True
+
+    @field_validator("times")
+    @classmethod
+    def _valid_times(cls, times: list[str]) -> list[str]:
+        normalized = set()
+        for value in times:
+            hours, sep, minutes = value.strip().partition(":")
+            if not (sep and hours.isdigit() and minutes.isdigit() and int(hours) < 24 and int(minutes) < 60):
+                raise ValueError(f"{value!r} is not a HH:MM time")
+            normalized.add(f"{int(hours):02d}:{int(minutes):02d}")
+        return sorted(normalized)
+
+    @field_validator("days")
+    @classmethod
+    def _valid_days(cls, days: list[int]) -> list[int]:
+        if any(d < 0 or d > 6 for d in days):
+            raise ValueError("days are 0 (Monday) to 6 (Sunday)")
+        return sorted(set(days))
+
+    @model_validator(mode="after")
+    def _has_something_to_say(self) -> "AnnouncementFields":
+        if not self.message.strip() and not self.asset_id:
+            raise ValueError("an announcement needs a message or an audio clip")
+        if self.kind == "weekly" and not self.times:
+            raise ValueError("a weekly announcement needs at least one time")
+        return self
+
+
+class AnnouncementModel(AnnouncementFields):
+    id: str = Field(min_length=1)
+
+
+class AnnouncementResponse(AnnouncementModel):
+    next_run: Optional[datetime]
+
+
 class SnapshotModel(BaseModel):
     config: ConfigResponse
     macros: list[MacroResponse]
+    announcements: list[AnnouncementModel] = []
 
 
 class SnapshotImportRequest(BaseModel):
@@ -123,6 +173,7 @@ class SnapshotImportRequest(BaseModel):
 
     config: dict[str, Any]
     macros: list[MacroCreateRequest] = []
+    announcements: list[AnnouncementModel] = []
 
 
 class AudioPreviewRequest(BaseModel):

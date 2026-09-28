@@ -4,8 +4,8 @@ Clip names are the strings carried by `PlayAudio(clip=...)`:
   - "courtesy_tone", "timeout_tone", "id" -- the controller's built-ins,
     using an assigned uploaded asset when there is one;
   - "asset:<id>" -- an uploaded clip, played as-is;
-  - "tts:<text>" -- arbitrary text through the local TTS engine
-    (announcements and weather alerts use this).
+  - "tts:<text>" -- arbitrary text through the local TTS engine, with
+    "{callsign}" spelled out (announcements and weather alerts use this).
 
 Rendering can be slow (TTS spawns a subprocess), so results are cached and
 `cached_duration` only ever answers from the cache -- it's what the
@@ -122,7 +122,7 @@ class ClipRenderer:
             asset = clip.removeprefix(ASSET_PREFIX)
             return (ASSET_PREFIX, asset, self._asset_version(asset))
         if clip.startswith(TTS_PREFIX):
-            return (TTS_PREFIX, clip.removeprefix(TTS_PREFIX), config.tts_voice)
+            return (TTS_PREFIX, clip.removeprefix(TTS_PREFIX), config.tts_voice, config.callsign, config.id_phonetic)
         raise UnknownClipError(clip)
 
     def _load_asset(self, asset_id: Optional[str]) -> Optional[np.ndarray]:
@@ -152,7 +152,8 @@ class ClipRenderer:
                 raise UnknownClipError(clip)
             return asset
         if clip.startswith(TTS_PREFIX):
-            return self.speak(clip.removeprefix(TTS_PREFIX), config.tts_voice)
+            text = format_voice_id(clip.removeprefix(TTS_PREFIX), config.callsign, config.id_phonetic)
+            return self.speak(text, config.tts_voice)
         raise UnknownClipError(clip)
 
     def _voice_id(self, config: RepeaterConfig) -> Optional[np.ndarray]:

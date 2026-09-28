@@ -13,8 +13,10 @@ import asyncio
 import dataclasses
 import logging
 import time
+from datetime import datetime
 from typing import Callable, Optional
 
+from controller.announcements import Announcement, AnnouncementScheduler, announcement_from_dict
 from controller.events import (
     AssertPTT,
     COSChanged,
@@ -30,7 +32,7 @@ from controller.events import (
 from controller.macros import Macro
 from controller.state_machine import RepeaterConfig, RepeaterController
 
-from playout.renderer import ClipRenderer
+from playout.renderer import ASSET_PREFIX, TTS_PREFIX, ClipRenderer
 
 from .persistence import StateStore
 
@@ -58,6 +60,10 @@ def macros_from_snapshot(data: dict) -> list[Macro]:
     return [Macro(**_known_fields(m, _MACRO_FIELDS, "macro")) for m in data.get("macros", [])]
 
 
+def announcements_from_snapshot(data: dict) -> list[Announcement]:
+    return [announcement_from_dict(a) for a in data.get("announcements", [])]
+
+
 @dataclasses.dataclass(frozen=True)
 class StatusSnapshot:
     state: str
@@ -78,8 +84,13 @@ class RepeaterService:
         link_command_sink: Callable[[SendLinkCommand], None] = lambda command: None,
         state_store: Optional[StateStore] = None,
         renderer: Optional[ClipRenderer] = None,
+        announcements: Optional[list[Announcement]] = None,
+        wall_clock: Callable[[], datetime] = datetime.now,
     ) -> None:
+        """`clock` is monotonic and drives the controller's timers;
+        `wall_clock` is naive local time and drives scheduled announcements."""
         self._clock = clock
+        self._wall_clock = wall_clock
         self._link_command_sink = link_command_sink
         self._state_store = state_store
         self.renderer = renderer
@@ -88,10 +99,12 @@ class RepeaterService:
         if saved is not None:
             config = config_from_snapshot(saved)
             macros = macros_from_snapshot(saved)
+            announcements = announcements_from_snapshot(saved)
             _logger.info("loaded saved state from %s", state_store.path)
         self.controller = RepeaterController(
             config or RepeaterConfig(), macros=macros or [], now=clock(), clip_duration=self._clip_duration
         )
+        self.scheduler = AnnouncementScheduler(announcements or [], wall_clock())
         self.ptt_active = False
         self.cos_active = False
         self.ctcss_hz: Optional[float] = None
@@ -211,18 +224,55 @@ class RepeaterService:
         self._persist()
         return macros
 
+    def list_announcements(self) -> list[Announcement]:
+        return self.scheduler.list()
+
+    def next_announcement_run(self, announcement_id: str) -> Optional[datetime]:
+        return self.scheduler.next_run(announcement_id)
+
+    def save_announcement(self, announcement: Announcement) -> Announcement:
+        _logger.info("save_announcement(id=%r, name=%r)", announcement.id, announcement.name)
+        self.scheduler.upsert(announcement, self._wall_clock())
+        self._persist()
+        return announcement
+
+    def delete_announcement(self, announcement_id: str) -> None:
+        _logger.info("delete_announcement(id=%r)", announcement_id)
+        self.scheduler.remove(announcement_id, self._wall_clock())
+        self._persist()
+
+    def announcement_clip(self, announcement: Announcement) -> str:
+        """The controller clip for an announcement: its uploaded recording,
+        or its message through text-to-speech."""
+        if announcement.asset_id:
+            return ASSET_PREFIX + announcement.asset_id
+        return TTS_PREFIX + announcement.message
+
+    def due_announcement_clips(self) -> list[str]:
+        due = self.scheduler.due(self._wall_clock())
+        for announcement in due:
+            _logger.info("announcement %r is due", announcement.name)
+        return [self.announcement_clip(a) for a in due]
+
+    def queue_announcement(self, clip: str) -> bool:
+        """Callers should render `clip` first (off the event loop) so the
+        controller knows how long to hold PTT for."""
+        return self.controller.queue_announcement(clip)
+
     def export_snapshot(self) -> dict:
         return {
             "config": dataclasses.asdict(self.controller.config),
             "macros": [dataclasses.asdict(m) for m in self.controller.list_macros()],
+            "announcements": [dataclasses.asdict(a) for a in self.scheduler.list()],
         }
 
     def import_snapshot(self, data: dict) -> None:
-        """Replace config and macros wholesale. Fields missing from `data`
-        (e.g. a backup taken before a setting existed) get their defaults."""
+        """Replace everything wholesale. Fields missing from `data` (e.g. a
+        backup taken before a setting existed) get their defaults."""
         _logger.info("import_snapshot()")
         self.controller.update_config(config_from_snapshot(data), self._clock())
         self.controller.set_macros(macros_from_snapshot(data))
+        self.scheduler.set_announcements(announcements_from_snapshot(data), self._wall_clock())
         self._persist()
         self._config_changed()
 

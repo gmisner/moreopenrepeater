@@ -9,6 +9,7 @@ const STATE_DESCRIPTIONS = {
   hang_time: "Hang time — transmitter still keyed",
   timeout: "Timed out — waiting for the user to unkey",
   transmitting_id: "Transmitting station ID",
+  announcing: "Playing a scheduled announcement",
 };
 const MAX_ACTIVITY = 50;
 

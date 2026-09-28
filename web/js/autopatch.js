@@ -113,6 +113,16 @@ function chooseProvider() {
   showProvider(elements.provider.value);
 }
 
+function recognizeServer() {
+  const { elements } = trunkForm;
+  const detected = providerFor(elements.server.value.trim());
+  if (detected === "other" || detected === elements.provider.value) return;
+  elements.provider.value = detected;
+  elements.ten_digit_prefix.value = PROVIDERS[detected].prefix;
+  elements.registers.checked = PROVIDERS[detected].registers;
+  showProvider(detected);
+}
+
 function populateTrunk(trunk, prefix) {
   const { elements } = trunkForm;
   const values = trunk ?? { server: "", port: 5060, transport: "udp", username: "", auth_username: "", registers: true };
@@ -286,6 +296,7 @@ export function initAutopatch() {
   );
   trunkForm.addEventListener("input", () => (trunkFormDirty = true));
   trunkForm.elements.provider.addEventListener("change", chooseProvider);
+  trunkForm.elements.server.addEventListener("change", recognizeServer);
   trunkForm.addEventListener("submit", saveTrunk);
   removeButton.addEventListener("click", removeTrunk);
   enableButton.addEventListener("click", () =>

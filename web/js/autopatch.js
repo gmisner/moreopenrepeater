@@ -132,7 +132,16 @@ const SIP_MODULE = /pjsip|pjproject|rtp|sorcery|codec/;
 
 function describeTrunk(status) {
   const { trunk } = status;
-  if (!status.configured) return { text: "Asterisk isn't connected (see above)." };
+  if (!status.configured) {
+    return {
+      text:
+        "The phone line settings appear here once the controller can reach Asterisk. Set " +
+        "<code>MOREOPENREPEATER_AMI_HOST</code>, <code>MOREOPENREPEATER_AMI_USER</code> and " +
+        "<code>MOREOPENREPEATER_AMI_SECRET</code> in the service's environment " +
+        "(<code>/etc/moreopenrepeater/env</code> on a Pi) and restart it.",
+      pill: ["Not connected", "off"],
+    };
+  }
   if (status.error) return { text: escapeHtml(status.error) };
   const missing = status.missing_modules;
   if (missing.length) {

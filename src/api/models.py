@@ -1,7 +1,7 @@
 """Pydantic request/response models for the repeater API."""
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -104,6 +104,15 @@ class MacroCreateRequest(BaseModel):
 class SnapshotModel(BaseModel):
     config: ConfigResponse
     macros: list[MacroResponse]
+
+
+class SnapshotImportRequest(BaseModel):
+    """A backup file. `config` is loosely typed so a backup from an older
+    version (missing newer settings) still restores -- missing fields get
+    defaults, then the merged result is validated as a ConfigResponse."""
+
+    config: dict[str, Any]
+    macros: list[MacroCreateRequest] = []
 
 
 class LoginRequest(BaseModel):

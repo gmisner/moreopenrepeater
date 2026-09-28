@@ -12,12 +12,15 @@ from typing import NamedTuple, Optional
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 from starlette.requests import HTTPConnection
 
 from controller.events import SendLinkCommand
 from controller.macros import Macro
+from controller.state_machine import RepeaterConfig
 from link.aprs_client import APRSClient, format_position_report, format_status_report
 from link.node_link import NodeLinkClient
 
@@ -44,20 +47,26 @@ from .models import (
     SimulateCTCSSRequest,
     SimulateDTMFRequest,
     SimulateRemoteKeyedRequest,
+    SnapshotImportRequest,
     SnapshotModel,
     StatusResponse,
 )
+from .persistence import StateStore
 from .service import RepeaterService, StatusSnapshot
 
 WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 _REPO_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
 
-def _resolve_data_dir(env: dict, repo_data_dir: Path) -> Path:
+def _resolve_data_root(env: dict, repo_data_dir: Path) -> Path:
     """`MOREOPENREPEATER_DATA_DIR`, if set, overrides the default of a
     `data/` directory next to the repo (which only makes sense for an
     editable/source install, not a real packaged deployment)."""
-    return Path(env.get("MOREOPENREPEATER_DATA_DIR") or str(repo_data_dir)) / "audio"
+    return Path(env.get("MOREOPENREPEATER_DATA_DIR") or str(repo_data_dir))
+
+
+def _resolve_data_dir(env: dict, repo_data_dir: Path) -> Path:
+    return _resolve_data_root(env, repo_data_dir) / "audio"
 
 
 def _resolve_log_path(env: dict, repo_data_dir: Path) -> Path:
@@ -65,6 +74,7 @@ def _resolve_log_path(env: dict, repo_data_dir: Path) -> Path:
 
 
 DEFAULT_DATA_DIR = _resolve_data_dir(os.environ, _REPO_DATA_DIR)
+DEFAULT_STATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "state.json"
 DEFAULT_LOG_PATH = _resolve_log_path(os.environ, _REPO_DATA_DIR)
 TICK_INTERVAL_SECONDS = 0.05
 APRS_DISABLED_POLL_SECONDS = 5.0
@@ -125,8 +135,11 @@ def create_app(
     log_path: Optional[Path] = None,
     link_settings: Optional[LinkSettings] = None,
     auth_settings: Optional[AuthSettings] = None,
+    state_store: Optional[StateStore] = None,
 ) -> FastAPI:
-    service = service or RepeaterService()
+    """`state_store` defaults to None (in-memory only) so tests never touch
+    the real `data/state.json`; the module-level `app` below opts in."""
+    service = service or RepeaterService(state_store=state_store)
     assets_store = assets_store or AudioAssetStore(DEFAULT_DATA_DIR)
     log_path = log_path or DEFAULT_LOG_PATH
     link_settings = link_settings if link_settings is not None else link_settings_from_env()
@@ -328,8 +341,13 @@ def create_app(
         return SnapshotModel(**service.export_snapshot())
 
     @app.post("/api/snapshot", response_model=SnapshotModel, dependencies=auth_dependencies)
-    async def post_snapshot(snapshot: SnapshotModel) -> SnapshotModel:
-        service.import_snapshot(snapshot.model_dump())
+    async def post_snapshot(snapshot: SnapshotImportRequest) -> SnapshotModel:
+        merged = {**dataclasses.asdict(RepeaterConfig()), **snapshot.config}
+        try:
+            config = ConfigResponse.model_validate({k: v for k, v in merged.items() if k in ConfigResponse.model_fields})
+        except ValidationError as error:
+            raise RequestValidationError(error.errors()) from error
+        service.import_snapshot({"config": config.model_dump(), "macros": [m.model_dump() for m in snapshot.macros]})
         return SnapshotModel(**service.export_snapshot())
 
     @app.get("/api/assets", response_model=list[AssetResponse], dependencies=auth_dependencies)
@@ -413,7 +431,7 @@ def create_app(
     return app
 
 
-app = create_app()
+app = create_app(state_store=StateStore(DEFAULT_STATE_PATH))
 
 
 def main() -> None:

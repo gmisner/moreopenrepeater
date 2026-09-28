@@ -30,7 +30,30 @@ from controller.events import (
 from controller.macros import Macro
 from controller.state_machine import RepeaterConfig, RepeaterController
 
+from .persistence import StateStore
+
 _logger = logging.getLogger("moreopenrepeater.service")
+
+_CONFIG_FIELDS = {f.name for f in dataclasses.fields(RepeaterConfig)}
+_MACRO_FIELDS = {f.name for f in dataclasses.fields(Macro)}
+
+
+def _known_fields(data: dict, known: set[str], what: str) -> dict:
+    """Saved state and backups may come from an older or newer version of
+    this app; drop fields this version doesn't know instead of crashing, and
+    let missing ones fall back to their defaults."""
+    unknown = set(data) - known
+    if unknown:
+        _logger.warning("ignoring unknown %s fields: %s", what, sorted(unknown))
+    return {k: v for k, v in data.items() if k in known}
+
+
+def config_from_snapshot(data: dict) -> RepeaterConfig:
+    return RepeaterConfig(**_known_fields(data.get("config", {}), _CONFIG_FIELDS, "config"))
+
+
+def macros_from_snapshot(data: dict) -> list[Macro]:
+    return [Macro(**_known_fields(m, _MACRO_FIELDS, "macro")) for m in data.get("macros", [])]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -51,9 +74,16 @@ class RepeaterService:
         macros: Optional[list[Macro]] = None,
         clock: Callable[[], float] = time.monotonic,
         link_command_sink: Callable[[SendLinkCommand], None] = lambda command: None,
+        state_store: Optional[StateStore] = None,
     ) -> None:
         self._clock = clock
         self._link_command_sink = link_command_sink
+        self._state_store = state_store
+        saved = state_store.load() if state_store is not None else None
+        if saved is not None:
+            config = config_from_snapshot(saved)
+            macros = macros_from_snapshot(saved)
+            _logger.info("loaded saved state from %s", state_store.path)
         self.controller = RepeaterController(config or RepeaterConfig(), macros=macros or [], now=clock())
         self.ptt_active = False
         self.cos_active = False
@@ -144,6 +174,7 @@ class RepeaterService:
         _logger.info("update_config(%s)", overrides)
         new_config = dataclasses.replace(self.controller.config, **overrides)
         self.controller.config = new_config
+        self._persist()
         self._notify()
         return new_config
 
@@ -155,12 +186,14 @@ class RepeaterService:
         macros = [m for m in self.controller.list_macros() if m.pattern != macro.pattern]
         macros.append(macro)
         self.controller.set_macros(macros)
+        self._persist()
         return self.controller.list_macros()
 
     def delete_macro(self, pattern: str) -> list[Macro]:
         _logger.info("delete_macro(pattern=%r)", pattern)
         macros = [m for m in self.controller.list_macros() if m.pattern != pattern]
         self.controller.set_macros(macros)
+        self._persist()
         return macros
 
     def export_snapshot(self) -> dict:
@@ -170,5 +203,14 @@ class RepeaterService:
         }
 
     def import_snapshot(self, data: dict) -> None:
-        self.update_config(**data["config"])
-        self.controller.set_macros([Macro(**m) for m in data["macros"]])
+        """Replace config and macros wholesale. Fields missing from `data`
+        (e.g. a backup taken before a setting existed) get their defaults."""
+        _logger.info("import_snapshot()")
+        self.controller.config = config_from_snapshot(data)
+        self.controller.set_macros(macros_from_snapshot(data))
+        self._persist()
+        self._notify()
+
+    def _persist(self) -> None:
+        if self._state_store is not None:
+            self._state_store.save(self.export_snapshot())

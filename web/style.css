@@ -124,6 +124,12 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 }
 .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
 .card-header h2 { margin: 0; }
+/* Viewers are read-only: the server refuses changes, so don't offer them. */
+[data-role="viewer"] .form-actions,
+[data-role="viewer"] .row-actions,
+[data-role="viewer"] #asset-form,
+[data-role="viewer"] [data-requires-write] { display: none; }
+[data-role="viewer"] .config-form { pointer-events: none; opacity: 0.8; }
 .listen-controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 .listen-card p { margin: 0; }
 

@@ -92,24 +92,69 @@ sudo chown root:moreopenrepeater /etc/moreopenrepeater/env
 sudo chmod 640 /etc/moreopenrepeater/env
 ```
 
-**Security note**: anyone who can reach the HTTP port and pass auth (if
-enabled) can fully reconfigure the repeater (change timers, upload audio,
-add DTMF macros that key the AllStarLink link, etc). Set
-`MOREOPENREPEATER_AUTH_USER`/`MOREOPENREPEATER_AUTH_PASSWORD` in the env
-file to require signing in: the dashboard then shows a login page and uses
-an HttpOnly session cookie (12-hour lifetime, revoked on sign-out, and
-cleared on service restart), and scripts can still use HTTP Basic
-(`curl -u admin:... http://127.0.0.1:8000/api/status`). Every API route
-and the WebSocket require one or the other; only the login page and the
-static JS/CSS (no secrets in those) are public. Setting only one of the two
-variables is treated as a misconfiguration and refuses to start rather than
-silently running open. There's still no TLS, so the password travels in
-the clear -- that's fine over loopback/SSH-tunneled/Tailscale access, not
-fine if you expose the port directly to an untrusted network. The env
-file's default (`MOREOPENREPEATER_HOST=127.0.0.1`) only listens on
-loopback either way; reach it remotely over SSH port-forwarding,
-Tailscale, or a VPN rather than exposing the port directly, unless you put
-a reverse proxy with real TLS in front of it yourself.
+## Security: sign-in, users and HTTPS
+
+Anyone who can reach the HTTP port and get past sign-in can reconfigure
+the repeater (timers, audio, DTMF macros that key the AllStar link, and
+so on), so turn sign-in on before the dashboard is reachable from anywhere
+but the Pi itself.
+
+**Sign-in.** Set `MOREOPENREPEATER_AUTH_USER`/`MOREOPENREPEATER_AUTH_PASSWORD`
+in the env file. That account is always an admin and can't be edited from
+the dashboard, so a lost users file never locks you out. Setting only one
+of the two is treated as a typo and the service refuses to start. The
+dashboard uses an HttpOnly session cookie (12 hours, revoked on sign-out,
+cleared when the service restarts); scripts can use HTTP Basic
+(`curl -u admin:... http://127.0.0.1:8000/api/status`).
+
+**More users.** Admins can add accounts under **Tools → Users**, each with a
+role:
+
+| Role | Can |
+| --- | --- |
+| Admin | Everything, including managing users and reading the audit log |
+| Operator | Change settings, macros, announcements, audio and recordings |
+| Viewer | Look and listen only |
+
+Passwords are stored as scrypt hashes in `data/users.json`. Role changes
+and deletions apply to signed-in sessions immediately. Adding a user also
+turns sign-in on if the env account isn't set; the first one must then be
+an admin.
+
+**Audit log.** Every change made through the dashboard or API is recorded
+with who made it (failed sign-ins included), along with DTMF commands
+dialed over the air, under **Tools → Audit log**. Settings changes show the
+old and new values. Request bodies aren't stored, so passwords never end up
+in it. Entries are kept for a year in `data/audit.db`.
+
+**HTTPS.** The service speaks plain HTTP, so on its own the password
+crosses the network unencrypted. The env file's default
+(`MOREOPENREPEATER_HOST=127.0.0.1`) only listens on the Pi itself. To reach
+it from elsewhere, pick one:
+
+- **Tailscale** (simplest): install it on the Pi and your devices, then
+  `sudo tailscale serve --bg 8000`. The dashboard is at
+  `https://<pi-name>.<tailnet>.ts.net`, with a real certificate, and only
+  your tailnet can reach it.
+- **Caddy reverse proxy** (for a public hostname pointing at the Pi, ports
+  80/443 open): `sudo apt install caddy`, then put this in
+  `/etc/caddy/Caddyfile` and `sudo systemctl reload caddy`:
+
+  ```
+  repeater.example.org {
+      reverse_proxy 127.0.0.1:8000
+  }
+  ```
+
+  Caddy gets and renews a Let's Encrypt certificate itself, and passes
+  WebSockets (live status, Listen live) through without extra config.
+- **SSH port forwarding** for occasional access:
+  `ssh -L 8000:127.0.0.1:8000 pi@<pi>`, then open `http://localhost:8000`.
+
+Behind a proxy on the same Pi, the session cookie is automatically marked
+`Secure`: uvicorn trusts `X-Forwarded-Proto` from localhost by default.
+If the proxy runs on another machine, set `FORWARDED_ALLOW_IPS` to its
+address in the env file.
 
 ## 5. Install and start the service
 

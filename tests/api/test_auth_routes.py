@@ -106,7 +106,7 @@ def test_login_with_correct_credentials_sets_httponly_session_cookie():
     response = _login(client)
 
     assert response.status_code == 200
-    assert response.json() == {"auth_required": True, "authenticated": True, "username": "admin"}
+    assert response.json() == {"auth_required": True, "authenticated": True, "username": "admin", "role": "admin"}
     set_cookie = response.headers["set-cookie"]
     assert set_cookie.startswith(f"{SESSION_COOKIE_NAME}=")
     assert "HttpOnly" in set_cookie
@@ -161,15 +161,15 @@ def test_logout_revokes_the_session_server_side():
 def test_session_endpoint_reports_signed_out_then_signed_in():
     client = make_authenticated_client()
 
-    assert client.get("/api/session").json() == {"auth_required": True, "authenticated": False, "username": None}
+    assert client.get("/api/session").json() == {"auth_required": True, "authenticated": False, "username": None, "role": None}
     _login(client)
-    assert client.get("/api/session").json() == {"auth_required": True, "authenticated": True, "username": "admin"}
+    assert client.get("/api/session").json() == {"auth_required": True, "authenticated": True, "username": "admin", "role": "admin"}
 
 
 def test_session_endpoint_reports_auth_not_required_when_disabled():
     client = make_client(auth_settings=None)
 
-    assert client.get("/api/session").json() == {"auth_required": False, "authenticated": True, "username": None}
+    assert client.get("/api/session").json() == {"auth_required": False, "authenticated": True, "username": None, "role": "admin"}
 
 
 def test_login_page_redirects_home_when_auth_disabled():

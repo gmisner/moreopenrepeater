@@ -6,6 +6,7 @@ import collections
 import dataclasses
 import logging
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -39,16 +40,20 @@ from .auth import (
     AuthSettings,
     SessionStore,
     auth_settings_from_env,
-    credentials_match,
+    parse_basic_auth_header,
     verify_credentials,
 )
+from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
+from .audit import AuditEntry, AuditLog, describe_config_change
 from .live_audio import LiveAudio, cm108_from_env, list_audio_devices
 from .monitor import MonitorSource
 from .recordings import RecordingInfo, RecordingStore
+from .users import Role, UserError, UserStore
 from .logging_config import configure_logging
 from .models import (
     ActivitySummaryResponse,
     AnnouncementFields,
+    AuditEntryResponse,
     AnnouncementResponse,
     AssetResponse,
     AudioDeviceResponse,
@@ -61,6 +66,9 @@ from .models import (
     MacroResponse,
     RecordingResponse,
     SessionResponse,
+    UserCreateRequest,
+    UserResponse,
+    UserUpdateRequest,
     SimulateCOSRequest,
     SimulateCTCSSRequest,
     SimulateDTMFRequest,
@@ -99,6 +107,11 @@ DEFAULT_DATA_DIR = _resolve_data_dir(os.environ, _REPO_DATA_DIR)
 DEFAULT_STATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "state.json"
 DEFAULT_ACTIVITY_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "activity.db"
 DEFAULT_RECORDINGS_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "recordings"
+DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.json"
+DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+# POSTs that don't change anything, left out of the audit log.
+_UNAUDITED_PATHS = ("/api/audio/preview",)
 DEFAULT_LOG_PATH = _resolve_log_path(os.environ, _REPO_DATA_DIR)
 TICK_INTERVAL_SECONDS = 0.05
 APRS_DISABLED_POLL_SECONDS = 5.0
@@ -113,6 +126,14 @@ _announce_logger = logging.getLogger("moreopenrepeater.announcements")
 _weather_logger = logging.getLogger("moreopenrepeater.weather")
 _link_logger = logging.getLogger("moreopenrepeater.link")
 _auth_logger = logging.getLogger("moreopenrepeater.auth")
+
+
+class Identity(NamedTuple):
+    username: Optional[str]  # None when auth is off
+    role: Role
+
+
+_LOCAL = Identity(None, "admin")
 
 
 class LinkSettings(NamedTuple):
@@ -155,6 +176,12 @@ def _macro_response(macro: Macro) -> MacroResponse:
 
 def _asset_response(asset) -> AssetResponse:
     return AssetResponse(**dataclasses.asdict(asset))
+
+
+def _audit_response(entry: AuditEntry) -> AuditEntryResponse:
+    return AuditEntryResponse(
+        at=datetime.fromtimestamp(entry.at), actor=entry.actor, action=entry.action, detail=entry.detail, status=entry.status
+    )
 
 
 def _recording_response(recording: RecordingInfo) -> RecordingResponse:
@@ -222,6 +249,8 @@ def create_app(
     live_audio: Optional[LiveAudio] = None,
     audio_devices: Callable[[], list[dict]] = list_audio_devices,
     recordings: Optional[RecordingStore] = None,
+    users: Optional[UserStore] = None,
+    audit: Optional[AuditLog] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -244,26 +273,56 @@ def create_app(
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
     configure_logging(log_path)
     sessions = SessionStore()
+    users = users if users is not None else UserStore()
+    users.reserved_username = auth_settings.username if auth_settings else None
+    audit = audit or AuditLog()
+    service.audit_hook = lambda actor, action, detail: audit.record(time.time(), actor, action, detail)
 
-    def authenticated_username(conn: HTTPConnection) -> Optional[str]:
+    def auth_enabled() -> bool:
+        """On once there's an env admin or any stored user -- so adding the
+        first user from an open dashboard turns sign-in on."""
+        return auth_settings is not None or bool(users)
+
+    def check_login(username: str, password: str) -> Optional[Identity]:
+        if auth_settings is not None and verify_credentials(username, password, auth_settings):
+            return Identity(username, "admin")
+        user = users.authenticate(username, password)
+        return Identity(user.username, user.role) if user else None
+
+    def identify(conn: HTTPConnection) -> Optional[Identity]:
         """Accepts either the dashboard's session cookie or a Basic
-        `Authorization` header (for curl/scripts)."""
-        assert auth_settings is not None
+        `Authorization` header (for curl/scripts). Roles are looked up on
+        every request, so a role change or deletion applies immediately."""
+        if not auth_enabled():
+            return _LOCAL
+        credentials = parse_basic_auth_header(conn.headers.get("Authorization"))
+        if credentials:
+            return check_login(*credentials)
         username = sessions.username_for(conn.cookies.get(SESSION_COOKIE_NAME))
-        if username is not None:
-            return username
-        if credentials_match(conn.headers.get("Authorization"), auth_settings):
-            return auth_settings.username
-        return None
+        if username is None:
+            return None
+        if auth_settings is not None and username == auth_settings.username:
+            return Identity(username, "admin")
+        user = users.get(username)
+        return Identity(username, user.role) if user else None
 
     def require_auth(request: Request) -> None:
         # No WWW-Authenticate header: it would make browsers pop their
         # native Basic Auth dialog over the dashboard's own login page
         # whenever a fetch() hits an expired session.
-        if authenticated_username(request) is None:
+        identity = identify(request)
+        if identity is None:
             raise HTTPException(status_code=401, detail="Not authenticated")
+        request.state.identity = identity
+        if identity.role == "viewer" and request.method not in SAFE_METHODS:
+            raise HTTPException(status_code=403, detail="Your account is read-only")
 
-    auth_dependencies = [Depends(require_auth)] if auth_settings is not None else []
+    def require_admin(request: Request) -> None:
+        if request.state.identity.role != "admin":
+            raise HTTPException(status_code=403, detail="Only admins can do that")
+
+    auth_dependencies = [Depends(require_auth)]
+    admin_dependencies = [Depends(require_auth), Depends(require_admin)]
 
     async def node_link_loop() -> None:
         assert link_settings is not None
@@ -383,6 +442,7 @@ def create_app(
             tasks.append(asyncio.create_task(announcement_loop()))
             tasks.append(asyncio.create_task(weather_loop()))
             activity_store.prune((datetime.now() - timedelta(days=RETENTION_DAYS)).timestamp())
+            audit.prune((datetime.now() - timedelta(days=AUDIT_RETENTION_DAYS)).timestamp())
             loop = asyncio.get_running_loop()
             loop.run_in_executor(None, renderer.warm, service.config)
             service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
@@ -403,22 +463,42 @@ def create_app(
         # keep running the old dashboard after an upgrade. "no-cache" still
         # allows caching -- it just forces a cheap ETag revalidation (304).
         response = await call_next(request)
-        if not request.url.path.startswith("/api/"):
+        path = request.url.path
+        if not path.startswith("/api/"):
             response.headers.setdefault("Cache-Control", "no-cache")
+        elif request.method not in SAFE_METHODS and path not in _UNAUDITED_PATHS:
+            state = request.state
+            identity = getattr(state, "identity", None)
+            actor = getattr(state, "audit_actor", None) or (identity and identity.username)
+            audit.record(
+                time.time(),
+                actor or ("local" if not auth_enabled() else "anonymous"),
+                f"{request.method} {path}",
+                getattr(state, "audit_detail", ""),
+                response.status_code,
+            )
         return response
+
+    def session_response(identity: Optional[Identity]) -> SessionResponse:
+        return SessionResponse(
+            auth_required=auth_enabled(),
+            authenticated=identity is not None,
+            username=identity.username if identity else None,
+            role=identity.role if identity else None,
+        )
 
     @app.get("/api/session", response_model=SessionResponse)
     def get_session(request: Request) -> SessionResponse:
-        if auth_settings is None:
-            return SessionResponse(auth_required=False, authenticated=True, username=None)
-        username = authenticated_username(request)
-        return SessionResponse(auth_required=True, authenticated=username is not None, username=username)
+        return session_response(identify(request))
 
     @app.post("/api/login", response_model=SessionResponse)
     async def login(body: LoginRequest, request: Request, response: Response) -> SessionResponse:
-        if auth_settings is None:
-            return SessionResponse(auth_required=False, authenticated=True, username=None)
-        if not verify_credentials(body.username, body.password, auth_settings):
+        if not auth_enabled():
+            return session_response(_LOCAL)
+        request.state.audit_actor = body.username
+        # scrypt takes tens of milliseconds; keep it off the event loop.
+        identity = await asyncio.get_running_loop().run_in_executor(None, check_login, body.username, body.password)
+        if identity is None:
             _auth_logger.warning("failed login for %r from %s", body.username, request.client.host if request.client else "?")
             await asyncio.sleep(LOGIN_FAILURE_DELAY_SECONDS)
             raise HTTPException(status_code=401, detail="Invalid username or password")
@@ -432,13 +512,13 @@ def create_app(
             secure=request.url.scheme == "https",
         )
         _auth_logger.info("login succeeded for %r", body.username)
-        return SessionResponse(auth_required=True, authenticated=True, username=body.username)
+        return session_response(identity)
 
     @app.post("/api/logout", response_model=SessionResponse)
     async def logout(request: Request, response: Response) -> SessionResponse:
         sessions.revoke(request.cookies.get(SESSION_COOKIE_NAME))
         response.delete_cookie(SESSION_COOKIE_NAME, httponly=True, samesite="strict")
-        return SessionResponse(auth_required=auth_settings is not None, authenticated=auth_settings is None, username=None)
+        return session_response(None if auth_enabled() else _LOCAL)
 
     @app.get("/api/status", response_model=StatusResponse, dependencies=auth_dependencies)
     def get_status() -> StatusResponse:
@@ -449,12 +529,13 @@ def create_app(
         return _config_response(service)
 
     @app.put("/api/config", response_model=ConfigResponse, dependencies=auth_dependencies)
-    async def put_config(update: ConfigUpdateRequest) -> ConfigResponse:
+    async def put_config(update: ConfigUpdateRequest, request: Request) -> ConfigResponse:
         clear_fields = {name for name in ConfigUpdateRequest.model_fields if name.startswith("clear_")}
         overrides = update.model_dump(exclude=clear_fields, exclude_none=True)
         for clear_field in clear_fields:
             if getattr(update, clear_field):
                 overrides[clear_field.removeprefix("clear_")] = None
+        request.state.audit_detail = describe_config_change(dataclasses.asdict(service.config), overrides)
         service.update_config(**overrides)
         return _config_response(service)
 
@@ -670,15 +751,55 @@ def create_app(
         with log_path.open() as f:
             return [line.rstrip("\n") for line in collections.deque(f, maxlen=lines)]
 
+    @app.get("/api/users", response_model=list[UserResponse], dependencies=admin_dependencies)
+    def list_users() -> list[UserResponse]:
+        builtin = [UserResponse(username=auth_settings.username, role="admin", builtin=True)] if auth_settings else []
+        return builtin + [UserResponse(username=u.username, role=u.role, builtin=False) for u in users.list()]
+
+    @app.post("/api/users", response_model=list[UserResponse], dependencies=admin_dependencies)
+    async def create_user(body: UserCreateRequest, request: Request) -> list[UserResponse]:
+        request.state.audit_detail = f"{body.username} ({body.role})"
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, users.add, body.username, body.password, body.role)
+        except UserError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+        return list_users()
+
+    @app.put("/api/users/{username}", response_model=list[UserResponse], dependencies=admin_dependencies)
+    async def update_user(username: str, body: UserUpdateRequest, request: Request) -> list[UserResponse]:
+        changes = ([f"role → {body.role}"] if body.role else []) + (["password reset"] if body.password else [])
+        request.state.audit_detail = f"{username}: {', '.join(changes)}"
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, users.update, username, body.password, body.role)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"No user {username!r}") from None
+        except UserError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+        return list_users()
+
+    @app.delete("/api/users/{username}", response_model=list[UserResponse], dependencies=admin_dependencies)
+    def delete_user(username: str) -> list[UserResponse]:
+        try:
+            users.delete(username)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"No user {username!r}") from None
+        except UserError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+        return list_users()
+
+    @app.get("/api/audit", response_model=list[AuditEntryResponse], dependencies=admin_dependencies)
+    def get_audit(limit: int = Query(default=200, ge=1, le=2000)) -> list[AuditEntryResponse]:
+        return [_audit_response(e) for e in audit.recent(limit)]
+
     def websocket_allowed(websocket: WebSocket) -> bool:
-        if auth_settings is None:
+        if not auth_enabled():
             return True
         # WebSocket handshakes aren't subject to CORS, so a page on another
         # origin could otherwise open this with the user's session cookie.
         origin = websocket.headers.get("origin")
         if origin and urlsplit(origin).netloc != websocket.headers.get("host"):
             return False
-        return authenticated_username(websocket) is not None
+        return identify(websocket) is not None
 
     @app.websocket("/ws/audio")
     async def ws_audio(websocket: WebSocket, source: MonitorSource = "tx") -> None:
@@ -722,7 +843,7 @@ def create_app(
 
     if WEB_DIR.is_dir():
         def is_signed_in(request: Request) -> bool:
-            return auth_settings is None or authenticated_username(request) is not None
+            return identify(request) is not None
 
         @app.get("/", response_model=None)
         def index(request: Request) -> Response:
@@ -732,7 +853,7 @@ def create_app(
 
         @app.get("/login", response_model=None)
         def login_page(request: Request) -> Response:
-            if auth_settings is None or is_signed_in(request):
+            if not auth_enabled() or is_signed_in(request):
                 return RedirectResponse("/", status_code=303)
             return FileResponse(WEB_DIR / "login.html")
 
@@ -749,6 +870,8 @@ app = create_app(
     state_store=StateStore(DEFAULT_STATE_PATH),
     activity_store=ActivityStore(DEFAULT_ACTIVITY_PATH),
     recordings=RecordingStore(DEFAULT_RECORDINGS_DIR),
+    users=UserStore(StateStore(DEFAULT_USERS_PATH)),
+    audit=AuditLog(DEFAULT_AUDIT_PATH),
 )
 
 

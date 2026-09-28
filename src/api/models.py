@@ -11,6 +11,7 @@ from controller.macros import ACTIONS_NEEDING_ARGUMENT, MacroAction
 CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
 WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
 CosSource = Literal["vox", "ctcss", "cm108"]
+Role = Literal["admin", "operator", "viewer"]
 
 
 class StatusResponse(BaseModel):
@@ -331,6 +332,32 @@ class SessionResponse(BaseModel):
     auth_required: bool
     authenticated: bool
     username: Optional[str]
+    role: Optional[Role] = None
+
+
+class UserResponse(BaseModel):
+    username: str
+    role: Role
+    builtin: bool  # the env-configured admin; can't be edited here
+
+
+class UserCreateRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._@-]+$")
+    password: str = Field(min_length=8, max_length=200)
+    role: Role
+
+
+class UserUpdateRequest(BaseModel):
+    password: Optional[str] = Field(default=None, min_length=8, max_length=200)
+    role: Optional[Role] = None
+
+
+class AuditEntryResponse(BaseModel):
+    at: datetime
+    actor: str
+    action: str
+    detail: str
+    status: int
 
 
 class AssetResponse(BaseModel):

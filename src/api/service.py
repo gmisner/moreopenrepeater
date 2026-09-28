@@ -118,6 +118,7 @@ class RepeaterService:
         self.renderer = renderer
         self.activity = activity
         self.audio_output: Optional[AudioOutput] = None
+        self.audit_hook: Optional[Callable[[str, str, str], None]] = None  # (actor, action, detail)
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
         if saved is not None:
@@ -224,6 +225,8 @@ class RepeaterService:
 
     def _run_action(self, action: RunAction) -> None:
         _logger.info("DTMF action %s(%r)", action.action, action.argument)
+        if self.audit_hook is not None:
+            self.audit_hook("DTMF", f"DTMF {action.action}", action.argument)
         if action.action == "tx_disable":
             self.update_config(transmitter_enabled=False)
         elif action.action == "tx_enable":

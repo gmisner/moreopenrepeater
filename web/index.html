@@ -36,11 +36,13 @@
         <a href="#/simulator" data-nav="simulator">Simulator</a>
         <a href="#/logs" data-nav="logs">Logs</a>
         <a href="#/backup" data-nav="backup">Backup &amp; restore</a>
+        <a href="#/users" data-nav="users" data-admin-only hidden>Users</a>
+        <a href="#/audit" data-nav="audit" data-admin-only hidden>Audit log</a>
       </nav>
       <div class="sidebar-footer">
         <span id="connection-indicator" class="pill pill-unknown">connecting&hellip;</span>
         <div id="user-box" class="user-box" hidden>
-          <span class="muted small">Signed in as <strong id="user-name"></strong></span>
+          <span class="muted small">Signed in as <strong id="user-name"></strong> <span id="user-role" class="tag"></span></span>
           <button type="button" class="btn btn-ghost btn-sm" id="logout-button">Sign out</button>
         </div>
       </div>
@@ -709,6 +711,65 @@
               <button type="button" class="btn" data-remote-keyed="false">Unkey</button>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- Users (admins only) -->
+      <section class="view" data-view="users" data-title="Users" hidden>
+        <header class="view-header">
+          <h1>Users</h1>
+          <p class="muted">Admins manage everything, operators change repeater settings, viewers can only look and listen.</p>
+        </header>
+        <p id="users-auth-off" class="card muted" hidden>Sign-in is currently off, so anyone who can reach this page has full control. Add an admin below to turn it on &mdash; you'll be asked to sign in straight away.</p>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>User</th><th>Role</th><th></th></tr></thead>
+              <tbody id="users-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <form class="card" id="user-form">
+          <h2>Add a user</h2>
+          <div class="form-grid">
+            <label>Username
+              <input name="username" required maxlength="64" pattern="[A-Za-z0-9._@\-]+" autocomplete="off" />
+            </label>
+            <label>Password
+              <input name="password" type="password" required minlength="8" autocomplete="new-password" />
+              <small>At least 8 characters.</small>
+            </label>
+            <label>Role
+              <select name="role">
+                <option value="viewer">Viewer</option>
+                <option value="operator">Operator</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Add user</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Audit log (admins only) -->
+      <section class="view" data-view="audit" data-title="Audit log" hidden>
+        <header class="view-header view-header-row">
+          <div>
+            <h1>Audit log</h1>
+            <p class="muted">Every change made through the dashboard or API, plus DTMF commands. Kept for a year.</p>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" id="audit-refresh">Refresh</button>
+        </header>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th><th></th></tr></thead>
+              <tbody id="audit-tbody"></tbody>
+            </table>
+          </div>
+          <p id="audit-empty" class="muted small">Nothing yet.</p>
         </div>
       </section>
 

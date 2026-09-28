@@ -1,15 +1,22 @@
 import { api } from "./api.js";
 import { toastError } from "./ui.js";
 
+const ROLE_LABELS = { admin: "admin", operator: "operator", viewer: "read-only" };
+
+export let session = null;
+
 // Returns false if the page is navigating away to the login screen.
 export async function initSession() {
-  const session = await api("/api/session");
+  session = await api("/api/session");
   if (session.auth_required && !session.authenticated) {
     location.replace("/login");
     return false;
   }
+  document.body.dataset.role = session.role;
+  for (const el of document.querySelectorAll("[data-admin-only]")) el.hidden = session.role !== "admin";
   if (session.auth_required) {
     document.getElementById("user-name").textContent = session.username;
+    document.getElementById("user-role").textContent = ROLE_LABELS[session.role] ?? session.role;
     document.getElementById("user-box").hidden = false;
     document.getElementById("logout-button").addEventListener("click", async () => {
       try {

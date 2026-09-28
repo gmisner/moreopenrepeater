@@ -1,6 +1,7 @@
 import { api } from "./js/api.js";
 import { initAnnouncements, loadAnnouncements } from "./js/announcements.js";
 import { initAssets, loadAssets } from "./js/assets.js";
+import { initAudit } from "./js/audit.js";
 import { initAudio } from "./js/audio.js";
 import { initBackup } from "./js/backup.js";
 import { initConfig, loadConfig } from "./js/config.js";
@@ -13,6 +14,7 @@ import { initSimulator } from "./js/simulator.js";
 import { applyStatus, connectStatusSocket, initStatus } from "./js/status.js";
 import { toastError } from "./js/ui.js";
 import { initUsage } from "./js/usage.js";
+import { initUsers } from "./js/users.js";
 import { initWeather, loadWeather } from "./js/weather.js";
 
 async function main() {
@@ -31,6 +33,8 @@ async function main() {
   initSimulator();
   initLogs();
   initBackup();
+  initUsers();
+  initAudit();
 
   try {
     // Assets first so the clip dropdowns have options before config

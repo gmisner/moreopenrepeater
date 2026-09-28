@@ -576,6 +576,13 @@
             <label>Longitude
               <input type="number" step="0.0001" min="-180" max="180" name="wx_lon" placeholder="e.g. -94.5786" />
             </label>
+            <label>Grid square or coordinates
+              <span class="input-action">
+                <input type="text" data-location-lookup placeholder="FN31pr or 41.7148, -72.7272" autocomplete="off" />
+                <button type="button" class="btn btn-ghost" data-location-apply>Set</button>
+              </span>
+              <small>Fills in the latitude and longitude.</small>
+            </label>
             <label>Announce alerts that are at least
               <select name="wx_min_severity">
                 <option value="Extreme">Extreme (e.g. tornado warning)</option>
@@ -593,7 +600,7 @@
             </label>
           </div>
           <div class="form-actions">
-            <button type="button" class="btn btn-ghost" id="wx-locate">Use my location</button>
+            <button type="button" class="btn btn-ghost" id="wx-locate" data-locate>Use this device's location</button>
             <span class="spacer"></span>
             <span class="dirty-note">Unsaved changes</span>
             <button type="button" class="btn btn-ghost" data-reset>Discard</button>
@@ -648,12 +655,19 @@
             <label>Longitude
               <input type="number" step="0.0001" min="-180" max="180" name="aprs_lon" placeholder="blank = status beacon" />
             </label>
+            <label>Grid square or coordinates
+              <span class="input-action">
+                <input type="text" data-location-lookup placeholder="FN31pr or 41.7148, -72.7272" autocomplete="off" />
+                <button type="button" class="btn btn-ghost" data-location-apply>Set</button>
+              </span>
+              <small>Fills in the latitude and longitude.</small>
+            </label>
             <label class="span-2">Beacon comment
               <input type="text" name="aprs_comment" placeholder="e.g. 146.940 PL100 repeater" />
             </label>
           </div>
           <div class="form-actions">
-            <button type="button" class="btn btn-ghost" id="aprs-locate">Use my location</button>
+            <button type="button" class="btn btn-ghost" id="aprs-locate" data-locate>Use this device's location</button>
             <span class="spacer"></span>
             <span class="dirty-note">Unsaved changes</span>
             <button type="button" class="btn btn-ghost" data-reset>Discard</button>

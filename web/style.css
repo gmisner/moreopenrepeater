@@ -275,6 +275,8 @@ input:user-invalid { border-color: var(--red); }
 input[type="file"] { padding: 0.4rem; }
 
 .input-unit { display: flex; align-items: stretch; }
+.input-action { display: flex; gap: 0.4rem; }
+.input-action input { flex: 1; min-width: 0; }
 .input-unit input { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .input-unit > span {
   display: flex;

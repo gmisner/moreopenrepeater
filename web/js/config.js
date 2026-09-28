@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { initLocationInputs } from "./location.js";
 import { playClip } from "./player.js";
 import { store } from "./store.js";
 import { escapeHtml, formatDuration, toast, toastError, withBusy } from "./ui.js";
@@ -142,25 +143,6 @@ async function loadTTSInfo() {
   }
 }
 
-function initGeolocation(buttonId, latField, lonField) {
-  const button = document.getElementById(buttonId);
-  if (!("geolocation" in navigator)) {
-    button.hidden = true;
-    return;
-  }
-  button.addEventListener("click", () => {
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        const form = button.closest("form");
-        form.elements[latField].value = coords.latitude.toFixed(4);
-        form.elements[lonField].value = coords.longitude.toFixed(4);
-        form.classList.add("dirty");
-      },
-      (error) => toast(`Couldn't get location: ${error.message}`, "error"),
-    );
-  });
-}
-
 export async function loadConfig() {
   store.set("config", await api("/api/config"));
 }
@@ -193,7 +175,7 @@ export function initConfig() {
     if (configForms.some((f) => f.classList.contains("dirty"))) event.preventDefault();
   });
   initPreviews();
-  initGeolocation("aprs-locate", "aprs_lat", "aprs_lon");
-  initGeolocation("wx-locate", "wx_lat", "wx_lon");
+  initLocationInputs(document.getElementById("aprs-locate").form, "aprs_lat", "aprs_lon");
+  initLocationInputs(document.getElementById("wx-locate").form, "wx_lat", "wx_lon");
   loadTTSInfo();
 }

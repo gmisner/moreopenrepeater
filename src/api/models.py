@@ -53,6 +53,11 @@ class ConfigResponse(BaseModel):
     aprs_lon: Optional[float]
     aprs_comment: str
     aprs_beacon_interval: float
+    aprs_map_enabled: bool
+    aprs_map_radius_km: float
+    aprs_map_hours: float
+    aprs_map_tiles: str
+    distance_units: Literal["mi", "km"]
     wx_alerts_enabled: bool
     wx_lat: Optional[float]
     wx_lon: Optional[float]
@@ -104,6 +109,11 @@ class ConfigUpdateRequest(BaseModel):
     aprs_lon: Optional[float] = None
     aprs_comment: Optional[str] = None
     aprs_beacon_interval: Optional[float] = Field(default=None, gt=0)
+    aprs_map_enabled: Optional[bool] = None
+    aprs_map_radius_km: Optional[float] = Field(default=None, ge=1, le=500)
+    aprs_map_hours: Optional[float] = Field(default=None, ge=0.25, le=48)
+    aprs_map_tiles: Optional[str] = Field(default=None, max_length=300, pattern=r"^$|^https?://")
+    distance_units: Optional[Literal["mi", "km"]] = None
     clear_aprs_lat: bool = False
     clear_aprs_lon: bool = False
     wx_alerts_enabled: Optional[bool] = None
@@ -350,6 +360,43 @@ class UserCreateRequest(BaseModel):
 class UserUpdateRequest(BaseModel):
     password: Optional[str] = Field(default=None, min_length=8, max_length=200)
     role: Optional[Role] = None
+
+
+class AprsStationResponse(BaseModel):
+    name: str
+    source: str
+    kind: str
+    category: str
+    lat: float
+    lon: float
+    symbol_table: str
+    symbol_code: str
+    comment: str
+    course: Optional[int]
+    speed_kmh: Optional[float]
+    altitude_m: Optional[float]
+    weather: Optional[dict]
+    first_heard: float  # unix time
+    last_heard: float
+    packets: int
+    trail: list[list[float]]  # [[lat, lon], ...] oldest first
+    distance_km: Optional[float] = None  # from the repeater
+    bearing: Optional[int] = None
+
+
+class AprsMapResponse(BaseModel):
+    enabled: bool
+    center: Optional[list[float]]  # [lat, lon] of the repeater
+    radius_km: float
+    hours: float
+    tiles: str
+    distance_units: Literal["mi", "km"]
+    connected: bool
+    server: str
+    error: Optional[str]
+    last_packet: Optional[datetime]
+    packets: int
+    stations: list[AprsStationResponse]
 
 
 class AuditEntryResponse(BaseModel):

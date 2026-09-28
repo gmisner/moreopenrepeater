@@ -119,6 +119,7 @@ class RepeaterService:
         self.activity = activity
         self.audio_output: Optional[AudioOutput] = None
         self.audit_hook: Optional[Callable[[str, str, str], None]] = None  # (actor, action, detail)
+        self.aprs_summary: Optional[Callable[[], str]] = None
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
         if saved is not None:
@@ -246,6 +247,9 @@ class RepeaterService:
                 _logger.warning("DTMF macro refers to unknown announcement %r", action.argument)
             else:
                 self.speak(self.announcement_clip(announcement))
+        elif action.action == "aprs":
+            text = self.aprs_summary() if self.aprs_summary else "The A P R S map is not set up."
+            self.speak(TTS_PREFIX + text)
         elif action.action == "parrot":
             if self.audio_output is None:
                 _logger.warning("parrot needs live audio, which isn't running")

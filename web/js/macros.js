@@ -19,6 +19,7 @@ const ACTION_LABELS = {
   parrot: "Parrot",
   tx_disable: "Transmitter off",
   tx_enable: "Transmitter on",
+  aprs: "APRS stations nearby",
 };
 
 let editingPattern = null;

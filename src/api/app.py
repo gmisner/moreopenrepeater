@@ -43,6 +43,7 @@ from .auth import (
     parse_basic_auth_header,
     verify_credentials,
 )
+from .aprs_map import AprsReceiver, StationStore, bearing_degrees, distance_km, map_center, spoken_summary
 from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
 from .audit import AuditEntry, AuditLog, describe_config_change
 from .live_audio import LiveAudio, cm108_from_env, list_audio_devices
@@ -53,6 +54,8 @@ from .logging_config import configure_logging
 from .models import (
     ActivitySummaryResponse,
     AnnouncementFields,
+    AprsMapResponse,
+    AprsStationResponse,
     AuditEntryResponse,
     AnnouncementResponse,
     AssetResponse,
@@ -109,6 +112,8 @@ DEFAULT_ACTIVITY_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "activi
 DEFAULT_RECORDINGS_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "recordings"
 DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.json"
 DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
+DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
+APRS_PRUNE_SECONDS = 300
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 # POSTs that don't change anything, left out of the audit log.
 _UNAUDITED_PATHS = ("/api/audio/preview",)
@@ -251,6 +256,7 @@ def create_app(
     recordings: Optional[RecordingStore] = None,
     users: Optional[UserStore] = None,
     audit: Optional[AuditLog] = None,
+    aprs_stations: Optional[StationStore] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -277,6 +283,14 @@ def create_app(
     users.reserved_username = auth_settings.username if auth_settings else None
     audit = audit or AuditLog()
     service.audit_hook = lambda actor, action, detail: audit.record(time.time(), actor, action, detail)
+    aprs_stations = aprs_stations or StationStore()
+    aprs_receiver = AprsReceiver(aprs_stations, lambda: service.config)
+    service.add_config_listener(lambda _config: aprs_receiver.settings_changed())
+
+    def aprs_window_start() -> float:
+        return time.time() - service.config.aprs_map_hours * 3600
+
+    service.aprs_summary = lambda: spoken_summary(aprs_stations.stations(aprs_window_start()), service.config, time.time())
 
     def auth_enabled() -> bool:
         """On once there's an env admin or any stored user -- so adding the
@@ -388,6 +402,11 @@ def create_app(
         if not service.queue_announcement(clip):
             raise HTTPException(status_code=429, detail="Too many announcements are already waiting to play")
 
+    async def aprs_prune_loop() -> None:
+        while True:
+            await asyncio.sleep(APRS_PRUNE_SECONDS)
+            await asyncio.get_running_loop().run_in_executor(None, aprs_stations.prune, aprs_window_start())
+
     async def announcement_loop() -> None:
         while True:
             await asyncio.sleep(ANNOUNCEMENT_POLL_SECONDS)
@@ -441,6 +460,8 @@ def create_app(
             tasks.append(asyncio.create_task(aprs_beacon_loop()))
             tasks.append(asyncio.create_task(announcement_loop()))
             tasks.append(asyncio.create_task(weather_loop()))
+            tasks.append(asyncio.create_task(aprs_receiver.run()))
+            tasks.append(asyncio.create_task(aprs_prune_loop()))
             activity_store.prune((datetime.now() - timedelta(days=RETENTION_DAYS)).timestamp())
             audit.prune((datetime.now() - timedelta(days=AUDIT_RETENTION_DAYS)).timestamp())
             loop = asyncio.get_running_loop()
@@ -751,6 +772,34 @@ def create_app(
         with log_path.open() as f:
             return [line.rstrip("\n") for line in collections.deque(f, maxlen=lines)]
 
+    @app.get("/api/aprs/stations", response_model=AprsMapResponse, dependencies=auth_dependencies)
+    def get_aprs_stations() -> AprsMapResponse:
+        config = service.config
+        center = map_center(config)
+        status = aprs_receiver.status
+        stations = []
+        for s in aprs_stations.stations(aprs_window_start()):
+            fields = dataclasses.asdict(s)
+            fields["trail"] = [[lat, lon] for _at, lat, lon in s.trail]
+            if center is not None:
+                fields["distance_km"] = round(distance_km(*center, s.lat, s.lon), 2)
+                fields["bearing"] = round(bearing_degrees(*center, s.lat, s.lon))
+            stations.append(AprsStationResponse(**fields))
+        return AprsMapResponse(
+            enabled=config.aprs_map_enabled,
+            center=list(center) if center else None,
+            radius_km=config.aprs_map_radius_km,
+            hours=config.aprs_map_hours,
+            tiles=config.aprs_map_tiles,
+            distance_units=config.distance_units,
+            connected=status.connected,
+            server=status.server,
+            error=status.error,
+            last_packet=datetime.fromtimestamp(status.last_packet) if status.last_packet else None,
+            packets=status.packets,
+            stations=stations,
+        )
+
     @app.get("/api/users", response_model=list[UserResponse], dependencies=admin_dependencies)
     def list_users() -> list[UserResponse]:
         builtin = [UserResponse(username=auth_settings.username, role="admin", builtin=True)] if auth_settings else []
@@ -872,6 +921,7 @@ app = create_app(
     recordings=RecordingStore(DEFAULT_RECORDINGS_DIR),
     users=UserStore(StateStore(DEFAULT_USERS_PATH)),
     audit=AuditLog(DEFAULT_AUDIT_PATH),
+    aprs_stations=StationStore(DEFAULT_APRS_PATH),
 )
 
 

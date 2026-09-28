@@ -198,7 +198,26 @@ several phases (see the plan file for the full breakdown):
   and day, and counts kerchunks and timeouts.
 - **Live audio on any sound device**, with software carrier detect (VOX or CTCSS)
   for interfaces with no COS wire, a live level meter, and CM108 PTT/COS when one is
-  plugged in.
+  plugged in. Devices open at whatever rate they support; audio is resampled to
+  16 kHz internally. `scripts/benchmark_audio.py` times the per-block work (about 1%
+  of the real-time budget on a Mac).
+- **Kerchunk filter**: a key-up must last a set time before the repeater comes up.
+  Filtered kerchunks are counted on the Activity page.
+- **CTCSS encode**: an optional sub-audible tone on everything transmitted, with
+  received audio high-passed so an incoming tone isn't repeated alongside it.
+- **DTMF local control**: macros can speak the time, read the weather alerts, play
+  an announcement or any text, send the ID, start a parrot test, or turn the
+  transmitter off and on (with a PIN in the macro code).
+- **Parrot / echo test**: after the parrot macro, the next transmission is recorded
+  instead of repeated, then played back.
+- **Recordings**: optionally save every repeated transmission, with playback on the
+  Activity page and automatic deletion after a set number of days.
+- **Listen live**: stream what's on the air (or what the receiver hears) to the
+  dashboard in the browser.
+- **Users and roles**: admin, operator and read-only viewer accounts, plus an audit
+  log of every change and DTMF command with who made it.
+- **One-command Raspberry Pi install** (`scripts/install-pi.sh`), which CI runs on
+  every push.
 - **CI**: GitHub Actions runs the test suite on Python 3.11-3.14.
 
 ### Why a local Asterisk sidecar for linking?
@@ -241,7 +260,7 @@ to end: the console script honors all four new env vars (custom host/port,
 custom data/log directories), confirmed by actually starting it with them
 set and checking the log file landed in the right place.
 
-**Optional sign-in** (`api/auth.py`): set both
+**Sign-in** (`api/auth.py`, `api/users.py`): set both
 `MOREOPENREPEATER_AUTH_USER`/`MOREOPENREPEATER_AUTH_PASSWORD` to require
 signing in (setting only one is treated as a misconfiguration and refuses
 to start); leaving both unset runs with no auth, matching every other
@@ -256,18 +275,37 @@ every REST route, plus an `Origin` check since WebSocket handshakes aren't
 covered by CORS. HTTP Basic still works for scripts (`curl -u`), but 401s
 no longer send `WWW-Authenticate: Basic`, which would pop the browser's
 native dialog over the login page. Failed logins are logged and delayed
-by 1s.
+by 1s. Admins can add more accounts (admin / operator / viewer) on the Users
+page; viewers are refused any change server-side, and every change lands in
+the audit log (`api/audit.py`).
 
 The dashboard (`web/`) is still plain HTML plus ES modules with no build
 step: a sidebar app with separate views for Dashboard (live state, linked
 nodes, and a recent-activity feed), Activity (airtime charts), Timing,
 Identification, Audio & tones (sounds, clip library and the live radio
 interface), DTMF macros (add/edit/rename/delete), Announcements, Weather
-alerts, APRS, Simulator, Logs (filter/level/pause), and Backup & restore. Each settings view saves only
+alerts, APRS, Simulator, Logs (filter/level/pause), Backup & restore, and for
+admins Users and Audit log. Each settings view saves only
 its own fields through `PUT /api/config`, with unsaved-change tracking.
 Verified live in a real browser: login rejection/acceptance, WebSocket via
 session cookie, every view's save round-tripping through the API, the
 phone-width layout, and sign-out revoking API access.
+
+## Installing on a Raspberry Pi
+
+On Raspberry Pi OS Bookworm (or any recent Debian/Ubuntu):
+
+```
+curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scripts/install-pi.sh | sudo bash
+```
+
+It installs the system packages, creates a `moreopenrepeater` service user,
+checks out the code in `/opt/moreopenrepeater`, sets up the CM108 udev rule,
+writes `/etc/moreopenrepeater/env` with a generated admin password (and the
+CM108's device if one is plugged in), and starts the systemd service. It
+prints the password and how to reach the dashboard at the end. Run it again
+to update. The manual steps, and how to reach the dashboard securely from
+other devices, are in `docs/raspberry-pi.md`.
 
 ## Development
 

@@ -26,3 +26,36 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Run tests
         run: pytest -q
+
+  installer:
+    # Runs scripts/install-pi.sh for real (the runner has systemd), then
+    # again to exercise the update path.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Lint
+        run: shellcheck scripts/install-pi.sh
+      # The service user must own the repo it clones from (git refuses
+      # repositories owned by someone else), so hand it a copy.
+      - name: Prepare a local clone source
+        run: |
+          sudo useradd --system --no-create-home --home-dir /opt/moreopenrepeater --shell /usr/sbin/nologin moreopenrepeater
+          sudo cp -r "$GITHUB_WORKSPACE" /tmp/src
+          sudo git -C /tmp/src checkout -q -B ci-install
+          sudo chown -R moreopenrepeater:moreopenrepeater /tmp/src
+      - name: Install
+        run: sudo REPO_URL=/tmp/src BRANCH=ci-install bash scripts/install-pi.sh
+      - name: Check the API answers with the generated password
+        run: |
+          password=$(sudo sed -n 's/^MOREOPENREPEATER_AUTH_PASSWORD=//p' /etc/moreopenrepeater/env)
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/status)" = 401
+          curl -fsS -u "admin:$password" http://127.0.0.1:8000/api/status
+      - name: Run again (update)
+        run: |
+          before=$(sudo md5sum /etc/moreopenrepeater/env)
+          sudo REPO_URL=/tmp/src BRANCH=ci-install bash scripts/install-pi.sh
+          test "$before" = "$(sudo md5sum /etc/moreopenrepeater/env)"
+          systemctl is-active moreopenrepeater
+      - name: Service log
+        if: always()
+        run: sudo journalctl -u moreopenrepeater -n 100 --no-pager

@@ -6,6 +6,17 @@ see the README's architecture section). Assumes Raspberry Pi OS Bookworm
 (64-bit, Debian 12-based), which ships Python 3.11.2, satisfying this
 project's `>=3.11` requirement.
 
+## Quick install
+
+```
+curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scripts/install-pi.sh | sudo bash
+```
+
+`scripts/install-pi.sh` does sections 1-5 below (and generates an admin
+password), and running it again updates an existing install. Add
+`-s -- --lan` after `bash` to listen on the local network instead of only on
+the Pi. The rest of this page is the same procedure by hand.
+
 ## 1. System packages
 
 ```
@@ -193,3 +204,4 @@ sudo systemctl restart moreopenrepeater
   the README's "Status".
 - No backup/restore automation beyond the dashboard's manual "Download
   configuration" snapshot -- back that up yourself before major changes.
+  `data/users.json` and `data/recordings/` aren't in the snapshot.

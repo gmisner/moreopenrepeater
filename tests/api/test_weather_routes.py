@@ -128,3 +128,28 @@ def test_weather_settings_round_trip_through_config():
 
     assert client.put("/api/config", json={"clear_wx_lat": True}).json()["wx_lat"] is None
     assert client.put("/api/config", json={"wx_poll_interval": 5}).status_code == 422
+
+
+def test_weather_areas_fetch_zone_outlines_only_when_the_map_is_on():
+    zone = "https://api.weather.gov/zones/county/TXC375"
+    shape = {"type": "Polygon", "coordinates": [[[-102, 35], [-101, 35], [-101, 36], [-102, 35]]]}
+    feed = {"features": [{"id": "a", "geometry": None, "properties": {
+        "id": "a", "status": "Actual", "event": "Tornado Warning", "severity": "Extreme", "affectedZones": [zone],
+    }}]}
+    fetched = []
+
+    def fetch_zone(url, contact=""):
+        fetched.append(url)
+        return shape
+
+    for map_on in (False, True):
+        tmp = Path(tempfile.mkdtemp())
+        service = RepeaterService(config=RepeaterConfig(aprs_map_enabled=map_on, **LOCATED))
+        app = create_app(service=service, start_background_tick=False, log_path=tmp / "t.log",
+                         fetch_weather=FakeNWS(feed), fetch_zone=fetch_zone)
+        client = TestClient(app)
+        client.post("/api/weather/check")
+        features = client.get("/api/weather/areas").json()["features"]
+        assert len(features) == (1 if map_on else 0)
+    assert fetched == [zone]
+    assert features[0]["geometry"] == shape and features[0]["properties"]["event"] == "Tornado Warning"

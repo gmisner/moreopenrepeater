@@ -30,7 +30,7 @@ from link.node_link import NodeLinkClient
 from playout.renderer import ClipRenderer, UnknownClipError
 from playout.tts import TTSError, detect_tts
 from playout.wav import encode_wav
-from wx.nws import fetch_active_alerts, speech_text
+from wx.nws import alert_areas, fetch_active_alerts, fetch_zone_geometry, missing_zones, speech_text
 
 from .activity import RETENTION_DAYS, ActivityRecorder, ActivityStore, summarize
 from .assets import AssetKind, AudioAssetStore
@@ -114,6 +114,7 @@ DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.jso
 DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
 DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
 APRS_PRUNE_SECONDS = 300
+ZONE_FETCHES_PER_POLL = 20
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 # POSTs that don't change anything, left out of the audit log.
 _UNAUDITED_PATHS = ("/api/audio/preview",)
@@ -250,6 +251,7 @@ def create_app(
     state_store: Optional[StateStore] = None,
     renderer: Optional[ClipRenderer] = None,
     fetch_weather: Callable[..., dict] = fetch_active_alerts,
+    fetch_zone: Callable[..., Optional[dict]] = fetch_zone_geometry,
     activity_store: Optional[ActivityStore] = None,
     live_audio: Optional[LiveAudio] = None,
     audio_devices: Callable[[], list[dict]] = list_audio_devices,
@@ -261,7 +263,7 @@ def create_app(
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
     module-level `app` below opts in.
-    `fetch_weather(lat, lon, contact)` is swappable so tests stay offline."""
+    `fetch_weather(lat, lon, contact)` and `fetch_zone(url, contact)` are swappable so tests stay offline."""
     assets_store = assets_store or AudioAssetStore(DEFAULT_DATA_DIR)
     recordings = recordings or RecordingStore(None)
     renderer = renderer or ClipRenderer(assets_store.path_for, tts=detect_tts(), recording_path=recordings.path_for)
@@ -433,6 +435,24 @@ def create_app(
                 await render_and_queue(clip)
             except (UnknownClipError, TTSError, HTTPException):
                 _weather_logger.exception("couldn't announce weather alert %s", clip)
+        if config.aprs_map_enabled:
+            await fetch_zone_shapes(config.callsign)
+
+    zone_shapes: dict[str, dict] = {}
+
+    async def fetch_zone_shapes(contact: str) -> None:
+        alerts = service.weather_alerts
+        wanted = {z for a in alerts for z in a.zones}
+        for zone in [z for z in zone_shapes if z not in wanted]:
+            del zone_shapes[zone]
+        for zone in missing_zones(alerts, zone_shapes)[:ZONE_FETCHES_PER_POLL]:
+            try:
+                shape = await asyncio.get_running_loop().run_in_executor(None, fetch_zone, zone, contact)
+            except Exception as error:  # noqa: BLE001 -- the map just goes without that outline
+                _weather_logger.warning("couldn't fetch NWS zone %s: %s", zone, error)
+                continue
+            if shape:
+                zone_shapes[zone] = shape
 
     async def weather_loop() -> None:
         while True:
@@ -640,6 +660,10 @@ def create_app(
     @app.get("/api/weather", response_model=WeatherStatusResponse, dependencies=auth_dependencies)
     def get_weather() -> WeatherStatusResponse:
         return _weather_response(service)
+
+    @app.get("/api/weather/areas", dependencies=auth_dependencies)
+    def get_weather_areas() -> dict:
+        return alert_areas(service.weather_alerts, zone_shapes)
 
     @app.post("/api/weather/check", response_model=WeatherStatusResponse, dependencies=auth_dependencies)
     async def check_weather_now() -> WeatherStatusResponse:

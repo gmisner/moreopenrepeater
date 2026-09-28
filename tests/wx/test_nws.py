@@ -100,3 +100,40 @@ def test_expired_alerts_are_forgotten():
 
     assert not tracker.was_announced("a1")
     assert tracker.update([alert()], NOW + timedelta(hours=2)) == [alert()]
+
+
+def _feature(alert_id, geometry=None, zones=()):
+    return {
+        "id": alert_id,
+        "geometry": geometry,
+        "properties": {
+            "id": alert_id, "status": "Actual", "event": "Tornado Warning", "severity": "Extreme",
+            "areaDesc": "Somewhere", "affectedZones": list(zones),
+        },
+    }
+
+
+SQUARE = {"type": "Polygon", "coordinates": [[[-73, 41], [-72, 41], [-72, 42], [-73, 41]]]}
+ZONE_A = "https://api.weather.gov/zones/county/CTC003"
+ZONE_B = "https://api.weather.gov/zones/forecast/CTZ002"
+
+
+def test_alert_areas_use_polygon_or_zone_outlines():
+    from wx.nws import alert_areas, missing_zones
+
+    alerts = parse_alerts({"features": [
+        _feature("poly", SQUARE, [ZONE_A]),
+        _feature("zones", None, [ZONE_A, ZONE_B, "https://evil.example/zones/x"]),
+        _feature("unknown", None, [ZONE_B]),
+    ]})
+    assert alerts[0].geometry == SQUARE
+    assert alerts[1].zones == (ZONE_A, ZONE_B)
+    assert missing_zones(alerts, {}) == [ZONE_A, ZONE_B]  # the polygon alert needs none of its own
+
+    areas = alert_areas(alerts, {ZONE_A: SQUARE})
+    assert [f["properties"]["id"] for f in areas["features"]] == ["poly", "zones"]
+    assert areas["features"][1]["geometry"] == SQUARE
+
+    both = alert_areas(alerts, {ZONE_A: SQUARE, ZONE_B: SQUARE})
+    assert both["features"][1]["geometry"]["type"] == "GeometryCollection"
+    assert len(both["features"]) == 3

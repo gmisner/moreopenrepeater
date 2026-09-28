@@ -6,19 +6,23 @@ Split into pure pieces so the interesting logic is testable offline:
     once when it's issued -- not again every time the NWS re-issues it as
     an "Update" (which gets a new id but references the one before);
   - `speech_text` is what the repeater says;
-  - `fetch_active_alerts` is the one blocking network call (run it in a
-    thread). The NWS asks every client to send an identifying User-Agent.
+  - `alert_areas` is GeoJSON for the map: an alert's own polygon, or the
+    outlines of its forecast/county zones when it doesn't have one;
+  - `fetch_active_alerts` and `fetch_zone_geometry` are the blocking network
+    calls (run them in a thread). The NWS asks every client to send an
+    identifying User-Agent.
 """
 from __future__ import annotations
 
 import json
 import re
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional
 
 API_URL = "https://api.weather.gov/alerts/active"
+ZONE_URL_PREFIX = "https://api.weather.gov/zones/"
 USER_AGENT = "moreopenrepeater (https://github.com/gmisner/moreopenrepeater)"
 TIMEOUT_SECONDS = 15
 SEVERITIES = ("Minor", "Moderate", "Severe", "Extreme")
@@ -39,6 +43,8 @@ class WeatherAlert:
     expires: Optional[str]
     ends: Optional[str]
     references: tuple[str, ...] = ()
+    zones: tuple[str, ...] = ()  # zone URLs, for outlines when there's no polygon
+    geometry: Optional[dict] = field(default=None, compare=False)
 
 
 def parse_alerts(geojson: dict) -> list[WeatherAlert]:
@@ -61,6 +67,8 @@ def parse_alerts(geojson: dict) -> list[WeatherAlert]:
                 expires=p.get("expires"),
                 ends=p.get("ends"),
                 references=tuple(r.get("identifier", "") for r in p.get("references") or []),
+                zones=tuple(z for z in p.get("affectedZones") or [] if z.startswith(ZONE_URL_PREFIX)),
+                geometry=feature.get("geometry") or None,
             )
         )
     return alerts
@@ -127,11 +135,44 @@ class AlertTracker:
         return to_announce
 
 
-def fetch_active_alerts(lat: float, lon: float, contact: str = "", timeout: float = TIMEOUT_SECONDS) -> dict:
-    user_agent = f"{USER_AGENT} {contact}".strip()
+def alert_areas(alerts: list[WeatherAlert], zone_shapes: dict[str, dict]) -> dict:
+    features = []
+    for alert in alerts:
+        geometry = alert.geometry
+        if geometry is None:
+            shapes = [zone_shapes[z] for z in alert.zones if z in zone_shapes]
+            if not shapes:
+                continue
+            geometry = shapes[0] if len(shapes) == 1 else {"type": "GeometryCollection", "geometries": shapes}
+        features.append({
+            "type": "Feature",
+            "geometry": geometry,
+            "properties": {
+                "id": alert.id, "event": alert.event, "severity": alert.severity,
+                "headline": alert.headline, "area": alert.area,
+            },
+        })
+    return {"type": "FeatureCollection", "features": features}
+
+
+def missing_zones(alerts: list[WeatherAlert], zone_shapes: dict[str, dict]) -> list[str]:
+    wanted = dict.fromkeys(z for a in alerts if a.geometry is None for z in a.zones)
+    return [z for z in wanted if z not in zone_shapes]
+
+
+def _get_json(url: str, contact: str, timeout: float) -> dict:
     request = urllib.request.Request(
-        f"{API_URL}?point={lat:.4f},{lon:.4f}",
-        headers={"User-Agent": user_agent, "Accept": "application/geo+json"},
+        url, headers={"User-Agent": f"{USER_AGENT} {contact}".strip(), "Accept": "application/geo+json"}
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.load(response)
+
+
+def fetch_zone_geometry(url: str, contact: str = "", timeout: float = TIMEOUT_SECONDS) -> Optional[dict]:
+    if not url.startswith(ZONE_URL_PREFIX):
+        raise ValueError(f"not an NWS zone: {url}")
+    return _get_json(url, contact, timeout).get("geometry")
+
+
+def fetch_active_alerts(lat: float, lon: float, contact: str = "", timeout: float = TIMEOUT_SECONDS) -> dict:
+    return _get_json(f"{API_URL}?point={lat:.4f},{lon:.4f}", contact, timeout)

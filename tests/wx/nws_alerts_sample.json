@@ -1,0 +1,170 @@
+{
+ "type": "FeatureCollection",
+ "title": "Current watches, warnings, and advisories for Texas",
+ "updated": "2026-09-28T15:56:29+00:00",
+ "features": [
+  {
+   "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.8fd0cdffdd7f2f3d073c1756b144972d6379fad9.001.1",
+   "type": "Feature",
+   "properties": {
+    "id": "urn:oid:2.49.0.1.840.0.8fd0cdffdd7f2f3d073c1756b144972d6379fad9.001.1",
+    "areaDesc": "Texas; Beaver; Dallam; Sherman; Hansford; Ochiltree; Lipscomb; Hartley; Moore; Hutchinson; Roberts; Hemphill; Oldham; Potter; Carson; Gray; Deaf Smith; Randall; Palo Duro Canyon",
+    "sent": "2026-09-28T10:56:00-05:00",
+    "effective": "2026-09-28T10:56:00-05:00",
+    "onset": "2026-09-28T10:56:00-05:00",
+    "expires": "2026-09-28T12:00:00-05:00",
+    "ends": "2026-09-28T11:00:00-05:00",
+    "status": "Actual",
+    "messageType": "Update",
+    "category": "Met",
+    "severity": "Moderate",
+    "certainty": "Likely",
+    "urgency": "Expected",
+    "event": "Dense Fog Advisory",
+    "senderName": "NWS Amarillo TX",
+    "headline": "Dense Fog Advisory issued September 28 at 10:56AM CDT until September 28 at 11:00AM CDT by NWS Amarillo TX",
+    "description": "The threat has ended.",
+    "instruction": null,
+    "response": "Execute",
+    "parameters": {
+     "AWIPSidentifier": [
+      "NPWAMA"
+     ],
+     "NWSheadline": [
+      "DENSE FOG ADVISORY WILL EXPIRE AT 11 AM CDT THIS MORNING"
+     ]
+    },
+    "references": [
+     {
+      "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.ed3ed8b457d872e54b5e33bdab02991ea645bef0.001.1",
+      "identifier": "urn:oid:2.49.0.1.840.0.ed3ed8b457d872e54b5e33bdab02991ea645bef0.001.1",
+      "sender": "w-nws.webmaster@noaa.gov",
+      "sent": "2026-09-28T06:11:00-05:00"
+     },
+     {
+      "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.923eaef033b69453047ada34e5d6addc65bcbe91.001.1",
+      "identifier": "urn:oid:2.49.0.1.840.0.923eaef033b69453047ada34e5d6addc65bcbe91.001.1",
+      "sender": "w-nws.webmaster@noaa.gov",
+      "sent": "2026-09-28T06:42:00-05:00"
+     }
+    ]
+   }
+  },
+  {
+   "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.23d446f44ae016b7616a9d59042f3aeafff1e0a3.001.1",
+   "type": "Feature",
+   "properties": {
+    "id": "urn:oid:2.49.0.1.840.0.23d446f44ae016b7616a9d59042f3aeafff1e0a3.001.1",
+    "areaDesc": "Fisher; Nolan; Sterling; Coke; Runnels; Irion; Tom Green; Concho; Crockett; Schleicher; Sutton; Haskell; Throckmorton; Jones; Shackelford; Taylor; Callahan; Coleman; Brown; McCulloch; San Saba; Menard; Kimble; Mason",
+    "sent": "2026-09-28T10:54:00-05:00",
+    "effective": "2026-09-28T10:54:00-05:00",
+    "onset": "2026-09-28T10:54:00-05:00",
+    "expires": "2026-09-29T13:00:00-05:00",
+    "ends": null,
+    "status": "Actual",
+    "messageType": "Alert",
+    "category": "Met",
+    "severity": "Moderate",
+    "certainty": "Observed",
+    "urgency": "Expected",
+    "event": "Special Weather Statement",
+    "senderName": "NWS San Angelo TX",
+    "headline": "Special Weather Statement issued September 28 at 10:54AM CDT by NWS San Angelo TX",
+    "description": "The threat for very heavy rainfall and significant flash flooding is\nincreasing across west central Texas mainly Tuesday night through\nThursday. The combination of the remnants of Hurricane Polo from the\nPacific, abundant tropical moisture and a cold front will result in\nperiods of very heavy rainfall which may produce localized\nsignificant flash flooding. Looks like the heaviest rainfall will\nset",
+    "instruction": null,
+    "response": "Execute",
+    "parameters": {
+     "AWIPSidentifier": [
+      "SPSSJT"
+     ],
+     "NWSheadline": [
+      "HEAVY RAINFALL AND FLASH FLOODING POSSIBLE LATER THIS WEEK"
+     ]
+    },
+    "references": []
+   }
+  },
+  {
+   "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.9852e4ff6084e34f7e160a99308274e257fa155e.001.1",
+   "type": "Feature",
+   "properties": {
+    "id": "urn:oid:2.49.0.1.840.0.9852e4ff6084e34f7e160a99308274e257fa155e.001.1",
+    "areaDesc": "Upper Gila River Valley; Southern Gila Foothills/Mimbres Valley; Southwest Desert/Lower Gila River Valley; Lowlands of the Bootheel; Uplands of the Bootheel; Southwest Desert/Mimbres Basin; Eastern Black Range Foothills; Sierra County Lakes; Northern Dona Ana County; Southern Dona Ana County/Mesilla Valley; West Slopes Sacramento Mountains Below 7500 Feet; Sacramento Mountains Above 7500 Feet; East Slopes Sacramento Mountains Below 7500 Feet; Otero Mesa; Central Grant County/Silver City Area; Southern Gila Region Highlands/Black Range; West Central Tularosa Basin/White Sands; East Central Tularosa Basin/Alamogordo; Southeast Tularosa Basin; Western El Paso County; Eastern/Central El Paso County; Northern Hudspeth Highlands/Hueco Mountains; Salt Basin; Southern Hudspeth Highlands; Rio Grande Valley of Eastern El Paso/Western Hudspeth Counties; Rio Grande Valley of Eastern Hudspeth County",
+    "sent": "2026-09-28T05:51:00-06:00",
+    "effective": "2026-09-28T05:51:00-06:00",
+    "onset": "2026-09-28T12:00:00-06:00",
+    "expires": "2026-09-28T15:00:00-06:00",
+    "ends": "2026-09-30T06:00:00-06:00",
+    "status": "Actual",
+    "messageType": "Update",
+    "category": "Met",
+    "severity": "Severe",
+    "certainty": "Possible",
+    "urgency": "Future",
+    "event": "Flood Watch",
+    "senderName": "NWS El Paso Tx/Santa Teresa NM",
+    "headline": "Flood Watch issued September 28 at 5:51AM MDT until September 30 at 6:00AM MDT by NWS El Paso Tx/Santa Teresa NM",
+    "description": "* WHAT...Flooding caused by excessive rainfall continues to be\npossible.\n\n* WHERE...Southwest New Mexico including Dona Ana, Otero, Luna,\nSierra, Grant, and Hidalgo Counties. Far West Texas, including El\nPaso and Hudspeth Counties.\n\n* WHEN...From noon MDT today through late Tuesday night.\n\n* IMPACTS...Excessive runoff may result in flooding of rivers,\ncreeks, streams, and other low-lying and flood",
+    "instruction": "You should monitor later forecasts and be alert for possible Flood\nWarnings. Those living in areas prone to flooding should be prepared\nto take action should flooding develop.",
+    "response": "Prepare",
+    "parameters": {
+     "AWIPSidentifier": [
+      "FFAEPZ"
+     ],
+     "NWSheadline": [
+      "FLOOD WATCH REMAINS IN EFFECT FROM NOON MDT TODAY THROUGH LATE TUESDAY NIGHT"
+     ]
+    },
+    "references": [
+     {
+      "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.944aac699838c04208567544f2765931b58d56e4.001.1",
+      "identifier": "urn:oid:2.49.0.1.840.0.944aac699838c04208567544f2765931b58d56e4.001.1",
+      "sender": "w-nws.webmaster@noaa.gov",
+      "sent": "2026-09-27T22:00:00-06:00"
+     }
+    ]
+   }
+  },
+  {
+   "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.9fa75c6e6abaf0020d1644993fc662f3401e166d.001.1",
+   "type": "Feature",
+   "properties": {
+    "id": "urn:oid:2.49.0.1.840.0.9fa75c6e6abaf0020d1644993fc662f3401e166d.001.1",
+    "areaDesc": "Cimarron; Texas; Dallam; Sherman; Hansford; Hartley; Moore; Hutchinson; Oldham; Potter; Carson; Deaf Smith; Randall; Armstrong; Palo Duro Canyon",
+    "sent": "2026-09-28T06:45:00-05:00",
+    "effective": "2026-09-28T06:45:00-05:00",
+    "onset": "2026-09-29T07:00:00-05:00",
+    "expires": "2026-09-28T16:00:00-05:00",
+    "ends": "2026-09-30T13:00:00-05:00",
+    "status": "Actual",
+    "messageType": "Update",
+    "category": "Met",
+    "severity": "Severe",
+    "certainty": "Possible",
+    "urgency": "Future",
+    "event": "Flood Watch",
+    "senderName": "NWS Amarillo TX",
+    "headline": "Flood Watch issued September 28 at 6:45AM CDT until September 30 at 1:00PM CDT by NWS Amarillo TX",
+    "description": "* WHAT...Flooding caused by excessive rainfall continues to be\npossible.\n\n* WHERE...Portions of the Panhandle of Oklahoma, including the\nfollowing areas, Cimarron and Texas and the Panhandle of Texas,\nincluding the following areas, Armstrong, Carson, Dallam, Deaf\nSmith, Hansford, Hartley, Hutchinson, Moore, Oldham, Palo Duro\nCanyon, Potter, Randall and Sherman.\n\n* WHEN...From Tuesday morning throu",
+    "instruction": "You should monitor later forecasts and be alert for possible Flood\nWarnings. Those living in areas prone to flooding should be prepared\nto take action should flooding develop.",
+    "response": "Prepare",
+    "parameters": {
+     "AWIPSidentifier": [
+      "FFAAMA"
+     ],
+     "NWSheadline": [
+      "FLOOD WATCH REMAINS IN EFFECT FROM TUESDAY MORNING THROUGH WEDNESDAY AFTERNOON"
+     ]
+    },
+    "references": [
+     {
+      "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.ffd0f585a0df994b9effca7c7b771e3ac2fc8874.001.1",
+      "identifier": "urn:oid:2.49.0.1.840.0.ffd0f585a0df994b9effca7c7b771e3ac2fc8874.001.1",
+      "sender": "w-nws.webmaster@noaa.gov",
+      "sent": "2026-09-28T00:27:00-05:00"
+     }
+    ]
+   }
+  }
+ ]
+}

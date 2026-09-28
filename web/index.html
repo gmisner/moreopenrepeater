@@ -29,6 +29,7 @@
         <span class="nav-group">Features</span>
         <a href="#/macros" data-nav="macros">DTMF macros</a>
         <a href="#/announcements" data-nav="announcements">Announcements</a>
+        <a href="#/weather" data-nav="weather">Weather alerts</a>
         <a href="#/aprs" data-nav="aprs">APRS</a>
         <span class="nav-group">Tools</span>
         <a href="#/simulator" data-nav="simulator">Simulator</a>
@@ -367,6 +368,67 @@
             <button type="submit" class="btn btn-primary" id="announcement-submit">Add announcement</button>
           </div>
         </form>
+      </section>
+
+      <!-- Weather alerts -->
+      <section class="view" data-view="weather" data-title="Weather alerts" hidden>
+        <header class="view-header">
+          <h1>Weather alerts</h1>
+          <p class="muted">Announce National Weather Service watches and warnings for the repeater's location
+            (US only, from <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">api.weather.gov</a>).
+            Each alert is spoken once when it's issued, as soon as the channel is clear.</p>
+        </header>
+        <form class="card config-form" data-config-form>
+          <label class="switch">
+            <input type="checkbox" name="wx_alerts_enabled" />
+            <span class="switch-track"></span>
+            <span>Announce weather alerts on the air</span>
+          </label>
+          <div class="form-grid">
+            <label>Latitude
+              <input type="number" step="0.0001" min="-90" max="90" name="wx_lat" placeholder="e.g. 39.0997" />
+            </label>
+            <label>Longitude
+              <input type="number" step="0.0001" min="-180" max="180" name="wx_lon" placeholder="e.g. -94.5786" />
+            </label>
+            <label>Announce alerts that are at least
+              <select name="wx_min_severity">
+                <option value="Extreme">Extreme (e.g. tornado warning)</option>
+                <option value="Severe">Severe (warnings, most watches)</option>
+                <option value="Moderate">Moderate (advisories)</option>
+                <option value="Minor">Minor (everything)</option>
+              </select>
+            </label>
+            <label>Check every
+              <span class="input-unit"><input type="number" step="30" min="30" name="wx_poll_interval" required /><span>s</span></span>
+            </label>
+            <label>Repeat ongoing alerts every
+              <span class="input-unit"><input type="number" step="5" min="0" name="wx_repeat_minutes" required /><span>min</span></span>
+              <small>0 = announce each alert only once.</small>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="wx-locate">Use my location</button>
+            <span class="spacer"></span>
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+        <div class="card">
+          <div class="card-header">
+            <h2>Active alerts</h2>
+            <button type="button" class="btn btn-ghost btn-sm" id="wx-check">Check now</button>
+          </div>
+          <p id="wx-status" class="muted small">Not checked yet.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Alert</th><th>Severity</th><th>Until</th><th>What the repeater says</th><th></th></tr></thead>
+              <tbody id="wx-tbody"></tbody>
+            </table>
+          </div>
+          <p id="wx-empty" class="muted small">No active alerts at or above the chosen severity.</p>
+        </div>
       </section>
 
       <!-- APRS -->

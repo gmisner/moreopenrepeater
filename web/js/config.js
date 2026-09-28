@@ -12,6 +12,8 @@ const CLEARABLE_FIELDS = new Set([
   "timeout_tone_asset_id",
   "aprs_lat",
   "aprs_lon",
+  "wx_lat",
+  "wx_lon",
 ]);
 
 const configForms = [...document.querySelectorAll("[data-config-form]")];
@@ -88,7 +90,9 @@ function renderSummaries(config) {
   document.getElementById("feature-summary").innerHTML = kv([
     ["CTCSS access", config.require_ctcss_hz ? `${config.require_ctcss_hz} Hz` : badge(false, "", "carrier")],
     ["APRS", badge(config.aprs_enabled)],
+    ["Weather alerts", badge(config.wx_alerts_enabled)],
     ["DTMF macros", String(macros.length)],
+    ["Announcements", String(store.state.announcements?.length ?? 0)],
     ["Audio clips", String(assets.length)],
   ]);
 }
@@ -137,8 +141,8 @@ async function loadTTSInfo() {
   }
 }
 
-function initGeolocation() {
-  const button = document.getElementById("aprs-locate");
+function initGeolocation(buttonId, latField, lonField) {
+  const button = document.getElementById(buttonId);
   if (!("geolocation" in navigator)) {
     button.hidden = true;
     return;
@@ -147,8 +151,8 @@ function initGeolocation() {
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         const form = button.closest("form");
-        form.elements.aprs_lat.value = coords.latitude.toFixed(4);
-        form.elements.aprs_lon.value = coords.longitude.toFixed(4);
+        form.elements[latField].value = coords.latitude.toFixed(4);
+        form.elements[lonField].value = coords.longitude.toFixed(4);
         form.classList.add("dirty");
       },
       (error) => toast(`Couldn't get location: ${error.message}`, "error"),
@@ -179,13 +183,16 @@ export function initConfig() {
     renderAssetSelects(detail);
     if (store.state.config) renderSummaries(store.state.config);
   });
-  store.addEventListener("macros", () => {
-    if (store.state.config) renderSummaries(store.state.config);
-  });
+  for (const key of ["macros", "announcements"]) {
+    store.addEventListener(key, () => {
+      if (store.state.config) renderSummaries(store.state.config);
+    });
+  }
   window.addEventListener("beforeunload", (event) => {
     if (configForms.some((f) => f.classList.contains("dirty"))) event.preventDefault();
   });
   initPreviews();
-  initGeolocation();
+  initGeolocation("aprs-locate", "aprs_lat", "aprs_lon");
+  initGeolocation("wx-locate", "wx_lat", "wx_lon");
   loadTTSInfo();
 }

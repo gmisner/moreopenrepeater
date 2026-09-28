@@ -7,6 +7,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
+WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
 
 
 class StatusResponse(BaseModel):
@@ -45,6 +46,12 @@ class ConfigResponse(BaseModel):
     aprs_lon: Optional[float]
     aprs_comment: str
     aprs_beacon_interval: float
+    wx_alerts_enabled: bool
+    wx_lat: Optional[float]
+    wx_lon: Optional[float]
+    wx_min_severity: WeatherSeverity
+    wx_poll_interval: float
+    wx_repeat_minutes: float
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -79,6 +86,14 @@ class ConfigUpdateRequest(BaseModel):
     aprs_beacon_interval: Optional[float] = Field(default=None, gt=0)
     clear_aprs_lat: bool = False
     clear_aprs_lon: bool = False
+    wx_alerts_enabled: Optional[bool] = None
+    wx_lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    wx_lon: Optional[float] = Field(default=None, ge=-180, le=180)
+    clear_wx_lat: bool = False
+    clear_wx_lon: bool = False
+    wx_min_severity: Optional[WeatherSeverity] = None
+    wx_poll_interval: Optional[float] = Field(default=None, ge=30)
+    wx_repeat_minutes: Optional[float] = Field(default=None, ge=0)
 
 
 class SimulateCOSRequest(BaseModel):
@@ -186,6 +201,26 @@ class AudioPreviewRequest(BaseModel):
 
 class TTSInfoResponse(BaseModel):
     engine: Optional[str]
+
+
+class WeatherAlertResponse(BaseModel):
+    id: str
+    event: str
+    severity: str
+    urgency: str
+    headline: str
+    area: str
+    expires: Optional[str]
+    ends: Optional[str]
+    announced: bool
+    speech: str
+
+
+class WeatherStatusResponse(BaseModel):
+    enabled: bool
+    last_checked: Optional[datetime]
+    last_error: Optional[str]
+    alerts: list[WeatherAlertResponse]
 
 
 class LoginRequest(BaseModel):

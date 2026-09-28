@@ -9,7 +9,7 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import Callable, NamedTuple, Optional
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
@@ -28,6 +28,7 @@ from link.node_link import NodeLinkClient
 from playout.renderer import ClipRenderer, UnknownClipError
 from playout.tts import TTSError, detect_tts
 from playout.wav import encode_wav
+from wx.nws import fetch_active_alerts, speech_text
 
 from .assets import AssetKind, AudioAssetStore
 from .auth import (
@@ -59,6 +60,8 @@ from .models import (
     SnapshotModel,
     StatusResponse,
     TTSInfoResponse,
+    WeatherAlertResponse,
+    WeatherStatusResponse,
 )
 from .persistence import StateStore
 from .service import RepeaterService, StatusSnapshot
@@ -91,9 +94,11 @@ LINK_RECONNECT_DELAY_SECONDS = 5.0
 LOGIN_FAILURE_DELAY_SECONDS = 1.0
 MAX_PREVIEW_CLIP_LENGTH = 2000
 ANNOUNCEMENT_POLL_SECONDS = 1.0
+WEATHER_DISABLED_POLL_SECONDS = 5.0
 
 _aprs_logger = logging.getLogger("moreopenrepeater.aprs")
 _announce_logger = logging.getLogger("moreopenrepeater.announcements")
+_weather_logger = logging.getLogger("moreopenrepeater.weather")
 _link_logger = logging.getLogger("moreopenrepeater.link")
 _auth_logger = logging.getLogger("moreopenrepeater.auth")
 
@@ -146,6 +151,23 @@ def _announcement_response(service: RepeaterService, announcement: Announcement)
     )
 
 
+def _weather_response(service: RepeaterService) -> WeatherStatusResponse:
+    alerts = [
+        WeatherAlertResponse(
+            id=a.id, event=a.event, severity=a.severity, urgency=a.urgency, headline=a.headline, area=a.area,
+            expires=a.expires, ends=a.ends, announced=service.weather_tracker.was_announced(a.id),
+            speech=speech_text(a),
+        )
+        for a in service.weather_alerts
+    ]
+    return WeatherStatusResponse(
+        enabled=service.config.wx_alerts_enabled,
+        last_checked=service.weather_last_checked,
+        last_error=service.weather_last_error,
+        alerts=alerts,
+    )
+
+
 def _validated_config(values: dict) -> RepeaterConfig:
     """Type-check a full config dict through the API model, turning bad
     values into the same 422 FastAPI gives for a bad request body."""
@@ -177,9 +199,11 @@ def create_app(
     auth_settings: Optional[AuthSettings] = None,
     state_store: Optional[StateStore] = None,
     renderer: Optional[ClipRenderer] = None,
+    fetch_weather: Callable[..., dict] = fetch_active_alerts,
 ) -> FastAPI:
     """`state_store` defaults to None (in-memory only) so tests never touch
-    the real `data/state.json`; the module-level `app` below opts in."""
+    the real `data/state.json`; the module-level `app` below opts in.
+    `fetch_weather(lat, lon, contact)` is swappable so tests stay offline."""
     assets_store = assets_store or AudioAssetStore(DEFAULT_DATA_DIR)
     renderer = renderer or ClipRenderer(assets_store.path_for, tts=detect_tts())
     service = service or RepeaterService(state_store=state_store)
@@ -284,6 +308,37 @@ def create_app(
                 except (UnknownClipError, TTSError, HTTPException):
                     _announce_logger.exception("couldn't play scheduled announcement %s", clip)
 
+    async def check_weather(announce: bool) -> None:
+        config = service.config
+        if config.wx_lat is None or config.wx_lon is None:
+            raise HTTPException(status_code=400, detail="Set the station location for weather alerts first")
+        try:
+            data = await asyncio.get_running_loop().run_in_executor(
+                None, fetch_weather, config.wx_lat, config.wx_lon, config.callsign
+            )
+        except (OSError, ValueError) as error:  # URLError/timeouts are OSErrors; bad JSON is a ValueError
+            _weather_logger.warning("NWS alert check failed: %s", error)
+            service.weather_poll_failed(str(error))
+            return
+        for clip in service.weather_polled(data, announce=announce):
+            try:
+                await render_and_queue(clip)
+            except (UnknownClipError, TTSError, HTTPException):
+                _weather_logger.exception("couldn't announce weather alert %s", clip)
+
+    async def weather_loop() -> None:
+        while True:
+            config = service.config
+            if not (config.wx_alerts_enabled and config.wx_lat is not None and config.wx_lon is not None):
+                await asyncio.sleep(WEATHER_DISABLED_POLL_SECONDS)
+                continue
+            try:
+                await check_weather(announce=True)
+            except Exception:
+                # Keep polling: a missed severe-weather alert is worse than a noisy log.
+                _weather_logger.exception("unexpected error checking NWS alerts")
+            await asyncio.sleep(config.wx_poll_interval)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         tasks: list[asyncio.Task] = []
@@ -296,6 +351,7 @@ def create_app(
             tasks.append(asyncio.create_task(tick_loop()))
             tasks.append(asyncio.create_task(aprs_beacon_loop()))
             tasks.append(asyncio.create_task(announcement_loop()))
+            tasks.append(asyncio.create_task(weather_loop()))
             loop = asyncio.get_running_loop()
             loop.run_in_executor(None, renderer.warm, service.config)
             service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
@@ -442,6 +498,26 @@ def create_app(
             await render_and_queue(clip)
         except UnknownClipError:
             raise HTTPException(status_code=404, detail="The announcement's audio clip no longer exists")
+        except TTSError as error:
+            raise HTTPException(status_code=503, detail=str(error))
+        return _status_response(service.snapshot())
+
+    @app.get("/api/weather", response_model=WeatherStatusResponse, dependencies=auth_dependencies)
+    def get_weather() -> WeatherStatusResponse:
+        return _weather_response(service)
+
+    @app.post("/api/weather/check", response_model=WeatherStatusResponse, dependencies=auth_dependencies)
+    async def check_weather_now() -> WeatherStatusResponse:
+        await check_weather(announce=service.config.wx_alerts_enabled)
+        return _weather_response(service)
+
+    @app.post("/api/weather/alerts/{alert_id}/play", response_model=StatusResponse, dependencies=auth_dependencies)
+    async def play_weather_alert(alert_id: str) -> StatusResponse:
+        alert = next((a for a in service.weather_alerts if a.id == alert_id), None)
+        if alert is None:
+            raise HTTPException(status_code=404, detail="That alert is no longer active")
+        try:
+            await render_and_queue(service.weather_alert_clip(alert))
         except TTSError as error:
             raise HTTPException(status_code=503, detail=str(error))
         return _status_response(service.snapshot())

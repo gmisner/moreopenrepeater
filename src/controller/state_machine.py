@@ -69,6 +69,12 @@ class RepeaterConfig:
     aprs_lon: Optional[float] = None
     aprs_comment: str = ""
     aprs_beacon_interval: float = 1800.0
+    wx_alerts_enabled: bool = False
+    wx_lat: Optional[float] = None
+    wx_lon: Optional[float] = None
+    wx_min_severity: Literal["Minor", "Moderate", "Severe", "Extreme"] = "Severe"
+    wx_poll_interval: float = 120.0
+    wx_repeat_minutes: float = 0.0  # 0 = announce each alert once
 
 
 class RepeaterController:

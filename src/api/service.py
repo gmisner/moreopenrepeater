@@ -13,7 +13,7 @@ import asyncio
 import dataclasses
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable, Optional
 
 from controller.announcements import Announcement, AnnouncementScheduler, announcement_from_dict
@@ -33,6 +33,7 @@ from controller.macros import Macro
 from controller.state_machine import RepeaterConfig, RepeaterController
 
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, ClipRenderer
+from wx.nws import AlertTracker, WeatherAlert, meets_severity, parse_alerts, speech_text
 
 from .persistence import StateStore
 
@@ -105,6 +106,10 @@ class RepeaterService:
             config or RepeaterConfig(), macros=macros or [], now=clock(), clip_duration=self._clip_duration
         )
         self.scheduler = AnnouncementScheduler(announcements or [], wall_clock())
+        self.weather_tracker = AlertTracker()
+        self.weather_alerts: list[WeatherAlert] = []
+        self.weather_last_checked: Optional[datetime] = None
+        self.weather_last_error: Optional[str] = None
         self.ptt_active = False
         self.cos_active = False
         self.ctcss_hz: Optional[float] = None
@@ -258,6 +263,30 @@ class RepeaterService:
         """Callers should render `clip` first (off the event loop) so the
         controller knows how long to hold PTT for."""
         return self.controller.queue_announcement(clip)
+
+    def weather_polled(self, geojson: dict, announce: bool = True) -> list[str]:
+        """Record a successful NWS poll; return the clips to announce.
+        With `announce=False` (a manual check while alerts are switched
+        off) it only refreshes what the dashboard shows."""
+        config = self.controller.config
+        alerts = parse_alerts(geojson)
+        self.weather_alerts = [a for a in alerts if meets_severity(a, config.wx_min_severity)]
+        self.weather_last_checked = self._wall_clock()
+        self.weather_last_error = None
+        if not announce:
+            return []
+        repeat = timedelta(minutes=config.wx_repeat_minutes) if config.wx_repeat_minutes > 0 else None
+        to_announce = self.weather_tracker.update(alerts, self._wall_clock(), config.wx_min_severity, repeat)
+        for alert in to_announce:
+            _logger.info("announcing weather alert: %s (%s)", alert.event, alert.id)
+        return [self.weather_alert_clip(a) for a in to_announce]
+
+    def weather_poll_failed(self, error: str) -> None:
+        self.weather_last_checked = self._wall_clock()
+        self.weather_last_error = error
+
+    def weather_alert_clip(self, alert: WeatherAlert) -> str:
+        return TTS_PREFIX + speech_text(alert)
 
     def export_snapshot(self) -> dict:
         return {

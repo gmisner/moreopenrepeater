@@ -1,6 +1,7 @@
 import { api } from "./js/api.js";
 import { initAnnouncements, loadAnnouncements } from "./js/announcements.js";
 import { initAssets, loadAssets } from "./js/assets.js";
+import { initAudio } from "./js/audio.js";
 import { initBackup } from "./js/backup.js";
 import { initConfig, loadConfig } from "./js/config.js";
 import { initLogs } from "./js/logs.js";
@@ -20,6 +21,7 @@ async function main() {
   initStatus();
   initConfig();
   initAssets();
+  initAudio();
   initMacros();
   initAnnouncements();
   initWeather();

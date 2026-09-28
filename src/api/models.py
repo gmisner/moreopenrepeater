@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
 WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
+CosSource = Literal["vox", "ctcss", "cm108"]
 
 
 class StatusResponse(BaseModel):
@@ -52,6 +53,13 @@ class ConfigResponse(BaseModel):
     wx_min_severity: WeatherSeverity
     wx_poll_interval: float
     wx_repeat_minutes: float
+    audio_enabled: bool
+    audio_input_device: str
+    audio_output_device: str
+    cos_source: CosSource
+    vox_threshold_db: float
+    vox_hold: float
+    tx_gain_db: float
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -94,6 +102,13 @@ class ConfigUpdateRequest(BaseModel):
     wx_min_severity: Optional[WeatherSeverity] = None
     wx_poll_interval: Optional[float] = Field(default=None, ge=30)
     wx_repeat_minutes: Optional[float] = Field(default=None, ge=0)
+    audio_enabled: Optional[bool] = None
+    audio_input_device: Optional[str] = None
+    audio_output_device: Optional[str] = None
+    cos_source: Optional[CosSource] = None
+    vox_threshold_db: Optional[float] = Field(default=None, ge=-90, le=0)
+    vox_hold: Optional[float] = Field(default=None, ge=0, le=5)
+    tx_gain_db: Optional[float] = Field(default=None, ge=-40, le=20)
 
 
 class SimulateCOSRequest(BaseModel):
@@ -249,6 +264,29 @@ class TransmissionResponse(BaseModel):
     started_at: datetime
     duration: float
     timed_out: bool
+
+
+class AudioDeviceResponse(BaseModel):
+    name: str
+    inputs: int
+    outputs: int
+    default_samplerate: float
+
+
+class AudioEngineResponse(BaseModel):
+    enabled: bool
+    running: bool
+    error: Optional[str]
+    input_device: str
+    output_device: str
+    sample_rate: int
+    rx_level_db: float
+    cos_open: bool
+    ctcss_hz: Optional[float]
+    transmitting: bool
+    dropped_input_blocks: int
+    starved_output_blocks: int
+    hardware_ptt: bool
 
 
 class LoginRequest(BaseModel):

@@ -72,13 +72,17 @@ class ClipRenderer:
                 self._cache.popitem(last=False)
         return samples
 
-    def cached_duration(self, clip: str, config: RepeaterConfig) -> Optional[float]:
+    def cached_samples(self, clip: str, config: RepeaterConfig) -> Optional[np.ndarray]:
+        """The rendered clip if it's already cached, else None -- never blocks."""
         try:
             key = self._cache_key(clip, config)
         except UnknownClipError:
             return None
         with self._lock:
-            samples = self._cache.get(key)
+            return self._cache.get(key)
+
+    def cached_duration(self, clip: str, config: RepeaterConfig) -> Optional[float]:
+        samples = self.cached_samples(clip, config)
         return None if samples is None else len(samples) / self.sample_rate
 
     def warm(self, config: RepeaterConfig) -> None:

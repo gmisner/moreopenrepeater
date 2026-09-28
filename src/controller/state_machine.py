@@ -75,6 +75,13 @@ class RepeaterConfig:
     wx_min_severity: Literal["Minor", "Moderate", "Severe", "Extreme"] = "Severe"
     wx_poll_interval: float = 120.0
     wx_repeat_minutes: float = 0.0  # 0 = announce each alert once
+    audio_enabled: bool = False
+    audio_input_device: str = ""  # PortAudio device name; "" = system default
+    audio_output_device: str = ""
+    cos_source: Literal["vox", "ctcss", "cm108"] = "vox"
+    vox_threshold_db: float = -40.0
+    vox_hold: float = 0.4
+    tx_gain_db: float = 0.0
 
 
 class RepeaterController:

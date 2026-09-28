@@ -13,6 +13,7 @@ different block sizes.
 """
 from __future__ import annotations
 
+import functools
 import math
 from dataclasses import dataclass, field
 from typing import Optional
@@ -45,8 +46,20 @@ def goertzel_magnitude(block: np.ndarray, sample_rate: int, target_freq: float) 
     return math.sqrt(max(power, 0.0)) * 2.0 / n
 
 
+@functools.lru_cache(maxsize=16)
+def _bin_basis(n: int, sample_rate: int, target_freqs: tuple[float, ...]) -> np.ndarray:
+    ks = np.floor(0.5 + n * np.asarray(target_freqs) / sample_rate)
+    return np.exp(-2j * np.pi * np.outer(ks, np.arange(n)) / n)
+
+
 def _goertzel_magnitudes(block: np.ndarray, sample_rate: int, target_freqs) -> list[float]:
-    return [goertzel_magnitude(block, sample_rate, f) for f in target_freqs]
+    """Same result as `goertzel_magnitude` per frequency -- a Goertzel filter's
+    output power *is* the DFT bin's |X[k]|^2 -- but as one cached-matrix
+    product, which is what makes a 1 s window x 50 CTCSS tones affordable
+    every 20 ms block in real time."""
+    n = len(block)
+    basis = _bin_basis(n, sample_rate, tuple(target_freqs))
+    return list(np.abs(basis @ np.asarray(block, dtype=np.float64)) * 2.0 / n)
 
 
 @dataclass

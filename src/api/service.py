@@ -14,7 +14,7 @@ import dataclasses
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Callable, Optional
+from typing import Callable, Optional, Protocol
 
 from controller.announcements import Announcement, AnnouncementScheduler, announcement_from_dict
 from controller.events import (
@@ -30,7 +30,7 @@ from controller.events import (
     SendLinkCommand,
 )
 from controller.macros import Macro
-from controller.state_machine import RepeaterConfig, RepeaterController
+from controller.state_machine import RECEIVING, RepeaterConfig, RepeaterController
 
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, ClipRenderer
 from wx.nws import AlertTracker, WeatherAlert, meets_severity, parse_alerts, speech_text
@@ -66,6 +66,14 @@ def announcements_from_snapshot(data: dict) -> list[Announcement]:
     return [announcement_from_dict(a) for a in data.get("announcements", [])]
 
 
+class AudioOutput(Protocol):
+    """What the service drives when a live audio engine is attached."""
+
+    def set_ptt(self, active: bool) -> None: ...
+    def set_repeating(self, repeating: bool) -> None: ...
+    def play(self, clip: str) -> None: ...
+
+
 @dataclasses.dataclass(frozen=True)
 class StatusSnapshot:
     state: str
@@ -98,6 +106,7 @@ class RepeaterService:
         self._state_store = state_store
         self.renderer = renderer
         self.activity = activity
+        self.audio_output: Optional[AudioOutput] = None
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
         if saved is not None:
@@ -170,18 +179,37 @@ class RepeaterService:
                 if self.activity is not None and command.active != self.ptt_active:
                     self.activity.ptt_changed(command.active, now)
                 self.ptt_active = command.active
+                if self.audio_output is not None:
+                    self.audio_output.set_ptt(command.active)
             elif isinstance(command, PlayAudio):
                 self.last_clip = command.clip
                 if self.activity is not None:
                     self.activity.clip_played(command.clip, now)
+                if self.audio_output is not None:
+                    self.audio_output.play(command.clip)
             elif isinstance(command, SendLinkCommand):
                 self._link_command_sink(command)
         state = self.controller.state
         if state != self._last_state:
             if self.activity is not None:
                 self.activity.state_changed(self._last_state, state, now)
+            if self.audio_output is not None:
+                self.audio_output.set_repeating(state == RECEIVING)
             self._last_state = state
         self._notify()
+
+    def handle_audio_events(self, events: list[ControllerEvent]) -> None:
+        """Carrier / CTCSS / DTMF detected by the live audio engine."""
+        commands: list[ControllerCommand] = []
+        for event in events:
+            if isinstance(event, COSChanged):
+                self.cos_active = event.active
+            elif isinstance(event, CTCSSChanged):
+                self.ctcss_hz = event.tone_hz
+            elif isinstance(event, DTMFDigit):
+                _logger.info("DTMF digit %r received", event.digit)
+            commands += self.controller.handle_event(event, self._clock())
+        self._apply_commands(commands)
 
     def tick(self) -> None:
         self._apply_commands(self.controller.tick(self._clock()))

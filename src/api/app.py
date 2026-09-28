@@ -42,12 +42,15 @@ from .auth import (
     credentials_match,
     verify_credentials,
 )
+from .live_audio import LiveAudio, cm108_from_env, list_audio_devices
 from .logging_config import configure_logging
 from .models import (
     ActivitySummaryResponse,
     AnnouncementFields,
     AnnouncementResponse,
     AssetResponse,
+    AudioDeviceResponse,
+    AudioEngineResponse,
     AudioPreviewRequest,
     ConfigResponse,
     ConfigUpdateRequest,
@@ -206,6 +209,8 @@ def create_app(
     renderer: Optional[ClipRenderer] = None,
     fetch_weather: Callable[..., dict] = fetch_active_alerts,
     activity_store: Optional[ActivityStore] = None,
+    live_audio: Optional[LiveAudio] = None,
+    audio_devices: Callable[[], list[dict]] = list_audio_devices,
 ) -> FastAPI:
     """`state_store` and `activity_store` default to in-memory so tests never
     touch the real files under `data/`; the module-level `app` below opts in.
@@ -218,6 +223,7 @@ def create_app(
     if service.activity is None:
         service.activity = ActivityRecorder(activity_store or ActivityStore())
     activity_store = service.activity.store
+    live_audio = live_audio or LiveAudio(service, renderer, cm108=cm108_from_env(os.environ))
     log_path = log_path or DEFAULT_LOG_PATH
     link_settings = link_settings if link_settings is not None else link_settings_from_env()
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
@@ -367,9 +373,11 @@ def create_app(
             service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
             if link_settings is not None:
                 tasks.append(asyncio.create_task(node_link_loop()))
+            live_audio.attach(loop)
         yield
         for task in tasks:
             task.cancel()
+        live_audio.shutdown()
 
     app = FastAPI(title="moreopenrepeater API", lifespan=lifespan)
     app.state.service = service
@@ -579,6 +587,17 @@ def create_app(
         except TTSError as error:
             raise HTTPException(status_code=503, detail=str(error))
         return Response(encode_wav(samples, renderer.sample_rate), media_type="audio/wav")
+
+    @app.get("/api/audio/devices", response_model=list[AudioDeviceResponse], dependencies=auth_dependencies)
+    def get_audio_devices() -> list[dict]:
+        try:
+            return audio_devices()
+        except Exception as error:  # PortAudio errors
+            raise HTTPException(status_code=503, detail=f"couldn't list audio devices: {error}")
+
+    @app.get("/api/audio/engine", response_model=AudioEngineResponse, dependencies=auth_dependencies)
+    def get_audio_engine() -> dict:
+        return live_audio.status()
 
     @app.get("/api/assets", response_model=list[AssetResponse], dependencies=auth_dependencies)
     def list_assets() -> list[AssetResponse]:

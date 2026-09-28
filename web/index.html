@@ -1047,23 +1047,79 @@
       <section class="view" data-view="backup" data-title="Backup & restore" hidden>
         <header class="view-header">
           <h1>Backup &amp; restore</h1>
-          <p class="muted">Save or restore the full configuration, DTMF macros and announcements as a JSON file.
-            Audio clips aren't included.</p>
+          <p class="muted">A full backup holds everything needed to rebuild the repeater: settings, DTMF macros,
+            announcements, audio clips, dashboard users, airtime statistics and the audit log, and optionally
+            recordings. The phone line lives in Asterisk and isn't included.</p>
         </header>
         <div class="grid grid-2">
+          <div class="card" data-admin-only hidden>
+            <h2>Full backup</h2>
+            <p class="muted small">A .zip file. It holds the dashboard users' password hashes, so keep it somewhere
+              private.</p>
+            <label class="switch">
+              <input type="checkbox" id="backup-download-recordings" />
+              <span class="switch-track"></span>
+              <span>Include recordings</span>
+            </label>
+            <div class="form-actions">
+              <a class="btn btn-primary" id="backup-download" href="/api/backup" download>Download full backup</a>
+            </div>
+          </div>
           <div class="card">
-            <h2>Download backup</h2>
-            <p class="muted small">Exports the current configuration, macros and announcements.</p>
-            <button type="button" class="btn btn-primary" id="snapshot-download">Download configuration</button>
+            <h2>Settings only</h2>
+            <p class="muted small">The configuration, macros and announcements as a JSON file, without audio clips,
+              users or history.</p>
+            <div class="form-actions">
+              <button type="button" class="btn" id="snapshot-download">Download settings</button>
+            </div>
           </div>
           <div class="card">
             <h2>Restore</h2>
-            <p class="muted small">Replaces the current configuration, macros and announcements.</p>
+            <p class="muted small">A full backup (.zip) replaces everything it holds, except that recordings are added
+              to the ones already here. A settings file (.json) replaces the configuration, macros and
+              announcements.</p>
             <label class="btn file-btn">Choose backup file&hellip;
-              <input type="file" id="snapshot-upload-input" accept="application/json,.json" />
+              <input type="file" id="backup-upload-input" accept=".zip,.json,application/zip,application/json" />
             </label>
           </div>
         </div>
+        <form class="card config-form" data-config-form data-admin-only hidden>
+          <div class="card-header"><h2>Backups on the repeater</h2></div>
+          <p class="muted small" id="backup-folder"></p>
+          <p class="form-error" id="backup-error" hidden></p>
+          <label class="switch">
+            <input type="checkbox" name="backup_enabled" />
+            <span class="switch-track"></span>
+            <span>Back up automatically</span>
+          </label>
+          <div class="form-grid">
+            <label>Every
+              <span class="input-unit"><input type="number" step="1" min="1" max="720" name="backup_interval_hours" required /><span>h</span></span>
+            </label>
+            <label>Keep the newest
+              <span class="input-unit"><input type="number" step="1" min="1" max="100" name="backup_keep" required /><span>backups</span></span>
+            </label>
+          </div>
+          <label class="switch">
+            <input type="checkbox" name="backup_include_recordings" />
+            <span class="switch-track"></span>
+            <span>Include recordings</span>
+          </label>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="backup-now">Back up now</button>
+            <span class="spacer"></span>
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Made</th><th>Size</th><th>Contents</th><th></th></tr></thead>
+              <tbody id="backup-tbody"></tbody>
+            </table>
+          </div>
+          <p id="backup-empty" class="muted small">No backups saved on the repeater yet.</p>
+        </form>
       </section>
     </main>
   </div>

@@ -89,6 +89,10 @@ class ConfigResponse(BaseModel):
     autopatch_blocked: str
     autopatch_max_call_seconds: float
     autopatch_ring_seconds: float
+    backup_enabled: bool
+    backup_interval_hours: float
+    backup_keep: int
+    backup_include_recordings: bool
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -171,6 +175,10 @@ class ConfigUpdateRequest(BaseModel):
     autopatch_blocked: Optional[str] = Field(default=None, max_length=500, pattern=r"^[0-9XNZxnz,\s]*$")
     autopatch_max_call_seconds: Optional[float] = Field(default=None, ge=30, le=3600)
     autopatch_ring_seconds: Optional[float] = Field(default=None, ge=5, le=120)
+    backup_enabled: Optional[bool] = None
+    backup_interval_hours: Optional[float] = Field(default=None, ge=1, le=720)
+    backup_keep: Optional[int] = Field(default=None, ge=1, le=100)
+    backup_include_recordings: Optional[bool] = None
 
 
 class AutopatchDialRequest(BaseModel):
@@ -331,6 +339,29 @@ class SnapshotImportRequest(BaseModel):
     config: dict[str, Any]
     macros: list[MacroCreateRequest] = []
     announcements: list[AnnouncementModel] = []
+
+
+class SavedBackupResponse(BaseModel):
+    name: str
+    created_at: datetime
+    size: int
+    contents: dict[str, int]
+
+
+class BackupFolderResponse(BaseModel):
+    enabled: bool
+    directory: Optional[str]
+    last_error: Optional[str]
+    backups: list[SavedBackupResponse]
+
+
+class BackupRestoreResponse(BaseModel):
+    macros: int
+    announcements: int
+    users: Optional[int]  # None: the backup had no accounts, so the current ones were kept
+    audio_clips: int
+    history: bool
+    recordings: int
 
 
 class AudioPreviewRequest(BaseModel):

@@ -379,6 +379,7 @@ input[type="file"] { padding: 0.4rem; }
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  text-decoration: none;
 }
 .btn:hover { filter: brightness(1.15); }
 .btn:disabled { opacity: 0.55; cursor: progress; }

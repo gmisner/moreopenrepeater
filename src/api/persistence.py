@@ -13,11 +13,44 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 import tempfile
 from pathlib import Path
 from typing import Optional
 
 _logger = logging.getLogger("moreopenrepeater.persistence")
+
+
+def copy_database(conn: sqlite3.Connection, path: Path) -> None:
+    """Write a consistent copy of a live SQLite database to `path`."""
+    dest = sqlite3.connect(str(path))
+    try:
+        conn.backup(dest)
+    finally:
+        dest.close()
+
+
+def load_database(conn: sqlite3.Connection, path: Path) -> None:
+    """Replace a live database's contents with those of the file at `path`."""
+    source = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+    try:
+        source.backup(conn)
+    finally:
+        source.close()
+
+
+def database_has_table(path: Path, table: str) -> bool:
+    """Whether `path` is an intact SQLite database with `table` in it."""
+    try:
+        conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            if conn.execute("PRAGMA quick_check").fetchone() != ("ok",):
+                return False
+            return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone() is not None
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError:
+        return False
 
 
 class StateStore:

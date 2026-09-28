@@ -114,6 +114,10 @@ class RepeaterConfig:
     autopatch_blocked: str = "900XXXXXXX NXX976XXXX"
     autopatch_max_call_seconds: float = 180.0
     autopatch_ring_seconds: float = 30.0
+    backup_enabled: bool = False  # scheduled backups to the backup folder
+    backup_interval_hours: float = 24.0
+    backup_keep: int = 7
+    backup_include_recordings: bool = False
 
 
 class RepeaterController:

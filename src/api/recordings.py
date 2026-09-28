@@ -8,6 +8,7 @@ storage (tests, or no data directory).
 from __future__ import annotations
 
 import re
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,6 +60,21 @@ class RecordingStore:
             return []
         paths = sorted((p for p in self.directory.glob("*.wav") if _ID.match(p.stem)), reverse=True)
         return [self._info(p) for p in paths[:limit]]
+
+    def paths(self) -> list[Path]:
+        if self.directory is None:
+            return []
+        return sorted(p for p in self.directory.glob("*.wav") if _ID.match(p.stem))
+
+    def import_file(self, source: Path) -> bool:
+        """Adds a recording file (e.g. from a backup) unless it's already here."""
+        path = self.path_for(source.stem)
+        if path.exists():
+            return False
+        tmp = path.with_suffix(".tmp")
+        shutil.copyfile(source, tmp)
+        tmp.replace(path)
+        return True
 
     def delete(self, recording_id: str) -> bool:
         try:

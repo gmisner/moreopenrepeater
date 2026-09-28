@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from .persistence import copy_database, load_database
+
 RETENTION_DAYS = 365
 
 
@@ -58,6 +60,14 @@ class AuditLog:
     def prune(self, older_than: float) -> None:
         with self._lock, self._conn:
             self._conn.execute("DELETE FROM audit WHERE at < ?", (older_than,))
+
+    def copy_to(self, path: Path) -> None:
+        with self._lock:
+            copy_database(self._conn, path)
+
+    def replace_from(self, path: Path) -> None:
+        with self._lock:
+            load_database(self._conn, path)
 
 
 def describe_config_change(before: dict, after: dict) -> str:

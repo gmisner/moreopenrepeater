@@ -6,6 +6,8 @@ import collections
 import dataclasses
 import logging
 import os
+import shutil
+import tempfile
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -19,6 +21,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
+from starlette.background import BackgroundTask
 from starlette.requests import HTTPConnection
 
 from controller.announcements import Announcement
@@ -44,6 +47,7 @@ from .auth import (
     verify_credentials,
 )
 from .autopatch import Autopatch, patch_settings_from_env
+from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_backup, restore_backup, write_backup
 from .sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
 from .sip_trunk import AsteriskSetupError, SipTrunk, TrunkSettings
 from .aprs_map import AprsReceiver, StationStore, bearing_degrees, distance_km, map_center, spoken_summary
@@ -67,12 +71,15 @@ from .models import (
     AudioPreviewRequest,
     AutopatchDialRequest,
     AutopatchStatusResponse,
+    BackupFolderResponse,
+    BackupRestoreResponse,
     ConfigResponse,
     ConfigUpdateRequest,
     LoginRequest,
     MacroCreateRequest,
     MacroResponse,
     RecordingResponse,
+    SavedBackupResponse,
     SessionResponse,
     UserCreateRequest,
     UserResponse,
@@ -120,6 +127,10 @@ DEFAULT_RECORDINGS_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "recor
 DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.json"
 DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
 DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
+DEFAULT_BACKUP_DIR = Path(
+    os.environ.get("MOREOPENREPEATER_BACKUP_DIR") or _resolve_data_root(os.environ, _REPO_DATA_DIR) / "backups"
+)
+BACKUP_CHECK_SECONDS = 60.0
 APRS_PRUNE_SECONDS = 300
 ZONE_FETCHES_PER_POLL = 20
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
@@ -236,6 +247,15 @@ def _validated_config(values: dict) -> RepeaterConfig:
     return RepeaterConfig(**validated.model_dump())
 
 
+def _snapshot_to_import(snapshot: SnapshotImportRequest) -> dict:
+    config = _validated_config({**dataclasses.asdict(RepeaterConfig()), **snapshot.config})
+    return {
+        "config": dataclasses.asdict(config),
+        "macros": [m.model_dump() for m in snapshot.macros],
+        "announcements": [a.model_dump() for a in snapshot.announcements],
+    }
+
+
 def aprs_beacon_packet(config: RepeaterConfig) -> str:
     """Info field for our beacon: a position report if located, else a status."""
     comment = config.aprs_comment
@@ -281,6 +301,7 @@ def create_app(
     aprs_stations: Optional[StationStore] = None,
     autopatch: Optional[Autopatch] = None,
     sip_trunk: Optional[SipTrunk] = None,
+    backups: Optional[BackupFolder] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -317,6 +338,8 @@ def create_app(
         return time.time() - service.config.aprs_map_hours * 3600
 
     service.aprs_summary = lambda: spoken_summary(aprs_stations.stations(aprs_window_start()), service.config, time.time())
+    backups = backups or BackupFolder(None)
+    backup_sources = BackupSources(service, users, assets_store, recordings, activity_store, audit)
 
     def auth_enabled() -> bool:
         """On once there's an env admin or any stored user -- so adding the
@@ -487,6 +510,12 @@ def create_app(
                 _weather_logger.exception("unexpected error checking NWS alerts")
             await asyncio.sleep(config.wx_poll_interval)
 
+    async def backup_loop() -> None:
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(BACKUP_CHECK_SECONDS)
+            await loop.run_in_executor(None, backups.run_schedule, backup_sources, service.config, time.time())
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         tasks: list[asyncio.Task] = []
@@ -507,6 +536,7 @@ def create_app(
             loop = asyncio.get_running_loop()
             loop.run_in_executor(None, renderer.warm, service.config)
             service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
+            tasks.append(asyncio.create_task(backup_loop()))
             if link_settings is not None:
                 tasks.append(asyncio.create_task(node_link_loop()))
             live_audio.attach(loop)
@@ -722,15 +752,110 @@ def create_app(
 
     @app.post("/api/snapshot", response_model=SnapshotModel, dependencies=auth_dependencies)
     async def post_snapshot(snapshot: SnapshotImportRequest) -> SnapshotModel:
-        config = _validated_config({**dataclasses.asdict(RepeaterConfig()), **snapshot.config})
-        service.import_snapshot(
-            {
-                "config": dataclasses.asdict(config),
-                "macros": [m.model_dump() for m in snapshot.macros],
-                "announcements": [a.model_dump() for a in snapshot.announcements],
-            }
-        )
+        service.import_snapshot(_snapshot_to_import(snapshot))
         return SnapshotModel(**service.export_snapshot())
+
+    def restore_backup_file(path: Path, loop: asyncio.AbstractEventLoop) -> dict:
+        """Runs in a worker thread; the settings themselves are applied on the event loop."""
+
+        async def import_on_loop(settings: dict) -> None:
+            service.import_snapshot(settings)
+
+        def import_settings(settings: dict) -> None:
+            asyncio.run_coroutine_threadsafe(import_on_loop(settings), loop).result()
+
+        try:
+            with open_backup(path) as backup:
+                try:
+                    settings = _snapshot_to_import(SnapshotImportRequest.model_validate(backup.settings))
+                except (ValidationError, RequestValidationError):
+                    raise BackupError("The settings in the backup aren't valid for this version.") from None
+                return restore_backup(backup, backup_sources, settings, import_settings)
+        except (BackupError, UserError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+
+    @app.get("/api/backup", dependencies=admin_dependencies)
+    def download_backup(request: Request, recordings: bool = False) -> FileResponse:
+        now = time.time()
+        fd, name = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
+        path = Path(name)
+        try:
+            write_backup(path, backup_sources, recordings, now)
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+        # A GET, so the middleware skips it -- but it hands out password hashes.
+        audit.record(now, request.state.identity.username or "local", "download backup", "with recordings" if recordings else "")
+        return FileResponse(
+            path,
+            media_type="application/zip",
+            filename=backup_name(service.config.callsign, now),
+            background=BackgroundTask(path.unlink, missing_ok=True),
+        )
+
+    @app.post("/api/backup/restore", response_model=BackupRestoreResponse, dependencies=admin_dependencies)
+    async def restore_uploaded_backup(request: Request, file: UploadFile = File(...)) -> dict:
+        request.state.audit_detail = file.filename or ""
+        loop = asyncio.get_running_loop()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "backup.zip"
+            with path.open("wb") as out:
+                await loop.run_in_executor(None, shutil.copyfileobj, file.file, out)
+            return await loop.run_in_executor(None, restore_backup_file, path, loop)
+
+    def backup_folder_response() -> BackupFolderResponse:
+        return BackupFolderResponse(
+            enabled=backups.enabled,
+            directory=str(backups.directory) if backups.directory else None,
+            last_error=backups.last_error,
+            backups=[
+                SavedBackupResponse(
+                    name=b.name, created_at=datetime.fromtimestamp(b.created_at), size=b.size, contents=b.contents
+                )
+                for b in backups.list()
+            ],
+        )
+
+    def saved_backup_path(name: str) -> Path:
+        try:
+            return backups.path_for(name)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"No backup named {name!r}") from None
+
+    @app.get("/api/backups", response_model=BackupFolderResponse, dependencies=admin_dependencies)
+    def list_backups() -> BackupFolderResponse:
+        return backup_folder_response()
+
+    @app.post("/api/backups", response_model=BackupFolderResponse, dependencies=admin_dependencies)
+    async def create_saved_backup() -> BackupFolderResponse:
+        if not backups.enabled:
+            raise HTTPException(status_code=409, detail="No backup folder is set up")
+        config = service.config
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, backups.create, backup_sources, config.backup_include_recordings, time.time()
+            )
+        except OSError as error:
+            raise HTTPException(status_code=507, detail=f"Couldn't save the backup: {error}") from None
+        return backup_folder_response()
+
+    @app.get("/api/backups/{name}", dependencies=admin_dependencies)
+    def download_saved_backup(name: str, request: Request) -> FileResponse:
+        path = saved_backup_path(name)
+        audit.record(time.time(), request.state.identity.username or "local", "download backup", name)
+        return FileResponse(path, media_type="application/zip", filename=name)
+
+    @app.delete("/api/backups/{name}", response_model=BackupFolderResponse, dependencies=admin_dependencies)
+    def delete_saved_backup(name: str) -> BackupFolderResponse:
+        saved_backup_path(name).unlink(missing_ok=True)
+        return backup_folder_response()
+
+    @app.post("/api/backups/{name}/restore", response_model=BackupRestoreResponse, dependencies=admin_dependencies)
+    async def restore_saved_backup(name: str, request: Request) -> dict:
+        request.state.audit_detail = name
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, restore_backup_file, saved_backup_path(name), loop)
 
     @app.get("/api/audio/tts", response_model=TTSInfoResponse, dependencies=auth_dependencies)
     def get_tts_info() -> TTSInfoResponse:
@@ -1034,6 +1159,7 @@ app = create_app(
     users=UserStore(StateStore(DEFAULT_USERS_PATH)),
     audit=AuditLog(DEFAULT_AUDIT_PATH),
     aprs_stations=StationStore(DEFAULT_APRS_PATH),
+    backups=BackupFolder(DEFAULT_BACKUP_DIR),
 )
 
 

@@ -10,6 +10,7 @@ asset into transmit audio.
 from __future__ import annotations
 
 import json
+import shutil
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -58,6 +59,18 @@ class AudioAssetStore:
 
     def path_for(self, asset_id: str) -> Path:
         return self._data_dir / f"{asset_id}.wav"
+
+    def replace(self, assets: list[AssetInfo], source_dir: Path) -> None:
+        """Swap in another set of clips (e.g. from a backup), whose files are
+        `<id>.wav` in `source_dir`. Files come first, so the index never
+        points at a missing clip."""
+        for asset in assets:
+            shutil.copyfile(source_dir / f"{asset.id}.wav", self.path_for(asset.id))
+        self._write_index([asdict(a) for a in assets])
+        keep = {a.id for a in assets}
+        for path in self._data_dir.glob("*.wav"):
+            if path.stem not in keep:
+                path.unlink(missing_ok=True)
 
     def _read_index(self) -> list[dict]:
         if not self._index_path.exists():

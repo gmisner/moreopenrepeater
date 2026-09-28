@@ -23,6 +23,8 @@ from typing import Optional
 
 from controller.state_machine import RECEIVING, TIMEOUT
 
+from .persistence import copy_database, load_database
+
 KERCHUNK_SECONDS = 1.5  # shorter than this and nobody said anything
 RETENTION_DAYS = 400
 _SILENT_CLIPS = {"courtesy_tone", "timeout_tone"}
@@ -83,6 +85,14 @@ class ActivityStore:
     def prune(self, older_than: float) -> int:
         with self._lock, self._conn:
             return self._conn.execute("DELETE FROM activity WHERE started_at < ?", (older_than,)).rowcount
+
+    def copy_to(self, path: Path) -> None:
+        with self._lock:
+            copy_database(self._conn, path)
+
+    def replace_from(self, path: Path) -> None:
+        with self._lock:
+            load_database(self._conn, path)
 
 
 class ActivityRecorder:

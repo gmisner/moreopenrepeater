@@ -193,6 +193,35 @@ sudo -u moreopenrepeater .venv/bin/pip install -e .   # picks up any new/changed
 sudo systemctl restart moreopenrepeater
 ```
 
+## Backups
+
+The dashboard's **Backup & restore** page (admins only) downloads a full
+backup as a `.zip`. It holds the settings, DTMF macros, announcements, audio
+clips, dashboard users, airtime statistics and the audit log, and optionally
+the recordings. Restoring one on a fresh install brings all of that back;
+recordings are added to any already there. The file includes the users'
+password hashes, so keep it private.
+
+The same page can save backups on the Pi itself, on demand or on a schedule
+(every so many hours, keeping the newest few). They go in `backups/` in the
+data directory unless `MOREOPENREPEATER_BACKUP_DIR` points elsewhere. An SD
+card is the part of a Pi most likely to fail, so a USB drive or network share
+is a better home:
+
+```
+sudo mkdir -p /mnt/usb/moreopenrepeater-backups
+sudo chown moreopenrepeater: /mnt/usb/moreopenrepeater-backups
+echo 'MOREOPENREPEATER_BACKUP_DIR=/mnt/usb/moreopenrepeater-backups' | sudo tee -a /etc/moreopenrepeater/env
+sudo systemctl restart moreopenrepeater
+```
+
+If a scheduled backup fails (a full or unplugged drive), the page says so and
+it tries again a minute later.
+
+A backup doesn't include the env file (the built-in admin and the Asterisk
+login) or Asterisk's own configuration, which holds the autopatch phone line.
+Keep a copy of `/etc/moreopenrepeater/env` and `/etc/asterisk/` too.
+
 ## Repeaters without internet
 
 The repeater itself never needs the internet. These optional features do, and each
@@ -222,6 +251,3 @@ refills as new reports arrive.
   under load on a Pi.
 - `link`'s AllStar audio path (`rxchannel=audiosocket`) is still open; see
   the README's "Status".
-- No backup/restore automation beyond the dashboard's manual "Download
-  configuration" snapshot -- back that up yourself before major changes.
-  `data/users.json` and `data/recordings/` aren't in the snapshot.

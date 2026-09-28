@@ -234,6 +234,10 @@ several phases (see the plan file for the full breakdown):
   dashboard in the browser.
 - **Users and roles**: admin, operator and read-only viewer accounts, plus an audit
   log of every change and DTMF command with who made it.
+- **Full backups**: one `.zip` with the settings, macros, announcements, audio clips,
+  users, activity history and audit log (recordings optional), downloadable or saved
+  on a schedule to a folder such as a USB drive. See
+  [docs/raspberry-pi.md](docs/raspberry-pi.md#backups).
 - **One-command Raspberry Pi install** (`scripts/install-pi.sh`), which CI runs on
   every push.
 - **CI**: GitHub Actions runs the test suite on Python 3.11-3.14.

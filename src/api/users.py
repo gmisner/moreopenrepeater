@@ -130,8 +130,33 @@ class UserStore:
         if self.reserved_username is None and users and not any(u.role == "admin" for u in users.values()):
             raise UserError("At least one admin is needed to manage users")
 
+    def export(self) -> dict:
+        return {"users": [{"username": u.username, "role": u.role, "password_hash": u.password_hash} for u in self.list()]}
+
+    def parse(self, data: dict) -> dict[str, User]:
+        """Checks users from `export()` (e.g. a backup) without applying them.
+        The built-in admin's name is skipped: that account lives outside the store."""
+        users: dict[str, User] = {}
+        entries = data.get("users") if isinstance(data, dict) else None
+        if not isinstance(entries, list):
+            raise UserError("The user list is malformed")
+        for entry in entries:
+            try:
+                user = User(str(entry["username"]).strip(), entry["role"], str(entry["password_hash"]))
+            except (KeyError, TypeError):
+                raise UserError("A user entry is malformed") from None
+            if not user.username or user.role not in ROLES or not user.password_hash.startswith("scrypt$"):
+                raise UserError(f"User {user.username!r} is malformed")
+            if user.username != self.reserved_username:
+                users[user.username] = user
+        self._check_admin_remains(users)
+        return users
+
+    def replace(self, users: dict[str, User]) -> None:
+        with self._lock:
+            self._users = dict(users)
+            self._save()
+
     def _save(self) -> None:
         if self._store is not None:
-            self._store.save(
-                {"users": [{"username": u.username, "role": u.role, "password_hash": u.password_hash} for u in self.list()]}
-            )
+            self._store.save(self.export())

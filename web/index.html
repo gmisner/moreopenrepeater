@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>moreopenrepeater</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>moreopenrepeater</span>
+        </div>
+        <button type="button" class="btn btn-ghost nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">&#9776;</button>
+      </div>
+      <div class="station-chip">
+        <span class="muted small">Station</span>
+        <strong id="station-callsign">(no callsign)</strong>
+      </div>
+      <nav class="nav" id="nav">
+        <a href="#/dashboard" data-nav="dashboard">Dashboard</a>
+        <span class="nav-group">Repeater</span>
+        <a href="#/timing" data-nav="timing">Timing</a>
+        <a href="#/identification" data-nav="identification">Identification</a>
+        <a href="#/audio" data-nav="audio">Audio &amp; tones</a>
+        <span class="nav-group">Features</span>
+        <a href="#/macros" data-nav="macros">DTMF macros</a>
+        <a href="#/aprs" data-nav="aprs">APRS</a>
+        <span class="nav-group">Tools</span>
+        <a href="#/simulator" data-nav="simulator">Simulator</a>
+        <a href="#/logs" data-nav="logs">Logs</a>
+        <a href="#/backup" data-nav="backup">Backup &amp; restore</a>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="connection-indicator" class="pill pill-unknown">connecting&hellip;</span>
+        <div id="user-box" class="user-box" hidden>
+          <span class="muted small">Signed in as <strong id="user-name"></strong></span>
+          <button type="button" class="btn btn-ghost btn-sm" id="logout-button">Sign out</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <!-- Dashboard -->
+      <section class="view" data-view="dashboard" data-title="Dashboard">
+        <header class="view-header">
+          <h1>Dashboard</h1>
+          <p class="muted">Live repeater state, pushed over WebSocket.</p>
+        </header>
+
+        <div class="grid grid-hero">
+          <div class="card state-card">
+            <span class="label">Controller state</span>
+            <span id="state-value" class="state-badge state-unknown">--</span>
+            <span id="state-description" class="muted"></span>
+          </div>
+          <div class="card indicators-card">
+            <div class="indicator" id="ptt-indicator">
+              <span class="indicator-dot"></span>
+              <span class="indicator-name">PTT</span>
+              <span class="indicator-value">off</span>
+            </div>
+            <div class="indicator" id="cos-indicator">
+              <span class="indicator-dot"></span>
+              <span class="indicator-name">COS</span>
+              <span class="indicator-value">off</span>
+            </div>
+            <div class="indicator" id="ctcss-indicator">
+              <span class="indicator-dot"></span>
+              <span class="indicator-name">CTCSS</span>
+              <span class="indicator-value">none</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-3">
+          <div class="card">
+            <h2>Linked nodes</h2>
+            <div id="linked-nodes-value" class="chips"><span class="muted">(none)</span></div>
+          </div>
+          <div class="card">
+            <h2>Station</h2>
+            <dl class="kv" id="station-summary"></dl>
+          </div>
+          <div class="card">
+            <h2>Features</h2>
+            <dl class="kv" id="feature-summary"></dl>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Recent activity</h2>
+            <button type="button" class="btn btn-ghost btn-sm" id="activity-clear">Clear</button>
+          </div>
+          <ol id="activity-list" class="activity"></ol>
+          <p id="activity-empty" class="muted small">State changes will appear here as they happen.</p>
+        </div>
+      </section>
+
+      <!-- Timing -->
+      <section class="view" data-view="timing" data-title="Timing" hidden>
+        <header class="view-header">
+          <h1>Timing</h1>
+          <p class="muted">Core repeater timers and access control.</p>
+        </header>
+        <form class="card config-form" data-config-form>
+          <div class="form-grid">
+            <label>Courtesy tone duration
+              <span class="input-unit"><input type="number" step="0.1" min="0.1" name="courtesy_tone_duration" required /><span>s</span></span>
+              <small>How long the courtesy tone plays after a user unkeys.</small>
+            </label>
+            <label>Hang time
+              <span class="input-unit"><input type="number" step="0.1" min="0.1" name="hang_time" required /><span>s</span></span>
+              <small>Transmitter stays keyed this long after the courtesy tone.</small>
+            </label>
+            <label>Timeout timer (TOT)
+              <span class="input-unit"><input type="number" step="1" min="1" name="tot_duration" required /><span>s</span></span>
+              <small>Maximum continuous transmission before the repeater times out.</small>
+            </label>
+            <label>Required CTCSS tone
+              <span class="input-unit"><input type="number" step="0.1" min="0" name="require_ctcss_hz" placeholder="disabled" /><span>Hz</span></span>
+              <small>Leave blank for carrier access (no tone required).</small>
+            </label>
+          </div>
+          <div class="form-actions">
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Identification -->
+      <section class="view" data-view="identification" data-title="Identification" hidden>
+        <header class="view-header">
+          <h1>Identification</h1>
+          <p class="muted">Station ID timing and CW / voice ID settings.</p>
+        </header>
+        <form class="card config-form" data-config-form>
+          <div class="form-grid">
+            <label>Callsign
+              <input type="text" name="callsign" placeholder="e.g. W1AW" autocapitalize="characters" />
+            </label>
+            <label>ID mode
+              <select name="id_mode">
+                <option value="voice">Voice</option>
+                <option value="cw">CW (Morse)</option>
+                <option value="both">Both</option>
+              </select>
+            </label>
+            <label>ID interval
+              <span class="input-unit"><input type="number" step="1" min="1" name="id_interval" required /><span>s</span></span>
+              <small>FCC &sect;97.119 requires an ID at least every 10 minutes (600 s).</small>
+            </label>
+            <label>ID audio duration
+              <span class="input-unit"><input type="number" step="0.1" min="0.1" name="id_audio_duration" required /><span>s</span></span>
+            </label>
+            <label>CW speed
+              <span class="input-unit"><input type="number" step="1" min="1" max="60" name="cw_wpm" required /><span>WPM</span></span>
+            </label>
+            <label>CW tone
+              <span class="input-unit"><input type="number" step="1" min="100" max="3000" name="cw_tone_hz" required /><span>Hz</span></span>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="cw-preview">&#9654; Preview CW ID</button>
+            <span class="spacer"></span>
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Audio -->
+      <section class="view" data-view="audio" data-title="Audio & tones" hidden>
+        <header class="view-header">
+          <h1>Audio &amp; tones</h1>
+          <p class="muted">Upload custom clips and choose which ones the repeater uses.
+            Storage and selection only for now &mdash; playback arrives once audio_io is wired in.</p>
+        </header>
+        <form class="card config-form" data-config-form>
+          <h2>Assigned clips</h2>
+          <div class="form-grid">
+            <label>Courtesy tone
+              <select name="courtesy_tone_asset_id" data-asset-select="courtesy_tone"><option value="">(built-in)</option></select>
+            </label>
+            <label>Voice ID
+              <select name="id_asset_id" data-asset-select="id"><option value="">(built-in)</option></select>
+            </label>
+            <label>Timeout tone
+              <select name="timeout_tone_asset_id" data-asset-select="timeout_tone"><option value="">(built-in)</option></select>
+            </label>
+          </div>
+          <div class="form-actions">
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+
+        <div class="card">
+          <h2>Library</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Kind</th><th>Filename</th><th>Uploaded</th><th>Preview</th><th></th></tr></thead>
+              <tbody id="assets-tbody"></tbody>
+            </table>
+          </div>
+          <p id="assets-empty" class="muted small">No clips uploaded yet.</p>
+          <form id="asset-form" class="inline-form">
+            <label>Kind
+              <select name="kind">
+                <option value="courtesy_tone">Courtesy tone</option>
+                <option value="id">Voice ID</option>
+                <option value="timeout_tone">Timeout tone</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <label class="grow">File (.wav)
+              <input type="file" name="file" accept="audio/wav,.wav" required />
+            </label>
+            <button type="submit" class="btn btn-primary">Upload</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- Macros -->
+      <section class="view" data-view="macros" data-title="DTMF macros" hidden>
+        <header class="view-header">
+          <h1>DTMF macros</h1>
+          <p class="muted">Digit patterns users can key in over the air, dispatched to the link layer
+            (e.g. <code>*81</code> &rarr; <code>disconnect_all</code>).</p>
+        </header>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Pattern</th><th>Description</th><th>Command</th><th>Node</th><th></th></tr></thead>
+              <tbody id="macros-tbody"></tbody>
+            </table>
+          </div>
+          <p id="macros-empty" class="muted small">No macros defined yet.</p>
+        </div>
+        <form id="macro-form" class="card">
+          <h2 id="macro-form-title">Add macro</h2>
+          <div class="form-grid">
+            <label>Pattern
+              <input type="text" name="pattern" placeholder="*81" pattern="[0-9A-Da-d*#]+" title="DTMF digits: 0-9, A-D, * and #" required />
+            </label>
+            <label>Command
+              <input type="text" name="command" placeholder="disconnect_all" required />
+            </label>
+            <label>Description
+              <input type="text" name="description" placeholder="Disconnect all links" />
+            </label>
+            <label>Node ID
+              <input type="text" name="node_id" placeholder="(optional)" />
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="macro-cancel" hidden>Cancel edit</button>
+            <button type="submit" class="btn btn-primary" id="macro-submit">Add macro</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- APRS -->
+      <section class="view" data-view="aprs" data-title="APRS" hidden>
+        <header class="view-header">
+          <h1>APRS</h1>
+          <p class="muted">Periodically beacon the repeater's position or status to APRS-IS.</p>
+        </header>
+        <form class="card config-form" data-config-form>
+          <label class="switch">
+            <input type="checkbox" name="aprs_enabled" />
+            <span class="switch-track"></span>
+            <span>Enable APRS beaconing</span>
+          </label>
+          <div class="form-grid">
+            <label>APRS callsign
+              <input type="text" name="aprs_callsign" placeholder="e.g. W1AW-10" autocapitalize="characters" />
+              <small>Your passcode is derived from this automatically.</small>
+            </label>
+            <label>Beacon interval
+              <span class="input-unit"><input type="number" step="60" min="60" name="aprs_beacon_interval" required /><span>s</span></span>
+            </label>
+            <label>APRS-IS server
+              <input type="text" name="aprs_server" required />
+            </label>
+            <label>Port
+              <input type="number" step="1" min="1" max="65535" name="aprs_port" required />
+            </label>
+            <label>Latitude
+              <input type="number" step="0.0001" min="-90" max="90" name="aprs_lat" placeholder="blank = status beacon" />
+            </label>
+            <label>Longitude
+              <input type="number" step="0.0001" min="-180" max="180" name="aprs_lon" placeholder="blank = status beacon" />
+            </label>
+            <label class="span-2">Beacon comment
+              <input type="text" name="aprs_comment" placeholder="e.g. 146.940 PL100 repeater" />
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="aprs-locate">Use my location</button>
+            <span class="spacer"></span>
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Simulator -->
+      <section class="view" data-view="simulator" data-title="Simulator" hidden>
+        <header class="view-header">
+          <h1>Simulator</h1>
+          <p class="muted">Inject synthetic hardware events &mdash; useful until real audio_io/link hardware is wired up.</p>
+        </header>
+        <div class="card sim-status">
+          <span class="label">State</span>
+          <span id="sim-state" class="state-badge state-unknown">--</span>
+          <span id="sim-ptt" class="pill pill-off">PTT</span>
+          <span id="sim-cos" class="pill pill-off">COS</span>
+        </div>
+        <div class="grid grid-2">
+          <div class="card">
+            <h2>Carrier (COS)</h2>
+            <div class="btn-row">
+              <button type="button" class="btn btn-primary" data-cos="true">Key up</button>
+              <button type="button" class="btn" data-cos="false">Unkey</button>
+            </div>
+            <p class="muted small">Or hold to talk:</p>
+            <button type="button" class="btn btn-ptt" id="hold-to-key">Hold to key</button>
+          </div>
+          <div class="card">
+            <h2>CTCSS tone</h2>
+            <div class="btn-row">
+              <span class="input-unit"><input type="number" step="0.1" id="ctcss-tone-input" placeholder="100.0" /><span>Hz</span></span>
+              <button type="button" class="btn btn-primary" id="ctcss-apply">Apply</button>
+              <button type="button" class="btn" id="ctcss-clear">Clear</button>
+            </div>
+          </div>
+          <div class="card">
+            <h2>DTMF</h2>
+            <div class="dtmf-layout">
+              <div id="dtmf-keypad" class="keypad"></div>
+              <form id="dtmf-sequence-form" class="stack">
+                <label>Send a sequence
+                  <input type="text" name="sequence" placeholder="*81" pattern="[0-9A-Da-d*#]+" required />
+                </label>
+                <button type="submit" class="btn btn-primary">Send</button>
+                <p class="muted small">Sent: <code id="dtmf-sent">&mdash;</code></p>
+              </form>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Remote node</h2>
+            <div class="btn-row">
+              <input type="text" id="remote-node-id" placeholder="node id" value="1999" class="w-8" />
+              <button type="button" class="btn btn-primary" data-remote-keyed="true">Key up</button>
+              <button type="button" class="btn" data-remote-keyed="false">Unkey</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Logs -->
+      <section class="view" data-view="logs" data-title="Logs" hidden>
+        <header class="view-header">
+          <h1>Logs</h1>
+          <p class="muted">Tail of the controller log file, refreshed every few seconds.</p>
+        </header>
+        <div class="card">
+          <div class="toolbar">
+            <input type="search" id="logs-filter" placeholder="Filter&hellip;" />
+            <select id="logs-level">
+              <option value="">All levels</option>
+              <option value="INFO">INFO+</option>
+              <option value="WARNING">WARNING+</option>
+              <option value="ERROR">ERROR+</option>
+            </select>
+            <select id="logs-lines">
+              <option value="200">200 lines</option>
+              <option value="500">500 lines</option>
+              <option value="1000">1000 lines</option>
+            </select>
+            <label class="switch switch-sm">
+              <input type="checkbox" id="logs-pause" />
+              <span class="switch-track"></span>
+              <span>Pause</span>
+            </label>
+          </div>
+          <pre id="logs-view" class="logs-view"></pre>
+        </div>
+      </section>
+
+      <!-- Backup -->
+      <section class="view" data-view="backup" data-title="Backup & restore" hidden>
+        <header class="view-header">
+          <h1>Backup &amp; restore</h1>
+          <p class="muted">Save or restore the full configuration and DTMF macros as a JSON file.
+            Audio clips aren't included.</p>
+        </header>
+        <div class="grid grid-2">
+          <div class="card">
+            <h2>Download backup</h2>
+            <p class="muted small">Exports the current configuration and macros.</p>
+            <button type="button" class="btn btn-primary" id="snapshot-download">Download configuration</button>
+          </div>
+          <div class="card">
+            <h2>Restore</h2>
+            <p class="muted small">Replaces the current configuration and all macros.</p>
+            <label class="btn file-btn">Choose backup file&hellip;
+              <input type="file" id="snapshot-upload-input" accept="application/json,.json" />
+            </label>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

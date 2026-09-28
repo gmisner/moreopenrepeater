@@ -1,0 +1,24 @@
+[Unit]
+Description=moreopenrepeater repeater controller API/dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=moreopenrepeater
+Group=moreopenrepeater
+WorkingDirectory=/opt/moreopenrepeater
+EnvironmentFile=/etc/moreopenrepeater/env
+ExecStart=/opt/moreopenrepeater/.venv/bin/moreopenrepeater-api
+Restart=on-failure
+RestartSec=5
+
+# Modest hardening -- not locked down further since the process needs real
+# device access (/dev/hidrawN for audio_io.cm108, sound devices for
+# sounddevice) that's awkward to enumerate up front in a DeviceAllow list.
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+# Grants the "audio" group read-write access to CM108/CM119-family
+# /dev/hidrawN device nodes -- audio_io.cm108.LinuxHidrawDevice needs this
+# (root-only by default), and moreopenrepeater's systemd unit runs as an
+# unprivileged user rather than root.
+#
+# Rule and vendor ID lifted verbatim from direwolf's own udev rules
+# (conf/99-direwolf-cmedia.rules in github.com/wb2osz/direwolf) -- 0d8c is
+# C-Media's vendor ID and covers CM108/CM119 regardless of which vendor's
+# name is on the dongle; 1209:7388 additionally covers the "All In One
+# Cable" device direwolf calls out by name.
+#
+# Install: copy to /etc/udev/rules.d/, then either reboot or run
+# `udevadm control --reload-rules && udevadm trigger`. Membership in the
+# "audio" group (`usermod -aG audio moreopenrepeater`) is also required.
+
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0d8c", GROUP="audio", MODE="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="7388", GROUP="audio", MODE="0660"

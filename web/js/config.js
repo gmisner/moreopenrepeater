@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { initBeaconPreview } from "./beacon.js";
 import { initLocationInputs } from "./location.js";
 import { playClip } from "./player.js";
 import { store } from "./store.js";
@@ -16,6 +17,9 @@ const CLEARABLE_FIELDS = new Set([
   "wx_lat",
   "wx_lon",
   "tx_ctcss_hz",
+  "aprs_frequency_mhz",
+  "aprs_offset_mhz",
+  "aprs_tone_hz",
 ]);
 
 const configForms = [...document.querySelectorAll("[data-config-form]")];
@@ -46,7 +50,14 @@ function populate(form, config) {
   for (const el of namedFields(form)) {
     if (!(el.name in config)) continue;
     if (el.type === "checkbox") el.checked = Boolean(config[el.name]);
-    else el.value = config[el.name] ?? "";
+    else {
+      const value = config[el.name] ?? "";
+      // Keep values set through the API (e.g. an overlay symbol) instead of blanking them.
+      if ("allowCustom" in el.dataset && value && ![...el.options].some((o) => o.value === value)) {
+        el.add(new Option(value, value));
+      }
+      el.value = value;
+    }
   }
   form.classList.remove("dirty");
 }
@@ -176,6 +187,7 @@ export function initConfig() {
   });
   initPreviews();
   initLocationInputs(document.getElementById("aprs-locate").form, "aprs_lat", "aprs_lon");
+  initBeaconPreview(document.getElementById("aprs-locate").form, document.getElementById("aprs-beacon-preview"));
   initLocationInputs(document.getElementById("wx-locate").form, "wx_lat", "wx_lon");
   loadTTSInfo();
 }

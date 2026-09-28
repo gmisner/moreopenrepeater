@@ -193,6 +193,10 @@ several phases (see the plan file for the full breakdown):
 - **NWS weather alerts**: polls active alerts for the repeater's location, announces
   new ones at or above a chosen severity, optionally repeats them, and shows the
   current alerts on the dashboard with a Play button.
+- **APRS beacon as a repeater object**: the beacon uses the repeater map symbol by
+  default, and can include the output frequency, offset and access tone in the
+  standard APRS format (`146.940MHz T100 -060`). APRS radios can then tune to the
+  repeater with one button. The APRS page previews the exact beacon text.
 - **APRS map** (optional, needs internet): shows stations heard on APRS-IS within a
   set range of the repeater, with trails for moving stations, weather-station
   readings, and filters for repeaters, digipeaters, mobiles, fixed stations and

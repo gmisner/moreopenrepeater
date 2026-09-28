@@ -662,8 +662,29 @@
               </span>
               <small>Fills in the latitude and longitude.</small>
             </label>
+            <label>Map symbol
+              <select name="aprs_symbol" data-allow-custom>
+                <option value="/r">Repeater</option>
+                <option value="/#">Digipeater</option>
+                <option value="/&amp;">Gateway</option>
+                <option value="/-">House</option>
+                <option value="/_">Weather station</option>
+              </select>
+            </label>
+            <label>Output frequency
+              <span class="input-unit"><input type="number" step="0.001" min="28" max="1300" name="aprs_frequency_mhz" placeholder="blank = leave out" /><span>MHz</span></span>
+              <small>Lets APRS radios tune to the repeater with one button.</small>
+            </label>
+            <label>Offset
+              <span class="input-unit"><input type="number" step="0.01" min="-9.99" max="9.99" name="aprs_offset_mhz" placeholder="standard" /><span>MHz</span></span>
+              <small>e.g. -0.6 or 5. Use 0 for simplex.</small>
+            </label>
+            <label>Access tone
+              <span class="input-unit"><input type="number" step="0.1" min="60" max="260" name="aprs_tone_hz" list="ctcss-tones" /><span>Hz</span></span>
+            </label>
             <label class="span-2">Beacon comment
-              <input type="text" name="aprs_comment" placeholder="e.g. 146.940 PL100 repeater" />
+              <input type="text" name="aprs_comment" placeholder="e.g. Hartford CT, net Tue 8pm" />
+              <small id="aprs-beacon-preview"></small>
             </label>
           </div>
           <div class="form-actions">

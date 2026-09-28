@@ -53,6 +53,10 @@ class ConfigResponse(BaseModel):
     aprs_lon: Optional[float]
     aprs_comment: str
     aprs_beacon_interval: float
+    aprs_symbol: str
+    aprs_frequency_mhz: Optional[float]
+    aprs_offset_mhz: Optional[float]
+    aprs_tone_hz: Optional[float]
     aprs_map_enabled: bool
     aprs_map_radius_km: float
     aprs_map_hours: float
@@ -109,6 +113,15 @@ class ConfigUpdateRequest(BaseModel):
     aprs_lon: Optional[float] = None
     aprs_comment: Optional[str] = None
     aprs_beacon_interval: Optional[float] = Field(default=None, gt=0)
+    # Table ("/", "\\" or an overlay letter/digit) then any printable symbol code.
+    aprs_symbol: Optional[str] = Field(default=None, pattern=r"^[/\\A-Z0-9][!-~]$")
+    aprs_frequency_mhz: Optional[float] = Field(default=None, ge=28, le=1300)
+    # The freq spec encodes offsets in 10 kHz steps with three digits.
+    aprs_offset_mhz: Optional[float] = Field(default=None, ge=-9.99, le=9.99)
+    aprs_tone_hz: Optional[float] = Field(default=None, ge=60, le=260)
+    clear_aprs_frequency_mhz: bool = False
+    clear_aprs_offset_mhz: bool = False
+    clear_aprs_tone_hz: bool = False
     aprs_map_enabled: Optional[bool] = None
     aprs_map_radius_km: Optional[float] = Field(default=None, ge=1, le=500)
     aprs_map_hours: Optional[float] = Field(default=None, ge=0.25, le=48)

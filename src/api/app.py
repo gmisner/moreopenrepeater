@@ -25,7 +25,7 @@ from controller.announcements import Announcement
 from controller.events import SendLinkCommand
 from controller.macros import Macro
 from controller.state_machine import RepeaterConfig
-from link.aprs_client import APRSClient, format_position_report, format_status_report
+from link.aprs_client import APRSClient, format_frequency_comment, format_position_report, format_status_report
 from link.node_link import NodeLinkClient
 from playout.renderer import ClipRenderer, UnknownClipError
 from playout.tts import TTSError, detect_tts
@@ -229,6 +229,19 @@ def _validated_config(values: dict) -> RepeaterConfig:
     return RepeaterConfig(**validated.model_dump())
 
 
+def aprs_beacon_packet(config: RepeaterConfig) -> str:
+    """Info field for our beacon: a position report if located, else a status."""
+    comment = config.aprs_comment
+    if config.aprs_frequency_mhz is not None:
+        tone = config.aprs_tone_hz if config.aprs_tone_hz is not None else config.require_ctcss_hz
+        frequency = format_frequency_comment(config.aprs_frequency_mhz, tone, config.aprs_offset_mhz)
+        comment = f"{frequency} {comment}".rstrip()
+    if config.aprs_lat is None or config.aprs_lon is None:
+        return format_status_report(comment)
+    table, code = config.aprs_symbol[0], config.aprs_symbol[1]
+    return format_position_report(config.aprs_lat, config.aprs_lon, comment, table, code)
+
+
 def _apply_overrides(base: RepeaterConfig, overrides: dict) -> RepeaterConfig:
     """Layer dashboard form values (including `clear_<field>` flags) over a config."""
     merged = dataclasses.asdict(base)
@@ -376,11 +389,7 @@ def create_app(
         client = APRSClient(config.aprs_server, config.aprs_port, config.aprs_callsign)
         await client.connect()
         try:
-            if config.aprs_lat is not None and config.aprs_lon is not None:
-                packet = format_position_report(config.aprs_lat, config.aprs_lon, config.aprs_comment)
-            else:
-                packet = format_status_report(config.aprs_comment)
-            await client.send_packet(packet)
+            await client.send_packet(aprs_beacon_packet(config))
         finally:
             await client.close()
 

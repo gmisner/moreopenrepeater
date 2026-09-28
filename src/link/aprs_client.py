@@ -63,6 +63,31 @@ def format_position_report(
     return f"!{_format_latitude(lat)}{symbol_table}{_format_longitude(lon)}{symbol_code}{comment}"
 
 
+def format_frequency_comment(
+    frequency_mhz: float,
+    tone_hz: Optional[float] = None,
+    offset_mhz: Optional[float] = None,
+) -> str:
+    """Repeater frequency in the APRS freq spec format radios can tune from.
+
+    aprs.org/info/freqspec.txt: the first 10 bytes are "FFF.FFFMHz", then an
+    optional " Tnnn" access tone (whole Hz, no decimals, so 107.2 -> T107)
+    and " +ooo"/"-ooo" offset in 10 kHz steps (-060 = -600 kHz, -000 forces
+    simplex). An offset must follow a tone field, so "Toff" fills in when
+    no tone is needed. Omitting the offset means "standard offset".
+    """
+    frequency = f"{frequency_mhz:07.3f}MHz" if frequency_mhz < 1000 else f"{frequency_mhz:.2f}MHz"
+    parts = [frequency]
+    if tone_hz is not None:
+        parts.append(f"T{int(tone_hz):03d}")
+    if offset_mhz is not None:
+        if tone_hz is None:
+            parts.append("Toff")
+        sign = "+" if offset_mhz > 0 else "-"
+        parts.append(f"{sign}{round(abs(offset_mhz) * 100):03d}")
+    return " ".join(parts)
+
+
 def format_status_report(comment: str) -> str:
     """Status report, no timestamp (APRS DTI '>')."""
     return f">{comment}"

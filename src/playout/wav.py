@@ -85,7 +85,7 @@ def encode_wav(samples: np.ndarray, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
-def _lowpass_kernel(cutoff_ratio: float, taps: int = 63) -> np.ndarray:
+def lowpass_kernel(cutoff_ratio: float, taps: int = 63) -> np.ndarray:
     """Windowed-sinc FIR; cutoff_ratio is cutoff / sample_rate."""
     n = np.arange(taps) - (taps - 1) / 2
     kernel = np.sinc(2 * cutoff_ratio * n) * np.hamming(taps)
@@ -98,7 +98,7 @@ def resample(samples: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
     if to_rate < from_rate:
         # Low-pass below the new Nyquist first, or content above it aliases
         # back down as audible garbage (plain interpolation doesn't do this).
-        samples = np.convolve(samples, _lowpass_kernel(0.45 * to_rate / from_rate), mode="same")
+        samples = np.convolve(samples, lowpass_kernel(0.45 * to_rate / from_rate), mode="same")
     out_len = max(1, int(math.floor(len(samples) * to_rate / from_rate)))
     positions = np.arange(out_len) * (from_rate / to_rate)
     return np.interp(positions, np.arange(len(samples)), samples).astype(np.float32)

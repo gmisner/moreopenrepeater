@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from playout.wav import _lowpass_kernel
+from playout.wav import lowpass_kernel
 
 
-class _StreamFIR:
+class StreamFIR:
     def __init__(self, kernel: np.ndarray) -> None:
         self._kernel = kernel
         self._history = np.zeros(len(kernel) - 1)
@@ -33,8 +33,8 @@ class StreamResampler:
         self.from_rate = from_rate
         self.to_rate = to_rate
         self._step = from_rate / to_rate
-        self._pre = _StreamFIR(_lowpass_kernel(0.45 * to_rate / from_rate)) if to_rate < from_rate else None
-        self._post = _StreamFIR(_lowpass_kernel(0.45 * from_rate / to_rate)) if to_rate > from_rate else None
+        self._pre = StreamFIR(lowpass_kernel(0.45 * to_rate / from_rate)) if to_rate < from_rate else None
+        self._post = StreamFIR(lowpass_kernel(0.45 * from_rate / to_rate)) if to_rate > from_rate else None
         self._last = 0.0
         # Next output position, in input samples, where 0 is the previous
         # call's final sample -- so 1.0 is the first sample of this call.

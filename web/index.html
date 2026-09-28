@@ -161,7 +161,7 @@
               <small>Maximum continuous transmission before the repeater times out.</small>
             </label>
             <label>Required CTCSS tone
-              <span class="input-unit"><input type="number" step="0.1" min="0" name="require_ctcss_hz" placeholder="disabled" /><span>Hz</span></span>
+              <span class="input-unit"><input type="number" step="0.1" min="0" name="require_ctcss_hz" placeholder="disabled" list="ctcss-tones" /><span>Hz</span></span>
               <small>Leave blank for carrier access (no tone required).</small>
             </label>
             <label>Kerchunk filter
@@ -316,7 +316,16 @@
               <span class="input-unit"><input type="number" step="0.5" min="-40" max="20" name="tx_gain_db" required /><span>dB</span></span>
               <small>Applied to repeated receive audio.</small>
             </label>
+            <label>Transmit CTCSS tone
+              <span class="input-unit"><input type="number" step="0.1" min="60" max="260" name="tx_ctcss_hz" placeholder="off" list="ctcss-tones" /><span>Hz</span></span>
+              <small>Added under everything the repeater sends, for radios that need a tone to open.</small>
+            </label>
+            <label>CTCSS level
+              <span class="input-unit"><input type="number" step="1" min="-40" max="-6" name="tx_ctcss_level_db" required /><span>dBFS</span></span>
+              <small>Adjust for about 500&ndash;750 Hz of deviation on the transmitter.</small>
+            </label>
           </div>
+          <datalist id="ctcss-tones"></datalist>
           <div class="level-meter" title="Receive level">
             <div class="level-meter-fill" id="audio-level-fill"></div>
             <div class="level-meter-threshold" id="audio-level-threshold" title="VOX threshold"></div>

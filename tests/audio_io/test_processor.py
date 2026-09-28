@@ -117,3 +117,38 @@ def test_external_cos_source():
 
     p.set_external_cos(True)
     assert p.process(silence(0.02)).events == [COSChanged(active=True)]
+
+
+def magnitude_at(signal, freq):
+    t = np.arange(len(signal)) / RATE
+    return float(np.abs(np.dot(signal, np.exp(-2j * np.pi * freq * t))) * 2 / len(signal))
+
+
+def test_ctcss_encode_is_added_while_transmitting_and_is_phase_continuous():
+    p = AudioProcessor(ProcessorSettings(RATE, tx_ctcss_hz=100.0, tx_ctcss_level_db=-20))
+    p.set_ptt(True)
+
+    out = np.concatenate([r.out for r in run(p, silence(1.0))[0]])
+
+    assert abs(magnitude_at(out, 100.0) - 0.1) < 0.005
+    # No clicks: a clean sine never jumps more than one sample's worth.
+    assert np.max(np.abs(np.diff(out))) < 0.1 * 2 * np.pi * 100 / RATE * 1.01
+
+
+def test_no_ctcss_encode_when_not_transmitting():
+    p = AudioProcessor(ProcessorSettings(RATE, tx_ctcss_hz=100.0))
+    out = np.concatenate([r.out for r in run(p, silence(0.5))[0]])
+    assert not out.any()
+
+
+def test_ctcss_encode_strips_the_received_tone_from_repeated_audio():
+    p = AudioProcessor(ProcessorSettings(RATE, vox_threshold_db=-40, tx_ctcss_hz=131.8))
+    p.set_ptt(True)
+    p.set_repeating(True)
+    received = tone(1000, 1.0, 0.3) + ctcss_tone(88.5, RATE, RATE, amplitude=0.1).astype(np.float32)
+
+    out = np.concatenate([r.out for r in run(p, received)[0]])[RATE // 4 :]
+
+    assert magnitude_at(out, 88.5) < 0.005  # the user's tone is gone
+    assert abs(magnitude_at(out, 1000) - 0.3) < 0.02  # voice passes
+    assert abs(magnitude_at(out, 131.8) - 0.1) < 0.01  # the repeater's tone is there

@@ -14,6 +14,7 @@ const CLEARABLE_FIELDS = new Set([
   "aprs_lon",
   "wx_lat",
   "wx_lon",
+  "tx_ctcss_hz",
 ]);
 
 const configForms = [...document.querySelectorAll("[data-config-form]")];

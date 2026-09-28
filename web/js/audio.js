@@ -3,6 +3,12 @@ import { currentView, router } from "./router.js";
 import { store } from "./store.js";
 
 const POLL_MS = 250;
+// Mirrors dsp/tones.py CTCSS_TONES_HZ.
+const CTCSS_TONES = [
+  67.0, 69.3, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5, 91.5, 94.8, 97.4, 100.0, 103.5, 107.2, 110.9, 114.8, 118.8,
+  123.0, 127.3, 131.8, 136.5, 141.3, 146.2, 151.4, 156.7, 159.8, 162.2, 165.5, 167.9, 171.3, 173.8, 177.3, 179.9,
+  183.5, 186.2, 189.9, 192.8, 196.6, 199.5, 203.5, 206.5, 210.7, 218.1, 225.7, 229.1, 233.6, 241.8, 250.3, 254.1,
+];
 const METER_FLOOR_DB = -80;
 
 const form = document.getElementById("audio-engine-form");
@@ -100,6 +106,7 @@ async function poll() {
 }
 
 export function initAudio() {
+  document.getElementById("ctcss-tones").replaceChildren(...CTCSS_TONES.map((hz) => new Option(hz.toFixed(1))));
   store.addEventListener("config", () => {
     renderDeviceSelects();
     renderThreshold();

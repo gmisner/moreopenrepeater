@@ -34,6 +34,8 @@ _logger = logging.getLogger("moreopenrepeater.audio")
 
 BLOCK_SECONDS = 0.02
 _RESTART_FIELDS = ("audio_enabled", "audio_input_device", "audio_output_device", "cos_source")
+# Same names on RepeaterConfig and ProcessorSettings; applied without a restart.
+_LIVE_FIELDS = ("vox_threshold_db", "vox_hold", "tx_gain_db", "tx_ctcss_hz", "tx_ctcss_level_db")
 
 
 def list_audio_devices() -> list[dict]:
@@ -95,9 +97,8 @@ class LiveAudio:
                 self._start_engine(config)
         elif self.engine is not None:
             settings = self.engine.processor.settings
-            settings.vox_threshold_db = config.vox_threshold_db
-            settings.vox_hold = config.vox_hold
-            settings.tx_gain_db = config.tx_gain_db
+            for field in _LIVE_FIELDS:
+                setattr(settings, field, getattr(config, field))
 
     def status(self) -> dict:
         config = self._service.config
@@ -163,9 +164,7 @@ class LiveAudio:
             ProcessorSettings(
                 sample_rate=rate,
                 cos_source="external" if cos_source == "cm108" else cos_source,
-                vox_threshold_db=config.vox_threshold_db,
-                vox_hold=config.vox_hold,
-                tx_gain_db=config.tx_gain_db,
+                **{field: getattr(config, field) for field in _LIVE_FIELDS},
             )
         )
         processor.set_ptt(self._service.ptt_active)

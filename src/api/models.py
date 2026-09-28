@@ -61,6 +61,8 @@ class ConfigResponse(BaseModel):
     vox_threshold_db: float
     vox_hold: float
     tx_gain_db: float
+    tx_ctcss_hz: Optional[float]
+    tx_ctcss_level_db: float
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -111,6 +113,9 @@ class ConfigUpdateRequest(BaseModel):
     vox_threshold_db: Optional[float] = Field(default=None, ge=-90, le=0)
     vox_hold: Optional[float] = Field(default=None, ge=0, le=5)
     tx_gain_db: Optional[float] = Field(default=None, ge=-40, le=20)
+    tx_ctcss_hz: Optional[float] = Field(default=None, ge=60, le=260)
+    clear_tx_ctcss_hz: bool = False
+    tx_ctcss_level_db: Optional[float] = Field(default=None, ge=-40, le=-6)
 
 
 class SimulateCOSRequest(BaseModel):

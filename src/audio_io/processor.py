@@ -28,9 +28,15 @@ import numpy as np
 
 from controller.events import COSChanged, ControllerEvent, CTCSSChanged, DTMFDigit
 from dsp.goertzel import CTCSSDetector, DTMFDetector
+from playout.wav import lowpass_kernel
+
+from .resample import StreamFIR
 
 CosSource = Literal["vox", "ctcss", "external"]
 SILENCE_DB = -120.0
+# CTCSS tones top out at 254.1 Hz; voice that matters starts around 300 Hz.
+_SUBAUDIBLE_CUTOFF_HZ = 280.0
+_SUBAUDIBLE_TAPS = 401
 _VOX_HYSTERESIS_DB = 3.0
 _CTCSS_ANALYZE_EVERY_BLOCKS = 5  # CTCSS needs a 1 s window anyway; ~100 ms steps are plenty
 
@@ -43,8 +49,17 @@ class ProcessorSettings:
     vox_attack: float = 0.06  # seconds above threshold before COS opens
     vox_hold: float = 0.4  # seconds below threshold before COS closes
     tx_gain_db: float = 0.0
+    tx_ctcss_hz: Optional[float] = None
+    tx_ctcss_level_db: float = -20.0
     ctcss_threshold: float = 0.05
     dtmf_threshold: float = 0.05
+
+
+def _highpass_kernel(cutoff_ratio: float) -> np.ndarray:
+    """Spectral inversion of the low-pass: passes everything above the cutoff."""
+    kernel = -lowpass_kernel(cutoff_ratio, taps=_SUBAUDIBLE_TAPS)
+    kernel[_SUBAUDIBLE_TAPS // 2] += 1.0
+    return kernel
 
 
 def level_db(block: np.ndarray) -> float:
@@ -76,6 +91,8 @@ class AudioProcessor:
         self._ctcss = CTCSSDetector(settings.sample_rate, magnitude_threshold=settings.ctcss_threshold)
         self._ctcss_pending: list[np.ndarray] = []
         self._dtmf = DTMFDetector(settings.sample_rate, magnitude_threshold=settings.dtmf_threshold)
+        self._subaudible_filter = StreamFIR(_highpass_kernel(_SUBAUDIBLE_CUTOFF_HZ / settings.sample_rate))
+        self._ctcss_phase = 0.0
 
     # -- controls (service thread) -----------------------------------------
 
@@ -118,9 +135,13 @@ class AudioProcessor:
             if digit is not None:
                 events.append(DTMFDigit(digit=digit))
 
+        encode_hz = self.settings.tx_ctcss_hz
+        # Filtered continuously (not just while repeating) so the filter's
+        # history is warm the moment repeating starts.
+        repeat_audio = self._subaudible_filter.process(block) if encode_hz else block
         out = np.zeros_like(block)
         if self._ptt and self._repeating:
-            out += block * (10 ** (self.settings.tx_gain_db / 20))
+            out += repeat_audio * (10 ** (self.settings.tx_gain_db / 20))
         clip = self._next_clip_samples(len(block))
         if clip is not None:
             out[: len(clip)] += clip
@@ -129,8 +150,16 @@ class AudioProcessor:
         transmitting = self._ptt or clip is not None
         if not transmitting:
             out.fill(0)
+        elif encode_hz:
+            out += self._ctcss_tone(encode_hz, len(block))
         np.clip(out, -1.0, 1.0, out=out)
         return ProcessResult(out=out, transmitting=transmitting, events=events)
+
+    def _ctcss_tone(self, hz: float, n: int) -> np.ndarray:
+        step = 2 * math.pi * hz / self.settings.sample_rate
+        phases = self._ctcss_phase + step * np.arange(n)
+        self._ctcss_phase = float((phases[-1] + step) % (2 * math.pi))
+        return (10 ** (self.settings.tx_ctcss_level_db / 20) * np.sin(phases)).astype(np.float32)
 
     def _detect_ctcss(self, block: np.ndarray) -> Optional[float]:
         self._ctcss_pending.append(block)

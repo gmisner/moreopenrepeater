@@ -83,6 +83,8 @@ class RepeaterConfig:
     vox_threshold_db: float = -40.0
     vox_hold: float = 0.4
     tx_gain_db: float = 0.0
+    tx_ctcss_hz: Optional[float] = None  # sub-audible tone added to everything transmitted
+    tx_ctcss_level_db: float = -20.0
 
 
 class RepeaterController:

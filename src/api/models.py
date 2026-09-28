@@ -280,6 +280,7 @@ class AudioEngineResponse(BaseModel):
     input_device: str
     output_device: str
     sample_rate: int
+    device_sample_rate: Optional[int]
     rx_level_db: float
     cos_open: bool
     ctcss_hz: Optional[float]

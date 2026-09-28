@@ -110,6 +110,7 @@ class LiveAudio:
             "input_device": config.audio_input_device,
             "output_device": config.audio_output_device,
             "sample_rate": self._renderer.sample_rate,
+            "device_sample_rate": engine.device_sample_rate if engine else None,
             "rx_level_db": processor.rx_level_db if processor else -120.0,
             "cos_open": processor.cos_open if processor else False,
             "ctcss_hz": processor.ctcss_hz if processor else None,

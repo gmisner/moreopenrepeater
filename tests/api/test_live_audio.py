@@ -18,6 +18,8 @@ BLOCK = RATE // 50
 
 class FakeStream:
     def __init__(self, sample_rate, block_size, input_queue, output_queue, device):
+        self.sample_rate = sample_rate
+        self.block_size = block_size
         self.device = device
         self.dropped_input_blocks = 0
         self.starved_output_blocks = 0

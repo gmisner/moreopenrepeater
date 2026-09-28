@@ -64,8 +64,11 @@ function renderEngine(engine) {
   setTag(txTag, running && engine.transmitting, "TX", "tag-danger");
 
   const glitches = engine.dropped_input_blocks + engine.starved_output_blocks;
+  const rate = engine.device_sample_rate ?? engine.sample_rate;
+  const rateText =
+    rate === engine.sample_rate ? `${rate / 1000} kHz` : `device ${rate / 1000} kHz → ${engine.sample_rate / 1000} kHz`;
   health.textContent = running
-    ? `${engine.sample_rate / 1000} kHz${engine.hardware_ptt ? " · CM108 PTT" : ""}${glitches ? ` · ${glitches} audio glitches` : ""}`
+    ? `${rateText}${engine.hardware_ptt ? " · CM108 PTT" : ""}${glitches ? ` · ${glitches} audio glitches` : ""}`
     : "";
 }
 

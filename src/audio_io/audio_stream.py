@@ -46,8 +46,39 @@ class AudioBlockPump:
             self.starved_output_blocks += 1
 
 
+_FALLBACK_RATES = (48000, 44100)
+
+
+def pick_stream_rate(device, preferred: int, channels: int = 1) -> int:
+    """The first rate both halves of a duplex stream accept: `preferred`,
+    then each device's own default, then common hardware rates. Raw ALSA
+    devices (a CM108 on a Pi) reject rates the chip can't run natively;
+    CoreAudio and PulseAudio/PipeWire convert, so they take `preferred`."""
+    input_device, output_device = device if isinstance(device, tuple) else (device, device)
+    candidates = [preferred]
+    for dev, kind in ((input_device, "input"), (output_device, "output")):
+        try:
+            candidates.append(int(sd.query_devices(dev, kind)["default_samplerate"]))
+        except (ValueError, sd.PortAudioError):
+            pass
+    candidates += _FALLBACK_RATES
+    for rate in dict.fromkeys(candidates):
+        try:
+            sd.check_input_settings(input_device, channels=channels, dtype="float32", samplerate=rate)
+            sd.check_output_settings(output_device, channels=channels, dtype="float32", samplerate=rate)
+        except (ValueError, sd.PortAudioError):
+            continue
+        return rate
+    raise RuntimeError(f"no sample rate works for both input and output (tried {list(dict.fromkeys(candidates))})")
+
+
 class AudioStream:
-    """Owns the PortAudio duplex stream lifecycle."""
+    """Owns the PortAudio duplex stream lifecycle.
+
+    `sample_rate`/`block_size` are what the caller would like; the stream may
+    run at a different rate the devices support, exposed as `sample_rate`
+    and `block_size` (same block duration) for the caller to resample.
+    """
 
     def __init__(
         self,
@@ -60,10 +91,12 @@ class AudioStream:
     ) -> None:
         if sd is None:
             raise RuntimeError("sounddevice/PortAudio is not available on this system")
-        self._pump = AudioBlockPump(input_queue, output_queue, block_size)
+        self.sample_rate = pick_stream_rate(device, sample_rate, channels)
+        self.block_size = round(block_size * self.sample_rate / sample_rate)
+        self._pump = AudioBlockPump(input_queue, output_queue, self.block_size)
         self._stream = sd.Stream(
-            samplerate=sample_rate,
-            blocksize=block_size,
+            samplerate=self.sample_rate,
+            blocksize=self.block_size,
             channels=channels,
             dtype="float32",
             device=device,

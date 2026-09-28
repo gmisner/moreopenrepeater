@@ -23,6 +23,7 @@ from controller.events import ControllerEvent
 
 from .audio_stream import AudioStream
 from .processor import AudioProcessor
+from .resample import StreamResampler
 
 _logger = logging.getLogger("moreopenrepeater.audio")
 
@@ -57,6 +58,16 @@ class AudioEngine:
         self._threads: list[threading.Thread] = []
         self._stop = threading.Event()
         self.transmitting = False
+        self._configure_device(processor.settings.sample_rate, block_size)
+
+    def _configure_device(self, device_rate: int, device_block_size: int) -> None:
+        rate = self.processor.settings.sample_rate
+        self.device_sample_rate = device_rate
+        self._device_block_size = device_block_size
+        self._rx_resampler = StreamResampler(device_rate, rate)
+        self._tx_resampler = StreamResampler(rate, device_rate)
+        self._rx_pending = np.zeros(0, dtype=np.float32)
+        self._tx_pending = np.zeros(0, dtype=np.float32)
 
     @property
     def running(self) -> bool:
@@ -71,17 +82,19 @@ class AudioEngine:
         return self._stream.starved_output_blocks if self._stream else 0
 
     def start(self) -> None:
-        silence = np.zeros((self.block_size, 1), dtype=np.float32)
-        for _ in range(PRIME_BLOCKS):
-            self._output.put_nowait(silence)
         self._stop.clear()
+        rate = self.processor.settings.sample_rate
         self._stream = self._stream_factory(
-            sample_rate=self.processor.settings.sample_rate,
+            sample_rate=rate,
             block_size=self.block_size,
             input_queue=self._input,
             output_queue=self._output,
             device=(self._input_device, self._output_device),
         )
+        self._configure_device(self._stream.sample_rate, self._stream.block_size)
+        silence = np.zeros((self._device_block_size, 1), dtype=np.float32)
+        for _ in range(PRIME_BLOCKS):
+            self._output.put_nowait(silence)
         self._threads = [threading.Thread(target=self._work, name="audio-worker", daemon=True)]
         if self._cos_input is not None:
             self._threads.append(threading.Thread(target=self._poll_cos, name="audio-cos", daemon=True))
@@ -89,8 +102,8 @@ class AudioEngine:
             thread.start()
         self._stream.start()
         _logger.info(
-            "audio engine started (in=%s, out=%s, %d Hz)",
-            self._input_device or "default", self._output_device or "default", self.processor.settings.sample_rate,
+            "audio engine started (in=%s, out=%s, device %d Hz, processing %d Hz)",
+            self._input_device or "default", self._output_device or "default", self.device_sample_rate, rate,
         )
 
     def stop(self) -> None:
@@ -107,15 +120,26 @@ class AudioEngine:
         _logger.info("audio engine stopped")
 
     def process_one(self, block: np.ndarray) -> None:
-        """One worker step -- separate from the thread loop for testing."""
-        result = self.processor.process(block)
-        try:
-            self._output.put_nowait(result.out.reshape(-1, 1))
-        except queue.Full:
-            pass  # the callback fell behind; dropping beats unbounded latency
-        self._set_transmitting(result.transmitting)
-        if result.events:
-            self._on_events(result.events)
+        """One worker step for one device block -- separate from the thread
+        loop for testing. Resampling can make a device block a sample more or
+        less than one processing block, so both directions go through FIFOs."""
+        rx = self._rx_resampler.process(block)
+        self._rx_pending = np.concatenate([self._rx_pending, rx])
+        while len(self._rx_pending) >= self.block_size:
+            chunk = self._rx_pending[: self.block_size]
+            self._rx_pending = self._rx_pending[self.block_size :]
+            result = self.processor.process(chunk)
+            self._tx_pending = np.concatenate([self._tx_pending, self._tx_resampler.process(result.out)])
+            self._set_transmitting(result.transmitting)
+            if result.events:
+                self._on_events(result.events)
+        while len(self._tx_pending) >= self._device_block_size:
+            out = self._tx_pending[: self._device_block_size]
+            self._tx_pending = self._tx_pending[self._device_block_size :]
+            try:
+                self._output.put_nowait(out.reshape(-1, 1))
+            except queue.Full:
+                pass  # the callback fell behind; dropping beats unbounded latency
 
     def _work(self) -> None:
         while not self._stop.is_set():

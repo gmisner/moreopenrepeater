@@ -111,6 +111,8 @@ async def _run_commands() -> None:
                 writer.write(f"Output: {line}\r\n".encode())
             writer.write(b"\r\n")
             await writer.drain()
+        writer.close()
+        await writer.wait_closed()
 
     server = await asyncio.start_server(fake, "127.0.0.1", 0)
     host, port = server.sockets[0].getsockname()

@@ -183,8 +183,9 @@ controller checks the schedule every 15 seconds, so a link can start up to
 15 seconds late. It only drops links it made: if the node was already linked
 at the start time, it's left alone. Disconnecting a scheduled link by hand
 keeps it down until the next start. If the controller restarts during a
-window, it links the node again. A 0-minute schedule is only started within
-5 minutes of its start time.
+window, it links the node again, or, if the link is still up, still drops it
+at the end. A 0-minute schedule is only started within 5 minutes of its
+start time.
 
 ## Checking it
 

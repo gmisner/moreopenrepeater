@@ -63,8 +63,18 @@ def test_a_link_that_was_already_up_is_left_alone():
     links = FakeLinks()
     links.up["2000"] = ("transceive", False)
     scheduler = LinkScheduler(links, lambda: [NET])
-    run(scheduler, at(19), at(20, 1))
+    run(scheduler, at(18, 59), at(19), at(20, 1))
     assert links.calls == []
+
+
+def test_after_a_restart_a_link_up_in_its_window_is_still_dropped():
+    links = FakeLinks()
+    links.up["2000"] = ("transceive", False)
+    scheduler = LinkScheduler(links, lambda: [NET])
+    run(scheduler, at(19, 30))
+    assert scheduler.until("2000") == at(20)
+    run(scheduler, at(20))
+    assert links.calls == [("disconnect", "2000")]
 
 
 def test_disconnecting_by_hand_keeps_it_down():

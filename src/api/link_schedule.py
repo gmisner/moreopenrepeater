@@ -6,7 +6,8 @@ wall clock, like announcements), how many minutes to stay linked (0 = stay
 until someone disconnects it) and whether to link monitor only. Only links
 the schedule made are dropped at the end: if the node was already linked,
 it's left alone. Disconnecting a scheduled link by hand keeps it down for the
-rest of that window.
+rest of that window. After a restart (app_rpt keeps its links), a link that's
+up during its window is taken as the schedule's, so it's still dropped.
 """
 from __future__ import annotations
 
@@ -57,6 +58,7 @@ class LinkScheduler:
         self._handled: set[tuple[str, datetime]] = set()
         self._failed: set[tuple[str, datetime]] = set()
         self._ours: dict[str, datetime] = {}  # node -> when the schedule drops it
+        self._started = False
 
     def until(self, node: str) -> Optional[datetime]:
         return self._ours.get(node)
@@ -78,9 +80,10 @@ class LinkScheduler:
                 await self._drop(node)
         for schedule in self._schedules():
             if schedule.get("enabled", True):
-                await self._start(schedule, now)
+                await self._start(schedule, now, adopt=not self._started)
+        self._started = True
 
-    async def _start(self, schedule: dict, now: datetime) -> None:
+    async def _start(self, schedule: dict, now: datetime, adopt: bool) -> None:
         start = last_start(schedule, now)
         if start is None:
             return
@@ -94,6 +97,8 @@ class LinkScheduler:
         try:
             if node in await self._links.linked():
                 self._handled.add(key)
+                if adopt and end is not None:
+                    self._ours[node] = end
                 return
             await self._links.connect(node, bool(schedule.get("monitor")))
         except LinkError as error:

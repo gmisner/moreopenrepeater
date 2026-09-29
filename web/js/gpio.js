@@ -79,7 +79,8 @@ function renderDashboard() {
   dashNote.textContent = latest.error ?? "No CM108 interface is connected, so the pins can't be read or switched.";
   const html = used
     .map((row) => {
-      const tag = row.mode === "output" && latest.available ? "button" : "div";
+      const canSwitch = row.mode === "output" && latest.available && document.body.dataset.role !== "viewer";
+      const tag = canSwitch ? "button" : "div";
       const attrs = tag === "button" ? ` type="button" data-switch="${row.pin}" title="Turn ${row.on ? "off" : "on"}"` : "";
       return `<${tag} class="indicator${row.on ? " on" : ""}"${attrs}>
         <span class="indicator-dot"></span>

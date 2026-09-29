@@ -14,6 +14,11 @@ channel with a fresh snapshot of every adjacent link, formatted as
 keyed state, not mode, so `parse_alinks` reduces each event to
 `{node_id: keyed}` and `NodeLinkClient.events` diffs successive snapshots
 into `LinkStateChanged`/`RemoteKeyed` events.
+
+The same connection connects and disconnects links (`rpt cmd <node> ilink
+3|2|1|6 [<node>]`: transceive, monitor, disconnect, disconnect all) and
+reads the current links on demand from `rpt xnode`'s `RPT_ALINKS=` line,
+since the events can lag by seconds.
 """
 from __future__ import annotations
 
@@ -27,8 +32,11 @@ from .ami_client import AMIClient, AMIMessage
 _logger = logging.getLogger("moreopenrepeater.link")
 
 
-def parse_alinks(value: str) -> dict[str, bool]:
-    """Parse an RPT_ALINKS EventValue into {node_id: keyed}.
+LINK_MODES = {"T": "transceive", "R": "monitor", "L": "local monitor", "C": "connecting"}
+
+
+def parse_link_modes(value: str) -> dict[str, tuple[str, bool]]:
+    """Parse an RPT_ALINKS value into {node_id: (mode, keyed)}.
 
     Empty string or "0" both mean "no links" (app_rpt emits either
     depending on whether any adjacent link was ever present this session).
@@ -38,13 +46,23 @@ def parse_alinks(value: str) -> dict[str, bool]:
     _count, _, rest = value.partition(",")
     if not rest:
         return {}
-    links: dict[str, bool] = {}
+    links: dict[str, tuple[str, bool]] = {}
     for token in rest.split(","):
-        if len(token) < 2:
+        if len(token) < 3:
             continue
-        node_id, keyed_flag = token[:-2], token[-1]
-        links[node_id] = keyed_flag == "K"
+        node_id, mode, keyed_flag = token[:-2], token[-2], token[-1]
+        links[node_id] = (LINK_MODES.get(mode, mode), keyed_flag == "K")
     return links
+
+
+def parse_alinks(value: str) -> dict[str, bool]:
+    """Parse an RPT_ALINKS EventValue into {node_id: keyed}."""
+    return {node: keyed for node, (_mode, keyed) in parse_link_modes(value).items()}
+
+
+def _output(response: AMIMessage) -> list[str]:
+    output = response.get("Output", [])
+    return [output] if isinstance(output, str) else output
 
 
 class NodeLinkClient:
@@ -61,9 +79,55 @@ class NodeLinkClient:
     async def close(self) -> None:
         await self._ami.close()
 
+    @property
+    def local_node_id(self) -> str:
+        return self._local_node_id
+
+    @local_node_id.setter
+    def local_node_id(self, node_id: str) -> None:
+        self._local_node_id = node_id
+
     async def send_macro_command(self, node_id: str, command: str) -> None:
         target = node_id or self._local_node_id
         await self._ami.send_action({"Action": "Command", "Command": f"rpt fun {target} {command}"})
+
+    async def command(self, command: str) -> list[str]:
+        """A console command's output lines."""
+        return _output(await self._ami.send_action({"Action": "Command", "Command": command}))
+
+    async def connect_node(self, node_id: str, monitor: bool = False) -> None:
+        await self._ilink(2 if monitor else 3, node_id)
+
+    async def disconnect_node(self, node_id: str) -> None:
+        await self._ilink(1, node_id)
+
+    async def disconnect_all(self) -> None:
+        await self._ilink(6)
+
+    async def links(self) -> dict[str, tuple[str, bool]]:
+        """{node_id: (mode, keyed)} for every link now."""
+        for line in await self.command(f"rpt xnode {self._require_node()}"):
+            if line.startswith("RPT_ALINKS="):
+                return parse_link_modes(line.removeprefix("RPT_ALINKS="))
+        return {}
+
+    async def echolink_callsign(self, number: str) -> Optional[str]:
+        """The callsign of EchoLink node `number`, from chan_echolink's directory."""
+        for line in await self.command(f"echolink dbget nodename {number}"):
+            fields = line.split("|")
+            if len(fields) >= 2 and fields[0] == number:
+                return fields[1]
+        return None
+
+    def _require_node(self) -> str:
+        if not self._local_node_id:
+            raise ValueError("the repeater's AllStarLink node isn't chosen yet")
+        return self._local_node_id
+
+    async def _ilink(self, function: int, node_id: str = "") -> None:
+        if node_id and not node_id.isdigit():
+            raise ValueError(f"not a node number: {node_id!r}")
+        await self.command(f"rpt cmd {self._require_node()} ilink {function} {node_id}".rstrip())
 
     async def events(self) -> AsyncIterator[ControllerEvent]:
         async for message in self._ami.events():

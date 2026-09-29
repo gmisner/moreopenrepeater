@@ -18,7 +18,6 @@ const MAX_ACTIVITY = 50;
 const connectionIndicator = document.getElementById("connection-indicator");
 const stateValue = document.getElementById("state-value");
 const stateDescription = document.getElementById("state-description");
-const linkedNodesValue = document.getElementById("linked-nodes-value");
 const activityList = document.getElementById("activity-list");
 const activityEmpty = document.getElementById("activity-empty");
 
@@ -77,10 +76,6 @@ export function applyStatus(status) {
   setIndicator("ptt-indicator", status.ptt_active, status.ptt_active ? "TX" : "off");
   setIndicator("cos-indicator", status.cos_active, status.cos_active ? "RX" : "off");
   setIndicator("ctcss-indicator", status.ctcss_hz !== null, status.ctcss_hz !== null ? `${status.ctcss_hz} Hz` : "none");
-
-  linkedNodesValue.innerHTML = status.linked_nodes.length
-    ? status.linked_nodes.map((n) => `<span class="chip">${escapeHtml(n)}</span>`).join("")
-    : '<span class="muted">(none)</span>';
 
   setStateBadge(document.getElementById("sim-state"), status.state);
   setPill("sim-ptt", status.ptt_active, status.ptt_active ? "PTT ON" : "PTT off");

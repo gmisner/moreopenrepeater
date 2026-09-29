@@ -153,6 +153,27 @@ leading 3, padded to six digits: `*33009999` connects to node 9999 (the echo
 test server). `*1` and the same number disconnects it. EchoLink users connect
 to the repeater with its EchoLink node number as usual.
 
+## Links
+
+The **Links** card on the dashboard lists the node's links with each
+station's callsign, description and location, whether it's a full link or
+monitor only, and which one is talking. **Connect** links any node number,
+optionally monitor only (you hear it, it doesn't hear the repeater);
+**Disconnect** drops one link and **Disconnect all** drops them all. These
+send the same `ilink` commands as the DTMF codes, through Asterisk's manager
+interface, so they need `MOREOPENREPEATER_AMI_HOST` and the node chosen.
+Viewers see the links but can't change them.
+
+Callsigns come from AllStarLink's list of registered nodes, downloaded from
+`allmondb.allstarlink.org` once a day into `data/allstar-nodes.txt`. Without
+internet the last copy keeps working, and without any copy nodes are shown by
+number. EchoLink stations show as their 3xxxxxx number, and their callsign
+comes from `chan_echolink`'s directory when EchoLink is on.
+
+**Favorite nodes** on the AllStarLink page become one-click buttons on the
+Links card. Each has an optional name (shown instead of the callsign) and can
+connect monitor only, which suits a busy hub you just want to listen to.
+
 ## Checking it
 
 `spikes/usrp_controller_check.py` runs the controller as node 1999's radio

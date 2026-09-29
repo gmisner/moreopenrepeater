@@ -237,7 +237,9 @@ several phases (see the plan file for the full breakdown):
   What it repeats goes out over the node's links, and linked stations key it up, with
   the controller's own courtesy tone and timers. Pick the node on the dashboard, which
   edits just that node's lines in `rpt.conf` and can put them back. EchoLink can be
-  turned on there too. See [docs/allstar.md](docs/allstar.md).
+  turned on there too. The dashboard lists the links with callsigns, connects and
+  disconnects nodes (transceive or monitor only) and keeps a list of favorite nodes.
+  See [docs/allstar.md](docs/allstar.md).
 - **Parrot / echo test**: after the parrot macro, the next transmission is recorded
   instead of repeated, then played back.
 - **Recordings**: optionally save every repeated transmission, with playback on the

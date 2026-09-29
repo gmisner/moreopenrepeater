@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -38,6 +38,15 @@ GpioPinNumber = Literal["1", "2", "4", "5", "6", "7", "8"]
 class GpioPinConfig(BaseModel):
     mode: Literal["output", "input"]
     name: str = Field(default="", max_length=30)
+
+
+NodeNumber = Annotated[str, Field(pattern=r"^[0-9]{1,10}$")]
+
+
+class LinkFavorite(BaseModel):
+    node: NodeNumber
+    name: str = Field(default="", max_length=40)
+    monitor: bool = False
 
 
 class ConfigResponse(BaseModel):
@@ -111,6 +120,7 @@ class ConfigResponse(BaseModel):
     backup_keep: int
     backup_include_recordings: bool
     gpio_pins: dict[GpioPinNumber, GpioPinConfig] = {}
+    link_favorites: list[LinkFavorite] = []
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -200,6 +210,7 @@ class ConfigUpdateRequest(BaseModel):
     backup_keep: Optional[int] = Field(default=None, ge=1, le=100)
     backup_include_recordings: Optional[bool] = None
     gpio_pins: Optional[dict[GpioPinNumber, GpioPinConfig]] = None
+    link_favorites: Optional[list[LinkFavorite]] = Field(default=None, max_length=50)
 
 
 class AutopatchDialRequest(BaseModel):
@@ -515,6 +526,31 @@ class GpioStatusResponse(BaseModel):
 
 class GpioOutputRequest(BaseModel):
     on: bool
+
+
+class LinkInfo(BaseModel):
+    node: str
+    kind: Literal["allstar", "echolink"]
+    callsign: str
+    description: str
+    location: str
+    mode: Optional[str] = None
+    keyed: bool = False
+    name: str = ""
+    monitor: bool = False
+
+
+class LinksResponse(BaseModel):
+    available: bool
+    node: Optional[str]
+    error: Optional[str]
+    links: list[LinkInfo]
+    favorites: list[LinkInfo]
+
+
+class LinkConnectRequest(BaseModel):
+    node: NodeNumber
+    monitor: bool = False
 
 
 class AllStarNodeRequest(BaseModel):

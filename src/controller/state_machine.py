@@ -122,6 +122,8 @@ class RepeaterConfig:
     backup_include_recordings: bool = False
     # Spare CM108 GPIO pins by number ("1", "2", "4"-"8"): {"mode": "output" | "input", "name": str}
     gpio_pins: dict = field(default_factory=dict)
+    # Nodes to connect to with one click: [{"node": str, "name": str, "monitor": bool}]
+    link_favorites: list = field(default_factory=list)
 
 
 class RepeaterController:

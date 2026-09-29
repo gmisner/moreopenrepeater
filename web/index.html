@@ -85,11 +85,25 @@
           </div>
         </div>
 
-        <div class="grid grid-3">
-          <div class="card">
-            <h2>Linked nodes</h2>
-            <div id="linked-nodes-value" class="chips"><span class="muted">(none)</span></div>
+        <div class="card" id="links-card">
+          <div class="card-header">
+            <h2>Links</h2>
+            <button type="button" class="btn btn-ghost btn-sm" id="links-disconnect-all" data-requires-write hidden>Disconnect all</button>
           </div>
+          <ul id="links-list" class="link-list"></ul>
+          <p id="links-empty" class="muted small">No nodes are linked.</p>
+          <div id="links-favorites" class="link-favorites" data-requires-write></div>
+          <form id="links-connect" class="inline-form" data-requires-write hidden>
+            <label>Node number
+              <input type="text" name="node" inputmode="numeric" pattern="[0-9]{1,10}" required placeholder="2000" autocomplete="off" />
+            </label>
+            <label class="inline-check"><input type="checkbox" name="monitor" /> Monitor only</label>
+            <button type="submit" class="btn btn-primary" id="links-connect-button">Connect</button>
+          </form>
+          <p id="links-note" class="muted small" hidden></p>
+        </div>
+
+        <div class="grid grid-2">
           <div class="card">
             <h2>Station</h2>
             <dl class="kv" id="station-summary"></dl>
@@ -863,6 +877,24 @@
               Copies of the files from before each change are kept in the data folder's <code>asterisk-backups</code>.</small>
           </form>
         </div>
+        <form class="card" id="favorites-form">
+          <h2>Favorite nodes</h2>
+          <p class="muted small">One-click buttons on the dashboard's Links card. Callsigns come from AllStarLink's node
+            list, which is downloaded once a day. EchoLink nodes are 3 and the EchoLink number padded to six digits
+            (<code>3009999</code> for 9999).</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Node</th><th>Name</th><th>Monitor only</th><th></th></tr></thead>
+              <tbody id="favorites-tbody"></tbody>
+            </table>
+          </div>
+          <p id="favorites-empty" class="muted small">No favorites yet.</p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="favorites-add">Add a node</button>
+            <span class="spacer"></span>
+            <button type="submit" class="btn btn-primary" id="favorites-save">Save favorites</button>
+          </div>
+        </form>
         <div class="card" id="echolink-card" hidden>
           <div class="card-header"><h2>EchoLink</h2><span id="echolink-pill" class="pill pill-off" hidden></span></div>
           <p id="echolink-status" class="muted"></p>

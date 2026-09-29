@@ -217,6 +217,15 @@ button.indicator:hover { border-color: var(--muted); }
   font-size: 0.85rem;
 }
 
+.link-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.link-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.7rem; border-radius: var(--radius); background: var(--panel-2); border: 1px solid var(--border); flex-wrap: wrap; }
+.link-row.keyed { border-color: var(--green); background: var(--green-soft); }
+.link-row .indicator-dot { flex: none; }
+.link-row.keyed .indicator-dot { background: var(--green); box-shadow: 0 0 10px var(--green); }
+.link-row .link-name { flex: 1; min-width: 10rem; }
+.link-favorites { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.9rem; }
+.link-favorites:empty { display: none; }
+.inline-check { display: flex; flex-direction: row !important; align-items: center; white-space: nowrap; gap: 0.4rem; min-width: 0 !important; padding-bottom: 0.55rem; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 0.45rem 1rem; margin: 0; font-size: 0.9rem; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; text-align: right; }

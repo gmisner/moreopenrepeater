@@ -17,6 +17,7 @@ from typing import Awaitable, Callable, NamedTuple, Optional
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Path as UrlPath
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -52,6 +53,8 @@ from .allstar_audio import AllStarAudio, usrp_listen_from_env, usrp_settings_fro
 from .allstar_node import AllStarNode, AllStarSetupError
 from .echolink import EchoLink, EchoLinkSettings
 from .gpio import GpioControl, GpioError
+from .links import LinkControl, LinkError
+from .node_directory import NodeDirectory
 from .autopatch import Autopatch, patch_settings_from_env
 from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_backup, restore_backup, write_backup
 from .sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
@@ -78,6 +81,8 @@ from .models import (
     EchoLinkRequest,
     EchoLinkStatusResponse,
     GpioOutputRequest,
+    LinkConnectRequest,
+    LinksResponse,
     GpioStatusResponse,
     AllStarStatusResponse,
     AudioPreviewRequest,
@@ -139,6 +144,7 @@ DEFAULT_RECORDINGS_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "recor
 DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.json"
 DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
 DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
+DEFAULT_NODE_LIST_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "allstar-nodes.txt"
 DEFAULT_BACKUP_DIR = Path(
     os.environ.get("MOREOPENREPEATER_BACKUP_DIR") or _resolve_data_root(os.environ, _REPO_DATA_DIR) / "backups"
 )
@@ -316,6 +322,8 @@ def create_app(
     backups: Optional[BackupFolder] = None,
     allstar_node: Optional[AllStarNode] = None,
     gpio: Optional[GpioControl] = None,
+    node_directory: Optional[NodeDirectory] = None,
+    links: Optional[LinkControl] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -346,6 +354,10 @@ def create_app(
     )
     log_path = log_path or DEFAULT_LOG_PATH
     link_settings = link_settings if link_settings is not None else link_settings_from_env()
+    node_directory = node_directory if node_directory is not None else NodeDirectory(None)
+    links = links or LinkControl(
+        service, node_directory, lambda: (link_settings.local_node_id if link_settings else "") or allstar_node.node or ""
+    )
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
     configure_logging(log_path)
     sessions = SessionStore()
@@ -434,11 +446,13 @@ def create_app(
                     asyncio.create_task(_client.send_macro_command(command.node_id, command.command))
 
                 service.set_link_command_sink(sink)
+                links.client = client
                 async for event in client.events():
                     service.handle_link_event(event)
             except (OSError, ConnectionError):
                 _link_logger.exception("app_rpt AMI connection lost; reconnecting in %ss", LINK_RECONNECT_DELAY_SECONDS)
             finally:
+                links.client = None
                 await client.close()
             await asyncio.sleep(LINK_RECONNECT_DELAY_SECONDS)
 
@@ -563,6 +577,7 @@ def create_app(
             tasks.append(asyncio.create_task(backup_loop()))
             if link_settings is not None:
                 tasks.append(asyncio.create_task(node_link_loop()))
+                tasks.append(asyncio.create_task(node_directory.run()))
             live_audio.attach(loop)
             await autopatch.start()
             await allstar_node.start()
@@ -950,6 +965,30 @@ def create_app(
         no_call_in_progress()
         return await change_allstar(echolink.disable())
 
+    async def change_links(action) -> dict:
+        try:
+            await action
+        except LinkError as error:
+            raise HTTPException(status_code=409, detail=str(error))
+        return await links.status()
+
+    @app.get("/api/links", response_model=LinksResponse, dependencies=auth_dependencies)
+    async def get_links() -> dict:
+        return await links.status()
+
+    @app.post("/api/links", response_model=LinksResponse, dependencies=auth_dependencies)
+    async def post_link(body: LinkConnectRequest, request: Request) -> dict:
+        request.state.audit_detail = f"node {body.node}" + (" (monitor)" if body.monitor else "")
+        return await change_links(links.connect(body.node, body.monitor))
+
+    @app.delete("/api/links", response_model=LinksResponse, dependencies=auth_dependencies)
+    async def delete_links() -> dict:
+        return await change_links(links.disconnect_all())
+
+    @app.delete("/api/links/{node}", response_model=LinksResponse, dependencies=auth_dependencies)
+    async def delete_link(node: str = UrlPath(pattern=r"^[0-9]{1,10}$")) -> dict:
+        return await change_links(links.disconnect(node))
+
     @app.get("/api/gpio", response_model=GpioStatusResponse, dependencies=auth_dependencies)
     def get_gpio() -> dict:
         return gpio.status()
@@ -1241,6 +1280,7 @@ app = create_app(
     audit=AuditLog(DEFAULT_AUDIT_PATH),
     aprs_stations=StationStore(DEFAULT_APRS_PATH),
     backups=BackupFolder(DEFAULT_BACKUP_DIR),
+    node_directory=NodeDirectory(DEFAULT_NODE_LIST_PATH),
 )
 
 

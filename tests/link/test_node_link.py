@@ -1,7 +1,9 @@
 import asyncio
 
+import pytest
+
 from controller.events import LinkStateChanged, RemoteKeyed
-from link.node_link import NodeLinkClient, parse_alinks
+from link.node_link import NodeLinkClient, parse_alinks, parse_link_modes
 
 
 def test_parse_alinks_handles_real_captured_and_source_confirmed_formats():
@@ -73,3 +75,66 @@ async def _read_block(reader: asyncio.StreamReader) -> dict[str, str]:
             return message
         key, _, value = line.partition(": ")
         message[key] = value
+
+
+def test_parse_link_modes():
+    assert parse_link_modes("3,1998TU,2000RK,3009999CU") == {
+        "1998": ("transceive", False),
+        "2000": ("monitor", True),
+        "3009999": ("connecting", False),
+    }
+
+
+def test_link_commands_and_lookups():
+    asyncio.run(_run_commands())
+
+
+XNODE = ["", "T1998", "", "RPT_NUMLINKS=1", "RPT_LINKS=1,T1998", "RPT_NUMALINKS=1", "RPT_ALINKS=1,1998TU"]
+
+
+async def _run_commands() -> None:
+    commands = []
+
+    async def fake(reader, writer):
+        writer.write(b"Asterisk Call Manager/11.0.0\r\n")
+        while True:
+            action = await _read_block(reader)
+            if not action:
+                break
+            fields = {"Response": "Success", "ActionID": action["ActionID"]}
+            command = action.get("Command", "")
+            commands.append(command)
+            for key, value in fields.items():
+                writer.write(f"{key}: {value}\r\n".encode())
+            output = XNODE if command.startswith("rpt xnode") else ["9999|*ECHOTEST*|13.57.14.183"] if "9999" in command else []
+            for line in output:
+                writer.write(f"Output: {line}\r\n".encode())
+            writer.write(b"\r\n")
+            await writer.drain()
+
+    server = await asyncio.start_server(fake, "127.0.0.1", 0)
+    host, port = server.sockets[0].getsockname()
+    async with server:
+        client = NodeLinkClient(host, port, "admin", "secret", local_node_id="1999")
+        await client.connect()
+        await client.connect_node("2000")
+        await client.connect_node("2001", monitor=True)
+        await client.disconnect_node("2000")
+        await client.disconnect_all()
+        assert await client.links() == {"1998": ("transceive", False)}
+        assert await client.echolink_callsign("9999") == "*ECHOTEST*"
+        assert await client.echolink_callsign("123") is None
+        with pytest.raises(ValueError):
+            await client.connect_node("2000; core stop now")
+        client.local_node_id = ""
+        with pytest.raises(ValueError, match="node"):
+            await client.links()
+        await client.close()
+    assert commands[1:7] == [
+        "rpt cmd 1999 ilink 3 2000",
+        "rpt cmd 1999 ilink 2 2001",
+        "rpt cmd 1999 ilink 1 2000",
+        "rpt cmd 1999 ilink 6",
+        "rpt xnode 1999",
+        "echolink dbget nodename 9999",
+    ]

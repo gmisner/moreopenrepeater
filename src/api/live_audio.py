@@ -13,7 +13,8 @@
     back after the user unkeys.
 
 A CM108 USB interface, if `MOREOPENREPEATER_CM108_HIDRAW` names its
-/dev/hidrawN node (Linux), keys the radio's PTT and can supply COS.
+/dev/hidrawN node (Linux), keys the radio's PTT and can supply COS. Its
+spare pins are `api.gpio`'s.
 """
 from __future__ import annotations
 
@@ -95,6 +96,10 @@ class LiveAudio:
         self._patch: Optional[PatchAudio] = None
         self._link: Optional[LinkAudio] = None
         self.monitor = AudioMonitor()
+
+    @property
+    def cm108(self) -> Optional[CM108Interface]:
+        return self._cm108
 
     @property
     def hardware_ptt(self) -> bool:

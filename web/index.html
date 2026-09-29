@@ -114,6 +114,15 @@
           <p id="listen-status" class="muted small">Streams the repeater's audio to this browser (needs live audio running).</p>
         </div>
 
+        <div class="card" id="gpio-dash-card" hidden>
+          <div class="card-header">
+            <h2>GPIO pins</h2>
+            <a href="#/audio" class="btn btn-ghost btn-sm">Set up</a>
+          </div>
+          <div class="gpio-pins" id="gpio-dash-pins"></div>
+          <p class="muted small" id="gpio-dash-note" hidden></p>
+        </div>
+
         <div class="card">
           <div class="card-header">
             <h2>Recent activity</h2>
@@ -355,7 +364,7 @@
               <select name="cos_source">
                 <option value="vox">Audio level (VOX)</option>
                 <option value="ctcss">CTCSS tone present</option>
-                <option value="cm108">CM108 COS pin</option>
+                <option value="cm108">CM108 COS input</option>
               </select>
             </label>
             <label>VOX threshold
@@ -400,6 +409,27 @@
             <span class="dirty-note">Unsaved changes</span>
             <button type="button" class="btn btn-ghost" data-reset>Discard</button>
             <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+
+        <form class="card" id="gpio-form">
+          <div class="card-header">
+            <h2>CM108 GPIO pins</h2>
+            <span id="gpio-state" class="tag" hidden></span>
+          </div>
+          <p class="muted small">The interface's spare pins, for relays, alarms and the like. Outputs are switched here,
+            on the dashboard, or by a DTMF macro, and start off when the repeater starts. Inputs show on the dashboard.
+            GPIO3 is PTT. GPIO5&ndash;8 exist on CM119-family chips only, and on a CM108AH GPIO2 can't be used.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Pin</th><th>Use</th><th>Name</th><th>State</th></tr></thead>
+              <tbody id="gpio-tbody"></tbody>
+            </table>
+          </div>
+          <p id="gpio-error" class="form-error" hidden></p>
+          <div class="form-actions">
+            <span class="spacer"></span>
+            <button type="submit" class="btn btn-primary" id="gpio-save">Save pins</button>
           </div>
         </form>
 
@@ -464,6 +494,7 @@
                 <option value="tx_disable">Transmitter off</option>
                 <option value="tx_enable">Transmitter on</option>
                 <option value="aprs">APRS stations nearby</option>
+                <option value="gpio">Switch a GPIO output</option>
               </select>
             </label>
             <label>Description
@@ -480,6 +511,20 @@
             </label>
             <label data-macro-arg="say" class="span-2">Text to say
               <input type="text" name="say_text" placeholder="Club meeting Thursday at 7" />
+            </label>
+            <label data-macro-arg="gpio">Output
+              <select name="gpio_pin"></select>
+            </label>
+            <label data-macro-arg="gpio">Switch it
+              <select name="gpio_verb">
+                <option value="on">On</option>
+                <option value="off">Off</option>
+                <option value="toggle">On if off, off if on</option>
+                <option value="pulse">On for a moment</option>
+              </select>
+            </label>
+            <label data-macro-arg="gpio" data-gpio-pulse>For
+              <span class="input-unit"><input type="number" name="gpio_seconds" min="0.1" max="60" step="0.1" value="1" /><span>s</span></span>
             </label>
           </div>
           <div class="form-actions">

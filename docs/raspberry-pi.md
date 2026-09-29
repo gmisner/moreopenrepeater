@@ -92,8 +92,29 @@ MOREOPENREPEATER_CM108_HIDRAW=/dev/hidraw0
 ```
 
 With that set, the live audio engine keys the radio through the CM108's
-GPIO3 (PTT) whenever it transmits, and "CM108 COS pin" (GPIO4) becomes
-available as the carrier-detect source.
+GPIO3 (PTT) whenever it transmits, and "CM108 COS input" becomes available
+as the carrier-detect source. That's the chip's volume-down input, active
+low, which is where URI/RIM/DMK-style interfaces wire the receiver's COS
+(the same as AllStarLink's SimpleUSB driver). Reading it needs Linux 5.11 or
+later, which every current Raspberry Pi OS has.
+
+### GPIO pins
+
+The interface's spare pins are set up under **Audio & tones → CM108 GPIO
+pins**: GPIO1, GPIO2 and GPIO4, and GPIO5-8 on CM119-family chips (GPIO3 is
+PTT, and on a CM108AH GPIO2 isn't a real pin). Check which ones your
+interface brings out to its connector.
+
+- An **output** drives the pin high when on, for a relay driver, a fan or a
+  remote reset. Outputs are switched on the Audio page or the dashboard, and
+  by a DTMF macro with the "Switch a GPIO output" action (on, off, toggle,
+  or on for up to 60 seconds). The macro says what it did on the air. Outputs
+  start off whenever the repeater starts.
+- An **input** shows high or low on the dashboard, for a door switch or a
+  power-fail alarm. Changes are written to the log.
+
+The pins come straight from the chip and can't power a relay coil: drive
+one through a transistor.
 
 ### Audio devices
 
@@ -258,7 +279,9 @@ refills as new reports arrive.
 ## Still not covered here
 
 - The live audio engine is tested with synthetic signals and against Mac
-  audio devices, but not yet with a CM108 and a real radio. Expect to tune
+  audio devices, but not yet with a CM108 and a real radio. The CM108 PTT,
+  COS and GPIO code follows AllStarLink's SimpleUSB driver but hasn't run on
+  real hardware yet. Expect to tune
   the VOX threshold and TX gain on first key-up, and check the "audio
   glitches" count on the Radio interface card (dropped or late audio blocks)
   under load on a Pi.

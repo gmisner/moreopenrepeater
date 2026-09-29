@@ -3,6 +3,7 @@ import { initAnnouncements, loadAnnouncements } from "./js/announcements.js";
 import { initAssets, loadAssets } from "./js/assets.js";
 import { initAudit } from "./js/audit.js";
 import { initAllStar } from "./js/allstar.js";
+import { initGpio } from "./js/gpio.js";
 import { initAutopatch } from "./js/autopatch.js";
 import { initAudio } from "./js/audio.js";
 import { initBackup } from "./js/backup.js";
@@ -34,6 +35,7 @@ async function main() {
   initWeather();
   initAutopatch();
   initAllStar();
+  initGpio();
   initMap();
   initUsage();
   initSimulator();

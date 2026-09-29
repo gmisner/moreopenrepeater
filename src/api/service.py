@@ -135,6 +135,7 @@ class RepeaterService:
         self.autopatch: Optional[PatchCalls] = None
         self.audit_hook: Optional[Callable[[str, str, str], None]] = None  # (actor, action, detail)
         self.aprs_summary: Optional[Callable[[], str]] = None
+        self.gpio_command: Optional[Callable[[str], str]] = None  # runs a gpio macro, returns what to say
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
         if saved is not None:
@@ -299,6 +300,9 @@ class RepeaterService:
                 self.speak(self.announcement_clip(announcement))
         elif action.action == "aprs":
             text = self.aprs_summary() if self.aprs_summary else "The A P R S map is not set up."
+            self.speak(TTS_PREFIX + text)
+        elif action.action == "gpio":
+            text = self.gpio_command(action.argument) if self.gpio_command else "That output is not set up."
             self.speak(TTS_PREFIX + text)
         elif action.action == "parrot":
             if self.audio_output is None:

@@ -12,7 +12,7 @@ extra dependency for logic this size.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Literal, Optional
 
 from .events import (
@@ -120,6 +120,8 @@ class RepeaterConfig:
     backup_interval_hours: float = 24.0
     backup_keep: int = 7
     backup_include_recordings: bool = False
+    # Spare CM108 GPIO pins by number ("1", "2", "4"-"8"): {"mode": "output" | "input", "name": str}
+    gpio_pins: dict = field(default_factory=dict)
 
 
 class RepeaterController:

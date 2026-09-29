@@ -51,6 +51,7 @@ from link.asterisk_files import asterisk_files_from_env
 from .allstar_audio import AllStarAudio, usrp_listen_from_env, usrp_settings_from_env
 from .allstar_node import AllStarNode, AllStarSetupError
 from .echolink import EchoLink, EchoLinkSettings
+from .gpio import GpioControl, GpioError
 from .autopatch import Autopatch, patch_settings_from_env
 from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_backup, restore_backup, write_backup
 from .sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
@@ -76,6 +77,8 @@ from .models import (
     AllStarNodeRequest,
     EchoLinkRequest,
     EchoLinkStatusResponse,
+    GpioOutputRequest,
+    GpioStatusResponse,
     AllStarStatusResponse,
     AudioPreviewRequest,
     AutopatchDialRequest,
@@ -312,6 +315,7 @@ def create_app(
     sip_trunk: Optional[SipTrunk] = None,
     backups: Optional[BackupFolder] = None,
     allstar_node: Optional[AllStarNode] = None,
+    gpio: Optional[GpioControl] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -326,9 +330,10 @@ def create_app(
     if service.activity is None:
         service.activity = ActivityRecorder(activity_store or ActivityStore())
     activity_store = service.activity.store
-    live_audio = live_audio or LiveAudio(
-        service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings
-    )
+    live_audio = live_audio or LiveAudio(service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings)
+    cm108 = live_audio.cm108
+    gpio = gpio or GpioControl(service, cm108)
+    service.gpio_command = gpio.run_command
     autopatch = autopatch or Autopatch(service, patch_settings_from_env(os.environ))
     sip_trunk = sip_trunk or SipTrunk(autopatch.settings)
     allstar_node = allstar_node or AllStarNode(
@@ -561,9 +566,11 @@ def create_app(
             live_audio.attach(loop)
             await autopatch.start()
             await allstar_node.start()
+        gpio.start()
         yield
         for task in tasks:
             task.cancel()
+        await gpio.stop()
         await allstar_node.stop()
         await autopatch.stop()
         live_audio.shutdown()
@@ -942,6 +949,19 @@ def create_app(
     async def delete_echolink() -> dict:
         no_call_in_progress()
         return await change_allstar(echolink.disable())
+
+    @app.get("/api/gpio", response_model=GpioStatusResponse, dependencies=auth_dependencies)
+    def get_gpio() -> dict:
+        return gpio.status()
+
+    @app.put("/api/gpio/{pin}", response_model=GpioStatusResponse, dependencies=auth_dependencies)
+    def put_gpio(pin: int, body: GpioOutputRequest, request: Request) -> dict:
+        request.state.audit_detail = f"GPIO{pin} ({gpio.name(pin)}) {'on' if body.on else 'off'}"
+        try:
+            gpio.set_output(pin, body.on)
+        except GpioError as error:
+            raise HTTPException(status_code=409, detail=str(error))
+        return gpio.status()
 
     @app.get("/api/audio/engine", response_model=AudioEngineResponse, dependencies=auth_dependencies)
     def get_audio_engine() -> dict:

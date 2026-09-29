@@ -198,6 +198,12 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 .indicator.on .indicator-dot { background: var(--green); box-shadow: 0 0 10px var(--green); }
 #ptt-indicator.on { border-color: var(--red); background: var(--red-soft); }
 #ptt-indicator.on .indicator-dot { background: var(--red); box-shadow: 0 0 10px var(--red); }
+.gpio-pins { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 0.75rem; }
+.gpio-pins .indicator { font: inherit; color: inherit; }
+button.indicator { cursor: pointer; }
+button.indicator:hover { border-color: var(--muted); }
+#gpio-tbody select { min-width: 5.8rem; }
+#gpio-tbody input { min-width: 3.5rem; }
 
 .sim-status { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; padding: 0.7rem 1.1rem; }
 

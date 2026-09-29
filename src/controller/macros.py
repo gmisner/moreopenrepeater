@@ -21,11 +21,12 @@ from .events import ControllerCommand, RunAction, SendLinkCommand
 #   id            station ID now              parrot        play the next transmission back
 #   tx_disable / tx_enable   turn the transmitter off/on (put a secret code in the pattern)
 #   aprs          speak how many APRS stations are nearby, and the closest
+#   gpio          switch a CM108 output: `<pin> on|off|toggle|pulse [seconds]`
 MacroAction = Literal[
-    "link", "time", "weather", "id", "announcement", "say", "parrot", "tx_disable", "tx_enable", "aprs"
+    "link", "time", "weather", "id", "announcement", "say", "parrot", "tx_disable", "tx_enable", "aprs", "gpio"
 ]
 MACRO_ACTIONS: tuple[str, ...] = get_args(MacroAction)
-ACTIONS_NEEDING_ARGUMENT = frozenset({"link", "announcement", "say"})
+ACTIONS_NEEDING_ARGUMENT = frozenset({"link", "announcement", "say", "gpio"})
 
 
 @dataclass(frozen=True)

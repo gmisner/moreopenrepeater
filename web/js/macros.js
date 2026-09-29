@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { SPARE_PINS, pinLabel } from "./gpio.js";
 import { store } from "./store.js";
 import { escapeHtml, toast, toastError, withBusy } from "./ui.js";
 
@@ -20,7 +21,10 @@ const ACTION_LABELS = {
   tx_disable: "Transmitter off",
   tx_enable: "Transmitter on",
   aprs: "APRS stations nearby",
+  gpio: "GPIO output",
 };
+
+const GPIO_VERBS = { on: "on", off: "off", toggle: "toggle", pulse: "on for" };
 
 let editingPattern = null;
 
@@ -35,6 +39,14 @@ function details(macro) {
     return announcement ? escapeHtml(announcement.name) : '<span class="tag tag-warn">missing announcement</span>';
   }
   if (macro.action === "say") return `&ldquo;${escapeHtml(macro.command)}&rdquo;`;
+  if (macro.action === "gpio") {
+    const [pin, verb, seconds] = macro.command.split(/\s+/);
+    const settings = store.state.config?.gpio_pins?.[pin];
+    const label = escapeHtml(pinLabel(pin, settings?.name));
+    const warning = settings?.mode === "output" ? "" : ' <span class="tag tag-warn">not an output</span>';
+    const time = verb === "pulse" ? ` ${escapeHtml(seconds ?? "1")} s` : "";
+    return `${label} ${escapeHtml(GPIO_VERBS[verb] ?? verb)}${time}${warning}`;
+  }
   return muted;
 }
 
@@ -67,6 +79,15 @@ function renderAnnouncementOptions() {
   if (current) select.value = current;
 }
 
+function renderGpioOptions() {
+  const select = form.elements.gpio_pin;
+  const current = select.value;
+  const pins = store.state.config?.gpio_pins ?? {};
+  const outputs = SPARE_PINS.filter((pin) => pins[pin]?.mode === "output");
+  select.replaceChildren(...(outputs.length ? outputs : SPARE_PINS).map((pin) => new Option(pinLabel(pin, pins[pin]?.name), pin)));
+  if (current) select.value = current;
+}
+
 function showArgumentFields() {
   const action = form.elements.action.value;
   for (const field of form.querySelectorAll("[data-macro-arg]")) {
@@ -77,6 +98,9 @@ function showArgumentFields() {
   form.elements.command.required = action === "link";
   form.elements.say_text.required = action === "say";
   form.elements.announcement_id.required = action === "announcement";
+  const pulse = form.querySelector("[data-gpio-pulse]");
+  pulse.hidden = action !== "gpio" || form.elements.gpio_verb.value !== "pulse";
+  form.elements.gpio_seconds.disabled = pulse.hidden;
 }
 
 function startEdit(macro) {
@@ -86,6 +110,12 @@ function startEdit(macro) {
   if (macro.action === "link") form.elements.command.value = macro.command;
   if (macro.action === "say") form.elements.say_text.value = macro.command;
   if (macro.action === "announcement") form.elements.announcement_id.value = macro.command;
+  if (macro.action === "gpio") {
+    const [pin, verb, seconds] = macro.command.split(/\s+/);
+    form.elements.gpio_pin.value = pin;
+    form.elements.gpio_verb.value = verb;
+    form.elements.gpio_seconds.value = seconds ?? 1;
+  }
   showArgumentFields();
   title.textContent = `Edit macro ${macro.pattern}`;
   submitButton.textContent = "Save changes";
@@ -108,7 +138,8 @@ function stopEdit() {
 function collect() {
   const els = form.elements;
   const action = els.action.value;
-  const command = { link: els.command.value, say: els.say_text.value, announcement: els.announcement_id.value }[action] ?? "";
+  const gpio = `${els.gpio_pin.value} ${els.gpio_verb.value}${els.gpio_verb.value === "pulse" ? ` ${els.gpio_seconds.value}` : ""}`;
+  const command = { link: els.command.value, say: els.say_text.value, announcement: els.announcement_id.value, gpio }[action] ?? "";
   return {
     pattern: els.pattern.value.trim().toUpperCase(),
     description: els.description.value.trim(),
@@ -158,7 +189,13 @@ export function initMacros() {
     renderAnnouncementOptions();
     if (store.state.macros) render(store.state.macros);
   });
+  store.addEventListener("config", () => {
+    renderGpioOptions();
+    if (store.state.macros) render(store.state.macros);
+  });
+  renderGpioOptions();
   form.elements.action.addEventListener("change", showArgumentFields);
+  form.elements.gpio_verb.addEventListener("change", showArgumentFields);
   showArgumentFields();
   cancelButton.addEventListener("click", stopEdit);
   form.addEventListener("submit", (event) => {

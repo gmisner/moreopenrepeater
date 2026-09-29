@@ -18,9 +18,10 @@ with custom repeater-control logic (not a wrapper around Asterisk's `app_rpt`).
 - **`audio_io`** -- sounddevice stream lifecycle (`AudioStream`/
   `AudioBlockPump`, a disciplined non-blocking PortAudio callback that only
   moves numpy blocks through queues) and a CM108-family USB sound-card GPIO
-  driver (`CM108Interface`) for PTT output / COS input, confirmed against
-  direwolf/SvxLink/uridiag's real wire protocol (5-byte hidraw write/read,
-  not the HIDIOCSFEATURE/HIDIOCGFEATURE ioctls). Linux-only at the hardware
+  driver (`CM108Interface`) for PTT output, COS input and the spare pins,
+  following AllStarLink's chan_simpleusb and direwolf (a hidraw output-report
+  write carrying every output pin, and the input report read on demand with
+  HIDIOCGINPUT; COS on the VOL_DN input, active low). Linux-only at the hardware
   layer (`/dev/hidrawN`); the GPIO bit-packing logic is unit tested via a
   fake in-memory device, no real hardware required. `AudioProcessor` is the
   per-20 ms-block logic of a live repeater (software COS by audio level,
@@ -156,8 +157,8 @@ several phases (see the plan file for the full breakdown):
 - **Phase F -- auxiliary GPIO on `audio_io.cm108` (done)**: `CM108Interface` gained
   generic `set_gpio(pin, active)`/`read_gpio(pin)`; `set_ptt`/`read_cos` are now thin
   wrappers over them (`set_ptt(active)` == `set_gpio(self.ptt_pin, active)`),
-  backward-compatible with existing callers/tests. Driver-only change -- no
-  dashboard control for the spare GPIO pins yet.
+  backward-compatible with existing callers/tests. The dashboard and DTMF macros now
+  use the spare pins (see "CM108 GPIO pins" below).
 - **Phase G -- APRS position/status beaconing (done)**: `link.aprs_client` implements
   APRS-IS login, the passcode checksum algorithm, and classic uncompressed
   position/status packet formatting -- verified against the official aprs-is.net spec,
@@ -220,8 +221,12 @@ several phases (see the plan file for the full breakdown):
   received audio high-passed so an incoming tone isn't repeated alongside it.
 - **DTMF local control**: macros can speak the time, read the weather alerts, play
   an announcement or any text, send the ID, start a parrot test, say which APRS
-  stations are nearby, or turn the transmitter off and on (with a PIN in the macro
-  code).
+  stations are nearby, turn the transmitter off and on (with a PIN in the macro
+  code), or switch a CM108 GPIO output.
+- **CM108 GPIO pins**: the interface's spare pins (GPIO1, 2 and 4, plus 5-8 on CM119
+  chips) can be outputs, switched from the dashboard or a DTMF macro (on, off,
+  toggle, or on for a few seconds), or inputs whose state shows on the dashboard.
+  See [docs/raspberry-pi.md](docs/raspberry-pi.md#gpio-pins).
 - **Autopatch**: users dial phone calls over the air (`*6` + number, `#` to hang up)
   through a SIP provider (VoIP.ms, Telnyx, Twilio, ...) on the local Asterisk, with
   allowed/blocked number patterns and a time limit. Calls to the line's number can

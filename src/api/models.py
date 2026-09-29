@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from controller.macros import ACTIONS_NEEDING_ARGUMENT, MacroAction
 
+from .gpio import parse_gpio_command
+
 CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
 WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
 CosSource = Literal["vox", "ctcss", "cm108"]
@@ -27,6 +29,15 @@ class StatusResponse(BaseModel):
     last_clip: Optional[str]
     timestamp: float
     transmitter_enabled: bool = True
+
+
+# GPIO3 is the PTT pin.
+GpioPinNumber = Literal["1", "2", "4", "5", "6", "7", "8"]
+
+
+class GpioPinConfig(BaseModel):
+    mode: Literal["output", "input"]
+    name: str = Field(default="", max_length=30)
 
 
 class ConfigResponse(BaseModel):
@@ -99,6 +110,7 @@ class ConfigResponse(BaseModel):
     backup_interval_hours: float
     backup_keep: int
     backup_include_recordings: bool
+    gpio_pins: dict[GpioPinNumber, GpioPinConfig] = {}
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -187,6 +199,7 @@ class ConfigUpdateRequest(BaseModel):
     backup_interval_hours: Optional[float] = Field(default=None, ge=1, le=720)
     backup_keep: Optional[int] = Field(default=None, ge=1, le=100)
     backup_include_recordings: Optional[bool] = None
+    gpio_pins: Optional[dict[GpioPinNumber, GpioPinConfig]] = None
 
 
 class AutopatchDialRequest(BaseModel):
@@ -295,6 +308,8 @@ class MacroCreateRequest(BaseModel):
     def _command_when_needed(self) -> "MacroCreateRequest":
         if self.action in ACTIONS_NEEDING_ARGUMENT and not self.command.strip():
             raise ValueError(f"a {self.action!r} macro needs a command")
+        if self.action == "gpio":
+            parse_gpio_command(self.command)
         return self
 
 
@@ -483,6 +498,23 @@ class AllStarStatusResponse(BaseModel):
     nodes: list[AllStarNodeInfo]
     node: Optional[str]
     audio: LinkAudioResponse
+
+
+class GpioPinStatus(BaseModel):
+    pin: int
+    name: str
+    mode: Optional[Literal["output", "input"]]
+    on: Optional[bool]
+
+
+class GpioStatusResponse(BaseModel):
+    available: bool
+    error: Optional[str]
+    pins: list[GpioPinStatus]
+
+
+class GpioOutputRequest(BaseModel):
+    on: bool
 
 
 class AllStarNodeRequest(BaseModel):

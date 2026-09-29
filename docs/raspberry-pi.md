@@ -98,6 +98,19 @@ low, which is where URI/RIM/DMK-style interfaces wire the receiver's COS
 (the same as AllStarLink's SimpleUSB driver). Reading it needs Linux 5.11 or
 later, which every current Raspberry Pi OS has.
 
+Before going on the air, check the interface with the repeater stopped and
+a dummy load on the transmitter:
+
+```
+sudo systemctl stop moreopenrepeater
+sudo -u moreopenrepeater /opt/moreopenrepeater/.venv/bin/python /opt/moreopenrepeater/scripts/cm108_check.py
+```
+
+It names the chip, keys PTT for a second, then shows COS and the GPIO
+inputs live for 15 seconds while you key a radio on the receive frequency.
+Add `--outputs 1,4` to switch spare pins on and off too. PTT is left off
+when it exits, even on Ctrl-C.
+
 ### GPIO pins
 
 The interface's spare pins are set up under **Audio & tones → CM108 GPIO

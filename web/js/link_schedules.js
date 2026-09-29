@@ -23,13 +23,26 @@ export function shortTime(value) {
   return `${day} ${time}`;
 }
 
+export function dayPicker(days) {
+  const boxes = DAY_NAMES.map(
+    (day, index) => `<label><input type="checkbox" data-day="${index}" ${days.includes(index) ? "checked" : ""} />${day}</label>`
+  ).join("");
+  return `<fieldset class="span-2 day-picker"><legend>Days</legend>${boxes}</fieldset>`;
+}
+
+export function pickedDays(element) {
+  return [...element.querySelectorAll("[data-day]:checked")].map((box) => Number(box.dataset.day));
+}
+
+export function scheduleText(row, active) {
+  if (!row) return "";
+  if (row.until) return `${active} until ${shortTime(row.until)}`;
+  return row.next_start ? `Next: ${shortTime(row.next_start)}` : "";
+}
+
 function item(schedule = { node: "", name: "", days: [], time: "", minutes: 60, monitor: false, enabled: true }) {
   const div = document.createElement("div");
   div.className = "schedule-item";
-  const days = DAY_NAMES.map(
-    (day, index) =>
-      `<label><input type="checkbox" data-day="${index}" ${schedule.days.includes(index) ? "checked" : ""} />${day}</label>`
-  ).join("");
   div.innerHTML = `
     <div class="form-grid">
       <label>Node
@@ -44,7 +57,7 @@ function item(schedule = { node: "", name: "", days: [], time: "", minutes: 60, 
       <label>Minutes linked
         <input type="number" data-field="minutes" min="0" max="720" step="1" required value="${schedule.minutes}" />
       </label>
-      <fieldset class="span-2 day-picker"><legend>Days</legend>${days}</fieldset>
+      ${dayPicker(schedule.days)}
     </div>
     <div class="schedule-foot">
       <label class="inline-check"><input type="checkbox" data-field="monitor" ${schedule.monitor ? "checked" : ""} />Monitor only</label>
@@ -67,9 +80,7 @@ function render() {
 function showStatus(status) {
   if (renderedFor !== JSON.stringify(store.state.config?.link_schedules ?? [])) return;
   [...list.children].forEach((div, index) => {
-    const row = status.schedules[index];
-    const text = !row ? "" : row.until ? `Linked until ${shortTime(row.until)}` : row.next_start ? `Next: ${shortTime(row.next_start)}` : "";
-    div.querySelector(".schedule-next").textContent = text;
+    div.querySelector(".schedule-next").textContent = scheduleText(status.schedules[index], "Linked");
   });
 }
 
@@ -85,7 +96,7 @@ function collect() {
       name: value("name").value.trim(),
       time: value("time").value,
       minutes: Number(value("minutes").value),
-      days: [...div.querySelectorAll("[data-day]:checked")].map((box) => Number(box.dataset.day)),
+      days: pickedDays(div),
       monitor: value("monitor").checked,
       enabled: value("enabled").checked,
     };

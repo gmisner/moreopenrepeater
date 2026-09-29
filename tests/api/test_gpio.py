@@ -1,5 +1,6 @@
 import asyncio
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -52,7 +53,7 @@ def test_outputs_start_low_and_unused_pins_go_back_to_inputs():
         gpio, service, device = make()
         gpio.start()
         assert device.writes == [(0, 0x01), (0, 0x09)]
-        assert pin(gpio.status(), 1) == {"pin": 1, "name": "Fan", "mode": "output", "on": False}
+        assert pin(gpio.status(), 1) == {"pin": 1, "name": "Fan", "mode": "output", "on": False, "until": None}
         gpio.set_output(1, True)
         service.update_config(gpio_pins={"4": {"mode": "output", "name": ""}})
         assert device.writes[-1] == (0, 0x08)
@@ -216,3 +217,74 @@ def test_inverted_inputs_and_missing_macros():
         await gpio.stop()
 
     asyncio.run(scenario())
+
+
+# 2026-09-29 is a Tuesday (weekday 1).
+LIGHT = {"pin": 1, "days": [1], "time": "18:00", "minutes": 300, "enabled": True}
+
+
+def at(hour, minute=0):
+    return datetime(2026, 9, 29, hour, minute)
+
+
+def scheduled(schedules):
+    service = RepeaterService(config=RepeaterConfig(gpio_pins=PINS, gpio_schedules=schedules))
+    device = FakeHidraw()
+    gpio = GpioControl(service, CM108Interface(device))
+    gpio._apply(service.config)
+    return gpio, device
+
+
+def test_scheduled_outputs_switch_on_for_their_window():
+    gpio, device = scheduled([LIGHT])
+    gpio.scheduler.tick(at(17, 59))
+    assert device.writes[-1] == (0, 0x09)
+    gpio.scheduler.tick(at(18))
+    assert device.writes[-1] == (0x01, 0x09)
+    assert pin(gpio.status(), 1)["until"] == at(23)
+    gpio.set_output(1, False)  # by hand: stays off for this window
+    gpio.scheduler.tick(at(19))
+    assert device.writes[-1] == (0, 0x09)
+    gpio.scheduler.tick(at(23))
+    assert gpio.scheduler.until(1) is None
+
+
+def test_a_restart_mid_window_switches_it_back_on_and_errors_are_retried():
+    gpio, device = scheduled([LIGHT])
+    gpio.scheduler.tick(at(20))
+    assert device.writes[-1] == (0x01, 0x09)
+    gpio.scheduler.tick(at(23, 1))
+    assert device.writes[-1] == (0, 0x09)
+
+    not_output = GpioControl(RepeaterService(config=RepeaterConfig(gpio_pins=PINS, gpio_schedules=[{**LIGHT, "pin": 2}])), None)
+    not_output.scheduler.tick(at(18))
+    assert not_output.scheduler.until(2) is None
+
+
+def test_output_schedules_with_no_end_and_paused():
+    gpio, device = scheduled([{**LIGHT, "minutes": 0}, {**LIGHT, "pin": 4, "enabled": False}])
+    gpio.scheduler.tick(at(18, 6))
+    assert device.writes[-1] == (0, 0x09)
+    gpio, device = scheduled([{**LIGHT, "minutes": 0}])
+    gpio.scheduler.tick(at(18, 2))
+    gpio.scheduler.tick(at(23, 59))
+    assert device.writes[-1] == (0x01, 0x09) and gpio.scheduler.until(1) is None
+
+
+def test_output_schedule_settings(tmp_path):
+    service = RepeaterService()
+    app = create_app(
+        service=service,
+        start_background_tick=False,
+        assets_store=AudioAssetStore(Path(tempfile.mkdtemp()) / "audio"),
+        log_path=tmp_path / "test.log",
+        gpio=GpioControl(service, None),
+    )
+    light = {"pin": 1, "days": [5, 4], "time": "6:30", "minutes": 90}
+    with TestClient(app) as client:
+        for bad in ({**light, "pin": 3}, {**light, "days": []}, {**light, "time": "6pm"}, {**light, "minutes": 1441}):
+            assert client.put("/api/config", json={"gpio_schedules": [bad]}).status_code == 422
+        config = client.put("/api/config", json={"gpio_schedules": [light]}).json()
+        assert config["gpio_schedules"] == [{"pin": 1, "days": [4, 5], "time": "06:30", "minutes": 90, "enabled": True}]
+        schedules = client.get("/api/gpio").json()["schedules"]
+        assert schedules[0]["pin"] == 1 and schedules[0]["next_start"].endswith("06:30:00")

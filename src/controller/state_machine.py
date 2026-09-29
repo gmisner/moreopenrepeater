@@ -123,6 +123,7 @@ class RepeaterConfig:
     # Spare CM108 GPIO pins by number ("1", "2", "4"-"8"): {"mode": "output" | "input", "name": str}.
     # Inputs can also have "invert" and "on_say"/"off_say"/"on_macro"/"off_macro".
     gpio_pins: dict = field(default_factory=dict)
+    gpio_schedules: list = field(default_factory=list)  # [{pin, days, time, minutes, enabled}], outputs on for a weekly window
     # Nodes to connect to with one click: [{"node": str, "name": str, "monitor": bool}]
     link_favorites: list = field(default_factory=list)
     link_schedules: list = field(default_factory=list)  # [{node, name, days, time, minutes, monitor, enabled}]

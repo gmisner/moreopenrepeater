@@ -123,6 +123,12 @@ interface brings out to its connector.
   by a DTMF macro with the "Switch a GPIO output" action (on, off, toggle,
   or on for up to 60 seconds). The macro says what it did on the air. Outputs
   start off whenever the repeater starts.
+  **Output schedules**, below the pins, switch an output on at a set time on
+  chosen weekdays and off after a number of minutes (0 leaves it on): a
+  light from 18:00 for 300 minutes, say. Times are the station's clock.
+  Switching a scheduled output off by hand keeps it off until the next
+  start, and after a restart an output that should be on comes back on. The
+  dashboard shows when a scheduled output goes off.
 - An **input** shows on or off on the dashboard, for a door switch or a
   power-fail alarm. Changes are written to the log. Tick **On when the pin
   reads low** for a switch or relay contact that pulls the pin to ground.

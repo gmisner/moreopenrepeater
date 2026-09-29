@@ -9,6 +9,11 @@ aren't saved: after a restart every output is off.
 An input can say something or run a DTMF macro when it turns on or off. A
 change counts once it has held for `SETTLE_SECONDS`, so a bouncing contact
 acts once; the reading at startup doesn't count as a change.
+
+Outputs can also be switched on for a weekly window (`gpio_schedules`, see
+`api.weekly`) and off at its end. Switching one off by hand keeps it off for
+the rest of that window; after a restart, an output inside its window comes
+back on.
 """
 from __future__ import annotations
 
@@ -16,11 +21,14 @@ import asyncio
 import logging
 import re
 import time
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Callable, Optional
 
 from audio_io.cm108 import CM108Interface
 from controller.state_machine import RepeaterConfig
 from playout.renderer import TTS_PREFIX
+
+from .weekly import last_start, next_start, window_end
 
 if TYPE_CHECKING:
     from .service import RepeaterService
@@ -30,6 +38,8 @@ _logger = logging.getLogger("moreopenrepeater.gpio")
 SPARE_PINS = (1, 2, 4, 5, 6, 7, 8)  # GPIO3 is PTT
 POLL_SECONDS = 0.25
 SETTLE_SECONDS = 1.0
+SCHEDULE_POLL_SECONDS = 5.0
+STAY_GRACE = timedelta(minutes=5)  # schedules with no end only switch on this soon after the start
 DEFAULT_PULSE_SECONDS = 1.0
 MAX_PULSE_SECONDS = 60.0
 
@@ -77,25 +87,29 @@ class GpioControl:
         self._changed_at: dict[int, float] = {}
         self._pulses: dict[int, asyncio.TimerHandle] = {}
         self._task: Optional[asyncio.Task] = None
+        self._schedule_task: Optional[asyncio.Task] = None
         self.error: Optional[str] = None
+        self.scheduler = GpioScheduler(self, lambda: self._service.config.gpio_schedules)
 
     def start(self) -> None:
         self._service.add_config_listener(self._apply)
         self._apply(self._service.config)
         if self._cm108 is not None:
             self._task = asyncio.create_task(self._poll())
+            self._schedule_task = asyncio.create_task(self._run_schedule())
 
     async def stop(self) -> None:
         for handle in self._pulses.values():
             handle.cancel()
         self._pulses.clear()
-        if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
+        for task in (self._task, self._schedule_task):
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self._task = self._schedule_task = None
 
     def status(self) -> dict:
         pins = _pins(self._service.config)
@@ -109,8 +123,14 @@ class GpioControl:
                 on = self._inputs.get(pin)
             else:
                 on = None
-            rows.append({"pin": pin, "name": settings.get("name", ""), "mode": mode, "on": on})
-        return {"available": self._cm108 is not None, "error": self.error, "pins": rows}
+            until = self.scheduler.until(pin) if mode == "output" else None
+            rows.append({"pin": pin, "name": settings.get("name", ""), "mode": mode, "on": on, "until": until})
+        return {
+            "available": self._cm108 is not None,
+            "error": self.error,
+            "pins": rows,
+            "schedules": self.scheduler.status(self._service.wall_now()),
+        }
 
     def set_output(self, pin: int, on: bool) -> None:
         self._output(pin)
@@ -225,6 +245,14 @@ class GpioControl:
                 self._inputs[pin] = on
                 self._settle(pin, level)
 
+    async def _run_schedule(self) -> None:
+        while True:
+            try:
+                self.scheduler.tick(self._service.wall_now())
+            except Exception:
+                _logger.exception("unexpected error in the GPIO schedule")
+            await asyncio.sleep(SCHEDULE_POLL_SECONDS)
+
     def _settle(self, pin: int, level: bool) -> None:
         settled = self._settled.get(pin)
         if settled is None:
@@ -250,3 +278,62 @@ class GpioControl:
             self._service.speak(TTS_PREFIX + say)
         if macro:
             self._service.run_macro(macro, f"GPIO{pin}")
+
+
+class GpioScheduler:
+    def __init__(self, gpio: GpioControl, schedules: Callable[[], list[dict]]) -> None:
+        self._gpio = gpio
+        self._schedules = schedules
+        self._handled: set[tuple[int, datetime]] = set()
+        self._failed: set[tuple[int, datetime]] = set()
+        self._ours: dict[int, datetime] = {}  # pin -> when the schedule switches it off
+
+    def until(self, pin: int) -> Optional[datetime]:
+        return self._ours.get(pin)
+
+    def status(self, now: datetime) -> list[dict]:
+        """For each schedule, in order: its next start and, while it has the output on, when it ends."""
+        rows = []
+        for schedule in self._schedules():
+            until = self._ours.get(schedule["pin"])
+            start = last_start(schedule, now)
+            active = until is not None and start is not None and window_end(schedule, start) == until
+            rows.append({"pin": schedule["pin"], "next_start": next_start(schedule, now), "until": until if active else None})
+        return rows
+
+    def tick(self, now: datetime) -> None:
+        for pin, end in list(self._ours.items()):
+            if now >= end:
+                del self._ours[pin]
+                try:
+                    self._gpio.set_output(pin, False)
+                except GpioError as error:
+                    _logger.warning("couldn't switch off scheduled GPIO%d: %s", pin, error)
+        for schedule in self._schedules():
+            if schedule.get("enabled", True):
+                self._start(schedule, now)
+
+    def _start(self, schedule: dict, now: datetime) -> None:
+        start = last_start(schedule, now)
+        if start is None:
+            return
+        end = window_end(schedule, start)
+        if now >= (end or start + STAY_GRACE):
+            return
+        pin = schedule["pin"]
+        key = (pin, start)
+        if key in self._handled:
+            return
+        try:
+            self._gpio.set_output(pin, True)
+        except GpioError as error:
+            if key not in self._failed:
+                self._failed.add(key)
+                _logger.warning("couldn't switch on scheduled GPIO%d: %s", pin, error)
+            return
+        self._handled.add(key)
+        cutoff = now - timedelta(days=8)
+        self._handled = {k for k in self._handled if k[1] > cutoff}
+        self._failed = {k for k in self._failed if k[1] > cutoff}
+        if end is not None:
+            self._ours[pin] = max(end, self._ours.get(pin, end))

@@ -12,43 +12,16 @@ up during its window is taken as the schedule's, so it's still dropped.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from typing import Callable, Optional
 
 from .links import LinkControl, LinkError
+from .weekly import last_start, next_start, window_end
 
 _logger = logging.getLogger("moreopenrepeater.link")
 
 POLL_SECONDS = 15
 STAY_GRACE = timedelta(minutes=5)  # "stay linked" schedules only connect this soon after the start
-
-
-def _start_time(schedule: dict) -> time:
-    hours, _, minutes = schedule["time"].partition(":")
-    return time(int(hours), int(minutes))
-
-
-def _starts(schedule: dict, around: datetime, offsets: range):
-    days = schedule.get("days", [])
-    for offset in offsets:
-        day = around.date() + timedelta(days=offset)
-        if day.weekday() in days:
-            yield datetime.combine(day, _start_time(schedule))
-
-
-def last_start(schedule: dict, now: datetime) -> Optional[datetime]:
-    return next((start for start in _starts(schedule, now, range(0, -8, -1)) if start <= now), None)
-
-
-def next_start(schedule: dict, now: datetime) -> Optional[datetime]:
-    if not schedule.get("enabled", True):
-        return None
-    return next((start for start in _starts(schedule, now, range(0, 8)) if start > now), None)
-
-
-def window_end(schedule: dict, start: datetime) -> Optional[datetime]:
-    minutes = schedule.get("minutes", 0)
-    return start + timedelta(minutes=minutes) if minutes else None
 
 
 class LinkScheduler:

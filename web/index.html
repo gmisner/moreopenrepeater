@@ -447,6 +447,19 @@
             <button type="submit" class="btn btn-primary" id="gpio-save">Save pins</button>
           </div>
         </form>
+        <form class="card" id="gpio-schedules-form">
+          <h2>Output schedules</h2>
+          <p class="muted small">Switch an output on at a set time each week and off after the given number of minutes
+            (0 leaves it on). Switching it off by hand keeps it off until next time, and after a restart an output that
+            should be on comes back on.</p>
+          <div id="gpio-schedules-list" class="schedule-list"></div>
+          <p id="gpio-schedules-empty" class="muted small">No output schedules. Set a pin up as an output above first.</p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="gpio-schedules-add">Add a schedule</button>
+            <span class="spacer"></span>
+            <button type="submit" class="btn btn-primary" id="gpio-schedules-save">Save schedules</button>
+          </div>
+        </form>
 
         <div class="card">
           <h2>Library</h2>

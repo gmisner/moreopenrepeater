@@ -1,5 +1,6 @@
 import { api } from "./api.js";
 import { currentView, router } from "./router.js";
+import { shortTime } from "./link_schedules.js";
 import { store } from "./store.js";
 import { escapeHtml, toast, toastError, withBusy } from "./ui.js";
 
@@ -113,7 +114,7 @@ function renderDashboard() {
       return `<${tag} class="indicator${row.on ? " on" : ""}"${attrs}>
         <span class="indicator-dot"></span>
         <span class="indicator-name">${escapeHtml(row.name || `GPIO${row.pin}`)}</span>
-        <span class="indicator-value">${row.mode === "input" ? "input" : "output"} · ${stateText(row, latest.available)}</span>
+        <span class="indicator-value">${row.mode === "input" ? "input" : "output"} · ${stateText(row, latest.available)}${row.until ? ` until ${escapeHtml(shortTime(row.until))}` : ""}</span>
       </${tag}>`;
     })
     .join("");
@@ -122,6 +123,7 @@ function renderDashboard() {
 
 async function refresh() {
   latest = await api("/api/gpio");
+  store.set("gpio", latest);
   renderState();
 }
 
@@ -130,6 +132,7 @@ async function switchPin(pin) {
   if (!row) return;
   try {
     latest = await api(`/api/gpio/${pin}`, { method: "PUT", json: { on: !row.on } });
+    store.set("gpio", latest);
     renderState();
   } catch (error) {
     toastError(error);

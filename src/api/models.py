@@ -89,6 +89,24 @@ class LinkSchedule(BaseModel):
         return weekdays(days)
 
 
+class GpioSchedule(BaseModel):
+    pin: Literal[1, 2, 4, 5, 6, 7, 8]
+    days: list[int] = Field(min_length=1)
+    time: str
+    minutes: int = Field(default=60, ge=0, le=24 * 60)  # 0 = leave it on
+    enabled: bool = True
+
+    @field_validator("time")
+    @classmethod
+    def _valid_time(cls, value: str) -> str:
+        return hh_mm(value)
+
+    @field_validator("days")
+    @classmethod
+    def _valid_days(cls, days: list[int]) -> list[int]:
+        return weekdays(days)
+
+
 class ConfigResponse(BaseModel):
     courtesy_tone_duration: float
     hang_time: float
@@ -160,6 +178,7 @@ class ConfigResponse(BaseModel):
     backup_keep: int
     backup_include_recordings: bool
     gpio_pins: dict[GpioPinNumber, GpioPinConfig] = {}
+    gpio_schedules: list[GpioSchedule] = []
     link_favorites: list[LinkFavorite] = []
     link_schedules: list[LinkSchedule] = []
 
@@ -251,6 +270,7 @@ class ConfigUpdateRequest(BaseModel):
     backup_keep: Optional[int] = Field(default=None, ge=1, le=100)
     backup_include_recordings: Optional[bool] = None
     gpio_pins: Optional[dict[GpioPinNumber, GpioPinConfig]] = None
+    gpio_schedules: Optional[list[GpioSchedule]] = Field(default=None, max_length=50)
     link_favorites: Optional[list[LinkFavorite]] = Field(default=None, max_length=50)
     link_schedules: Optional[list[LinkSchedule]] = Field(default=None, max_length=50)
 
@@ -550,12 +570,20 @@ class GpioPinStatus(BaseModel):
     name: str
     mode: Optional[Literal["output", "input"]]
     on: Optional[bool]
+    until: Optional[datetime] = None  # a scheduled output's switch-off, local time
+
+
+class GpioScheduleStatus(BaseModel):
+    pin: int
+    next_start: Optional[datetime]
+    until: Optional[datetime]
 
 
 class GpioStatusResponse(BaseModel):
     available: bool
     error: Optional[str]
     pins: list[GpioPinStatus]
+    schedules: list[GpioScheduleStatus] = []
 
 
 class GpioOutputRequest(BaseModel):

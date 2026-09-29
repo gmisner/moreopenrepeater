@@ -4,6 +4,7 @@ import { initAssets, loadAssets } from "./js/assets.js";
 import { initAudit } from "./js/audit.js";
 import { initAllStar } from "./js/allstar.js";
 import { initFavorites } from "./js/favorites.js";
+import { initLinkSchedules } from "./js/link_schedules.js";
 import { initGpio } from "./js/gpio.js";
 import { initLinks } from "./js/links.js";
 import { initAutopatch } from "./js/autopatch.js";
@@ -40,6 +41,7 @@ async function main() {
   initGpio();
   initLinks();
   initFavorites();
+  initLinkSchedules();
   initMap();
   initUsage();
   initSimulator();

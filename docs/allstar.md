@@ -174,6 +174,18 @@ comes from `chan_echolink`'s directory when EchoLink is on.
 Links card. Each has an optional name (shown instead of the callsign) and can
 connect monitor only, which suits a busy hub you just want to listen to.
 
+**Scheduled links**, also on the AllStarLink page, link a node at a set time
+each week and drop it after a number of minutes: a net's hub on Tuesdays at
+19:00 for 60 minutes, say. Times are the station's clock, like scheduled
+announcements. 0 minutes leaves the link up until someone disconnects it. A
+scheduled link shows "until" and its end time on the dashboard. The
+controller checks the schedule every 15 seconds, so a link can start up to
+15 seconds late. It only drops links it made: if the node was already linked
+at the start time, it's left alone. Disconnecting a scheduled link by hand
+keeps it down until the next start. If the controller restarts during a
+window, it links the node again. A 0-minute schedule is only started within
+5 minutes of its start time.
+
 ## Checking it
 
 `spikes/usrp_controller_check.py` runs the controller as node 1999's radio

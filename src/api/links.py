@@ -97,6 +97,13 @@ class LinkControl:
             "location": info.get("location", ""),
         }
 
+    async def linked(self) -> dict[str, tuple[str, bool]]:
+        client = self._require_client()
+        try:
+            return await asyncio.wait_for(client.links(), AMI_TIMEOUT)
+        except (OSError, ConnectionError, asyncio.TimeoutError, ValueError) as error:
+            raise LinkError(f"couldn't read the links from app_rpt: {error}") from error
+
     async def connect(self, node: str, monitor: bool) -> None:
         client = self._require_client()
         await self._run(client.connect_node(node, monitor))

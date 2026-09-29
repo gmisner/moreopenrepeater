@@ -223,6 +223,11 @@ button.indicator:hover { border-color: var(--muted); }
 .link-row .indicator-dot { flex: none; }
 .link-row.keyed .indicator-dot { background: var(--green); box-shadow: 0 0 10px var(--green); }
 .link-row .link-name { flex: 1; min-width: 10rem; }
+.schedule-list { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
+.schedule-item { padding: 0.9rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); }
+.schedule-item .form-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.schedule-foot { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 0.8rem; }
+.schedule-foot .schedule-next { flex: 1; }
 .link-favorites { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.9rem; }
 .link-favorites:empty { display: none; }
 .inline-check { display: flex; flex-direction: row !important; align-items: center; white-space: nowrap; gap: 0.4rem; min-width: 0 !important; padding-bottom: 0.55rem; }

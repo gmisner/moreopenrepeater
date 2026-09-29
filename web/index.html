@@ -895,6 +895,19 @@
             <button type="submit" class="btn btn-primary" id="favorites-save">Save favorites</button>
           </div>
         </form>
+        <form class="card" id="schedules-form">
+          <h2>Scheduled links</h2>
+          <p class="muted small">Link a node at a set time each week, such as a net's hub, and drop the link after the
+            given number of minutes (0 keeps it until someone disconnects it). A node that was already linked is left
+            alone, and disconnecting a scheduled link keeps it down until next time.</p>
+          <div id="schedules-list" class="schedule-list"></div>
+          <p id="schedules-empty" class="muted small">No scheduled links.</p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="schedules-add">Add a schedule</button>
+            <span class="spacer"></span>
+            <button type="submit" class="btn btn-primary" id="schedules-save">Save schedules</button>
+          </div>
+        </form>
         <div class="card" id="echolink-card" hidden>
           <div class="card-header"><h2>EchoLink</h2><span id="echolink-pill" class="pill pill-off" hidden></span></div>
           <p id="echolink-status" class="muted"></p>

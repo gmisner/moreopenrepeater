@@ -175,3 +175,22 @@ def test_routes(tmp_path):
         config = client.put("/api/config", json={"link_favorites": [{"node": "2000", "name": "Hub"}]}).json()
         assert config["link_favorites"] == [{"node": "2000", "name": "Hub", "monitor": False}]
         assert client.get("/api/links").json()["favorites"][0]["name"] == "Hub"
+
+
+def test_link_schedule_settings(tmp_path):
+    app = create_app(
+        service=RepeaterService(),
+        start_background_tick=False,
+        assets_store=AudioAssetStore(Path(tempfile.mkdtemp()) / "audio"),
+        log_path=tmp_path / "test.log",
+    )
+    net = {"node": "2000", "days": [3, 1, 1], "time": "7:05", "minutes": 90}
+    with TestClient(app) as client:
+        for bad in ({**net, "time": "25:00"}, {**net, "days": []}, {**net, "days": [7]}, {**net, "minutes": 721}):
+            assert client.put("/api/config", json={"link_schedules": [bad]}).status_code == 422
+        config = client.put("/api/config", json={"link_schedules": [net]}).json()
+        assert config["link_schedules"] == [
+            {"node": "2000", "name": "", "days": [1, 3], "time": "07:05", "minutes": 90, "monitor": False, "enabled": True}
+        ]
+        schedules = client.get("/api/links").json()["schedules"]
+        assert schedules[0]["node"] == "2000" and schedules[0]["next_start"].endswith("07:05:00")

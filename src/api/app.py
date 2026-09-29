@@ -54,6 +54,7 @@ from .allstar_node import AllStarNode, AllStarSetupError
 from .echolink import EchoLink, EchoLinkSettings
 from .gpio import GpioControl, GpioError
 from .links import LinkControl, LinkError
+from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkScheduler
 from .node_directory import NodeDirectory
 from .autopatch import Autopatch, patch_settings_from_env
 from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_backup, restore_backup, write_backup
@@ -358,6 +359,7 @@ def create_app(
     links = links or LinkControl(
         service, node_directory, lambda: (link_settings.local_node_id if link_settings else "") or allstar_node.node or ""
     )
+    link_scheduler = LinkScheduler(links, lambda: service.config.link_schedules)
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
     configure_logging(log_path)
     sessions = SessionStore()
@@ -455,6 +457,14 @@ def create_app(
                 links.client = None
                 await client.close()
             await asyncio.sleep(LINK_RECONNECT_DELAY_SECONDS)
+
+    async def link_schedule_loop() -> None:
+        while True:
+            await asyncio.sleep(LINK_SCHEDULE_POLL_SECONDS)
+            try:
+                await link_scheduler.tick(service.wall_now())
+            except Exception:
+                _link_logger.exception("unexpected error in the link schedule")
 
     async def send_aprs_beacon() -> None:
         config = service.config
@@ -578,6 +588,7 @@ def create_app(
             if link_settings is not None:
                 tasks.append(asyncio.create_task(node_link_loop()))
                 tasks.append(asyncio.create_task(node_directory.run()))
+                tasks.append(asyncio.create_task(link_schedule_loop()))
             live_audio.attach(loop)
             await autopatch.start()
             await allstar_node.start()
@@ -965,16 +976,23 @@ def create_app(
         no_call_in_progress()
         return await change_allstar(echolink.disable())
 
+    async def links_status() -> dict:
+        status = await links.status()
+        for row in status["links"]:
+            row["until"] = link_scheduler.until(row["node"])
+        status["schedules"] = link_scheduler.status(service.wall_now())
+        return status
+
     async def change_links(action) -> dict:
         try:
             await action
         except LinkError as error:
             raise HTTPException(status_code=409, detail=str(error))
-        return await links.status()
+        return await links_status()
 
     @app.get("/api/links", response_model=LinksResponse, dependencies=auth_dependencies)
     async def get_links() -> dict:
-        return await links.status()
+        return await links_status()
 
     @app.post("/api/links", response_model=LinksResponse, dependencies=auth_dependencies)
     async def post_link(body: LinkConnectRequest, request: Request) -> dict:

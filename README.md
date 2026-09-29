@@ -239,6 +239,8 @@ several phases (see the plan file for the full breakdown):
   edits just that node's lines in `rpt.conf` and can put them back. EchoLink can be
   turned on there too. The dashboard lists the links with callsigns, connects and
   disconnects nodes (transceive or monitor only) and keeps a list of favorite nodes.
+  Scheduled links connect a node at a set time each week (a net's hub, say) and drop
+  it afterwards.
   See [docs/allstar.md](docs/allstar.md).
 - **Parrot / echo test**: after the parrot macro, the next transmission is recorded
   instead of repeated, then played back.

@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { shortTime } from "./link_schedules.js";
 import { currentView, router } from "./router.js";
 import { store } from "./store.js";
 import { escapeHtml, toast, toastError, withBusy } from "./ui.js";
@@ -33,6 +34,7 @@ function render(status) {
   list.innerHTML = status.links
     .map((link) => {
       const mode = MODE_LABELS[link.mode] ? `<span class="tag">${MODE_LABELS[link.mode]}</span>` : "";
+      const until = link.until ? `<span class="tag">until ${escapeHtml(shortTime(link.until))}</span>` : "";
       const remove = status.available
         ? `<button type="button" class="btn btn-ghost btn-sm" data-disconnect="${escapeHtml(link.node)}" data-requires-write>Disconnect</button>`
         : "";
@@ -41,7 +43,7 @@ function render(status) {
       return `<li class="link-row${link.keyed ? " keyed" : ""}">
         <span class="indicator-dot" title="${link.keyed ? "Talking" : "Quiet"}"></span>
         <span class="link-name"><code>${escapeHtml(link.node)}</code> ${callsign}${detail(link)}</span>
-        ${mode}${remove}
+        ${until}${mode}${remove}
       </li>`;
     })
     .join("");

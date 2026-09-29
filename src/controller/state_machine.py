@@ -124,6 +124,7 @@ class RepeaterConfig:
     gpio_pins: dict = field(default_factory=dict)
     # Nodes to connect to with one click: [{"node": str, "name": str, "monitor": bool}]
     link_favorites: list = field(default_factory=list)
+    link_schedules: list = field(default_factory=list)  # [{node, name, days, time, minutes, monitor, enabled}]
 
 
 class RepeaterController:

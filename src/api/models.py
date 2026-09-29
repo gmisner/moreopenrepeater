@@ -49,6 +49,39 @@ class LinkFavorite(BaseModel):
     monitor: bool = False
 
 
+def hh_mm(value: str) -> str:
+    hours, sep, minutes = value.strip().partition(":")
+    if not (sep and hours.isdigit() and minutes.isdigit() and int(hours) < 24 and int(minutes) < 60):
+        raise ValueError(f"{value!r} is not a HH:MM time")
+    return f"{int(hours):02d}:{int(minutes):02d}"
+
+
+def weekdays(days: list[int]) -> list[int]:
+    if any(d < 0 or d > 6 for d in days):
+        raise ValueError("days are 0 (Monday) to 6 (Sunday)")
+    return sorted(set(days))
+
+
+class LinkSchedule(BaseModel):
+    node: NodeNumber
+    name: str = Field(default="", max_length=40)
+    days: list[int] = Field(min_length=1)
+    time: str
+    minutes: int = Field(default=60, ge=0, le=12 * 60)  # 0 = stay linked
+    monitor: bool = False
+    enabled: bool = True
+
+    @field_validator("time")
+    @classmethod
+    def _valid_time(cls, value: str) -> str:
+        return hh_mm(value)
+
+    @field_validator("days")
+    @classmethod
+    def _valid_days(cls, days: list[int]) -> list[int]:
+        return weekdays(days)
+
+
 class ConfigResponse(BaseModel):
     courtesy_tone_duration: float
     hang_time: float
@@ -121,6 +154,7 @@ class ConfigResponse(BaseModel):
     backup_include_recordings: bool
     gpio_pins: dict[GpioPinNumber, GpioPinConfig] = {}
     link_favorites: list[LinkFavorite] = []
+    link_schedules: list[LinkSchedule] = []
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -211,6 +245,7 @@ class ConfigUpdateRequest(BaseModel):
     backup_include_recordings: Optional[bool] = None
     gpio_pins: Optional[dict[GpioPinNumber, GpioPinConfig]] = None
     link_favorites: Optional[list[LinkFavorite]] = Field(default=None, max_length=50)
+    link_schedules: Optional[list[LinkSchedule]] = Field(default=None, max_length=50)
 
 
 class AutopatchDialRequest(BaseModel):
@@ -340,20 +375,12 @@ class AnnouncementFields(BaseModel):
     @field_validator("times")
     @classmethod
     def _valid_times(cls, times: list[str]) -> list[str]:
-        normalized = set()
-        for value in times:
-            hours, sep, minutes = value.strip().partition(":")
-            if not (sep and hours.isdigit() and minutes.isdigit() and int(hours) < 24 and int(minutes) < 60):
-                raise ValueError(f"{value!r} is not a HH:MM time")
-            normalized.add(f"{int(hours):02d}:{int(minutes):02d}")
-        return sorted(normalized)
+        return sorted({hh_mm(value) for value in times})
 
     @field_validator("days")
     @classmethod
     def _valid_days(cls, days: list[int]) -> list[int]:
-        if any(d < 0 or d > 6 for d in days):
-            raise ValueError("days are 0 (Monday) to 6 (Sunday)")
-        return sorted(set(days))
+        return weekdays(days)
 
     @model_validator(mode="after")
     def _has_something_to_say(self) -> "AnnouncementFields":
@@ -538,6 +565,13 @@ class LinkInfo(BaseModel):
     keyed: bool = False
     name: str = ""
     monitor: bool = False
+    until: Optional[datetime] = None  # a scheduled link's end, local time
+
+
+class LinkScheduleStatus(BaseModel):
+    node: str
+    next_start: Optional[datetime]
+    until: Optional[datetime]
 
 
 class LinksResponse(BaseModel):
@@ -546,6 +580,7 @@ class LinksResponse(BaseModel):
     error: Optional[str]
     links: list[LinkInfo]
     favorites: list[LinkInfo]
+    schedules: list[LinkScheduleStatus] = []
 
 
 class LinkConnectRequest(BaseModel):

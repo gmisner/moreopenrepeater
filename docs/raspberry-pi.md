@@ -249,5 +249,5 @@ refills as new reports arrive.
   the VOX threshold and TX gain on first key-up, and check the "audio
   glitches" count on the Radio interface card (dropped or late audio blocks)
   under load on a Pi.
-- `link`'s AllStar audio path (`rxchannel=audiosocket`) is still open; see
-  the README's "Status".
+- AllStarLink audio (the node's `rxchannel` over USRP) is set up separately;
+  see [allstar.md](allstar.md).

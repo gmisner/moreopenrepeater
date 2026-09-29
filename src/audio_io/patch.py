@@ -67,7 +67,7 @@ class PatchAudio:
     def exchange(self, radio: np.ndarray, carrier: bool) -> np.ndarray:
         """Hand over one radio block (silence unless a user is transmitting)
         and get the same number of phone samples back."""
-        self._to_phone.append(radio.copy() if carrier else np.zeros_like(radio))
+        self._offer(radio, carrier)
         n = len(radio)
         if not self._primed:
             if self._queued + len(self._pending) < PRIME_SECONDS * self.sample_rate:
@@ -87,3 +87,16 @@ class PatchAudio:
         if take < n:
             self._primed = False
         return out
+
+    def _offer(self, radio: np.ndarray, carrier: bool) -> None:
+        self._to_phone.append(radio.copy() if carrier else np.zeros_like(radio))
+
+
+class LinkAudio(PatchAudio):
+    """The same crossing for an AllStar node's audio (the "phone" side is
+    the node). Radio blocks go over only while there's a signal, since the
+    node treats audio arriving as its receiver being keyed."""
+
+    def _offer(self, radio: np.ndarray, carrier: bool) -> None:
+        if carrier:
+            self._to_phone.append(radio.copy())

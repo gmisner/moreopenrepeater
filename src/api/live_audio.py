@@ -27,7 +27,7 @@ import numpy as np
 from audio_io.audio_stream import sd
 from audio_io.cm108 import CM108Interface, LinuxHidrawDevice
 from audio_io.engine import AudioEngine
-from audio_io.patch import PatchAudio
+from audio_io.patch import LinkAudio, PatchAudio
 from audio_io.processor import AudioProcessor, ProcessorSettings
 from controller.events import COSChanged, CTCSSChanged
 from controller.state_machine import RepeaterConfig
@@ -93,6 +93,7 @@ class LiveAudio:
         self._parrot_recording = False
         self._capture_started_at: Optional[float] = None
         self._patch: Optional[PatchAudio] = None
+        self._link: Optional[LinkAudio] = None
         self.monitor = AudioMonitor()
 
     @property
@@ -184,6 +185,11 @@ class LiveAudio:
         if self.engine is not None:
             self.engine.processor.set_patch(patch)
 
+    def set_link(self, link: Optional[LinkAudio]) -> None:
+        self._link = link
+        if self.engine is not None:
+            self.engine.processor.set_link(link)
+
     def arm_parrot(self) -> bool:
         if self.engine is None or self._recordings is None or not self._recordings.enabled:
             _logger.warning("parrot needs live audio and a recordings directory")
@@ -247,6 +253,7 @@ class LiveAudio:
         processor.set_ptt(self._service.ptt_active)
         processor.set_repeating(self._service.repeating)
         processor.set_patch(self._patch)
+        processor.set_link(self._link)
         engine = self._engine_factory(
             processor,
             int(rate * BLOCK_SECONDS),

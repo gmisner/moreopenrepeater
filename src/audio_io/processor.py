@@ -30,7 +30,7 @@ from controller.events import COSChanged, ControllerEvent, CTCSSChanged, DTMFDig
 from dsp.goertzel import CTCSSDetector, DTMFDetector
 from playout.wav import lowpass_kernel
 
-from .patch import PatchAudio
+from .patch import LinkAudio, PatchAudio
 from .resample import StreamFIR
 
 CosSource = Literal["vox", "ctcss", "external"]
@@ -97,6 +97,7 @@ class AudioProcessor:
         self._subaudible_filter = StreamFIR(_highpass_kernel(_SUBAUDIBLE_CUTOFF_HZ / settings.sample_rate))
         self._ctcss_phase = 0.0
         self._patch: Optional[PatchAudio] = None
+        self._link: Optional[LinkAudio] = None
 
     # -- controls (service thread) -----------------------------------------
 
@@ -114,6 +115,11 @@ class AudioProcessor:
         """Exchange audio with an autopatch call: received audio goes to the
         phone, and phone audio is transmitted while PTT is up."""
         self._patch = patch
+
+    def set_link(self, link: Optional[LinkAudio]) -> None:
+        """Exchange audio with the AllStar node: audio being repeated goes to
+        the node, and the node's audio is transmitted while PTT is up."""
+        self._link = link
 
     def start_capture(self, max_seconds: float) -> None:
         """Keep a copy of received audio (for recording or parrot)."""
@@ -160,10 +166,11 @@ class AudioProcessor:
 
         encode_hz = self.settings.tx_ctcss_hz
         patch = self._patch
+        link = self._link
         # Filtered continuously (not just while repeating) so the filter's
-        # history is warm the moment repeating starts. The phone never gets
-        # the user's CTCSS tone either.
-        voice = self._subaudible_filter.process(block) if encode_hz or patch else block
+        # history is warm the moment repeating starts. The phone and the
+        # node never get the user's CTCSS tone either.
+        voice = self._subaudible_filter.process(block) if encode_hz or patch or link else block
         repeat_audio = voice if encode_hz else block
         out = np.zeros_like(block)
         if self._ptt and self._repeating:
@@ -172,6 +179,12 @@ class AudioProcessor:
             phone = patch.exchange(voice, self.cos_open)
             if self._ptt:
                 out += phone
+        if link is not None:
+            # Only what the controller is repeating: not a kerchunk, a
+            # signal without the required CTCSS, or a parrot recording.
+            node = link.exchange(voice, self.cos_open and self._repeating)
+            if self._ptt:
+                out += node
         clip = self._next_clip_samples(len(block))
         if clip is not None:
             out[: len(clip)] += clip

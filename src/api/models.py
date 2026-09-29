@@ -459,6 +459,14 @@ class AudioDeviceResponse(BaseModel):
     default_samplerate: float
 
 
+class LinkAudioResponse(BaseModel):
+    configured: bool
+    running: bool
+    error: Optional[str]
+    node: Optional[str]
+    keyed: bool
+
+
 class AudioEngineResponse(BaseModel):
     enabled: bool
     running: bool

@@ -315,6 +315,8 @@ class RepeaterController:
             self.kerchunks_filtered += 1
             _logger.info("kerchunk ignored (carrier shorter than %.2fs)", self.config.kerchunk_delay)
             return []
+        if (self._local_carrier and self._ctcss_present) if remote else self._remote_keyed:
+            return []  # the other side is still talking
         if self.state == RECEIVING:
             if self._tot_deadline is not None and now >= self._tot_deadline:
                 return self._enter_timeout(now)

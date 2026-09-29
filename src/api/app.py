@@ -46,6 +46,7 @@ from .auth import (
     parse_basic_auth_header,
     verify_credentials,
 )
+from .allstar_audio import AllStarAudio, usrp_settings_from_env
 from .autopatch import Autopatch, patch_settings_from_env
 from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_backup, restore_backup, write_backup
 from .sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
@@ -68,6 +69,7 @@ from .models import (
     AssetResponse,
     AudioDeviceResponse,
     AudioEngineResponse,
+    LinkAudioResponse,
     AudioPreviewRequest,
     AutopatchDialRequest,
     AutopatchStatusResponse,
@@ -302,6 +304,7 @@ def create_app(
     autopatch: Optional[Autopatch] = None,
     sip_trunk: Optional[SipTrunk] = None,
     backups: Optional[BackupFolder] = None,
+    allstar_audio: Optional[AllStarAudio] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -321,6 +324,7 @@ def create_app(
     )
     autopatch = autopatch or Autopatch(service, patch_settings_from_env(os.environ))
     sip_trunk = sip_trunk or SipTrunk(autopatch.settings)
+    allstar_audio = allstar_audio or AllStarAudio(service, usrp_settings_from_env(os.environ))
     log_path = log_path or DEFAULT_LOG_PATH
     link_settings = link_settings if link_settings is not None else link_settings_from_env()
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
@@ -541,9 +545,11 @@ def create_app(
                 tasks.append(asyncio.create_task(node_link_loop()))
             live_audio.attach(loop)
             await autopatch.start()
+            await allstar_audio.start()
         yield
         for task in tasks:
             task.cancel()
+        await allstar_audio.stop()
         await autopatch.stop()
         live_audio.shutdown()
 
@@ -882,6 +888,10 @@ def create_app(
             return audio_devices()
         except Exception as error:  # PortAudio errors
             raise HTTPException(status_code=503, detail=f"couldn't list audio devices: {error}")
+
+    @app.get("/api/link/audio", response_model=LinkAudioResponse, dependencies=auth_dependencies)
+    def get_link_audio() -> dict:
+        return allstar_audio.status()
 
     @app.get("/api/audio/engine", response_model=AudioEngineResponse, dependencies=auth_dependencies)
     def get_audio_engine() -> dict:

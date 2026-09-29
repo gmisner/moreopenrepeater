@@ -73,11 +73,13 @@ with custom repeater-control logic (not a wrapper around Asterisk's `app_rpt`).
   `RepeaterService` to `async def`, which is what actually gives them the
   "same event loop, no locking needed" guarantee `RepeaterService` was
   already documented (but not enforced) to rely on.
-  **Still open**: `rxchannel = audiosocket/...` node-channel-driver
-  integration (letting `audio_io` feed a node's actual repeated audio
-  instead of only its control-plane events) hits an unresolved upstream bug
-  in app_rpt's channel-state handling per the community's own testing --
-  worth re-checking against a newer ASL3 release before relying on it.
+  The node's audio goes over app_rpt's USRP channel
+  (`rxchannel = USRP/...`, `link.usrp` and `api.allstar_audio`). The
+  controller is the node's radio: what it repeats goes out over the links,
+  and what the node transmits keys the repeater. `rxchannel = AudioSocket/...`
+  can't do this, because AudioSocket carries only audio and app_rpt needs
+  key-up signalling for its receiver. Verified both ways against ASL3; see
+  [docs/allstar.md](docs/allstar.md).
 - **`api`/`web`** -- FastAPI backend (`RepeaterService` runs a
   `RepeaterController` in-process on the asyncio event loop) exposing REST
   config/status endpoints, a `/ws/status` WebSocket pushing live state on
@@ -264,11 +266,10 @@ browser check of the live dashboard. `link` is now wired into
 `RepeaterService` for real (`NodeLinkClient`, gated behind
 `MOREOPENREPEATER_AMI_HOST`) -- node connect/disconnect and remote keyup
 drive the dashboard live, and DTMF macros dispatch real AMI commands, both
-confirmed against a live two-node app_rpt link. Still open: the tighter
-`rxchannel=audiosocket` node-channel-driver integration (letting
-`audio_io` feed a node's actual audio, not just its control-plane events --
-blocked on an unresolved upstream app_rpt bug per the community's own
-testing). `audio_io` now runs the repeater on real sound devices, verified
+confirmed against a live two-node app_rpt link. The node's audio is wired
+in as well, over app_rpt's USRP channel (`MOREOPENREPEATER_USRP_NODE`; see
+[docs/allstar.md](docs/allstar.md)), and was checked in both directions
+against a live link with the real controller code. `audio_io` now runs the repeater on real sound devices, verified
 on a Mac (BlackHole loopback and speakers); it hasn't been tried with a
 CM108 and a real radio yet.
 Raspberry Pi packaging is done too: `packaging/moreopenrepeater.service`

@@ -34,7 +34,7 @@ from controller.events import (
 )
 from controller.macros import Macro
 from controller.state_machine import PATCH, RECEIVING, RepeaterConfig, RepeaterController
-from audio_io.patch import PatchAudio
+from audio_io.patch import LinkAudio, PatchAudio
 
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, ClipRenderer
 from wx.nws import AlertTracker, WeatherAlert, meets_severity, parse_alerts, speech_text
@@ -86,6 +86,7 @@ class AudioOutput(Protocol):
     def play(self, clip: str) -> None: ...
     def arm_parrot(self) -> bool: ...
     def set_patch(self, patch: Optional[PatchAudio]) -> None: ...
+    def set_link(self, link: Optional[LinkAudio]) -> None: ...
 
 
 class PatchCalls(Protocol):

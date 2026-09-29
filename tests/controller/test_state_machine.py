@@ -130,6 +130,32 @@ def test_remote_keyed_triggers_receiving_without_ctcss_gate():
     assert controller.state == COURTESY_TONE
 
 
+def test_doubling_waits_for_both_the_user_and_the_link_to_unkey():
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=1.0)
+    controller.handle_event(COSChanged(active=False), now=2.0)
+    assert controller.state == RECEIVING  # the link is still talking
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=False), now=3.0)
+    assert controller.state == COURTESY_TONE
+
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=1.0)
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=False), now=2.0)
+    assert controller.state == RECEIVING  # the user is still talking
+    controller.handle_event(COSChanged(active=False), now=3.0)
+    assert controller.state == COURTESY_TONE
+
+
+def test_a_carrier_without_the_required_tone_doesnt_hold_the_link_up():
+    controller = RepeaterController(make_config(require_ctcss_hz=100.0), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)  # no tone: ignored
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=1.0)
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=False), now=2.0)
+    assert controller.state == COURTESY_TONE
+
+
 def test_changing_id_interval_reschedules_the_next_id_immediately():
     controller = RepeaterController(make_config(id_interval=600.0), now=0.0)
 

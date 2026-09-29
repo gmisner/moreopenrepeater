@@ -50,6 +50,7 @@ from link.asterisk_files import asterisk_files_from_env
 
 from .allstar_audio import AllStarAudio, usrp_listen_from_env, usrp_settings_from_env
 from .allstar_node import AllStarNode, AllStarSetupError
+from .echolink import EchoLink, EchoLinkSettings
 from .autopatch import Autopatch, patch_settings_from_env
 from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_backup, restore_backup, write_backup
 from .sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
@@ -73,6 +74,8 @@ from .models import (
     AudioDeviceResponse,
     AudioEngineResponse,
     AllStarNodeRequest,
+    EchoLinkRequest,
+    EchoLinkStatusResponse,
     AllStarStatusResponse,
     AudioPreviewRequest,
     AutopatchDialRequest,
@@ -921,6 +924,24 @@ def create_app(
     async def delete_allstar() -> dict:
         no_call_in_progress()
         return await change_allstar(allstar_node.release())
+
+    echolink = EchoLink(allstar_node)
+
+    @app.get("/api/allstar/echolink", response_model=EchoLinkStatusResponse, dependencies=auth_dependencies)
+    async def get_echolink() -> dict:
+        return await echolink.status()
+
+    @app.put("/api/allstar/echolink", response_model=EchoLinkStatusResponse, dependencies=admin_dependencies)
+    async def put_echolink(body: EchoLinkRequest, request: Request) -> dict:
+        no_call_in_progress()
+        request.state.audit_detail = f"{body.callsign}, node {body.node_number}" + (", new password" if body.password else "")
+        settings = EchoLinkSettings(**{**body.model_dump(), "password": body.password or None})
+        return await change_allstar(echolink.save(settings))
+
+    @app.delete("/api/allstar/echolink", response_model=EchoLinkStatusResponse, dependencies=admin_dependencies)
+    async def delete_echolink() -> dict:
+        no_call_in_progress()
+        return await change_allstar(echolink.disable())
 
     @app.get("/api/audio/engine", response_model=AudioEngineResponse, dependencies=auth_dependencies)
     def get_audio_engine() -> dict:

@@ -117,20 +117,25 @@ def nodes(text: str) -> list[Node]:
     return found
 
 
-def _node_section(text: str, node: str) -> Section:
-    section = next((s for s in parse_sections(text) if s.name == node), None)
+def _section(text: str, name: str) -> Section:
+    section = next((s for s in parse_sections(text) if s.name == name), None)
     if section is None:
-        raise ValueError(f"rpt.conf has no node {node}")
+        raise ValueError(f"no [{name}] section")
     return section
+
+
+def section_settings(text: str, name: str) -> dict[str, str]:
+    """A section's own settings (not its templates'), comments stripped."""
+    return _section(text, name).settings
 
 
 def _rejoin(lines: list[str], text: str) -> str:
     return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
 
-def release_node(text: str, node: str) -> str:
-    """Take our settings out of the node's stanza and put back what they replaced."""
-    section = _node_section(text, node)
+def release_section(text: str, name: str) -> str:
+    """Take our settings out of a section and put back what they replaced."""
+    section = _section(text, name)
     lines = text.splitlines()
     body = []
     for line in lines[section.start + 1 : section.end]:
@@ -140,10 +145,10 @@ def release_node(text: str, node: str) -> str:
     return _rejoin(lines[: section.start + 1] + body + lines[section.end :], text)
 
 
-def control_node(text: str, node: str, settings: dict[str, str]) -> str:
-    """Put `settings` in the node's stanza, commenting out the lines they replace."""
-    text = release_node(text, node)
-    section = _node_section(text, node)
+def control_section(text: str, name: str, settings: dict[str, str]) -> str:
+    """Put `settings` at the top of a section, commenting out the lines they replace."""
+    text = release_section(text, name)
+    section = _section(text, name)
     lines = text.splitlines()
     body = []
     for line in lines[section.start + 1 : section.end]:
@@ -151,6 +156,18 @@ def control_node(text: str, node: str, settings: dict[str, str]) -> str:
         body.append(SAVED + line if setting and setting["key"].lower() in settings else line)
     ours = [f"{key} = {value}  {MARK}" for key, value in settings.items()]
     return _rejoin(lines[: section.start + 1] + ours + body + lines[section.end :], text)
+
+
+def release_node(text: str, node: str) -> str:
+    if not any(n.number == node for n in nodes(text)):
+        raise ValueError(f"rpt.conf has no node {node}")
+    return release_section(text, node)
+
+
+def control_node(text: str, node: str, settings: dict[str, str]) -> str:
+    if not any(n.number == node for n in nodes(text)):
+        raise ValueError(f"rpt.conf has no node {node}")
+    return control_section(text, node, settings)
 
 
 def controller_settings(rxchannel: str) -> dict[str, str]:

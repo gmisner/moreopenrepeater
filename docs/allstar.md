@@ -127,6 +127,32 @@ For development with Asterisk in a VM, `MOREOPENREPEATER_ASTERISK_SHELL` is
 a command prefix that reaches its files, for example
 `limactl shell asl3 -- sudo`.
 
+## EchoLink
+
+ASL3 includes an EchoLink channel driver, `chan_echolink`. With it on,
+EchoLink stations connect to the repeater's node like AllStar links: they're
+heard on the repeater, key it up and show in the link list. Everything the
+repeater repeats goes to them.
+
+You need an EchoLink callsign for the repeater, validated by EchoLink. For a
+repeater that's the callsign with `-R` (`W1AW-R`), and EchoLink assigns the
+node number and password when it validates it. Forward UDP ports 5198 and
+5199 on the router to the machine running Asterisk.
+
+Turn it on from the **EchoLink** card on the **AllStarLink** page, after
+choosing the node. Blank fields start from the repeater's settings: the
+callsign with `-R`, and the APRS page's position, frequency and tone. Saving
+writes them to `echolink.conf`'s `[el0]` section, marked like the node's lines
+in `rpt.conf`, loads `chan_echolink` in `modules.conf` and restarts Asterisk.
+The password is written there but never shown on the dashboard. **Turn off
+EchoLink** puts `modules.conf` back and keeps the details for next time.
+Choosing a different node moves EchoLink to it.
+
+To connect to an EchoLink node over the air, dial `*3` and its number with a
+leading 3, padded to six digits: `*33009999` connects to node 9999 (the echo
+test server). `*1` and the same number disconnects it. EchoLink users connect
+to the repeater with its EchoLink node number as usual.
+
 ## Checking it
 
 `spikes/usrp_controller_check.py` runs the controller as node 1999's radio

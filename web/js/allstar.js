@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { initEchoLink, refreshEchoLink, setEchoLinkNode } from "./echolink.js";
 import { currentView, router } from "./router.js";
 import { session } from "./session.js";
 import { escapeHtml, toast, toastError, withBusy } from "./ui.js";
@@ -92,6 +93,7 @@ function render(status) {
   form.hidden = !isAdmin || !status.available || Boolean(status.error) || !status.nodes.length;
   releaseButton.hidden = !status.node;
   if (!form.hidden) fillNodes(status);
+  setEchoLinkNode(status.node);
 }
 
 async function refresh() {
@@ -107,6 +109,7 @@ async function use(event) {
     try {
       render(await api("/api/allstar", { method: "PUT", json: { node: number } }));
       toast(`The repeater is node ${number}'s radio`);
+      refreshEchoLink().catch(() => {});
     } catch (error) {
       toastError(error);
       refresh().catch(() => {});
@@ -129,6 +132,7 @@ async function release() {
 
 function start() {
   refresh().catch(toastError);
+  refreshEchoLink().catch(toastError);
   timer ??= setInterval(() => {
     if (!document.hidden) refresh().catch(() => {});
   }, REFRESH_MS);
@@ -143,6 +147,7 @@ export function initAllStar() {
   form.addEventListener("submit", use);
   nodeSelect.addEventListener("change", showHint);
   releaseButton.addEventListener("click", release);
+  initEchoLink();
   router.addEventListener("change", ({ detail }) => (detail === "allstar" ? start() : stop()));
   if (currentView === "allstar") start();
 }

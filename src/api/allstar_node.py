@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Callable, Optional
 
 from link.ami_client import AMIClient
 from link.asl_config import (
+    MARK,
     control_node,
     controller_settings,
     module_state,
@@ -132,6 +134,7 @@ class AllStarNode:
             modules = self._usb_drivers(rpt, set_module(modules, "chan_usrp.so", True))
             await self._write("modules.conf", modules)
             await self._write("rpt.conf", rpt)
+            await self._retarget_echolink(number)
             _logger.info("node %s: radio is now the controller (%s)", number, rxchannel)
             self.node = number
             await self._restart()
@@ -157,7 +160,52 @@ class AllStarNode:
             await self.audio.configure(None)
         return await self.status()
 
+    # -- shared with api.echolink ---------------------------------------------
+
+    @property
+    def can_edit(self) -> bool:
+        return self._files is not None and self._manual is None
+
+    async def read_file(self, name: str) -> str:
+        self._require_files()
+        return await self._read(name)
+
+    async def write_file(self, name: str, text: str) -> None:
+        self._require_files()
+        await self._write(name, text)
+
+    async def restart_asterisk(self) -> None:
+        await self._restart()
+
+    async def module_loaded(self, module: str) -> Optional[bool]:
+        """Whether Asterisk has it loaded now, or None without AMI."""
+        if self._ami is None:
+            return None
+        s = self._ami
+        ami = self._ami_factory(s.ami_host, s.ami_port, s.ami_username, s.ami_secret)
+        try:
+            await asyncio.wait_for(ami.connect(), AMI_TIMEOUT)
+            response = await asyncio.wait_for(ami.send_action({"Action": "ModuleCheck", "Module": module}), AMI_TIMEOUT)
+            return response.get("Response") == "Success"
+        except (ConnectionError, OSError, asyncio.TimeoutError):
+            return None
+        finally:
+            try:
+                await ami.close()
+            except OSError:
+                pass
+
     # -- helpers -------------------------------------------------------------
+
+    async def _retarget_echolink(self, number: str) -> None:
+        """EchoLink set up from the dashboard follows the repeater to its new node."""
+        try:
+            text = await self._read("echolink.conf")
+        except AllStarSetupError:
+            return
+        retargeted = re.sub(rf"^astnode = \S+  {re.escape(MARK)}$", f"astnode = {number}  {MARK}", text, flags=re.MULTILINE)
+        if retargeted != text:
+            await self._write("echolink.conf", retargeted)
 
     def _settings_for(self, rpt: str) -> Optional[UsrpSettings]:
         for node in nodes(rpt):

@@ -174,11 +174,10 @@ several phases (see the plan file for the full breakdown):
   them from form submission entirely -- handled explicitly). Live beaconing against a
   real APRS-IS server was not exercised (optional per the plan, unlike the AllStar
   spike which was load-bearing for an architecture decision).
-- **EchoLink linking**: researched in `docs/research/echolink.md`. The recommendation is
-  to enable `chan_echolink` in the existing Asterisk sidecar first (EchoLink stations
-  become ordinary app_rpt links, so `NodeLinkClient` should cover them), and write a
-  native Python client (estimated 3-5 weeks) only if that path's gaps matter. Either
-  way it's gated on getting a `-R` callsign validated by EchoLink.
+- **EchoLink linking**: through `chan_echolink` in the AllStarLink node's Asterisk, as
+  recommended in `docs/research/echolink.md`. EchoLink stations become ordinary links of
+  the repeater's node. The station is set up from the dashboard's AllStarLink page and
+  needs a `-R` callsign validated by EchoLink. See [docs/allstar.md](docs/allstar.md#echolink).
 
 ## Beyond OpenRepeater
 
@@ -232,8 +231,8 @@ several phases (see the plan file for the full breakdown):
 - **AllStarLink**: the repeater is the radio of a node in the ASL3 install beside it.
   What it repeats goes out over the node's links, and linked stations key it up, with
   the controller's own courtesy tone and timers. Pick the node on the dashboard, which
-  edits just that node's lines in `rpt.conf` and can put them back. See
-  [docs/allstar.md](docs/allstar.md).
+  edits just that node's lines in `rpt.conf` and can put them back. EchoLink can be
+  turned on there too. See [docs/allstar.md](docs/allstar.md).
 - **Parrot / echo test**: after the parrot macro, the next transmission is recorded
   instead of repeated, then played back.
 - **Recordings**: optionally save every repeated transmission, with playback on the

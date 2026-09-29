@@ -21,7 +21,8 @@ after `-s --`, following `bash`:
   linking and autopatch. It gives the controller an AMI login of its own
   (usable only from the Pi) and lets it edit the node's settings; see
   [allstar.md](allstar.md). Then set up the node with `sudo asl-menu` and
-  choose it on the dashboard's **AllStarLink** page.
+  choose it on the dashboard's **AllStarLink** page. EchoLink is turned on
+  from the same page.
 
 ```
 curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scripts/install-pi.sh | sudo bash -s -- --allstar

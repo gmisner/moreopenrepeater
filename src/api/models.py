@@ -489,6 +489,48 @@ class AllStarNodeRequest(BaseModel):
     node: str = Field(pattern=r"^[0-9]{1,10}$")
 
 
+# `;` starts a comment in Asterisk's config files, so it can't be in a value.
+_CONF_TEXT = r"^[^;\\\r\n]*$"
+
+
+class EchoLinkRequest(BaseModel):
+    callsign: str = Field(pattern=r"^[A-Z0-9]{3,8}(-[LR])?$")
+    password: str = Field(default="", max_length=64, pattern=r"^[^\s;\\]*$")
+    name: str = Field(min_length=1, max_length=40, pattern=_CONF_TEXT)
+    location: str = Field(min_length=1, max_length=40, pattern=_CONF_TEXT)
+    email: str = Field(max_length=80, pattern=r"^[^\s;@\\]+@[^\s;@\\]+$")
+    node_number: str = Field(pattern=r"^[0-9]{1,7}$")
+    lat: float = Field(default=0.0, ge=-90, le=90)
+    lon: float = Field(default=0.0, ge=-180, le=180)
+    frequency_mhz: float = Field(default=0.0, ge=0, le=3000)
+    tone_hz: float = Field(default=0.0, ge=0, le=300)
+    max_stations: int = Field(default=20, ge=1, le=100)
+
+
+class EchoLinkStationInfo(BaseModel):
+    callsign: str
+    name: str
+    location: str
+    email: str
+    node_number: str
+    has_password: bool
+    lat: float
+    lon: float
+    frequency_mhz: float
+    tone_hz: float
+    max_stations: int
+    astnode: str
+    set_here: bool
+
+
+class EchoLinkStatusResponse(BaseModel):
+    available: bool
+    enabled: bool
+    loaded: Optional[bool]
+    error: Optional[str]
+    settings: Optional[EchoLinkStationInfo]
+
+
 class AudioEngineResponse(BaseModel):
     enabled: bool
     running: bool

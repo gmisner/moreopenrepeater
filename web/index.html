@@ -818,6 +818,58 @@
               Copies of the files from before each change are kept in the data folder's <code>asterisk-backups</code>.</small>
           </form>
         </div>
+        <div class="card" id="echolink-card" hidden>
+          <div class="card-header"><h2>EchoLink</h2><span id="echolink-pill" class="pill pill-off" hidden></span></div>
+          <p id="echolink-status" class="muted"></p>
+          <form id="echolink-form" hidden>
+            <div class="form-grid">
+              <label>Callsign
+                <input type="text" name="callsign" required pattern="[A-Z0-9]{3,8}(-[LR])?" autocomplete="off" spellcheck="false" />
+                <small>With <code>-R</code> for a repeater, as validated by EchoLink.</small>
+              </label>
+              <label>Password
+                <input type="password" name="password" autocomplete="new-password" />
+              </label>
+              <label>EchoLink node number
+                <input type="text" name="node_number" required pattern="[0-9]{1,7}" inputmode="numeric" autocomplete="off" />
+              </label>
+              <label>Sysop name
+                <input type="text" name="name" required maxlength="40" pattern="[^;\\]*" autocomplete="off" />
+              </label>
+              <label>Location
+                <input type="text" name="location" required maxlength="40" pattern="[^;\\]*" autocomplete="off" placeholder="e.g. Newington, CT" />
+              </label>
+              <label>Email
+                <input type="email" name="email" required maxlength="80" autocomplete="off" />
+              </label>
+              <label>Latitude
+                <input type="number" name="lat" step="any" min="-90" max="90" />
+              </label>
+              <label>Longitude
+                <input type="number" name="lon" step="any" min="-180" max="180" />
+              </label>
+              <label>Frequency
+                <span class="input-unit"><input type="number" name="frequency_mhz" step="any" min="0" max="3000" /><span>MHz</span></span>
+              </label>
+              <label>Tone
+                <span class="input-unit"><input type="number" name="tone_hz" step="0.1" min="0" max="300" /><span>Hz</span></span>
+                <small>0 for none.</small>
+              </label>
+              <label>Most stations at once
+                <input type="number" name="max_stations" min="1" max="100" required />
+              </label>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn btn-ghost" id="echolink-off" hidden>Turn off EchoLink</button>
+              <span class="spacer"></span>
+              <button type="submit" class="btn btn-primary" id="echolink-save">Save and turn on</button>
+            </div>
+            <small class="muted">EchoLink stations connect to the repeater's node like AllStar links. To connect to one over
+              the air, dial <code>*3</code>, then <code>3</code> and its node number padded to six digits (<code>*33009999</code>
+              for node 9999). Saving writes these settings to <code>echolink.conf</code>, loads Asterisk's EchoLink driver
+              and restarts Asterisk. The router has to forward UDP ports 5198 and 5199 to this machine.</small>
+          </form>
+        </div>
       </section>
 
       <!-- APRS -->

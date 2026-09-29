@@ -467,6 +467,28 @@ class LinkAudioResponse(BaseModel):
     keyed: bool
 
 
+class AllStarNodeInfo(BaseModel):
+    number: str
+    rxchannel: str
+    duplex: str
+    controlled: bool
+
+
+class AllStarStatusResponse(BaseModel):
+    available: bool
+    manual: bool
+    can_restart: bool
+    restart_needed: bool
+    error: Optional[str]
+    nodes: list[AllStarNodeInfo]
+    node: Optional[str]
+    audio: LinkAudioResponse
+
+
+class AllStarNodeRequest(BaseModel):
+    node: str = Field(pattern=r"^[0-9]{1,10}$")
+
+
 class AudioEngineResponse(BaseModel):
     enabled: bool
     running: bool

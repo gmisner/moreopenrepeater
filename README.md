@@ -229,6 +229,11 @@ several phases (see the plan file for the full breakdown):
   come in too, behind an access code the caller keys in. The phone line is set up on
   the dashboard, which also turns on SIP in Asterisk and shows the registration and
   any call in progress. See [docs/autopatch.md](docs/autopatch.md).
+- **AllStarLink**: the repeater is the radio of a node in the ASL3 install beside it.
+  What it repeats goes out over the node's links, and linked stations key it up, with
+  the controller's own courtesy tone and timers. Pick the node on the dashboard, which
+  edits just that node's lines in `rpt.conf` and can put them back. See
+  [docs/allstar.md](docs/allstar.md).
 - **Parrot / echo test**: after the parrot macro, the next transmission is recorded
   instead of repeated, then played back.
 - **Recordings**: optionally save every repeated transmission, with playback on the

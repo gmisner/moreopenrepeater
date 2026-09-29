@@ -32,6 +32,7 @@
         <a href="#/announcements" data-nav="announcements">Announcements</a>
         <a href="#/weather" data-nav="weather">Weather alerts</a>
         <a href="#/autopatch" data-nav="autopatch">Autopatch</a>
+        <a href="#/allstar" data-nav="allstar">AllStarLink</a>
         <a href="#/aprs" data-nav="aprs">APRS</a>
         <a href="#/map" data-nav="map">APRS map</a>
         <span class="nav-group">Tools</span>
@@ -785,6 +786,38 @@
             <button type="submit" class="btn btn-primary">Save</button>
           </div>
         </form>
+      </section>
+
+      <!-- AllStarLink -->
+      <section class="view" data-view="allstar" data-title="AllStarLink" hidden>
+        <header class="view-header">
+          <h1>AllStarLink</h1>
+          <p class="muted">Link the repeater to other AllStarLink nodes. The controller becomes the radio of a node in the
+            AllStarLink (ASL3) install beside it: what it repeats goes out over the node's links, and linked stations are
+            transmitted here. See the <a href="https://github.com/gmisner/moreopenrepeater/blob/main/docs/allstar.md" target="_blank" rel="noopener">setup guide</a>.</p>
+        </header>
+        <div class="card">
+          <div class="card-header"><h2>Node</h2><span id="allstar-pill" class="pill pill-off" hidden></span></div>
+          <p id="allstar-status" class="muted">Loading&hellip;</p>
+          <form id="allstar-form" hidden>
+            <div class="form-grid">
+              <label>Node
+                <select name="node" required></select>
+                <small id="allstar-node-hint"></small>
+              </label>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn btn-ghost" id="allstar-release" hidden>Stop using this node</button>
+              <span class="spacer"></span>
+              <button type="submit" class="btn btn-primary" id="allstar-use">Use this node</button>
+            </div>
+            <small class="muted">This changes the node's <code>rxchannel</code>, <code>duplex</code> and hang time in
+              <code>rpt.conf</code>, turns on Asterisk's USRP channel, turns off the SimpleUSB and USBRadio drivers if
+              no node needs them (they'd take the controller's sound card), and restarts Asterisk, which drops any links
+              for a few seconds. Each line it changes is marked, and <strong>Stop using this node</strong> puts them back.
+              Copies of the files from before each change are kept in the data folder's <code>asterisk-backups</code>.</small>
+          </form>
+        </div>
       </section>
 
       <!-- APRS -->

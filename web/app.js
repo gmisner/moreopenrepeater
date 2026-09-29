@@ -2,6 +2,7 @@ import { api } from "./js/api.js";
 import { initAnnouncements, loadAnnouncements } from "./js/announcements.js";
 import { initAssets, loadAssets } from "./js/assets.js";
 import { initAudit } from "./js/audit.js";
+import { initAllStar } from "./js/allstar.js";
 import { initAutopatch } from "./js/autopatch.js";
 import { initAudio } from "./js/audio.js";
 import { initBackup } from "./js/backup.js";
@@ -32,6 +33,7 @@ async function main() {
   initAnnouncements();
   initWeather();
   initAutopatch();
+  initAllStar();
   initMap();
   initUsage();
   initSimulator();

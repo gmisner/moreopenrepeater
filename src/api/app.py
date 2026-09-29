@@ -46,7 +46,10 @@ from .auth import (
     parse_basic_auth_header,
     verify_credentials,
 )
-from .allstar_audio import AllStarAudio, usrp_settings_from_env
+from link.asterisk_files import asterisk_files_from_env
+
+from .allstar_audio import AllStarAudio, usrp_listen_from_env, usrp_settings_from_env
+from .allstar_node import AllStarNode, AllStarSetupError
 from .autopatch import Autopatch, patch_settings_from_env
 from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_backup, restore_backup, write_backup
 from .sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
@@ -69,7 +72,8 @@ from .models import (
     AssetResponse,
     AudioDeviceResponse,
     AudioEngineResponse,
-    LinkAudioResponse,
+    AllStarNodeRequest,
+    AllStarStatusResponse,
     AudioPreviewRequest,
     AutopatchDialRequest,
     AutopatchStatusResponse,
@@ -304,7 +308,7 @@ def create_app(
     autopatch: Optional[Autopatch] = None,
     sip_trunk: Optional[SipTrunk] = None,
     backups: Optional[BackupFolder] = None,
-    allstar_audio: Optional[AllStarAudio] = None,
+    allstar_node: Optional[AllStarNode] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -324,7 +328,14 @@ def create_app(
     )
     autopatch = autopatch or Autopatch(service, patch_settings_from_env(os.environ))
     sip_trunk = sip_trunk or SipTrunk(autopatch.settings)
-    allstar_audio = allstar_audio or AllStarAudio(service, usrp_settings_from_env(os.environ))
+    allstar_node = allstar_node or AllStarNode(
+        asterisk_files_from_env(os.environ, backup_dir=DEFAULT_DATA_DIR / "asterisk-backups"),
+        autopatch.settings,
+        AllStarAudio(service, None),
+        listen=usrp_listen_from_env(os.environ),
+        address=os.environ.get("MOREOPENREPEATER_USRP_ADDRESS"),
+        manual=usrp_settings_from_env(os.environ),
+    )
     log_path = log_path or DEFAULT_LOG_PATH
     link_settings = link_settings if link_settings is not None else link_settings_from_env()
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
@@ -545,11 +556,11 @@ def create_app(
                 tasks.append(asyncio.create_task(node_link_loop()))
             live_audio.attach(loop)
             await autopatch.start()
-            await allstar_audio.start()
+            await allstar_node.start()
         yield
         for task in tasks:
             task.cancel()
-        await allstar_audio.stop()
+        await allstar_node.stop()
         await autopatch.stop()
         live_audio.shutdown()
 
@@ -889,9 +900,26 @@ def create_app(
         except Exception as error:  # PortAudio errors
             raise HTTPException(status_code=503, detail=f"couldn't list audio devices: {error}")
 
-    @app.get("/api/link/audio", response_model=LinkAudioResponse, dependencies=auth_dependencies)
-    def get_link_audio() -> dict:
-        return allstar_audio.status()
+    async def change_allstar(change: Awaitable[dict]) -> dict:
+        try:
+            return await change
+        except AllStarSetupError as error:
+            raise HTTPException(status_code=502, detail=str(error))
+
+    @app.get("/api/allstar", response_model=AllStarStatusResponse, dependencies=auth_dependencies)
+    async def get_allstar() -> dict:
+        return await allstar_node.status()
+
+    @app.put("/api/allstar", response_model=AllStarStatusResponse, dependencies=admin_dependencies)
+    async def put_allstar(body: AllStarNodeRequest, request: Request) -> dict:
+        no_call_in_progress()
+        request.state.audit_detail = f"node {body.node}"
+        return await change_allstar(allstar_node.use(body.node))
+
+    @app.delete("/api/allstar", response_model=AllStarStatusResponse, dependencies=admin_dependencies)
+    async def delete_allstar() -> dict:
+        no_call_in_progress()
+        return await change_allstar(allstar_node.release())
 
     @app.get("/api/audio/engine", response_model=AudioEngineResponse, dependencies=auth_dependencies)
     def get_audio_engine() -> dict:

@@ -44,6 +44,8 @@ from .persistence import StateStore
 
 _logger = logging.getLogger("moreopenrepeater.service")
 
+LINK_AUDIO_NODE = "allstar"  # RemoteKeyed's node_id for the AllStar node's own transmitter
+
 WEATHER_SUMMARY_MAX = 3
 
 
@@ -152,6 +154,7 @@ class RepeaterService:
         self.cos_active = False
         self.ctcss_hz: Optional[float] = None
         self.linked_nodes: set[str] = set()
+        self.link_audio = False  # api.allstar_audio is carrying the node's audio
         self.last_clip: Optional[str] = None
         self._last_state = self.controller.state
         self._repeating = False
@@ -378,6 +381,10 @@ class RepeaterService:
         same shape as simulate_remote_keyed's bookkeeping, but driven by the
         network layer instead of a dashboard button."""
         _logger.info("handle_link_event(%r)", event)
+        if isinstance(event, RemoteKeyed) and self.link_audio and event.node_id != LINK_AUDIO_NODE:
+            # The node's own key-up (with its audio) says when to transmit;
+            # a linked station can be keyed without the node sending it.
+            return
         if isinstance(event, LinkStateChanged):
             if event.linked:
                 self.linked_nodes.add(event.node_id)

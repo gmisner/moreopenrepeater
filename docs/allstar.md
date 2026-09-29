@@ -30,38 +30,62 @@ Set up both for a complete AllStar node.
 
 ## Setup
 
-Tested with ASL3 (Asterisk 22.10.1, app_rpt 3.10.5).
+Tested with ASL3 (Asterisk 22.10.1, app_rpt 3.10.5). Set up the node itself
+first (node number, callsign, password) with `sudo asl-menu`, as for any
+ASL3 node. `scripts/install-pi.sh --allstar` installs ASL3 beside the
+controller and sets up the rest of this.
 
-### 1. Load the USRP channel
+### From the dashboard
 
-ASL3 turns it off in `/etc/asterisk/modules.conf`. Change
+On the **AllStarLink** page, choose the node and click **Use this node**.
+The controller:
 
-```ini
-noload = chan_usrp.so
+- puts these lines at the top of the node's stanza in `rpt.conf`, keeping
+  any line they replace as a `;moreopenrepeater was:` comment:
+
+  ```ini
+  [1999](node-main)
+  rxchannel = USRP/127.0.0.1:34001:32001  ; set by moreopenrepeater
+  duplex = 0  ; set by moreopenrepeater
+  linktolink = yes  ; set by moreopenrepeater
+  hangtime = 0  ; set by moreopenrepeater
+  althangtime = 0  ; set by moreopenrepeater
+  nounkeyct = 1  ; set by moreopenrepeater
+  ```
+
+- changes `noload = chan_usrp.so` to `load` in `modules.conf`, and turns off
+  `chan_simpleusb` and `chan_usbradio` if no other node uses them. Those
+  drivers would open the USB sound card that the controller is using.
+- restarts Asterisk over AMI. A reload keeps the node's old radio channel.
+  The restart drops links and any autopatch call for a few seconds.
+- starts sending and receiving the node's audio. After that, it finds the
+  node from `rpt.conf` whenever it starts.
+
+**Stop using this node** takes those lines out and puts back what they
+replaced. A copy of each file from before every change is kept in the data
+folder's `asterisk-backups`.
+
+The controller edits the files directly, because saving `rpt.conf` over AMI
+would copy every template's settings into the sections that use it. So the
+service needs write access to them, and the installer sets that up:
+
+```sh
+sudo usermod -aG asterisk moreopenrepeater
+sudo chmod g+w /etc/asterisk/rpt.conf /etc/asterisk/modules.conf /etc/asterisk/echolink.conf
+sudo systemctl restart moreopenrepeater
 ```
 
-to
+This gives the controller nothing it couldn't already do: its AMI login can
+rewrite the dialplan anyway. It also needs the AMI settings
+(`MOREOPENREPEATER_AMI_*`) to restart Asterisk. Without them, restart it
+yourself after each change.
 
-```ini
-load = chan_usrp.so
-```
-
-### 2. Point the node at the controller
-
-In `/etc/asterisk/rpt.conf`, in your node's stanza:
-
-```ini
-[1999](node-main)
-rxchannel = USRP/127.0.0.1:34001:32001
-duplex = 0
-linktolink = yes
-hangtime = 0
-althangtime = 0
-nounkeyct = 1
-```
+The settings do this:
 
 - `rxchannel = USRP/<controller host>:<controller port>:<node port>`. The
-  controller listens on the first port and the node on the second.
+  controller listens on the first port (34001, or the port in
+  `MOREOPENREPEATER_USRP_LISTEN`) and the node on the second (32001, or the
+  next port no other USRP node uses).
 - `duplex = 0` is app_rpt's mode for an external repeater controller. The
   stock `duplex = 2` repeats the node's receiver, so everything the
   controller sent would come straight back and go out twice.
@@ -73,29 +97,35 @@ nounkeyct = 1
   transmitter for its own hang time (two seconds as shipped), which keeps
   the repeater up, and adds its courtesy tone to the controller's.
 
-To keep the node's own voice IDs off the air too, comment out `idrecording`
-and `idtalkover` in the stanza. The controller sends its own ID.
+The node still sends its own ID (`idrecording` in the `node-main` template,
+every `idtime`), and the repeater transmits it like anything else the node
+sends.
 
-Then `sudo systemctl restart asterisk`.
+### By hand
 
-### 3. Tell the controller where the node is
-
-In `/etc/moreopenrepeater/env`:
+Make the same changes to `rpt.conf` and `modules.conf` yourself, restart
+Asterisk, and tell the controller where the node is in
+`/etc/moreopenrepeater/env`:
 
 ```sh
 MOREOPENREPEATER_USRP_NODE=127.0.0.1:32001
 #MOREOPENREPEATER_USRP_LISTEN=127.0.0.1:34001
 ```
 
-`USRP_NODE` is the node's host and the last port in `rxchannel`. Setting it
-turns this on. `USRP_LISTEN` is where the controller listens, which is the
-first port (34001 by default). Restart the service. The log shows
-`AllStar audio over USRP: listening on ...`, and `GET /api/link/audio`
-reports whether it's running and whether the node is keyed.
+`USRP_NODE` is the node's host and the last port in `rxchannel`. The
+dashboard then shows the node but leaves its settings alone.
+
+### Where the controller listens
 
 Audio is accepted only from the node's host, because anything that arrives
-is transmitted. Keep the listener on `127.0.0.1` when Asterisk runs on the
-same machine.
+is transmitted. Keep the listener on `127.0.0.1` (the default) when Asterisk
+runs on the same machine. If it doesn't, set `MOREOPENREPEATER_USRP_LISTEN`
+to `0.0.0.0:34001`, and set `MOREOPENREPEATER_USRP_ADDRESS` to the address
+Asterisk reaches the controller at.
+
+For development with Asterisk in a VM, `MOREOPENREPEATER_ASTERISK_SHELL` is
+a command prefix that reaches its files, for example
+`limactl shell asl3 -- sudo`.
 
 ## Checking it
 

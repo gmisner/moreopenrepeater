@@ -23,12 +23,11 @@ from audio_io.resample import StreamResampler
 from controller.events import RemoteKeyed
 from link.usrp import FRAME_SAMPLES, RATE, decode, encode_voice
 
-from .service import RepeaterService
+from .service import LINK_AUDIO_NODE, RepeaterService
 
 _logger = logging.getLogger("moreopenrepeater.allstar_audio")
 
 FRAME_SECONDS = FRAME_SAMPLES / RATE
-NODE_ID = "allstar"  # the controller's name for the node's own transmitter
 UNKEY_TIMEOUT = 0.5  # keyed with no packets this long: the unkey packet was lost
 
 
@@ -44,11 +43,16 @@ def _host_port(value: str) -> tuple[str, int]:
     return host or "127.0.0.1", int(port)
 
 
+def usrp_listen_from_env(env: dict) -> tuple[str, int]:
+    return _host_port(env.get("MOREOPENREPEATER_USRP_LISTEN", "127.0.0.1:34001"))
+
+
 def usrp_settings_from_env(env: dict) -> Optional[UsrpSettings]:
+    """A node set up by hand (docs/allstar.md), rather than from the dashboard."""
     node = env.get("MOREOPENREPEATER_USRP_NODE")
     if not node:
         return None
-    listen_host, listen_port = _host_port(env.get("MOREOPENREPEATER_USRP_LISTEN", "127.0.0.1:34001"))
+    listen_host, listen_port = usrp_listen_from_env(env)
     node_host, node_port = _host_port(node)
     return UsrpSettings(listen_host, listen_port, node_host, node_port)
 
@@ -109,18 +113,32 @@ class AllStarAudio(asyncio.DatagramProtocol):
         self._from_node = StreamResampler(RATE, self.rate)
         self._set_output(self._link)
         self._task = asyncio.create_task(self._send())
+        self._service.link_audio = True
         _logger.info("AllStar audio over USRP: listening on %s:%s, node at %s:%s", s.listen_host, s.listen_port, s.node_host, s.node_port)
 
     async def stop(self) -> None:
         if self._task is not None:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
+            self._task = None
         if self._link is not None:
             self._set_output(None)
+            self._link = None
         if self._transport is not None:
             self._transport.close()
+            self._transport = None
         if self.keyed:
             self._set_keyed(False)
+        self._service.link_audio = False
+
+    async def configure(self, settings: Optional[UsrpSettings]) -> None:
+        """Switch to another node (or none), e.g. after the dashboard sets one up."""
+        if settings == self.settings and (settings is None or self._task is not None):
+            return
+        await self.stop()
+        self.settings = settings
+        self.error = None
+        await self.start()
 
     # -- to the node ---------------------------------------------------------
 
@@ -167,7 +185,7 @@ class AllStarAudio(asyncio.DatagramProtocol):
 
     def _set_keyed(self, keyed: bool) -> None:
         self.keyed = keyed
-        self._service.handle_link_event(RemoteKeyed(node_id=NODE_ID, keyed=keyed))
+        self._service.handle_link_event(RemoteKeyed(node_id=LINK_AUDIO_NODE, keyed=keyed))
 
     def _set_output(self, link: Optional[LinkAudio]) -> None:
         output = self._service.audio_output

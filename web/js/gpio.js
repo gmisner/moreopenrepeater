@@ -25,13 +25,41 @@ export function pinLabel(pin, name) {
 
 function stateText(row, available) {
   if (!row.mode || !available || row.on === null) return "–";
-  if (row.mode === "input") return row.on ? "High" : "Low";
   return row.on ? "On" : "Off";
+}
+
+function macroOptions(selected) {
+  const macros = store.state.macros ?? [];
+  const options = macros.map((m) => {
+    const label = `${m.pattern} · ${m.description || m.action}`;
+    return `<option value="${escapeHtml(m.pattern)}"${m.pattern === selected ? " selected" : ""}>${escapeHtml(label)}</option>`;
+  });
+  if (selected && !macros.some((m) => m.pattern === selected)) {
+    options.push(`<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)} (not a saved macro)</option>`);
+  }
+  return `<option value="">No macro</option>${options.join("")}`;
+}
+
+function actionsRow(pin, settings) {
+  const field = (state) => `
+    <label>When ${state}, say
+      <input type="text" name="${state}_say-${pin}" maxlength="200" value="${escapeHtml(settings[`${state}_say`] ?? "")}" />
+    </label>
+    <label>and run
+      <select name="${state}_macro-${pin}">${macroOptions(settings[`${state}_macro`] ?? "")}</select>
+    </label>`;
+  return `<tr class="gpio-actions" data-actions="${pin}"${settings.mode === "input" ? "" : " hidden"}>
+    <td></td>
+    <td colspan="3">
+      <label class="inline-check"><input type="checkbox" name="invert-${pin}"${settings.invert ? " checked" : ""} />On when the pin reads low</label>
+      <div class="gpio-action-grid">${field("on")}${field("off")}</div>
+    </td>
+  </tr>`;
 }
 
 function renderRows() {
   const pins = store.state.config?.gpio_pins ?? {};
-  const key = JSON.stringify(pins);
+  const key = JSON.stringify([pins, (store.state.macros ?? []).map((m) => [m.pattern, m.description, m.action])]);
   if (key === rowsFor) return;
   rowsFor = key;
   tbody.innerHTML = SPARE_PINS.map((pin) => {
@@ -46,7 +74,7 @@ function renderRows() {
       </select></td>
       <td><input type="text" name="name-${pin}" maxlength="30" value="${escapeHtml(settings.name ?? "")}" /></td>
       <td data-state></td>
-    </tr>`;
+    </tr>${actionsRow(pin, settings)}`;
   }).join("");
   renderState();
 }
@@ -113,7 +141,17 @@ async function save(event) {
   const gpio_pins = {};
   for (const pin of SPARE_PINS) {
     const mode = form.elements[`mode-${pin}`].value;
-    if (mode) gpio_pins[pin] = { mode, name: form.elements[`name-${pin}`].value.trim() };
+    if (!mode) continue;
+    gpio_pins[pin] = { mode, name: form.elements[`name-${pin}`].value.trim() };
+    if (mode === "input") {
+      Object.assign(gpio_pins[pin], {
+        invert: form.elements[`invert-${pin}`].checked,
+        on_say: form.elements[`on_say-${pin}`].value.trim(),
+        off_say: form.elements[`off_say-${pin}`].value.trim(),
+        on_macro: form.elements[`on_macro-${pin}`].value,
+        off_macro: form.elements[`off_macro-${pin}`].value,
+      });
+    }
   }
   await withBusy(saveButton, async () => {
     try {
@@ -147,11 +185,19 @@ function sync(view) {
 export function initGpio() {
   form.addEventListener("submit", save);
   tbody.addEventListener("click", onClick);
-  dashPins.addEventListener("click", onClick);
-  store.addEventListener("config", () => {
-    renderRows();
-    renderState();
+  tbody.addEventListener("change", (event) => {
+    const select = event.target.closest('select[name^="mode-"]');
+    if (!select) return;
+    const pin = select.name.slice("mode-".length);
+    tbody.querySelector(`[data-actions="${pin}"]`).hidden = select.value !== "input";
   });
+  dashPins.addEventListener("click", onClick);
+  for (const key of ["config", "macros"]) {
+    store.addEventListener(key, () => {
+      renderRows();
+      renderState();
+    });
+  }
   if (store.state.config) renderRows();
   router.addEventListener("change", ({ detail }) => sync(detail));
   sync(currentView);

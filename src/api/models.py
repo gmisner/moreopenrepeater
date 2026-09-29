@@ -38,6 +38,13 @@ GpioPinNumber = Literal["1", "2", "4", "5", "6", "7", "8"]
 class GpioPinConfig(BaseModel):
     mode: Literal["output", "input"]
     name: str = Field(default="", max_length=30)
+    # Inputs only: on when the pin reads low (a switch to ground), and what to
+    # do when the input turns on or off.
+    invert: bool = False
+    on_say: str = Field(default="", max_length=200)
+    off_say: str = Field(default="", max_length=200)
+    on_macro: str = Field(default="", pattern=r"^[0-9A-D*#]{0,16}$")
+    off_macro: str = Field(default="", pattern=r"^[0-9A-D*#]{0,16}$")
 
 
 NodeNumber = Annotated[str, Field(pattern=r"^[0-9]{1,10}$")]

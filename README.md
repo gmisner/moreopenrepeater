@@ -225,7 +225,9 @@ several phases (see the plan file for the full breakdown):
   code), or switch a CM108 GPIO output.
 - **CM108 GPIO pins**: the interface's spare pins (GPIO1, 2 and 4, plus 5-8 on CM119
   chips) can be outputs, switched from the dashboard or a DTMF macro (on, off,
-  toggle, or on for a few seconds), or inputs whose state shows on the dashboard.
+  toggle, or on for a few seconds), or inputs whose state shows on the dashboard. An
+  input can say something or run a macro when it turns on or off (a door alarm, a
+  power failure).
   See [docs/raspberry-pi.md](docs/raspberry-pi.md#gpio-pins).
 - **Autopatch**: users dial phone calls over the air (`*6` + number, `#` to hang up)
   through a SIP provider (VoIP.ms, Telnyx, Twilio, ...) on the local Asterisk, with

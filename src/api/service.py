@@ -136,6 +136,7 @@ class RepeaterService:
         self.audit_hook: Optional[Callable[[str, str, str], None]] = None  # (actor, action, detail)
         self.aprs_summary: Optional[Callable[[], str]] = None
         self.gpio_command: Optional[Callable[[str], str]] = None  # runs a gpio macro, returns what to say
+        self._action_source = "DTMF"
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
         if saved is not None:
@@ -275,10 +276,24 @@ class RepeaterService:
         self.controller.set_patch_call_active(False)
         self._apply_commands(self.controller.end_patch(self._clock()))
 
+    def run_macro(self, pattern: str, source: str) -> bool:
+        """Run a saved macro as if its code had been dialed; `source` names what ran it."""
+        macro = next((m for m in self.list_macros() if m.pattern == pattern), None)
+        if macro is None:
+            _logger.warning("%s: there's no macro %r", source, pattern)
+            return False
+        self._action_source = source
+        try:
+            self._apply_commands([macro.build_command()])
+        finally:
+            self._action_source = "DTMF"
+        return True
+
     def _run_action(self, action: RunAction) -> None:
-        _logger.info("DTMF action %s(%r)", action.action, action.argument)
+        source = self._action_source
+        _logger.info("%s action %s(%r)", source, action.action, action.argument)
         if self.audit_hook is not None:
-            self.audit_hook("DTMF", f"DTMF {action.action}", action.argument)
+            self.audit_hook(source, f"{source} {action.action}", action.argument)
         if action.action == "tx_disable":
             self.update_config(transmitter_enabled=False)
         elif action.action == "tx_enable":

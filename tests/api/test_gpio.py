@@ -11,6 +11,7 @@ from api.gpio import GpioControl, GpioError, parse_gpio_command
 from api.service import RepeaterService
 from audio_io.cm108 import CM108Interface
 from controller.events import RunAction
+from controller.macros import Macro
 from controller.state_machine import RepeaterConfig
 
 PINS = {"1": {"mode": "output", "name": "Fan"}, "2": {"mode": "input", "name": "Door"}, "4": {"mode": "output", "name": ""}}
@@ -133,7 +134,9 @@ def test_routes_and_the_dtmf_macro(tmp_path):
         assert client.put("/api/config", json={"gpio_pins": {"3": {"mode": "output"}}}).status_code == 422
         assert client.put("/api/config", json={"gpio_pins": {"1": {"mode": "relay"}}}).status_code == 422
         config = client.put("/api/config", json={"gpio_pins": {"1": {"mode": "output", "name": "Fan"}}}).json()
-        assert config["gpio_pins"] == {"1": {"mode": "output", "name": "Fan"}}
+        assert config["gpio_pins"]["1"]["mode"] == "output" and config["gpio_pins"]["1"]["name"] == "Fan"
+        assert client.put("/api/config", json={"gpio_pins": {"2": {"mode": "input", "on_macro": "*9x"}}}).status_code == 422
+        assert client.put("/api/config", json={"gpio_pins": {"2": {"mode": "input", "on_say": "x" * 201}}}).status_code == 422
         assert pin(client.put("/api/gpio/1", json={"on": True}).json(), 1)["on"] is True
         assert client.put("/api/gpio/2", json={"on": True}).status_code == 409
         assert client.post("/api/macros", json={"pattern": "*91", "action": "gpio", "command": "3 on"}).status_code == 422
@@ -141,3 +144,75 @@ def test_routes_and_the_dtmf_macro(tmp_path):
         service._run_action(RunAction("gpio", "1 off"))
         assert spoken == ["tts:Fan off."]
         assert pin(client.get("/api/gpio").json(), 1)["on"] is False
+
+
+DOOR = {"2": {"mode": "input", "name": "Door", "on_say": "Door open.", "off_say": "Door closed.", "on_macro": "*95"}}
+
+
+def test_input_changes_speak_and_run_a_macro_once_settled():
+    async def scenario():
+        now = [0.0]
+        service = RepeaterService(config=RepeaterConfig(gpio_pins=DOOR))
+        service.add_macro(Macro(pattern="*95", description="alert", action="say", command="Check the site."))
+        spoken = []
+        service.speak = spoken.append
+        device = FakeHidraw()
+        device.gpio = 0x02  # already on at startup: no action
+        gpio = GpioControl(service, CM108Interface(device), poll_seconds=0.01, clock=lambda: now[0])
+        gpio.start()
+        await asyncio.sleep(0.05)
+        assert spoken == [] and pin(gpio.status(), 2)["on"] is True
+
+        device.gpio = 0
+        await asyncio.sleep(0.05)
+        device.gpio = 0x02  # a bounce shorter than the settle time
+        await asyncio.sleep(0.05)
+        now[0] = 5.0
+        await asyncio.sleep(0.05)
+        assert spoken == []
+
+        device.gpio = 0
+        await asyncio.sleep(0.05)
+        assert spoken == []
+        now[0] = 6.5
+        await asyncio.sleep(0.05)
+        assert spoken == ["tts:Door closed."]
+
+        device.gpio = 0x02
+        await asyncio.sleep(0.05)
+        now[0] = 8.0
+        await asyncio.sleep(0.05)
+        assert spoken == ["tts:Door closed.", "tts:Door open.", "tts:Check the site."]
+        await gpio.stop()
+
+    asyncio.run(scenario())
+
+
+def test_inverted_inputs_and_missing_macros():
+    async def scenario():
+        now = [0.0]
+        service = RepeaterService(config=RepeaterConfig(gpio_pins={"2": {**DOOR["2"], "invert": True}}))
+        audit = []
+        service.audit_hook = lambda actor, action, detail: audit.append(actor)
+        spoken = []
+        service.speak = spoken.append
+        device = FakeHidraw()
+        gpio = GpioControl(service, CM108Interface(device), poll_seconds=0.01, clock=lambda: now[0])
+        gpio.start()
+        await asyncio.sleep(0.05)
+        assert pin(gpio.status(), 2)["on"] is True  # reads low, inverted
+        device.gpio = 0x02
+        await asyncio.sleep(0.05)
+        now[0] = 2.0
+        await asyncio.sleep(0.05)
+        assert spoken == ["tts:Door closed."]
+        device.gpio = 0
+        await asyncio.sleep(0.05)
+        now[0] = 4.0
+        await asyncio.sleep(0.05)
+        assert spoken == ["tts:Door closed.", "tts:Door open."]  # *95 isn't a saved macro
+        service.add_macro(Macro(pattern="*95", description="", action="id"))
+        assert service.run_macro("*95", "GPIO2") and audit == ["GPIO2"]
+        await gpio.stop()
+
+    asyncio.run(scenario())

@@ -5,16 +5,22 @@ dashboard (a door switch, a power-fail alarm).
 Which pins are used, and how, is `RepeaterConfig.gpio_pins`. Outputs start
 low, and a pin taken out of use goes back to being an input. Output levels
 aren't saved: after a restart every output is off.
+
+An input can say something or run a DTMF macro when it turns on or off. A
+change counts once it has held for `SETTLE_SECONDS`, so a bouncing contact
+acts once; the reading at startup doesn't count as a change.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import re
-from typing import TYPE_CHECKING, Optional
+import time
+from typing import TYPE_CHECKING, Callable, Optional
 
 from audio_io.cm108 import CM108Interface
 from controller.state_machine import RepeaterConfig
+from playout.renderer import TTS_PREFIX
 
 if TYPE_CHECKING:
     from .service import RepeaterService
@@ -23,6 +29,7 @@ _logger = logging.getLogger("moreopenrepeater.gpio")
 
 SPARE_PINS = (1, 2, 4, 5, 6, 7, 8)  # GPIO3 is PTT
 POLL_SECONDS = 0.25
+SETTLE_SECONDS = 1.0
 DEFAULT_PULSE_SECONDS = 1.0
 MAX_PULSE_SECONDS = 60.0
 
@@ -52,11 +59,22 @@ def _pins(config: RepeaterConfig) -> dict[int, dict]:
 
 
 class GpioControl:
-    def __init__(self, service: RepeaterService, cm108: Optional[CM108Interface], poll_seconds: float = POLL_SECONDS) -> None:
+    def __init__(
+        self,
+        service: RepeaterService,
+        cm108: Optional[CM108Interface],
+        poll_seconds: float = POLL_SECONDS,
+        settle_seconds: float = SETTLE_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._service = service
         self._cm108 = cm108
         self._poll_seconds = poll_seconds
+        self._settle_seconds = settle_seconds
+        self._clock = clock
         self._inputs: dict[int, bool] = {}
+        self._settled: dict[int, bool] = {}  # raw level last acted on
+        self._changed_at: dict[int, float] = {}
         self._pulses: dict[int, asyncio.TimerHandle] = {}
         self._task: Optional[asyncio.Task] = None
         self.error: Optional[str] = None
@@ -180,12 +198,14 @@ class GpioControl:
                 _logger.error("%s", self.error)
             if mode != "input":
                 self._inputs.pop(pin, None)
+                self._settled.pop(pin, None)
+                self._changed_at.pop(pin, None)
 
     async def _poll(self) -> None:
         assert self._cm108 is not None
         while True:
             await asyncio.sleep(self._poll_seconds)
-            inputs = [pin for pin, s in _pins(self._service.config).items() if s.get("mode") == "input"]
+            inputs = {pin: s for pin, s in _pins(self._service.config).items() if s.get("mode") == "input"}
             if not inputs:
                 continue
             try:
@@ -197,8 +217,36 @@ class GpioControl:
                 await asyncio.sleep(1.0)
                 continue
             self.error = None
-            for pin in inputs:
+            for pin, settings in inputs.items():
                 level = bool(levels & (1 << (pin - 1)))
-                if self._inputs.get(pin) != level:
-                    _logger.info("GPIO%d (%s) input %s", pin, self.name(pin), "high" if level else "low")
-                self._inputs[pin] = level
+                on = level != bool(settings.get("invert"))
+                if self._inputs.get(pin) != on:
+                    _logger.info("GPIO%d (%s) input %s", pin, self.name(pin), "on" if on else "off")
+                self._inputs[pin] = on
+                self._settle(pin, level)
+
+    def _settle(self, pin: int, level: bool) -> None:
+        settled = self._settled.get(pin)
+        if settled is None:
+            self._settled[pin] = level
+            return
+        if level == settled:
+            self._changed_at.pop(pin, None)
+            return
+        since = self._changed_at.setdefault(pin, self._clock())
+        if self._clock() - since >= self._settle_seconds:
+            self._settled[pin] = level
+            del self._changed_at[pin]
+            self._act(pin)
+
+    def _act(self, pin: int) -> None:
+        settings = _pins(self._service.config).get(pin, {})
+        on = self._settled[pin] != bool(settings.get("invert"))
+        state = "on" if on else "off"
+        say = settings.get(f"{state}_say", "").strip()
+        macro = settings.get(f"{state}_macro", "")
+        if say:
+            _logger.info("GPIO%d (%s) %s: saying %r", pin, self.name(pin), state, say)
+            self._service.speak(TTS_PREFIX + say)
+        if macro:
+            self._service.run_macro(macro, f"GPIO{pin}")

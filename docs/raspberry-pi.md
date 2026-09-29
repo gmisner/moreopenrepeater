@@ -123,8 +123,15 @@ interface brings out to its connector.
   by a DTMF macro with the "Switch a GPIO output" action (on, off, toggle,
   or on for up to 60 seconds). The macro says what it did on the air. Outputs
   start off whenever the repeater starts.
-- An **input** shows high or low on the dashboard, for a door switch or a
-  power-fail alarm. Changes are written to the log.
+- An **input** shows on or off on the dashboard, for a door switch or a
+  power-fail alarm. Changes are written to the log. Tick **On when the pin
+  reads low** for a switch or relay contact that pulls the pin to ground.
+  An input can say something on the air when it turns on and when it turns
+  off ("Commercial power has failed."), and run a saved DTMF macro, for
+  example one that switches an output or plays an announcement. It waits
+  for a clear channel like any announcement. A change only counts once it
+  has held for a second, so a bouncing contact acts once. The state at
+  startup isn't treated as a change.
 
 The pins come straight from the chip and can't power a relay coil: drive
 one through a transistor.

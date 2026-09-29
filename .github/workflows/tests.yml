@@ -56,6 +56,14 @@ jobs:
           sudo REPO_URL=/tmp/src BRANCH=ci-install bash scripts/install-pi.sh
           test "$before" = "$(sudo md5sum /etc/moreopenrepeater/env)"
           systemctl is-active moreopenrepeater
+      # ASL3 is packaged for Debian only; on Ubuntu --allstar has to stop
+      # before changing anything. (The ASL3 steps were run on Debian 12.)
+      - name: --allstar refuses a system ASL3 doesn't support
+        run: |
+          before=$(sudo md5sum /etc/moreopenrepeater/env)
+          ! sudo REPO_URL=/tmp/src BRANCH=ci-install bash scripts/install-pi.sh --allstar 2>err.txt
+          grep -q "Debian 12 (bookworm) and 13 (trixie)" err.txt
+          test "$before" = "$(sudo md5sum /etc/moreopenrepeater/env)"
       - name: Service log
         if: always()
         run: sudo journalctl -u moreopenrepeater -n 100 --no-pager

@@ -33,7 +33,7 @@ Set up both for a complete AllStar node.
 Tested with ASL3 (Asterisk 22.10.1, app_rpt 3.10.5). Set up the node itself
 first (node number, callsign, password) with `sudo asl-menu`, as for any
 ASL3 node. `scripts/install-pi.sh --allstar` installs ASL3 beside the
-controller and sets up the rest of this.
+controller, and sets up the file permissions and AMI login below.
 
 ### From the dashboard
 

@@ -67,6 +67,7 @@ class AllStarNode:
         self._ami_factory = ami_factory
         self._lock = asyncio.Lock()
         self.restart_needed = False
+        self.node: Optional[str] = None  # the node whose radio the controller is, per rpt.conf
 
     @property
     def _node_host(self) -> str:
@@ -83,6 +84,7 @@ class AllStarNode:
         except AllStarSetupError as error:
             _logger.warning("%s", error)
             return
+        self.node = next((n.number for n in nodes(text) if n.controlled), None)
         await self.audio.configure(self._settings_for(text))
 
     async def stop(self) -> None:
@@ -110,7 +112,7 @@ class AllStarNode:
         result["nodes"] = [
             {"number": n.number, "rxchannel": n.rxchannel, "duplex": n.duplex, "controlled": n.controlled} for n in found
         ]
-        result["node"] = next((n.number for n in found if n.controlled), None)
+        result["node"] = self.node = next((n.number for n in found if n.controlled), None)
         return result
 
     async def use(self, number: str) -> dict:
@@ -131,6 +133,7 @@ class AllStarNode:
             await self._write("modules.conf", modules)
             await self._write("rpt.conf", rpt)
             _logger.info("node %s: radio is now the controller (%s)", number, rxchannel)
+            self.node = number
             await self._restart()
             await self.audio.configure(self._settings_for(rpt))
         return await self.status()
@@ -147,6 +150,7 @@ class AllStarNode:
                 modules = restore_module(modules, module)
             await self._write("modules.conf", modules)
             await self._write("rpt.conf", rpt)
+            self.node = None
             if controlled:
                 _logger.info("node %s: radio settings put back", ", ".join(controlled))
                 await self._restart()

@@ -8,8 +8,10 @@
 # is the manual procedure in docs/raspberry-pi.md.
 #
 # Options (append after `sudo bash -s --` when piping):
-#   --lan     listen on all interfaces instead of only the Pi itself
-#             (first install only; see "Security" in docs/raspberry-pi.md)
+#   --lan      listen on all interfaces instead of only the Pi itself
+#              (first install only; see "Security" in docs/raspberry-pi.md)
+#   --allstar  also install AllStarLink (ASL3) for linking and autopatch, and
+#              connect the controller to it (Debian 12 or 13; docs/allstar.md)
 #
 # Environment overrides: REPO_URL, BRANCH, INSTALL_DIR.
 set -euo pipefail
@@ -21,10 +23,14 @@ SERVICE_USER=moreopenrepeater
 ENV_DIR=/etc/moreopenrepeater
 ENV_FILE="$ENV_DIR/env"
 LISTEN_LAN=0
+ALLSTAR=0
+ASTERISK_DIR=/etc/asterisk
+AMI_USER=moreopenrepeater
 
 for arg in "$@"; do
   case "$arg" in
     --lan) LISTEN_LAN=1 ;;
+    --allstar) ALLSTAR=1 ;;
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -58,7 +64,55 @@ find_cm108() {
   return 0
 }
 
+# ASL3's apt repository package for this Debian release.
+asl_repo_package() {
+  local codename
+  codename="$(sed -nE 's/^VERSION_CODENAME="?([^"]*)"?$/\1/p' /etc/os-release)"
+  case "$codename" in
+    bookworm) echo "asl-apt-repos.deb12_all.deb" ;;
+    trixie) echo "asl-apt-repos.deb13_all.deb" ;;
+    *) fail "AllStarLink (ASL3) packages are for Debian 12 (bookworm) and 13 (trixie), not '${codename:-this system}'." ;;
+  esac
+}
+
+install_allstar() {
+  step "Installing AllStarLink (ASL3)"
+  if ! dpkg -s asl-apt-repos >/dev/null 2>&1; then
+    local repo_deb
+    repo_deb="$(asl_repo_package)"
+    curl -fsSL -o "/tmp/$repo_deb" "https://repo.allstarlink.org/public/$repo_deb"
+    dpkg -i "/tmp/$repo_deb"
+    rm -f "/tmp/$repo_deb"
+    apt-get update -q
+  fi
+  apt-get install -y -q asl3
+
+  step "Letting moreopenrepeater set up the node"
+  # It edits the node's lines in rpt.conf as text (see docs/allstar.md).
+  usermod -aG asterisk "$SERVICE_USER"
+  local file
+  for file in rpt.conf modules.conf echolink.conf; do
+    if [ -f "$ASTERISK_DIR/$file" ]; then chmod g+w "$ASTERISK_DIR/$file"; fi
+  done
+
+  # An AMI login of its own, usable only from this machine.
+  local manager="$ASTERISK_DIR/manager.conf" secret
+  secret="$(awk -v user="[$AMI_USER]" '$0 == user {found = 1; next} /^\[/ {found = 0} found && $1 == "secret" {print $3}' "$manager")"
+  if [ -z "$secret" ]; then
+    secret="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+    printf '\n[%s]\nsecret = %s\ndeny = 0.0.0.0/0.0.0.0\npermit = 127.0.0.1/255.255.255.255\nread = all\nwrite = all\n' \
+      "$AMI_USER" "$secret" >>"$manager"
+    if systemctl is-active -q asterisk; then asterisk -rx "manager reload" >/dev/null; fi
+  fi
+  if [ -z "$(env_value MOREOPENREPEATER_AMI_HOST)" ]; then
+    set_env MOREOPENREPEATER_AMI_HOST 127.0.0.1
+    set_env MOREOPENREPEATER_AMI_USER "$AMI_USER"
+    set_env MOREOPENREPEATER_AMI_SECRET "$secret"
+  fi
+}
+
 [ "$(id -u)" -eq 0 ] || fail "run this with sudo."
+if [ "$ALLSTAR" -eq 1 ]; then asl_repo_package >/dev/null; fi
 command -v apt-get >/dev/null || fail "this installer needs a Debian-based system (Raspberry Pi OS, Debian, Ubuntu)."
 
 step "Installing system packages"
@@ -123,6 +177,10 @@ elif [ "$LISTEN_LAN" -eq 1 ]; then
   echo "Note: --lan only applies to a first install; edit MOREOPENREPEATER_HOST in $ENV_FILE instead."
 fi
 
+if [ "$ALLSTAR" -eq 1 ]; then
+  install_allstar
+fi
+
 step "Installing and (re)starting the service"
 install -m 644 "$INSTALL_DIR/packaging/moreopenrepeater.service" /etc/systemd/system/moreopenrepeater.service
 systemctl daemon-reload
@@ -162,3 +220,9 @@ if [ -n "$GENERATED_PASSWORD" ]; then
   echo "                          (change it in $ENV_FILE, then: sudo systemctl restart moreopenrepeater)"
 fi
 echo "  Logs:                   journalctl -u moreopenrepeater -f"
+if [ "$ALLSTAR" -eq 1 ]; then
+  echo
+  echo "AllStarLink is installed. If this node is new, run: sudo asl-menu"
+  echo "(node number, callsign and password), then choose the node on the"
+  echo "dashboard's AllStarLink page."
+fi

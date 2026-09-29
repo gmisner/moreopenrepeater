@@ -333,7 +333,8 @@ checks out the code in `/opt/moreopenrepeater`, sets up the CM108 udev rule,
 writes `/etc/moreopenrepeater/env` with a generated admin password (and the
 CM108's device if one is plugged in), and starts the systemd service. It
 prints the password and how to reach the dashboard at the end. Run it again
-to update. The manual steps, and how to reach the dashboard securely from
+to update. With `-s -- --allstar` after `bash`, it also installs AllStarLink
+(ASL3) and connects the controller to it. The manual steps, and how to reach the dashboard securely from
 other devices, are in `docs/raspberry-pi.md`.
 
 ## Development

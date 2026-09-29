@@ -405,12 +405,13 @@ def create_app(
     async def node_link_loop() -> None:
         assert link_settings is not None
         while True:
+            node_id = link_settings.local_node_id or allstar_node.node or ""
             client = NodeLinkClient(
                 link_settings.host,
                 link_settings.port,
                 link_settings.username,
                 link_settings.secret,
-                link_settings.local_node_id,
+                node_id,
             )
             try:
                 await client.connect()
@@ -418,7 +419,7 @@ def create_app(
                     "connected to app_rpt AMI at %s:%s (node %s)",
                     link_settings.host,
                     link_settings.port,
-                    link_settings.local_node_id,
+                    node_id or "not chosen yet",
                 )
 
                 def sink(command: SendLinkCommand, _client: NodeLinkClient = client) -> None:

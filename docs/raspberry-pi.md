@@ -13,9 +13,21 @@ curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scrip
 ```
 
 `scripts/install-pi.sh` does sections 1-5 below (and generates an admin
-password), and running it again updates an existing install. Add
-`-s -- --lan` after `bash` to listen on the local network instead of only on
-the Pi. The rest of this page is the same procedure by hand.
+password), and running it again updates an existing install. Options go
+after `-s --`, following `bash`:
+
+- `--lan` listens on the local network instead of only on the Pi.
+- `--allstar` also installs AllStarLink (ASL3) from its apt repository, for
+  linking and autopatch. It gives the controller an AMI login of its own
+  (usable only from the Pi) and lets it edit the node's settings; see
+  [allstar.md](allstar.md). Then set up the node with `sudo asl-menu` and
+  choose it on the dashboard's **AllStarLink** page.
+
+```
+curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scripts/install-pi.sh | sudo bash -s -- --allstar
+```
+
+The rest of this page is the same procedure by hand.
 
 ## 1. System packages
 

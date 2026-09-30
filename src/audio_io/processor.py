@@ -39,7 +39,7 @@ SILENCE_DB = -120.0
 _SUBAUDIBLE_CUTOFF_HZ = 280.0
 _SUBAUDIBLE_TAPS = 401
 _VOX_HYSTERESIS_DB = 3.0
-_CTCSS_ANALYZE_EVERY_BLOCKS = 5  # CTCSS needs a 1 s window anyway; ~100 ms steps are plenty
+_CTCSS_ANALYZE_EVERY_BLOCKS = 5  # CTCSS needs a 1 s window anyway; ~100 ms decisions are plenty
 
 
 @dataclass
@@ -90,7 +90,7 @@ class AudioProcessor:
         self._current: Optional[np.ndarray] = None
         self._position = 0
         self._ctcss = CTCSSDetector(settings.sample_rate, magnitude_threshold=settings.ctcss_threshold)
-        self._ctcss_pending: list[np.ndarray] = []
+        self._ctcss_blocks = 0
         self._dtmf = DTMFDetector(settings.sample_rate, magnitude_threshold=settings.dtmf_threshold)
         self._capture: Optional[list[np.ndarray]] = None
         self._capture_limit = 0
@@ -205,12 +205,12 @@ class AudioProcessor:
         return (10 ** (self.settings.tx_ctcss_level_db / 20) * np.sin(phases)).astype(np.float32)
 
     def _detect_ctcss(self, block: np.ndarray) -> Optional[float]:
-        self._ctcss_pending.append(block)
-        if len(self._ctcss_pending) < _CTCSS_ANALYZE_EVERY_BLOCKS:
+        self._ctcss.feed(block)
+        self._ctcss_blocks += 1
+        if self._ctcss_blocks < _CTCSS_ANALYZE_EVERY_BLOCKS:
             return self.ctcss_hz
-        chunk = np.concatenate(self._ctcss_pending)
-        self._ctcss_pending = []
-        return self._ctcss.process(chunk)
+        self._ctcss_blocks = 0
+        return self._ctcss.decide()
 
     def _carrier(self, block: np.ndarray) -> bool:
         source = self.settings.cos_source

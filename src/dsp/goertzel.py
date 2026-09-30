@@ -55,11 +55,15 @@ def _bin_basis(n: int, sample_rate: int, target_freqs: tuple[float, ...]) -> np.
 def _goertzel_magnitudes(block: np.ndarray, sample_rate: int, target_freqs) -> list[float]:
     """Same result as `goertzel_magnitude` per frequency -- a Goertzel filter's
     output power *is* the DFT bin's |X[k]|^2 -- but as one cached-matrix
-    product, which is what makes a 1 s window x 50 CTCSS tones affordable
-    every 20 ms block in real time."""
+    product instead of a Python loop per sample."""
     n = len(block)
     basis = _bin_basis(n, sample_rate, tuple(target_freqs))
     return list(np.abs(basis @ np.asarray(block, dtype=np.float64)) * 2.0 / n)
+
+
+@functools.lru_cache(maxsize=16)
+def _window_basis(length: int, window: int, ks: tuple[float, ...]) -> np.ndarray:
+    return np.exp(-2j * np.pi * np.outer(ks, np.arange(length)) / window)
 
 
 @dataclass
@@ -71,13 +75,21 @@ class CTCSSDetector:
     apart -- an FFT/Goertzel's bin resolution is sample_rate/N, and a 320
     sample (40ms @ 8kHz) block only resolves to 25 Hz bins. To get usable
     ~1 Hz resolution, this detector accumulates incoming blocks into a
-    rolling `window_seconds`-long buffer and re-analyzes that full window on
-    every call, trading detection latency (~`window_seconds`) for accuracy.
+    rolling `window_seconds`-long buffer, trading detection latency
+    (~`window_seconds`) for accuracy.
+
+    Re-analyzing the whole window (1 s x 50 tones) on every call is too slow
+    for a Raspberry Pi 3, so the window's DFT bins are kept as running sums:
+    each `feed` adds the new samples' terms and subtracts the terms of the
+    samples leaving the window. Terms use each sample's position modulo the
+    window length, and the bins are whole cycles per window, so the sums
+    differ from a fresh DFT of the window only by a unit-magnitude phase
+    per bin -- the magnitudes are the same.
 
     Once a tone is resolved, it must be seen for `lock_blocks` consecutive
-    calls before being reported as detected, and absent for `unlock_blocks`
-    consecutive calls before being reported as lost -- mirroring how real
-    repeater controllers debounce sub-audible tone squelch.
+    `decide` calls before being reported as detected, and absent for
+    `unlock_blocks` consecutive calls before being reported as lost --
+    mirroring how real repeater controllers debounce sub-audible tone squelch.
     """
 
     sample_rate: int
@@ -88,21 +100,48 @@ class CTCSSDetector:
     window_seconds: float = 1.0
 
     _buffer: np.ndarray = field(default_factory=lambda: np.zeros(0), init=False, repr=False)
+    _position: int = field(default=0, init=False, repr=False)
+    _bins: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.complex128), init=False, repr=False)
     _locked_tone: Optional[float] = field(default=None, init=False, repr=False)
     _candidate_tone: Optional[float] = field(default=None, init=False, repr=False)
     _candidate_count: int = field(default=0, init=False, repr=False)
     _miss_count: int = field(default=0, init=False, repr=False)
 
-    @property
-    def _window_samples(self) -> int:
-        return int(self.sample_rate * self.window_seconds)
+    def __post_init__(self) -> None:
+        self._window = int(self.sample_rate * self.window_seconds)
+        self._ks = tuple(float(k) for k in np.floor(0.5 + self._window * np.asarray(self.tones_hz) / self.sample_rate))
+        self._bins = np.zeros(len(self.tones_hz), dtype=np.complex128)
+
+    def _terms(self, samples: np.ndarray, position: int) -> np.ndarray:
+        phase = np.exp(-2j * np.pi * np.asarray(self._ks) * position / self._window)
+        return phase * (_window_basis(len(samples), self._window, self._ks) @ samples)
+
+    def feed(self, block: np.ndarray) -> None:
+        """Add samples to the window; cheap enough to call on every block."""
+        block = np.asarray(block, dtype=np.float64).reshape(-1)
+        window = self._window
+        if len(block) >= window:
+            self._position = (self._position + len(block) - window) % window
+            self._buffer = block[-window:].copy()
+            self._bins = self._terms(self._buffer, self._position)
+            return
+        self._bins += self._terms(block, self._position)
+        overflow = len(self._buffer) + len(block) - window
+        if overflow > 0:
+            start = (self._position - len(self._buffer)) % window
+            self._bins -= self._terms(self._buffer[:overflow], start)
+        self._buffer = np.concatenate([self._buffer, block])[-window:]
+        self._position = (self._position + len(block)) % window
 
     def process(self, block: np.ndarray) -> Optional[float]:
-        self._buffer = np.concatenate([self._buffer, block])[-self._window_samples :]
-        if len(self._buffer) < self._window_samples:
+        self.feed(block)
+        return self.decide()
+
+    def decide(self) -> Optional[float]:
+        if len(self._buffer) < self._window:
             return self._locked_tone  # not enough data yet to resolve tones reliably
 
-        magnitudes = _goertzel_magnitudes(self._buffer, self.sample_rate, self.tones_hz)
+        magnitudes = list(np.abs(self._bins) * 2.0 / self._window)
         best_index = max(range(len(magnitudes)), key=lambda i: magnitudes[i])
         best_tone = self.tones_hz[best_index]
         best_magnitude = magnitudes[best_index]

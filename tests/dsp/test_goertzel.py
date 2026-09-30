@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from dsp.goertzel import CTCSSDetector, DTMFDetector, ctcss_tone, dtmf_tone
+from dsp.goertzel import CTCSSDetector, DTMFDetector, _goertzel_magnitudes, ctcss_tone, dtmf_tone
 from dsp.tones import CTCSS_TONES_HZ
 
 SAMPLE_RATE = 8000
@@ -46,6 +46,21 @@ def test_ctcss_detector_ignores_random_noise():
     results = [detector.process(block) for block in _blocks(noise)]
 
     assert all(r is None for r in results)
+
+
+def test_ctcss_detector_running_bins_match_a_fresh_window_analysis():
+    rng = np.random.default_rng(seed=1)
+    detector = CTCSSDetector(sample_rate=SAMPLE_RATE)
+    signal = np.zeros(0)
+    for size in [3000, 7, 320, 5000, 1, 320, 9000, 320, 123, 4567] * 3:
+        block = rng.normal(scale=0.3, size=size) + ctcss_tone(131.8, SAMPLE_RATE, size, amplitude=0.2)
+        detector.feed(block)
+        signal = np.concatenate([signal, block])
+
+    window = signal[-SAMPLE_RATE:]
+    expected = _goertzel_magnitudes(window, SAMPLE_RATE, CTCSS_TONES_HZ)
+    actual = np.abs(detector._bins) * 2.0 / SAMPLE_RATE
+    np.testing.assert_allclose(actual, expected, rtol=1e-9, atol=1e-12)
 
 
 @pytest.mark.parametrize("digit", ["1", "5", "9", "*", "#", "D"])

@@ -37,7 +37,7 @@ function render(status) {
       const until = link.until ? `<span class="tag">until ${escapeHtml(shortTime(link.until))}</span>` : "";
       const talking = link.keyed ? `<span class="tag tag-on">talking</span>` : "";
       const remove = status.available
-        ? `<button type="button" class="btn btn-ghost btn-sm" data-disconnect="${escapeHtml(link.node)}" data-requires-write>Disconnect</button>`
+        ? `<button type="button" class="btn btn-danger btn-sm" data-disconnect="${escapeHtml(link.node)}" data-requires-write>Disconnect</button>`
         : "";
       const label = [link.name, link.callsign].filter(Boolean).join(" · ");
       const callsign = label ? `<strong>${escapeHtml(label)}</strong> ` : "";

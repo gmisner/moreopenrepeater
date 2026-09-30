@@ -95,6 +95,14 @@ logs. The body is 15px.
 Uppercase labels use `letter-spacing: 0.06em`. Numbers that update live use
 `font-variant-numeric: tabular-nums` so they don't jitter.
 
+### Spacing
+
+All padding, margins and gaps come from a 4px scale: `--space-1` (4px),
+`--space-2` (8px), `--space-3` (12px), `--space-4` (16px), `--space-5` (20px),
+`--space-6` (24px), `--space-8` (32px), `--space-9` (36px), `--space-12` (48px),
+`--space-16` (64px). `--space-half` (2px) is only for the vertical padding of
+tags. Buttons and other touch targets sit at least `--space-2` apart.
+
 ### Shape and motion
 
 Radii: `--radius-xs` 4px (inline code, small labels), `--radius-sm` 6px (tags),
@@ -112,8 +120,13 @@ Transitions use `--speed` (0.15s) and animate only color, opacity and transform.
 
 - **Desktop (over 860px):** fixed 240px sidebar, content up to 1150px wide.
 - **Tablet and phone (860px and under):** the sidebar becomes a sticky header with
-  the logo, the TX/RX chips and a menu button. The TX/RX chips stay visible on
-  every page and link back to the dashboard.
+  the logo and the TX/RX chips, which stay visible on every page and link back to
+  the dashboard. A bottom tab bar holds the four most-used pages (Dashboard,
+  Activity, Links, Map) and **More**, which opens the full sidebar as a
+  full-screen menu above the tab bar (Escape or any link closes it). Content
+  reserves space for the tab bar and the phone's home indicator, and
+  `scroll-padding` keeps focused fields out from under the header and tab bar.
+  Heights use `dvh` so the browser's address bar doesn't cut off the layout.
 - **Phone (600px and under):** cards get 1rem padding, the brand name is hidden
   (the logo stays), the controller state sits on one line, and toasts span the
   width.
@@ -129,9 +142,18 @@ Transitions use `--speed` (0.15s) and animate only color, opacity and transform.
   (weather alerts).
 - **Indicator tile:** dot + name + value. Lit state tints the tile with the status
   color's soft background and border, and the dot glows.
-- **Buttons:** default (`--panel-2`), `.btn-primary` (filled accent, one per
-  form), `.btn-ghost` (transparent), `.btn-danger` (red outline, fills red-soft on
+- **Buttons:** default (`--panel-2`), `.btn-primary` (filled accent),
+  `.btn-ghost` (transparent), `.btn-danger` (red outline, fills red-soft on
   hover), `.btn-sm`. The PTT button fills red while held.
+  - One primary button per form, for the action that form exists for (Save,
+    Connect). The dashboard has one: Connect. Filled buttons that show an *on*
+    state (a linked favorite, a GPIO output that's on) aren't calls to action and
+    don't count.
+  - Anything that drops a connection or deletes something is `.btn-danger`:
+    Disconnect, Remove, Delete, Hang up. It sits apart from the primary button (a
+    `.spacer` between them in `.form-actions`) and asks for confirmation when it
+    can't be undone with one click.
+  - Form actions go at the bottom right of their card, primary last.
 - **Pills and tags:** pills are round and show connection or on/off state; tags
   are small labels (role, severity, "talking", "announced").
 - **Segmented control:** for two or three mutually exclusive choices (listen
@@ -172,7 +194,10 @@ The name is always written in lowercase: moreopenrepeater.
 
 - Text contrast at least 4.5:1 in both themes (see Color).
 - Every interactive element at least 24×24px, and 44px tall on touch screens
-  (`pointer: coarse`).
+  (`pointer: coarse`), with 8px between neighbors.
+- Inputs use 16px text on touch screens; smaller text makes iOS Safari zoom in on
+  focus.
+- Links in text use `--accent`, never the browser's default blue.
 - Visible focus ring: 2px `--accent` outline on `:focus-visible`.
 - Status never relies on color alone.
 - Live regions only where a change needs announcing (connection banner); the

@@ -77,7 +77,7 @@ async function start() {
   connect();
   watchdog = setInterval(showStatus, 500);
   toggle.textContent = "Stop";
-  toggle.classList.replace("btn-primary", "btn-danger");
+  toggle.classList.add("btn-danger");
 }
 
 function stop() {
@@ -87,7 +87,7 @@ function stop() {
   clearInterval(watchdog);
   context?.suspend();
   toggle.textContent = "Listen";
-  toggle.classList.replace("btn-danger", "btn-primary");
+  toggle.classList.remove("btn-danger");
   statusLine.textContent = IDLE_TEXT;
 }
 

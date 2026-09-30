@@ -327,7 +327,8 @@ alerts, APRS, APRS map, Simulator, Logs (filter/level/pause), Backup & restore, 
 admins Users and Audit log. Each settings view saves only
 its own fields through `PUT /api/config`, with unsaved-change tracking.
 It has light and dark themes (following the system setting unless you pick one
-in the sidebar), and on a phone the header keeps TX/RX lit on every page. It
+in the sidebar). On a phone the header keeps TX/RX lit on every page and a
+bottom tab bar reaches the main pages with one thumb. It
 can be added to a phone's home screen with its own icon. Colors, type sizes and
 layout rules are written down in `design-system/moreopenrepeater/MASTER.md`.
 Verified live in a real browser: login rejection/acceptance, WebSocket via

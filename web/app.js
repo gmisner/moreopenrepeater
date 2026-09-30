@@ -20,12 +20,14 @@ import { initRouter } from "./js/router.js";
 import { initSession } from "./js/session.js";
 import { initSimulator } from "./js/simulator.js";
 import { applyStatus, connectStatusSocket, initStatus } from "./js/status.js";
+import { initThemePicker } from "./js/theme_picker.js";
 import { toastError } from "./js/ui.js";
 import { initUsage } from "./js/usage.js";
 import { initUsers } from "./js/users.js";
 import { initWeather, loadWeather } from "./js/weather.js";
 
 async function main() {
+  initThemePicker();
   if (!(await initSession())) return;
 
   initRouter();

@@ -21,6 +21,7 @@ const stateValue = document.getElementById("state-value");
 const stateDescription = document.getElementById("state-description");
 const activityList = document.getElementById("activity-list");
 const activityEmpty = document.getElementById("activity-empty");
+const miniStatus = document.getElementById("mini-status");
 
 let previous = null;
 let lostAt = null;
@@ -78,6 +79,12 @@ export function applyStatus(status) {
   setIndicator("ptt-indicator", status.ptt_active, status.ptt_active ? "TX" : "off");
   setIndicator("cos-indicator", status.cos_active, status.cos_active ? "RX" : "off");
   setIndicator("ctcss-indicator", status.ctcss_hz !== null, status.ctcss_hz !== null ? `${status.ctcss_hz} Hz` : "none");
+  miniStatus.querySelector('[data-signal="ptt"]').classList.toggle("on", status.ptt_active);
+  miniStatus.querySelector('[data-signal="cos"]').classList.toggle("on", status.cos_active);
+  miniStatus.setAttribute(
+    "aria-label",
+    `Transmitter ${status.ptt_active ? "keyed" : "off"}, receiver ${status.cos_active ? "hearing a signal" : "quiet"}. Open the dashboard.`,
+  );
 
   setStateBadge(document.getElementById("sim-state"), status.state);
   setPill("sim-ptt", status.ptt_active, status.ptt_active ? "PTT ON" : "PTT off");

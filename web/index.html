@@ -4,6 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>moreopenrepeater</title>
+  <meta name="theme-color" content="#16191e" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -11,9 +17,20 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-top">
         <div class="brand">
-          <span class="brand-mark" aria-hidden="true"></span>
-          <span>moreopenrepeater</span>
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 14 11.6 27.5M16 14l4.4 13.5M13.2 22.6h5.6" />
+              <path d="M20.2 6.8a6 6 0 0 1 0 8.4M11.8 6.8a6 6 0 0 0 0 8.4" />
+              <path d="M23.4 3.6a10.5 10.5 0 0 1 0 14.8M8.6 3.6a10.5 10.5 0 0 0 0 14.8" opacity=".55" />
+            </g>
+            <circle cx="16" cy="11" r="2.6" fill="currentColor" />
+          </svg>
+          <span class="brand-name">moreopenrepeater</span>
         </div>
+        <a class="mini-status" id="mini-status" href="#/dashboard">
+          <span class="mini-signal" data-signal="ptt"><span class="indicator-dot"></span>TX</span>
+          <span class="mini-signal" data-signal="cos"><span class="indicator-dot"></span>RX</span>
+        </a>
         <button type="button" class="btn btn-ghost nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">&#9776;</button>
       </div>
       <div class="station-chip">
@@ -43,6 +60,11 @@
         <a href="#/audit" data-nav="audit" data-admin-only hidden>Audit log</a>
       </nav>
       <div class="sidebar-footer">
+        <div id="theme-picker" class="segmented segmented-sm" role="group" aria-label="Color theme">
+          <button type="button" data-theme-choice="auto">Auto</button>
+          <button type="button" data-theme-choice="light">Light</button>
+          <button type="button" data-theme-choice="dark">Dark</button>
+        </div>
         <span id="connection-indicator" class="pill pill-unknown">connecting&hellip;</span>
         <div id="user-box" class="user-box" hidden>
           <span class="muted small">Signed in as <strong id="user-name"></strong> <span id="user-role" class="tag"></span></span>
@@ -86,6 +108,14 @@
           </div>
         </div>
 
+        <div class="card alerts-card" id="wx-dash-card" hidden>
+          <div class="card-header">
+            <h2>Weather alerts</h2>
+            <a href="#/weather" class="btn btn-ghost btn-sm">Details</a>
+          </div>
+          <ul class="alert-list" id="wx-dash-list"></ul>
+        </div>
+
         <div class="card" id="links-card">
           <div class="card-header">
             <h2>Links</h2>
@@ -104,15 +134,13 @@
           <p id="links-note" class="muted small" hidden></p>
         </div>
 
-        <div class="grid grid-2">
-          <div class="card">
-            <h2>Station</h2>
-            <dl class="kv" id="station-summary"></dl>
+        <div class="card" id="gpio-dash-card" hidden>
+          <div class="card-header">
+            <h2>GPIO pins</h2>
+            <a href="#/audio" class="btn btn-ghost btn-sm">Set up</a>
           </div>
-          <div class="card">
-            <h2>Features</h2>
-            <dl class="kv" id="feature-summary"></dl>
-          </div>
+          <div class="gpio-pins" id="gpio-dash-pins"></div>
+          <p class="muted small" id="gpio-dash-note" hidden></p>
         </div>
 
         <div class="card listen-card">
@@ -129,15 +157,6 @@
           <p id="listen-status" class="muted small">Streams the repeater's audio to this browser (needs live audio running).</p>
         </div>
 
-        <div class="card" id="gpio-dash-card" hidden>
-          <div class="card-header">
-            <h2>GPIO pins</h2>
-            <a href="#/audio" class="btn btn-ghost btn-sm">Set up</a>
-          </div>
-          <div class="gpio-pins" id="gpio-dash-pins"></div>
-          <p class="muted small" id="gpio-dash-note" hidden></p>
-        </div>
-
         <div class="card">
           <div class="card-header">
             <h2>Recent activity</h2>
@@ -145,6 +164,17 @@
           </div>
           <ol id="activity-list" class="activity"></ol>
           <p id="activity-empty" class="muted small">State changes will appear here as they happen.</p>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="card">
+            <h2>Station</h2>
+            <dl class="kv" id="station-summary"></dl>
+          </div>
+          <div class="card">
+            <h2>Features</h2>
+            <dl class="kv" id="feature-summary"></dl>
+          </div>
         </div>
       </section>
 

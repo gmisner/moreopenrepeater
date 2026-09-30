@@ -4,12 +4,25 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Sign in &middot; moreopenrepeater</title>
+  <meta name="theme-color" content="#111317" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f3f4f6" media="(prefers-color-scheme: light)" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body class="login-body">
   <main class="login-card">
     <div class="brand brand-large">
-      <span class="brand-mark" aria-hidden="true"></span>
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 14 11.6 27.5M16 14l4.4 13.5M13.2 22.6h5.6" />
+          <path d="M20.2 6.8a6 6 0 0 1 0 8.4M11.8 6.8a6 6 0 0 0 0 8.4" />
+          <path d="M23.4 3.6a10.5 10.5 0 0 1 0 14.8M8.6 3.6a10.5 10.5 0 0 0 0 14.8" opacity=".55" />
+        </g>
+        <circle cx="16" cy="11" r="2.6" fill="currentColor" />
+      </svg>
       <span>moreopenrepeater</span>
     </div>
     <p class="muted">Sign in to manage your repeater.</p>

@@ -326,6 +326,10 @@ interface), DTMF macros (add/edit/rename/delete), Announcements, Weather
 alerts, APRS, APRS map, Simulator, Logs (filter/level/pause), Backup & restore, and for
 admins Users and Audit log. Each settings view saves only
 its own fields through `PUT /api/config`, with unsaved-change tracking.
+It has light and dark themes (following the system setting unless you pick one
+in the sidebar), and on a phone the header keeps TX/RX lit on every page. It
+can be added to a phone's home screen with its own icon. Colors, type sizes and
+layout rules are written down in `design-system/moreopenrepeater/MASTER.md`.
 Verified live in a real browser: login rejection/acceptance, WebSocket via
 session cookie, every view's save round-tripping through the API, the
 phone-width layout, and sign-out revoking API access.

@@ -23,7 +23,7 @@ function row(favorite = { node: "", name: "", monitor: false }) {
   tr.innerHTML = `
     <td><input type="text" data-field="node" inputmode="numeric" pattern="[0-9]{1,10}" required value="${escapeHtml(favorite.node)}" placeholder="2000" /></td>
     <td><input type="text" data-field="name" maxlength="40" value="${escapeHtml(favorite.name)}" placeholder="${escapeHtml(lookupText(favorite.node))}" /></td>
-    <td><input type="checkbox" data-field="monitor" ${favorite.monitor ? "checked" : ""} /></td>
+    <td><label class="check-cell"><input type="checkbox" data-field="monitor" aria-label="Monitor only" ${favorite.monitor ? "checked" : ""} /></label></td>
     <td class="row-actions"><button type="button" class="btn btn-danger btn-sm" data-remove>Remove</button></td>`;
   return tr;
 }

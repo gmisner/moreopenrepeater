@@ -16,12 +16,14 @@ const STATE_DESCRIPTIONS = {
 const MAX_ACTIVITY = 50;
 
 const connectionIndicator = document.getElementById("connection-indicator");
+const connectionBanner = document.getElementById("connection-banner");
 const stateValue = document.getElementById("state-value");
 const stateDescription = document.getElementById("state-description");
 const activityList = document.getElementById("activity-list");
 const activityEmpty = document.getElementById("activity-empty");
 
 let previous = null;
+let lostAt = null;
 
 function setIndicator(id, on, valueText) {
   const el = document.getElementById(id);
@@ -89,6 +91,20 @@ function setConnection(text, className) {
   connectionIndicator.className = `pill ${className}`;
 }
 
+// While the status socket is down, everything live on the page is frozen at its last value.
+function setLost(lost) {
+  if (!lost) {
+    lostAt = null;
+    delete document.body.dataset.connection;
+    connectionBanner.hidden = true;
+    return;
+  }
+  lostAt ??= new Date();
+  document.body.dataset.connection = "lost";
+  connectionBanner.hidden = false;
+  connectionBanner.textContent = `Lost the connection to the controller at ${lostAt.toLocaleTimeString()}. What's shown may be out of date. Reconnecting…`;
+}
+
 export function connectStatusSocket() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${protocol}//${location.host}/ws/status`);
@@ -97,11 +113,13 @@ export function connectStatusSocket() {
   ws.onopen = () => {
     opened = true;
     setConnection("live", "pill-on");
+    setLost(false);
   };
   ws.onmessage = (event) => applyStatus(JSON.parse(event.data));
   ws.onerror = () => ws.close();
   ws.onclose = async () => {
     setConnection("reconnecting…", "pill-warn");
+    if (previous) setLost(true);
     if (!opened) {
       // A handshake rejected before opening is most likely an expired
       // session -- api() redirects to the login page on a 401.

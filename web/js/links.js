@@ -35,15 +35,16 @@ function render(status) {
     .map((link) => {
       const mode = MODE_LABELS[link.mode] ? `<span class="tag">${MODE_LABELS[link.mode]}</span>` : "";
       const until = link.until ? `<span class="tag">until ${escapeHtml(shortTime(link.until))}</span>` : "";
+      const talking = link.keyed ? `<span class="tag tag-on">talking</span>` : "";
       const remove = status.available
         ? `<button type="button" class="btn btn-ghost btn-sm" data-disconnect="${escapeHtml(link.node)}" data-requires-write>Disconnect</button>`
         : "";
       const label = [link.name, link.callsign].filter(Boolean).join(" · ");
       const callsign = label ? `<strong>${escapeHtml(label)}</strong> ` : "";
       return `<li class="link-row${link.keyed ? " keyed" : ""}">
-        <span class="indicator-dot" title="${link.keyed ? "Talking" : "Quiet"}"></span>
+        <span class="indicator-dot" aria-hidden="true"></span>
         <span class="link-name"><code>${escapeHtml(link.node)}</code> ${callsign}${detail(link)}</span>
-        ${until}${mode}${remove}
+        ${talking}${until}${mode}${remove}
       </li>`;
     })
     .join("");

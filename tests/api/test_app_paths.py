@@ -1,6 +1,19 @@
+import logging
+import sys
 from pathlib import Path
 
-from api.app import _resolve_data_dir, _resolve_log_path
+from api.app import _resolve_data_dir, _resolve_log_path, create_app
+
+
+def test_startup_messages_reach_the_log_file(tmp_path, monkeypatch):
+    def find_cm108(_env):
+        logging.getLogger("moreopenrepeater.audio").info("using the CM108 interface at /dev/hidraw3")
+        return None
+
+    monkeypatch.setattr(sys.modules["api.app"], "cm108_from_env", find_cm108)
+    log_path = tmp_path / "app.log"
+    create_app(start_background_tick=False, log_path=log_path)
+    assert "using the CM108 interface at /dev/hidraw3" in log_path.read_text()
 
 
 def test_resolve_data_dir_defaults_to_repo_data_dir_slash_audio():

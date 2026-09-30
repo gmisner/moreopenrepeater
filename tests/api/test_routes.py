@@ -249,13 +249,13 @@ def test_delete_unknown_asset_returns_404():
     assert response.status_code == 404
 
 
-def test_logs_endpoint_returns_empty_list_before_any_activity():
+def test_logs_endpoint_has_no_activity_before_any_action():
     client, service, clock = make_client()
 
     response = client.get("/api/logs")
 
     assert response.status_code == 200
-    assert response.json() == []
+    assert not any("moreopenrepeater.controller" in line for line in response.json())
 
 
 def test_logs_endpoint_reflects_a_real_log_entry_after_an_action():

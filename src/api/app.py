@@ -330,6 +330,8 @@ def create_app(
     (or off) so tests never touch the real files under `data/`; the
     module-level `app` below opts in.
     `fetch_weather(lat, lon, contact)` and `fetch_zone(url, contact)` are swappable so tests stay offline."""
+    log_path = log_path or DEFAULT_LOG_PATH
+    configure_logging(log_path)
     assets_store = assets_store or AudioAssetStore(DEFAULT_DATA_DIR)
     recordings = recordings or RecordingStore(None)
     renderer = renderer or ClipRenderer(assets_store.path_for, tts=detect_tts(), recording_path=recordings.path_for)
@@ -353,7 +355,6 @@ def create_app(
         address=os.environ.get("MOREOPENREPEATER_USRP_ADDRESS"),
         manual=usrp_settings_from_env(os.environ),
     )
-    log_path = log_path or DEFAULT_LOG_PATH
     link_settings = link_settings if link_settings is not None else link_settings_from_env()
     node_directory = node_directory if node_directory is not None else NodeDirectory(None)
     links = links or LinkControl(
@@ -361,7 +362,6 @@ def create_app(
     )
     link_scheduler = LinkScheduler(links, lambda: service.config.link_schedules)
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
-    configure_logging(log_path)
     sessions = SessionStore()
     users = users if users is not None else UserStore()
     users.reserved_username = auth_settings.username if auth_settings else None

@@ -50,6 +50,7 @@ class FakeCM108:
     def __init__(self):
         self.ptt = []
         self.cos = False
+        self.cos_active_low = True
 
     def set_ptt(self, active):
         self.ptt.append(active)
@@ -58,7 +59,38 @@ class FakeCM108:
         return self.cos
 
 
-def make_live(config=None, stream=FakeStream, cm108=None):
+class FakePin:
+    def __init__(self, pin, output, active_low):
+        self.pin = pin
+        self.output = output
+        self.active_low = active_low
+        self.active = False
+        self.writes = []
+        self.closed = False
+
+    def read(self):
+        return self.active
+
+    def write(self, active):
+        self.writes.append(active)
+
+    def close(self):
+        self.closed = True
+
+
+class FakeHeader:
+    def __init__(self, fail_pins=()):
+        self.pins = {}
+        self.fail_pins = fail_pins
+
+    def open(self, pin, *, output, active_low):
+        if pin in self.fail_pins:
+            raise PermissionError(13, "Permission denied")
+        self.pins[pin] = FakePin(pin, output, active_low)
+        return self.pins[pin]
+
+
+def make_live(config=None, stream=FakeStream, cm108=None, header=None):
     tmp = Path(tempfile.mkdtemp())
     renderer = ClipRenderer(AudioAssetStore(tmp / "audio").path_for, tts=None, sample_rate=RATE)
     clock = {"now": 0.0}
@@ -73,7 +105,9 @@ def make_live(config=None, stream=FakeStream, cm108=None):
         engines.append(AudioEngine(*args, stream_factory=stream, **kwargs))
         return engines[-1]
 
-    live = LiveAudio(service, renderer, cm108=cm108, engine_factory=engine_factory)
+    live = LiveAudio(
+        service, renderer, cm108=cm108, engine_factory=engine_factory, open_pin=(header or FakeHeader()).open
+    )
     live.attach(ImmediateLoop())
     return live, service, clock, engines
 
@@ -173,13 +207,65 @@ def test_cm108_supplies_cos_and_hardware_ptt():
     live, service, _clock, _engines = make_live(RepeaterConfig(audio_enabled=True, cos_source="cm108"), cm108=cm108)
     engine = live.engine
     assert engine.processor.settings.cos_source == "external"
-    assert live.status()["hardware_ptt"] is True
+    assert live.status()["hardware_ptt"] == "cm108"
 
     engine.processor.set_external_cos(True)  # what the COS poll thread does
     feed(engine, tone(level=0.0, blocks=1))
     assert service.controller.state == RECEIVING
     feed(engine, tone(level=0.0, blocks=1))  # PTT keys on the first block transmitted after the controller asks
     assert cm108.ptt == [True]
+
+
+def test_cos_polarity_applies_to_the_cm108():
+    cm108 = FakeCM108()
+    _live, service, _clock, engines = make_live(RepeaterConfig(audio_enabled=True, cos_source="cm108"), cm108=cm108)
+    assert cm108.cos_active_low is True
+
+    service.update_config(cos_polarity="high")
+    assert len(engines) == 2
+    assert cm108.cos_active_low is False
+
+
+def test_pi_header_pins_supply_cos_and_ptt():
+    header = FakeHeader()
+    config = RepeaterConfig(
+        audio_enabled=True, cos_source="gpio", cos_gpio_pin=27, cos_polarity="high", ptt_output="gpio", ptt_gpio_pin=17
+    )
+    cm108 = FakeCM108()
+    live, service, _clock, _engines = make_live(config, cm108=cm108, header=header)
+    engine = live.engine
+    ptt, cos = header.pins[17], header.pins[27]
+    assert (ptt.output, ptt.active_low) == (True, False)
+    assert (cos.output, cos.active_low) == (False, False)
+    assert engine.processor.settings.cos_source == "external"
+    assert live.status()["hardware_ptt"] == "gpio"
+
+    cos.active = True
+    engine.processor.set_external_cos(engine._cos_input())  # one step of the COS poll thread
+    feed(engine, tone(level=0.0, blocks=2))
+    assert service.controller.state == RECEIVING
+    assert ptt.writes == [True]
+    assert cm108.ptt == []  # the CM108 no longer keys the radio
+
+    service.update_config(audio_enabled=False)
+    assert ptt.writes[-1] is False
+    assert ptt.closed and cos.closed
+
+
+def test_ptt_and_cos_cannot_share_a_pin():
+    config = RepeaterConfig(audio_enabled=True, cos_source="gpio", ptt_output="gpio", cos_gpio_pin=17, ptt_gpio_pin=17)
+    live, _service, _clock, engines = make_live(config)
+    assert engines == []
+    assert "GPIO17" in live.status()["error"]
+
+
+def test_pin_open_failure_is_reported_and_releases_other_pins():
+    header = FakeHeader(fail_pins=(27,))
+    config = RepeaterConfig(audio_enabled=True, cos_source="gpio", ptt_output="gpio")
+    live, _service, _clock, engines = make_live(config, header=header)
+    assert engines == []
+    assert live.status()["error"] == "couldn't open GPIO27 for COS: Permission denied"
+    assert header.pins[17].closed
 
 
 def test_audio_endpoints():

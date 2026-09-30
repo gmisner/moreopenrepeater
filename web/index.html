@@ -451,6 +451,33 @@
                 <option value="vox">Audio level (VOX)</option>
                 <option value="ctcss">CTCSS tone present</option>
                 <option value="cm108">CM108 COS input</option>
+                <option value="gpio">Raspberry Pi GPIO pin</option>
+              </select>
+            </label>
+            <label data-cos-hardware>COS polarity
+              <select name="cos_polarity">
+                <option value="low">Active low (pulled to ground on carrier)</option>
+                <option value="high">Active high</option>
+              </select>
+            </label>
+            <label data-cos-gpio>COS pin
+              <span class="input-unit"><input type="number" step="1" min="2" max="27" name="cos_gpio_pin" required /><span>GPIO</span></span>
+              <small>BCM number; GPIO27 is header pin 13. 3.3&nbsp;V only.</small>
+            </label>
+            <label>PTT
+              <select name="ptt_output">
+                <option value="cm108">CM108 interface (if set up)</option>
+                <option value="gpio">Raspberry Pi GPIO pin</option>
+              </select>
+            </label>
+            <label data-ptt-gpio>PTT pin
+              <span class="input-unit"><input type="number" step="1" min="2" max="27" name="ptt_gpio_pin" required /><span>GPIO</span></span>
+              <small>BCM number; GPIO17 is header pin 11. Drive the radio through a transistor.</small>
+            </label>
+            <label data-ptt-gpio>PTT polarity
+              <select name="ptt_polarity">
+                <option value="high">Active high (pin goes high to transmit)</option>
+                <option value="low">Active low</option>
               </select>
             </label>
             <label>VOX threshold

@@ -14,7 +14,8 @@
 
 A CM108 USB interface, if `MOREOPENREPEATER_CM108_HIDRAW` names its
 /dev/hidrawN node (Linux), keys the radio's PTT and can supply COS. Its
-spare pins are `api.gpio`'s.
+spare pins are `api.gpio`'s. On a Raspberry Pi, PTT and COS can use header
+pins instead, held only while the engine runs.
 """
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ from audio_io.audio_stream import sd
 from audio_io.cm108 import CM108Interface, LinuxHidrawDevice
 from audio_io.engine import AudioEngine
 from audio_io.patch import LinkAudio, PatchAudio
+from audio_io.pi_gpio import GpioLine, open_header_pin
 from audio_io.processor import AudioProcessor, ProcessorSettings
 from controller.events import COSChanged, CTCSSChanged
 from controller.state_machine import RepeaterConfig
@@ -46,7 +48,17 @@ MIN_RECORDING_SECONDS = 1.0  # shorter captures are kerchunks, not worth keeping
 MAX_RECORDING_SECONDS = 300.0
 MAX_PARROT_SECONDS = 30.0
 PARROT_ARMED_SECONDS = 60.0  # give up waiting for the parrot transmission after this
-_RESTART_FIELDS = ("audio_enabled", "audio_input_device", "audio_output_device", "cos_source")
+_RESTART_FIELDS = (
+    "audio_enabled",
+    "audio_input_device",
+    "audio_output_device",
+    "cos_source",
+    "cos_polarity",
+    "cos_gpio_pin",
+    "ptt_output",
+    "ptt_gpio_pin",
+    "ptt_polarity",
+)
 # Same names on RepeaterConfig and ProcessorSettings; applied without a restart.
 _LIVE_FIELDS = ("vox_threshold_db", "vox_hold", "tx_gain_db", "tx_ctcss_hz", "tx_ctcss_level_db")
 
@@ -79,11 +91,14 @@ class LiveAudio:
         engine_factory: Callable[..., AudioEngine] = AudioEngine,
         recordings: Optional[RecordingStore] = None,
         clock: Callable[[], float] = time.time,
+        open_pin: Callable[..., GpioLine] = open_header_pin,
     ) -> None:
         self._service = service
         self._renderer = renderer
         self._cm108 = cm108
         self._engine_factory = engine_factory
+        self._open_pin = open_pin
+        self._pins: list[GpioLine] = []
         self._recordings = recordings
         self._clock = clock
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -102,8 +117,11 @@ class LiveAudio:
         return self._cm108
 
     @property
-    def hardware_ptt(self) -> bool:
-        return self._cm108 is not None
+    def hardware_ptt(self) -> Optional[str]:
+        """What keys the transmitter: "cm108", "gpio", or None (nothing)."""
+        if self._service.config.ptt_output == "gpio":
+            return "gpio"
+        return "cm108" if self._cm108 is not None else None
 
     def attach(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -247,11 +265,29 @@ class LiveAudio:
         if cos_source == "cm108" and self._cm108 is None:
             self.error = "COS source is CM108, but no CM108 interface is configured (MOREOPENREPEATER_CM108_HIDRAW)"
             return
+        gpio_ptt = config.ptt_output == "gpio"
+        if gpio_ptt and cos_source == "gpio" and config.ptt_gpio_pin == config.cos_gpio_pin:
+            self.error = f"PTT and COS can't both use GPIO{config.ptt_gpio_pin}"
+            return
+        ptt_output = self._cm108.set_ptt if self._cm108 and not gpio_ptt else None
+        cos_input = self._cm108.read_cos if self._cm108 and cos_source == "cm108" else None
+        if self._cm108 is not None:
+            self._cm108.cos_active_low = config.cos_polarity == "low"
+        try:
+            if gpio_ptt:
+                ptt_output = self._claim_pin(config.ptt_gpio_pin, "PTT", output=True, active_low=config.ptt_polarity == "low").write
+            if cos_source == "gpio":
+                cos_input = self._claim_pin(config.cos_gpio_pin, "COS", output=False, active_low=config.cos_polarity == "low").read
+        except OSError as error:
+            self._release_pins()
+            self.error = str(error)
+            _logger.error("%s", self.error)
+            return
         rate = self._renderer.sample_rate
         processor = AudioProcessor(
             ProcessorSettings(
                 sample_rate=rate,
-                cos_source="external" if cos_source == "cm108" else cos_source,
+                cos_source="external" if cos_source in ("cm108", "gpio") else cos_source,
                 **{field: getattr(config, field) for field in _LIVE_FIELDS},
             )
         )
@@ -265,8 +301,8 @@ class LiveAudio:
             on_events=self._on_events,
             input_device=config.audio_input_device or None,
             output_device=config.audio_output_device or None,
-            ptt_output=self._cm108.set_ptt if self._cm108 else None,
-            cos_input=self._cm108.read_cos if self._cm108 and cos_source == "cm108" else None,
+            ptt_output=ptt_output,
+            cos_input=cos_input,
             on_audio=self.monitor.feed,
         )
         try:
@@ -278,15 +314,33 @@ class LiveAudio:
                 engine.stop()
             except Exception:
                 pass
+            self._release_pins()
             return
         self.engine = engine
         self.error = None
+
+    def _claim_pin(self, pin: int, role: str, *, output: bool, active_low: bool) -> GpioLine:
+        try:
+            line = self._open_pin(pin, output=output, active_low=active_low)
+        except OSError as error:
+            raise OSError(f"couldn't open GPIO{pin} for {role}: {error.strerror or error}") from error
+        self._pins.append(line)
+        return line
+
+    def _release_pins(self) -> None:
+        for line in self._pins:
+            try:
+                line.close()
+            except OSError:
+                pass
+        self._pins = []
 
     def _stop_engine(self) -> None:
         if self.engine is not None:
             processor = self.engine.processor
             self.engine.stop()
             self.engine = None
+            self._release_pins()
             # Otherwise the controller would sit in RECEIVING until the timeout timer.
             released = []
             if processor.cos_open:

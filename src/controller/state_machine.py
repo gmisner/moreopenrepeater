@@ -95,7 +95,12 @@ class RepeaterConfig:
     audio_enabled: bool = False
     audio_input_device: str = ""  # PortAudio device name; "" = system default
     audio_output_device: str = ""
-    cos_source: Literal["vox", "ctcss", "cm108"] = "vox"
+    cos_source: Literal["vox", "ctcss", "cm108", "gpio"] = "vox"  # "gpio" = a Raspberry Pi header pin
+    cos_polarity: Literal["low", "high"] = "low"  # hardware COS (CM108 or Pi pin): the level meaning "carrier"
+    cos_gpio_pin: int = 27  # BCM numbers; GPIO27 is header pin 13
+    ptt_output: Literal["cm108", "gpio"] = "cm108"  # "cm108" keys a CM108 interface's PTT, if one is set up
+    ptt_gpio_pin: int = 17  # header pin 11
+    ptt_polarity: Literal["high", "low"] = "high"  # the level that keys the transmitter
     vox_threshold_db: float = -40.0
     vox_hold: float = 0.4
     tx_gain_db: float = 0.0

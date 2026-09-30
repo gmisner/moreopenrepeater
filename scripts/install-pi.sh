@@ -130,6 +130,10 @@ if ! id "$SERVICE_USER" >/dev/null 2>&1; then
   useradd --system --no-create-home --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
 usermod -aG audio,dialout "$SERVICE_USER"
+# Header pins for PTT/COS (/dev/gpiochip*); Raspberry Pi OS has this group.
+if getent group gpio >/dev/null; then
+  usermod -aG gpio "$SERVICE_USER"
+fi
 
 step "Fetching moreopenrepeater ($BRANCH) into $INSTALL_DIR"
 FIRST_INSTALL=0

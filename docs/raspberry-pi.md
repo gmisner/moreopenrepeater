@@ -53,7 +53,7 @@ needs to run as root.
 
 ```
 sudo useradd --system --create-home --home-dir /opt/moreopenrepeater --shell /usr/sbin/nologin moreopenrepeater
-sudo usermod -aG audio,dialout moreopenrepeater   # /dev/hidrawN (below) and USB-serial, if used
+sudo usermod -aG audio,dialout,gpio moreopenrepeater   # /dev/hidrawN (below), USB-serial, header pins
 
 sudo -u moreopenrepeater git clone <this repo's URL> /opt/moreopenrepeater
 cd /opt/moreopenrepeater
@@ -93,10 +93,16 @@ MOREOPENREPEATER_CM108_HIDRAW=/dev/hidraw0
 
 With that set, the live audio engine keys the radio through the CM108's
 GPIO3 (PTT) whenever it transmits, and "CM108 COS input" becomes available
-as the carrier-detect source. That's the chip's volume-down input, active
-low, which is where URI/RIM/DMK-style interfaces wire the receiver's COS
-(the same as AllStarLink's SimpleUSB driver). Reading it needs Linux 5.11 or
-later, which every current Raspberry Pi OS has.
+as the carrier-detect source. That's the chip's volume-down input, which is
+where URI/RIM/DMK-style interfaces wire the receiver's COS (the same as
+AllStarLink's SimpleUSB driver). **COS polarity** on the Radio interface
+card says which level means carrier: "Active low" (the default, the pin
+pulled to ground) matches SimpleUSB's `carrierfrom=usbinvert`, and "Active
+high" matches `carrierfrom=usb`. Reading it needs Linux 5.11 or later,
+which every current Raspberry Pi OS has.
+
+A plain USB sound dongle can be turned into an interface with a transistor
+and a little soldering: see [cm108-wiring.md](cm108-wiring.md).
 
 Before going on the air, check the interface with the repeater stopped and
 a dummy load on the transmitter:
@@ -141,6 +147,37 @@ interface brings out to its connector.
 
 The pins come straight from the chip and can't power a relay coil: drive
 one through a transistor.
+
+### PTT and COS on the Pi's own pins
+
+Without a CM108 (a sound card with no GPIO, or a HAT), PTT and COS can use
+the Pi's 40-pin header instead. On the Radio interface card, set **PTT**
+and/or **Carrier detect** to "Raspberry Pi GPIO pin". Pins are BCM GPIO
+numbers; the defaults are GPIO17 (header pin 11) for PTT and GPIO27 (header
+pin 13) for COS, with ground on header pin 9 or 14. The pins are held only
+while live audio runs. The service user needs the `gpio` group, which the
+installer adds.
+
+The Pi's pins are 3.3 V only and can't drive a radio's PTT line directly:
+
+```
+GPIO17 (pin 11) ──[ 2.2k-4.7k ]── base
+                                    2N3904   collector ── radio PTT
+                                             emitter ──── ground (pin 9)
+```
+
+With this circuit, set **PTT polarity** to "Active high". Prefer it to
+"Active low" wiring: at power-up, and whenever the repeater isn't running,
+the pin is low, so an active-low PTT would key the radio while the Pi
+boots.
+
+For COS, a receiver output that pulls to ground on carrier (open collector)
+goes straight to GPIO27, with **COS polarity** "Active low"; the repeater
+turns on the Pi's internal pull-up. A COS output that goes to 5 V or more on
+carrier must go through a transistor, as in
+[cm108-wiring.md](cm108-wiring.md#cos) (collector to GPIO27, still "Active
+low"). "Active high" turns on the pull-down instead, for a 3.3 V signal that
+goes high on carrier.
 
 ### Audio devices
 
@@ -307,9 +344,16 @@ refills as new reports arrive.
 - The live audio engine is tested with synthetic signals and against Mac
   audio devices, but not yet with a CM108 and a real radio. The CM108 PTT,
   COS and GPIO code follows AllStarLink's SimpleUSB driver but hasn't run on
-  real hardware yet. Expect to tune
-  the VOX threshold and TX gain on first key-up, and check the "audio
-  glitches" count on the Radio interface card (dropped or late audio blocks)
-  under load on a Pi.
+  real hardware yet; the Pi header pins have been checked with `pinctrl`,
+  but not with a radio. Expect to tune the VOX threshold and TX gain on
+  first key-up, and check the "audio glitches" count on the Radio interface
+  card (dropped or late audio blocks).
+- Audio processing fits on a Raspberry Pi 3B+: it averages about 4 ms of
+  each 20 ms block, and 99% of blocks take under 6 ms
+  (`scripts/benchmark_audio.py`). A desktop session with a
+  web browser open on the Pi itself competes for the CPU and causes the
+  occasional late block, so run the Pi without a desktop (Raspberry Pi OS
+  Lite), or at least don't browse on it, and use the dashboard from another
+  computer.
 - AllStarLink audio (the node's `rxchannel` over USRP) is set up separately;
   see [allstar.md](allstar.md).

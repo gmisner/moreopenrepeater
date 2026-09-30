@@ -13,7 +13,11 @@ from .gpio import parse_gpio_command
 
 CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
 WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
-CosSource = Literal["vox", "ctcss", "cm108"]
+CosSource = Literal["vox", "ctcss", "cm108", "gpio"]
+Polarity = Literal["low", "high"]
+PttOutput = Literal["cm108", "gpio"]
+# BCM numbers on the 40-pin header; GPIO0/1 are reserved for HAT EEPROMs.
+PiGpioPin = Annotated[int, Field(ge=2, le=27)]
 Role = Literal["admin", "operator", "viewer"]
 
 # A hostname, or an IPv4/IPv6 address with an optional /prefix, as PJSIP's identify `match` takes.
@@ -154,6 +158,11 @@ class ConfigResponse(BaseModel):
     audio_input_device: str
     audio_output_device: str
     cos_source: CosSource
+    cos_polarity: Polarity
+    cos_gpio_pin: int
+    ptt_output: PttOutput
+    ptt_gpio_pin: int
+    ptt_polarity: Polarity
     vox_threshold_db: float
     vox_hold: float
     tx_gain_db: float
@@ -243,6 +252,11 @@ class ConfigUpdateRequest(BaseModel):
     audio_input_device: Optional[str] = None
     audio_output_device: Optional[str] = None
     cos_source: Optional[CosSource] = None
+    cos_polarity: Optional[Polarity] = None
+    cos_gpio_pin: Optional[PiGpioPin] = None
+    ptt_output: Optional[PttOutput] = None
+    ptt_gpio_pin: Optional[PiGpioPin] = None
+    ptt_polarity: Optional[Polarity] = None
     vox_threshold_db: Optional[float] = Field(default=None, ge=-90, le=0)
     vox_hold: Optional[float] = Field(default=None, ge=0, le=5)
     tx_gain_db: Optional[float] = Field(default=None, ge=-40, le=20)
@@ -683,7 +697,7 @@ class AudioEngineResponse(BaseModel):
     transmitting: bool
     dropped_input_blocks: int
     starved_output_blocks: int
-    hardware_ptt: bool
+    hardware_ptt: Optional[str]  # "cm108" or "gpio"
     listeners: int = 0
 
 

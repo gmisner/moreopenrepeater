@@ -211,10 +211,12 @@ several phases (see the plan file for the full breakdown):
   SQLite (`data/activity.db`, 400 days kept). The Activity page charts usage by hour
   and day, and counts kerchunks and timeouts.
 - **Live audio on any sound device**, with software carrier detect (VOX or CTCSS)
-  for interfaces with no COS wire, a live level meter, and CM108 PTT/COS when one is
-  plugged in. Devices open at whatever rate they support; audio is resampled to
+  for interfaces with no COS wire, a live level meter, and hardware PTT/COS from a
+  CM108 interface or the Raspberry Pi's own header pins, with either COS polarity.
+  [docs/cm108-wiring.md](docs/cm108-wiring.md) turns a plain USB sound dongle into
+  an interface. Devices open at whatever rate they support; audio is resampled to
   16 kHz internally. `scripts/benchmark_audio.py` times the per-block work (about 1%
-  of the real-time budget on a Mac).
+  of the real-time budget on a Mac, 20% on a Raspberry Pi 3B+).
 - **Kerchunk filter**: a key-up must last a set time before the repeater comes up.
   Filtered kerchunks are counted on the Activity page.
 - **CTCSS encode**: an optional sub-audible tone on everything transmitted, with

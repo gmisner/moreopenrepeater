@@ -10,6 +10,7 @@ const CTCSS_TONES = [
   183.5, 186.2, 189.9, 192.8, 196.6, 199.5, 203.5, 206.5, 210.7, 218.1, 225.7, 229.1, 233.6, 241.8, 250.3, 254.1,
 ];
 const METER_FLOOR_DB = -80;
+const PTT_LABELS = { cm108: " · CM108 PTT", gpio: " · GPIO PTT" };
 
 const form = document.getElementById("audio-engine-form");
 const stateTag = document.getElementById("audio-engine-state");
@@ -74,7 +75,7 @@ function renderEngine(engine) {
   const rateText =
     rate === engine.sample_rate ? `${rate / 1000} kHz` : `device ${rate / 1000} kHz → ${engine.sample_rate / 1000} kHz`;
   health.textContent = running
-    ? `${rateText}${engine.hardware_ptt ? " · CM108 PTT" : ""}${glitches ? ` · ${glitches} audio glitches` : ""}`
+    ? `${rateText}${PTT_LABELS[engine.hardware_ptt] ?? ""}${glitches ? ` · ${glitches} audio glitches` : ""}`
     : "";
 }
 
@@ -83,6 +84,17 @@ function renderThreshold() {
   const threshold = Number(form.elements.vox_threshold_db.value);
   levelThreshold.hidden = source !== "vox" || Number.isNaN(threshold);
   levelThreshold.style.left = `${meterPercent(threshold)}%`;
+}
+
+function renderHardwareFields() {
+  const source = form.elements.cos_source.value;
+  const gpioPtt = form.elements.ptt_output.value === "gpio";
+  const show = (selector, visible) => {
+    for (const label of form.querySelectorAll(selector)) label.hidden = !visible;
+  };
+  show("[data-cos-hardware]", source === "cm108" || source === "gpio");
+  show("[data-cos-gpio]", source === "gpio");
+  show("[data-ptt-gpio]", gpioPtt);
 }
 
 async function loadDevices() {
@@ -110,8 +122,18 @@ export function initAudio() {
   store.addEventListener("config", () => {
     renderDeviceSelects();
     renderThreshold();
+    renderHardwareFields();
   });
-  form.addEventListener("input", renderThreshold);
+  form.addEventListener("input", () => {
+    renderThreshold();
+    renderHardwareFields();
+  });
+  form.querySelector("[data-reset]").addEventListener("click", () =>
+    setTimeout(() => {
+      renderThreshold();
+      renderHardwareFields();
+    }),
+  );
   router.addEventListener("change", ({ detail }) => {
     if (detail === "audio") loadDevices();
   });

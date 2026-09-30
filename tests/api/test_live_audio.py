@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from api.app import create_app
 from api.assets import AudioAssetStore
-from api.live_audio import LiveAudio
+from api.live_audio import LiveAudio, cm108_from_env
 from api.service import RepeaterService
 from audio_io.engine import AudioEngine
 from controller.state_machine import COURTESY_TONE, IDLE, RECEIVING, RepeaterConfig
@@ -214,6 +214,23 @@ def test_cm108_supplies_cos_and_hardware_ptt():
     assert service.controller.state == RECEIVING
     feed(engine, tone(level=0.0, blocks=1))  # PTT keys on the first block transmitted after the controller asks
     assert cm108.ptt == [True]
+
+
+def test_cm108_is_found_automatically_unless_turned_off(tmp_path):
+    node = tmp_path / "hidraw3"
+    node.touch()
+    found = [{"path": str(node), "vendor": 0x0D8C, "product": 0x0012, "name": "USB Audio Device"}]
+
+    assert cm108_from_env({}, find=lambda: found) is not None
+    assert cm108_from_env({"MOREOPENREPEATER_CM108_HIDRAW": "auto"}, find=lambda: found) is not None
+    assert cm108_from_env({}, find=lambda: []) is None
+    assert cm108_from_env({"MOREOPENREPEATER_CM108_HIDRAW": "off"}, find=lambda: found) is None
+
+
+def test_cm108_path_can_be_set_explicitly(tmp_path):
+    node = tmp_path / "hidraw7"
+    node.touch()
+    assert cm108_from_env({"MOREOPENREPEATER_CM108_HIDRAW": str(node)}, find=lambda: []) is not None
 
 
 def test_cos_polarity_applies_to_the_cm108():

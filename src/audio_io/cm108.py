@@ -27,6 +27,7 @@ from __future__ import annotations
 import fcntl
 import os
 import threading
+from pathlib import Path
 from typing import Optional, Protocol
 
 GPIO1 = 0x01
@@ -45,6 +46,26 @@ def gpio_bit(pin: int) -> int:
     if not 1 <= pin <= 8:
         raise ValueError(f"no GPIO{pin} on a CM108-family chip")
     return 1 << (pin - 1)
+
+
+def find_interfaces(sysfs: Path = Path("/sys/class/hidraw")) -> list[dict]:
+    """CM108-family hidraw nodes: [{"path", "vendor", "product", "name"}].
+    The N in /dev/hidrawN depends on USB enumeration order, so look it up
+    rather than configuring it."""
+    found = []
+    for node in sorted(sysfs.glob("hidraw*")):
+        try:
+            uevent = (node / "device" / "uevent").read_text()
+        except OSError:
+            continue
+        fields = dict(line.split("=", 1) for line in uevent.splitlines() if "=" in line)
+        try:
+            _bus, vendor, product = (int(part, 16) for part in fields.get("HID_ID", "").split(":"))
+        except ValueError:
+            continue
+        if vendor == 0x0D8C or (vendor, product) == (0x1209, 0x7388):
+            found.append({"path": f"/dev/{node.name}", "vendor": vendor, "product": product, "name": fields.get("HID_NAME", "")})
+    return found
 
 
 def _hidiocginput(length: int) -> int:

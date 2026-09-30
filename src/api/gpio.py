@@ -170,7 +170,7 @@ class GpioControl:
 
     def _output(self, pin: int) -> None:
         if self._cm108 is None:
-            raise GpioError("No CM108 interface is set up (MOREOPENREPEATER_CM108_HIDRAW).")
+            raise GpioError("No CM108 interface was found when the service started.")
         if _pins(self._service.config).get(pin, {}).get("mode") != "output":
             raise GpioError(f"GPIO{pin} isn't set up as an output.")
 

@@ -12,8 +12,8 @@
     armed, the next transmission isn't repeated live but saved and played
     back after the user unkeys.
 
-A CM108 USB interface, if `MOREOPENREPEATER_CM108_HIDRAW` names its
-/dev/hidrawN node (Linux), keys the radio's PTT and can supply COS. Its
+A CM108 USB interface, found at startup (Linux), keys the radio's PTT and
+can supply COS. Its
 spare pins are `api.gpio`'s. On a Raspberry Pi, PTT and COS can use header
 pins instead, held only while the engine runs.
 """
@@ -27,7 +27,7 @@ from typing import Callable, Optional
 import numpy as np
 
 from audio_io.audio_stream import sd
-from audio_io.cm108 import CM108Interface, LinuxHidrawDevice
+from audio_io.cm108 import CM108Interface, LinuxHidrawDevice, find_interfaces
 from audio_io.engine import AudioEngine
 from audio_io.patch import LinkAudio, PatchAudio
 from audio_io.pi_gpio import GpioLine, open_header_pin
@@ -77,9 +77,25 @@ def list_audio_devices() -> list[dict]:
     ]
 
 
-def cm108_from_env(env: dict) -> Optional[CM108Interface]:
-    path = env.get("MOREOPENREPEATER_CM108_HIDRAW")
-    return CM108Interface(LinuxHidrawDevice(path)) if path else None
+def cm108_from_env(env: dict, find: Callable[[], list[dict]] = find_interfaces) -> Optional[CM108Interface]:
+    """`MOREOPENREPEATER_CM108_HIDRAW`: a /dev/hidrawN path, "off", or
+    "auto" (the default) for the first CM108 plugged in at startup."""
+    setting = env.get("MOREOPENREPEATER_CM108_HIDRAW", "").strip() or "auto"
+    if setting == "off":
+        return None
+    if setting != "auto":
+        return CM108Interface(LinuxHidrawDevice(setting))
+    found = find()
+    if not found:
+        return None
+    path = found[0]["path"]
+    try:
+        device = LinuxHidrawDevice(path)
+    except OSError as error:
+        _logger.error("found a CM108 interface at %s but couldn't open it: %s", path, error)
+        return None
+    _logger.info("using the CM108 interface at %s (%s)", path, found[0]["name"])
+    return CM108Interface(device)
 
 
 class LiveAudio:
@@ -263,7 +279,7 @@ class LiveAudio:
     def _start_engine(self, config: RepeaterConfig) -> None:
         cos_source = config.cos_source
         if cos_source == "cm108" and self._cm108 is None:
-            self.error = "COS source is CM108, but no CM108 interface is configured (MOREOPENREPEATER_CM108_HIDRAW)"
+            self.error = "COS source is CM108, but no CM108 interface was found when the service started"
             return
         gpio_ptt = config.ptt_output == "gpio"
         if gpio_ptt and cos_source == "gpio" and config.ptt_gpio_pin == config.cos_gpio_pin:

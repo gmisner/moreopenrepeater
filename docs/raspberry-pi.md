@@ -85,13 +85,14 @@ access to.) Plug in the interface and confirm with
 `ls -l /dev/hidraw*` -- it should show `root audio` ownership, mode
 `crw-rw----`.
 
-Then point the service at it in the env file (next section):
+The service finds the interface itself when it starts, so after plugging
+one in, restart it (`sudo systemctl restart moreopenrepeater`). The N in
+`/dev/hidrawN` depends on what else is plugged in, so it's looked up by
+USB ID rather than configured. With more than one CM108, pick one with
+`MOREOPENREPEATER_CM108_HIDRAW=/dev/hidrawN` in the env file (next
+section), or set it to `off` to ignore the interface.
 
-```
-MOREOPENREPEATER_CM108_HIDRAW=/dev/hidraw0
-```
-
-With that set, the live audio engine keys the radio through the CM108's
+With an interface found, the live audio engine keys the radio through the CM108's
 GPIO3 (PTT) whenever it transmits, and "CM108 COS input" becomes available
 as the carrier-detect source. That's the chip's volume-down input, which is
 where URI/RIM/DMK-style interfaces wire the receiver's COS (the same as

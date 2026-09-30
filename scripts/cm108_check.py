@@ -23,7 +23,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from audio_io.cm108 import VOL_DN, VOL_UP, CM108Interface, LinuxHidrawDevice  # noqa: E402
+from audio_io.cm108 import VOL_DN, VOL_UP, CM108Interface, LinuxHidrawDevice, find_interfaces  # noqa: E402
 
 VENDORS = {0x0D8C: "C-Media", 0x1209: "All In One Cable"}
 CHIPS = {
@@ -36,24 +36,6 @@ CHIPS = {
     0x6A00: "CM108 (NHRC/N1KDO)",
 }
 SPARE_PINS = (1, 2, 4, 5, 6, 7, 8)
-
-
-def find_interfaces(sysfs: Path = Path("/sys/class/hidraw")) -> list[dict]:
-    """CM108-family hidraw nodes: [{"path", "vendor", "product", "name"}]."""
-    found = []
-    for node in sorted(sysfs.glob("hidraw*")):
-        try:
-            uevent = (node / "device" / "uevent").read_text()
-        except OSError:
-            continue
-        fields = dict(line.split("=", 1) for line in uevent.splitlines() if "=" in line)
-        try:
-            _bus, vendor, product = (int(part, 16) for part in fields.get("HID_ID", "").split(":"))
-        except ValueError:
-            continue
-        if vendor == 0x0D8C or (vendor, product) == (0x1209, 0x7388):
-            found.append({"path": f"/dev/{node.name}", "vendor": vendor, "product": product, "name": fields.get("HID_NAME", "")})
-    return found
 
 
 def chip_name(vendor: int, product: int) -> str:

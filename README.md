@@ -98,7 +98,7 @@ with custom repeater-control logic (not a wrapper around Asterisk's `app_rpt`).
   `audio_io` is wired in too: `api.live_audio.LiveAudio` starts the
   `AudioEngine` when live audio is enabled on the dashboard, feeds detected
   carrier/CTCSS/DTMF into the controller, and carries out its PTT and clip
-  commands (`MOREOPENREPEATER_CM108_HIDRAW` adds CM108 hardware PTT/COS).
+  commands (a CM108 plugged in at startup adds hardware PTT/COS).
   The `simulate_*` controls keep working alongside it.
   Frontend (`web/`) is a plain HTML/JS dashboard (no build step) served by
   FastAPI's StaticFiles, driven by that same WebSocket. Manually verified

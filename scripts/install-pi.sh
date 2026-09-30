@@ -51,19 +51,6 @@ set_env() {
 
 env_value() { sed -nE "s/^$1=(.*)/\1/p" "$ENV_FILE" | tail -n 1; }
 
-# A CM108/CM119 (C-Media, USB vendor 0d8c) sound card's /dev/hidrawN, if one is plugged in.
-find_cm108() {
-  local uevent
-  for uevent in /sys/class/hidraw/hidraw*/device/uevent; do
-    [ -e "$uevent" ] || continue
-    if grep -qi '^HID_ID=.*:00000D8C:' "$uevent"; then
-      echo "/dev/$(basename "$(dirname "$(dirname "$uevent")")")"
-      return 0
-    fi
-  done
-  return 0
-}
-
 # ASL3's apt repository package for this Debian release.
 asl_repo_package() {
   local codename
@@ -171,11 +158,6 @@ if [ ! -f "$ENV_FILE" ]; then
   set_env MOREOPENREPEATER_AUTH_PASSWORD "$GENERATED_PASSWORD"
   if [ "$LISTEN_LAN" -eq 1 ]; then
     set_env MOREOPENREPEATER_HOST 0.0.0.0
-  fi
-  CM108="$(find_cm108)"
-  if [ -n "$CM108" ]; then
-    echo "Found a CM108 interface at $CM108"
-    set_env MOREOPENREPEATER_CM108_HIDRAW "$CM108"
   fi
 elif [ "$LISTEN_LAN" -eq 1 ]; then
   echo "Note: --lan only applies to a first install; edit MOREOPENREPEATER_HOST in $ENV_FILE instead."

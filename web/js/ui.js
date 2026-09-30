@@ -28,6 +28,11 @@ export function formatDuration(seconds) {
   return Number.isInteger(minutes) ? `${minutes} min` : `${minutes.toFixed(1)} min`;
 }
 
+// Icons are <symbol>s in index.html's sprite, named i-<name>.
+export function svgIcon(name) {
+  return `<svg class="icon" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+}
+
 export function formatTimestamp(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();

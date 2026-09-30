@@ -22,6 +22,15 @@ function show(name) {
   router.dispatchEvent(new CustomEvent("change", { detail: name }));
 }
 
+// Moves screen readers and keyboard users to the new page, the way a real
+// page load would.
+function focusHeading() {
+  const heading = views.get(currentView).querySelector("h1");
+  if (!heading) return;
+  heading.tabIndex = -1;
+  heading.focus({ preventScroll: true });
+}
+
 function setMenuOpen(open) {
   sidebar.classList.toggle("open", open);
   navToggle.setAttribute("aria-expanded", String(open));
@@ -36,6 +45,14 @@ export function initRouter() {
       navToggle.focus();
     }
   });
-  window.addEventListener("hashchange", () => show(location.hash.replace(/^#\/?/, "")));
+  document.getElementById("skip-link").addEventListener("click", (event) => {
+    event.preventDefault();
+    focusHeading();
+  });
+  window.addEventListener("hashchange", () => {
+    show(location.hash.replace(/^#\/?/, ""));
+    window.scrollTo(0, 0);
+    focusHeading();
+  });
   show(location.hash.replace(/^#\/?/, ""));
 }

@@ -73,8 +73,9 @@ The APRS map draws markers and alert areas over OpenStreetMap tiles, which look
 the same in both themes, so `web/js/map.js` keeps a fixed palette: repeater
 `#4f9dff`, digipeater `#b58cff`, mobile `#35d07f`, fixed `#c9ced6`, weather
 `#ffb020`, and alert severity Extreme `#d946ef`, Severe `#ff5c5c`, Moderate
-`#ffb020`, Minor `#facc15`. Markers sit on a white disc, so they don't need to
-change with the theme.
+`#ffb020`, Minor `#facc15`. Markers are a white disc with a border in the
+category color and a dark icon (`--marker-ink`), so they don't need to change
+with the theme.
 
 ### Type
 
@@ -133,6 +134,15 @@ Transitions use `--speed` (0.15s) and animate only color, opacity and transform.
 - **Dashboard order**, at every width: controller state and PTT/COS/CTCSS, weather
   alerts (only when there are any), links, GPIO (only when set up), listen live,
   recent activity, then the static station and feature summaries.
+- **Wide dashboard (1200px and up):** two columns split 3:2. The left column has
+  the controller state, alerts, links, GPIO and listen; the right has PTT/COS,
+  activity and the summaries. The status row uses the same split so the columns
+  line up. Narrower screens stack the two columns in the order above.
+- **Line length:** paragraphs and help text in cards and page headers stop at
+  75 characters, however wide the card is.
+- **Page changes** scroll to the top and move focus to the new page's `h1`, the
+  way a real page load would. A "Skip to content" link is the first thing Tab
+  reaches.
 
 ## Components
 
@@ -162,6 +172,24 @@ Transitions use `--speed` (0.15s) and animate only color, opacity and transform.
 - **Switch:** for settings that take effect when saved. Checkbox for list items.
 - **Toasts:** bottom right (full width on phones), green edge for success, red
   for errors.
+
+## Icons
+
+One hand-drawn set, never emoji (emoji look different on every system and
+can't take the theme's colors). Every icon is a `<symbol id="i-name">` in the
+sprite at the top of `index.html`, drawn on a 24×24 grid with 2px round-capped
+strokes and no fill, and colored by `currentColor`. Use them with
+`<svg class="icon"><use href="#i-name" /></svg>`, or `svgIcon("name")` from
+`web/js/ui.js` in scripts.
+
+- Navigation: every sidebar and tab bar item has an icon *and* a label. Sidebar
+  icons are 18px and `--muted` until the item is active; tab bar icons are 24px.
+- Map: APRS symbols are grouped into broad shapes (car, truck, bike, walker,
+  aircraft, balloon, boat, train, emergency, building, weather, tower,
+  digipeater, gateway, phone, pin) that stay readable at 16px inside a marker.
+
+To add one, draw it to the same grid and stroke, add a `<symbol>` to the sprite,
+and check it at 16px.
 
 ## Themes
 

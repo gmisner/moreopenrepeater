@@ -1,6 +1,6 @@
 import { api } from "./api.js";
 import { currentView, router } from "./router.js";
-import { escapeHtml } from "./ui.js";
+import { escapeHtml, svgIcon } from "./ui.js";
 
 const REFRESH_MS = 5_000;
 const AREAS_REFRESH_MS = 60_000;
@@ -13,23 +13,25 @@ const LABEL_ZOOM = 11;
 const FILTERS_KEY = "moreopenrepeater.mapHidden";
 
 const CATEGORIES = {
-  repeater: { label: "Repeaters", one: "Repeater", emoji: "📡", color: "#4f9dff" },
-  digipeater: { label: "Digipeaters", one: "Digipeater", emoji: "🔁", color: "#b58cff" },
-  mobile: { label: "Mobile", one: "Mobile", emoji: "🚗", color: "#35d07f" },
-  fixed: { label: "Fixed", one: "Fixed", emoji: "📍", color: "#c9ced6" },
-  weather: { label: "Weather", one: "Weather station", emoji: "🌡️", color: "#ffb020" },
+  repeater: { label: "Repeaters", one: "Repeater", icon: "tower", color: "#4f9dff" },
+  digipeater: { label: "Digipeaters", one: "Digipeater", icon: "digi", color: "#b58cff" },
+  mobile: { label: "Mobile", one: "Mobile", icon: "car", color: "#35d07f" },
+  fixed: { label: "Fixed", one: "Fixed", icon: "pin", color: "#c9ced6" },
+  weather: { label: "Weather", one: "Weather station", icon: "thermometer", color: "#ffb020" },
 };
-const LAYERS = { alerts: "⚠️ Weather alerts", trails: "〰️ Trails" };
+const LAYERS = { alerts: `${svgIcon("warning")} Weather alerts`, trails: `${svgIcon("trail")} Trails` };
 const SEVERITY_COLORS = { Extreme: "#d946ef", Severe: "#ff5c5c", Moderate: "#ffb020", Minor: "#facc15" };
 const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 
-// APRS symbol code -> emoji. Drawn rather than using the APRS symbol sprite
-// sheets, whose licensing is murky; the two tables mostly agree on meaning.
+// APRS symbol code -> icon in index.html's sprite. Drawn rather than using the
+// APRS symbol sprite sheets, whose licensing is murky, and grouped into broad
+// shapes that stay readable at marker size.
 const SYMBOLS = {
-  ">": "🚗", k: "🛻", u: "🚚", v: "🚐", j: "🚙", R: "🚐", U: "🚌", b: "🚲", "<": "🏍️", "[": "🚶",
-  X: "🚁", "^": "✈️", "'": "🛩️", O: "🎈", s: "🚤", Y: "⛵", C: "🛶", "=": "🚆",
-  f: "🚒", a: "🚑", P: "🚓", "!": "🚔", h: "🏥", "+": "➕", o: "🏛️", K: "🏫", ";": "⛺",
-  "-": "🏠", y: "🏠", _: "🌡️", W: "🌩️", r: "📡", "`": "📡", "#": "🔁", "&": "🌐", $: "☎️",
+  ">": "car", v: "car", j: "car", R: "car", k: "truck", u: "truck", U: "truck", b: "bike", "<": "bike", "[": "person",
+  X: "plane", "^": "plane", "'": "plane", O: "balloon", s: "boat", Y: "boat", C: "boat", "=": "train",
+  f: "emergency", a: "emergency", P: "emergency", "!": "emergency", h: "emergency", "+": "emergency",
+  o: "house", K: "house", ";": "house", "-": "house", y: "house", _: "thermometer", W: "thermometer",
+  r: "tower", "`": "tower", "#": "digi", "&": "globe", $: "phone",
 };
 
 const mapEl = document.getElementById("map");
@@ -135,8 +137,8 @@ function weatherRows(w, units) {
   return rows;
 }
 
-function emoji(station) {
-  return SYMBOLS[station.symbol_code] ?? CATEGORIES[station.category]?.emoji ?? "📍";
+function stationIcon(station) {
+  return svgIcon(SYMBOLS[station.symbol_code] ?? CATEGORIES[station.category]?.icon ?? "pin");
 }
 
 function stationPopup(s, units) {
@@ -239,7 +241,7 @@ function renderStations(body) {
   for (const s of body.stations) {
     seen.add(s.name);
     const color = CATEGORIES[s.category]?.color ?? "#c9ced6";
-    const icon = `<span class="map-icon" style="border-color:${color}">${emoji(s)}</span><span class="map-label">${escapeHtml(s.name)}</span>`;
+    const icon = `<span class="map-icon" style="border-color:${color}">${stationIcon(s)}</span><span class="map-label">${escapeHtml(s.name)}</span>`;
     const popup = stationPopup(s, units);
     let entry = markers.get(s.name);
     if (!entry) {
@@ -283,7 +285,7 @@ function renderFilters(body) {
   const counts = {};
   for (const s of body.stations) counts[s.category] = (counts[s.category] ?? 0) + 1;
   const chips = Object.entries(CATEGORIES).map(
-    ([key, c]) => [key, `${c.emoji} ${c.label} <span class="map-filter-count">${counts[key] ?? 0}</span>`],
+    ([key, c]) => [key, `${svgIcon(c.icon)} ${c.label} <span class="map-filter-count">${counts[key] ?? 0}</span>`],
   );
   chips.push(...Object.entries(LAYERS));
   filtersEl.innerHTML = chips
@@ -303,7 +305,7 @@ function renderTable(body) {
     .map(
       (s) => `
       <tr class="clickable" data-station="${escapeHtml(s.name)}">
-        <td><span class="map-table-icon">${emoji(s)}</span> <strong>${escapeHtml(s.name)}</strong>
+        <td><span class="map-table-icon">${stationIcon(s)}</span> <strong>${escapeHtml(s.name)}</strong>
           ${s.kind !== "station" ? `<span class="muted small">via ${escapeHtml(s.source)}</span>` : ""}</td>
         <td>${escapeHtml(CATEGORIES[s.category]?.one ?? s.category)}</td>
         <td class="nowrap">${s.distance_km != null ? `${distance(s.distance_km, units)} ${compass(s.bearing)}` : ""}</td>

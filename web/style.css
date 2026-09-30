@@ -55,6 +55,7 @@
   --map-bg: #0d1014;
   --overlay: rgba(17, 19, 23, 0.8);
   --halo: #000000;
+  --marker-ink: #262b33;
   --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.35);
@@ -128,6 +129,35 @@ h2 {
 }
 a { color: var(--accent); text-underline-offset: 2px; }
 a:hover { text-decoration-thickness: 2px; }
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.icon {
+  width: 1.15em;
+  height: 1.15em;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.skip-link {
+  position: fixed;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 100;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip-link:focus { transform: none; }
+/* Headings get focus programmatically on page change; the ring would only be noise. */
+h1[tabindex="-1"]:focus { outline: none; }
+/* Keep running text to a readable line length on wide screens. */
+.view-header p, .card p, .card small, .section-title + p { max-width: 75ch; }
 code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); padding: var(--space-half) var(--space-1); border-radius: var(--radius-xs); }
 .muted { color: var(--muted); }
 .small { font-size: var(--text-sm); }
@@ -189,12 +219,17 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 
 .nav { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
 .nav a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   color: var(--text);
   text-decoration: none;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   font-size: var(--text-md);
 }
+.nav a .icon { width: 18px; height: 18px; color: var(--muted); }
+.nav a.active .icon { color: inherit; }
 .nav a:hover { background: var(--panel); }
 .nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .nav-group {
@@ -224,6 +259,12 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 .view { display: flex; flex-direction: column; gap: var(--space-4); }
 .view-header { margin-bottom: var(--space-2); }
 .view-header p { margin: 0; }
+
+.dash-columns, .dash-main, .dash-side { display: flex; flex-direction: column; gap: var(--space-4); }
+@media (min-width: 1200px) {
+  .dash-columns { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
+  [data-view="dashboard"] .grid-hero { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+}
 
 .grid { display: grid; gap: var(--space-4); }
 .grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
@@ -651,6 +692,9 @@ td audio { height: 2rem; width: 14rem; max-width: 100%; }
 }
 .map.map-offline .leaflet-tile-pane { display: none; }
 .map-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
@@ -673,9 +717,9 @@ td audio { height: 2rem; width: 14rem; max-width: 100%; }
   border: 2px solid;
   background: color-mix(in srgb, var(--knob) 92%, transparent);
   box-shadow: var(--shadow-sm);
-  font-size: 15px;
-  line-height: 1;
+  color: var(--marker-ink);
 }
+.map-icon .icon { width: 16px; height: 16px; }
 .map-label {
   display: none;
   margin-left: 4px;
@@ -708,7 +752,7 @@ td audio { height: 2rem; width: 14rem; max-width: 100%; }
 .map .leaflet-popup-content .kv { margin: var(--space-2) 0; font-size: var(--text-xs); }
 .map .leaflet-container a, .map a { color: var(--accent); }
 .map-popup-comment { margin-top: var(--space-1); color: var(--muted); }
-.map-table-icon { display: inline-block; width: 1.4rem; text-align: center; }
+.map-table-icon { display: inline-flex; width: 1.4rem; justify-content: center; vertical-align: -0.2em; color: var(--muted); }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover td { background: var(--panel-2); }
 td.nowrap { white-space: nowrap; }
@@ -762,7 +806,7 @@ body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-ins
     cursor: pointer;
     touch-action: manipulation;
   }
-  .tabbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .tabbar .icon { width: 24px; height: 24px; }
   .tabbar [aria-current="page"], .tabbar [aria-expanded="true"] { color: var(--accent); }
   .tabbar:has([aria-expanded="true"]) [aria-current="page"] { color: var(--muted); }
   .tabbar :focus-visible { outline-offset: -4px; }

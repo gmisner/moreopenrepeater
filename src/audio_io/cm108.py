@@ -15,9 +15,11 @@ GET_REPORT on the HID interface) and direwolf's cm108.c (hidraw write):
   written with a leading report-ID byte of 0 (5 bytes).
 - Input report, 4 bytes: byte 0 holds the button inputs (VOL_UP, VOL_DN,
   HOOK on a CM108AH, ...), byte 1 GPIO1-8's levels. It's read on demand
-  (HIDIOCGINPUT, a GET_REPORT), like chan_simpleusb polls it.
+  (HIDIOCGINPUT, a GET_REPORT), like chan_simpleusb polls it. A button's
+  bit is set while its pin is pulled low (pressed); the pins have pull-ups.
 - On URI/RIM/DMK-style interfaces GPIO3 is PTT and COS comes in on VOL_DN,
-  active low (chan_simpleusb's `keyed = !(buf[0] & 2)`). GPIO5-8 exist on
+  usually active low: chan_simpleusb's `carrierfrom=usbinvert` ("active
+  low") reports carrier while the VOL_DN bit is set. GPIO5-8 exist on
   CM119-family chips only, and on a CM108AH GPIO2 isn't a real GPIO.
 """
 from __future__ import annotations
@@ -131,6 +133,9 @@ class CM108Interface:
     def set_ptt(self, active: bool) -> None:
         self.set_gpio(self.ptt_pin, active)
 
+    def cos_from_buttons(self, buttons: int) -> bool:
+        pulled_low = bool(buttons & self.cos_input)
+        return pulled_low if self.cos_active_low else not pulled_low
+
     def read_cos(self) -> bool:
-        pressed = bool(self.read_inputs()[0] & self.cos_input)
-        return not pressed if self.cos_active_low else pressed
+        return self.cos_from_buttons(self.read_inputs()[0])

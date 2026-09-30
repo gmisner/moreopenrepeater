@@ -85,14 +85,9 @@ def service_running() -> bool:
     return result.returncode == 0
 
 
-def cos_open(cm108: CM108Interface, buttons: int) -> bool:
-    pressed = bool(buttons & cm108.cos_input)
-    return not pressed if cm108.cos_active_low else pressed
-
-
 def describe_inputs(cm108: CM108Interface, buttons: int, gpio: int) -> str:
-    cos = "OPEN (carrier)" if cos_open(cm108, buttons) else "closed"
-    vol_up = "high" if buttons & VOL_UP else "low"
+    cos = "OPEN (carrier)" if cm108.cos_from_buttons(buttons) else "closed"
+    vol_up = "low" if buttons & VOL_UP else "high"  # button bits are set while the pin is pulled low
     pins = " ".join(f"{p}:{'H' if gpio & (1 << (p - 1)) else 'L'}" for p in SPARE_PINS)
     return f"COS {cos:14}  VOL_UP {vol_up:4}  GPIO {pins}  raw {buttons:02x} {gpio:02x}"
 
@@ -153,7 +148,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             while time.monotonic() < end:
                 buttons, gpio = cm108.read_inputs()
                 line = describe_inputs(cm108, buttons, gpio)
-                opened = opened or cos_open(cm108, buttons)
+                opened = opened or cm108.cos_from_buttons(buttons)
                 if line != last:
                     print(f"  {time.strftime('%H:%M:%S')}  {line}", flush=True)
                     last = line

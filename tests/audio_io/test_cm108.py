@@ -57,16 +57,21 @@ def test_releasing_a_pin_makes_it_an_input_again():
 
 
 def test_cos_is_vol_dn_active_low():
-    device = FakeHidrawDevice(buttons=0xFF & ~VOL_DN)
+    # A button bit is set while its pin is pulled low, like chan_simpleusb's
+    # carrierfrom=usbinvert ("active low"), which reports carrier on a set bit.
+    device = FakeHidrawDevice(buttons=VOL_DN)
     cm108 = CM108Interface(device)
     assert cm108.read_cos() is True
-    device.buttons = VOL_DN | VOL_UP
+    device.buttons = 0xFF & ~VOL_DN
     assert cm108.read_cos() is False
 
 
 def test_cos_input_and_polarity_can_change():
-    device = FakeHidrawDevice(buttons=VOL_UP)
-    assert CM108Interface(device, cos_input=VOL_UP, cos_active_low=False).read_cos() is True
+    device = FakeHidrawDevice(buttons=VOL_DN)
+    cm108 = CM108Interface(device, cos_input=VOL_UP, cos_active_low=False)
+    assert cm108.read_cos() is True  # VOL_UP's pin is high: active high carrier
+    device.buttons = VOL_UP
+    assert cm108.read_cos() is False
 
 
 def test_gpio_inputs_come_from_the_second_byte():

@@ -11,16 +11,21 @@ the Raspberry Pi) before trusting it with a repeater:
 
 Anything under ~25% of the budget at p99 leaves room for the web server,
 text-to-speech rendering and the rest of the system.
+
+BLAS is limited to one thread, as the systemd service does.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import queue
 import sys
 import time
 from pathlib import Path
 
-import numpy as np
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
+import numpy as np  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 

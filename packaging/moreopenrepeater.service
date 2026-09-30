@@ -8,6 +8,9 @@ Type=simple
 User=moreopenrepeater
 Group=moreopenrepeater
 WorkingDirectory=/opt/moreopenrepeater
+# Multithreaded BLAS makes the audio worker's small matrix products late now
+# and then on a Pi (waking the other cores costs more than it saves).
+Environment=OPENBLAS_NUM_THREADS=1
 EnvironmentFile=/etc/moreopenrepeater/env
 ExecStart=/opt/moreopenrepeater/.venv/bin/moreopenrepeater-api
 Restart=on-failure

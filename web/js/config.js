@@ -128,7 +128,7 @@ function renderSummaries(config) {
   document.getElementById("station-summary").innerHTML = kv([
     ["Callsign", escapeHtml(config.callsign || "not set")],
     ["ID mode", escapeHtml(config.id_mode.toUpperCase())],
-    ["ID every", formatDuration(config.id_interval)],
+    ["ID every", `${formatDuration(config.id_interval)}${config.idle_id ? "" : " in use"}`],
     ["Timeout", formatDuration(config.tot_duration)],
     ["Hang time", formatDuration(config.hang_time)],
   ]);

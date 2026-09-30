@@ -116,6 +116,7 @@ class ConfigResponse(BaseModel):
     hang_time: float
     tot_duration: float
     id_interval: float
+    idle_id: bool
     id_audio_duration: float
     require_ctcss_hz: Optional[float]
     kerchunk_delay: float
@@ -197,6 +198,7 @@ class ConfigUpdateRequest(BaseModel):
     hang_time: Optional[float] = Field(default=None, gt=0)
     tot_duration: Optional[float] = Field(default=None, gt=0)
     id_interval: Optional[float] = Field(default=None, gt=0)
+    idle_id: Optional[bool] = None
     id_audio_duration: Optional[float] = Field(default=None, gt=0)
     require_ctcss_hz: Optional[float] = None
     clear_require_ctcss_hz: bool = False

@@ -50,6 +50,9 @@ class RepeaterConfig:
     hang_time: float = 3.0
     tot_duration: float = 180.0
     id_interval: float = 600.0
+    # Off: ID only while there's been activity since the last one. On: ID every
+    # interval around the clock, like a beacon.
+    idle_id: bool = False
     id_audio_duration: float = 3.0
     require_ctcss_hz: Optional[float] = None
     kerchunk_delay: float = 0.0  # carrier must last this long before keying up from idle; 0 = off
@@ -156,6 +159,7 @@ class RepeaterController:
         self._tot_deadline: Optional[float] = None
         self._state_deadline: Optional[float] = None
         self._id_due_at = now + config.id_interval
+        self._id_owed = False  # transmitted since the last ID
         self._resume_state_after_id = IDLE
         self._remote_keyed: set[str] = set()
         self._announcements: list[str] = []
@@ -201,6 +205,7 @@ class RepeaterController:
         if not self.config.transmitter_enabled:
             return []
         self._keyup_at = None
+        self._note_transmission(now)
         if self.state == TRANSMITTING_ID:
             self._resume_state_after_id = PATCH
             return []
@@ -299,7 +304,7 @@ class RepeaterController:
         if not self.config.transmitter_enabled:
             return commands
 
-        if self.state in (IDLE, HANG_TIME, PATCH) and now >= self._id_due_at:
+        if self.state in (IDLE, HANG_TIME, PATCH) and self._id_due(now):
             commands += self._enter_id(now)
 
         if self.state == IDLE and self._announcements and self._keyup_at is None:
@@ -342,7 +347,19 @@ class RepeaterController:
             _logger.info("state %s -> %s", self.state, new_state)
         self.state = new_state
 
+    def _id_due(self, now: float) -> bool:
+        return (self._id_owed or self.config.idle_id) and now >= self._id_due_at
+
+    def _note_transmission(self, now: float) -> None:
+        """The first transmission after an ID starts the countdown to the
+        next one, so IDs come every interval while the repeater is in use and
+        once more after the last of it (§97.119), and not at all when idle."""
+        if not self._id_owed and not self.config.idle_id:
+            self._id_due_at = now + self.config.id_interval
+        self._id_owed = True
+
     def _enter_receiving(self, now: float) -> list[ControllerCommand]:
+        self._note_transmission(now)
         self._set_state(RECEIVING)
         self._tot_deadline = now + self.config.tot_duration
         self._state_deadline = None
@@ -377,6 +394,7 @@ class RepeaterController:
         self._set_state(TRANSMITTING_ID)
         self._state_deadline = now + (self._clip_duration("id") or self.config.id_audio_duration)
         self._id_due_at = now + self.config.id_interval
+        self._id_owed = False
         return [AssertPTT(active=True), PlayAudio(clip="id")]
 
     def _exit_id(self, now: float) -> list[ControllerCommand]:
@@ -386,12 +404,14 @@ class RepeaterController:
             self._state_deadline = None
             return [AssertPTT(active=False)]
         if target == PATCH:
+            self._id_owed = True  # the call is still on the air
             self._state_deadline = None
             return []
         self._state_deadline = now + self.config.hang_time  # resume hang_time countdown
         return []
 
     def _start_announcement(self, now: float) -> list[ControllerCommand]:
+        self._note_transmission(now)
         commands: list[ControllerCommand] = [] if self.state == ANNOUNCING else [AssertPTT(active=True)]
         clip = self._announcements.pop(0)
         self._set_state(ANNOUNCING)
@@ -399,6 +419,6 @@ class RepeaterController:
         return commands + [PlayAudio(clip=clip)]
 
     def _finish_announcement(self, now: float) -> list[ControllerCommand]:
-        if self._announcements and now < self._id_due_at:
+        if self._announcements and not self._id_due(now):
             return self._start_announcement(now)  # back-to-back, without dropping PTT
         return self._enter_idle(now)

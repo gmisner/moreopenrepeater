@@ -189,6 +189,10 @@ several phases (see the plan file for the full breakdown):
   including unsaved changes.
 - **Text-to-speech voice ID**, using whichever TTS engine is installed. The ID text
   can include `{callsign}`, which is spoken phonetically if you want it to be.
+- **Polite station ID**: the first transmission after a quiet spell starts the ID
+  clock, so the repeater IDs every interval while it's in use and once after the
+  last of it, then stays quiet until someone keys up (§97.119). A switch turns on
+  idle IDs every interval around the clock, as a beacon.
 - **Scheduled announcements**: interval ("every 30 minutes") or weekly ("Tuesdays at
   19:55") messages, spoken or from an uploaded clip. They queue for a clear channel
   and never interrupt a user.

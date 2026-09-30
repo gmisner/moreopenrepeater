@@ -345,7 +345,12 @@
             </label>
             <label>ID interval
               <span class="input-unit"><input type="number" step="1" min="1" name="id_interval" required /><span>s</span></span>
-              <small>FCC &sect;97.119 requires an ID at least every 10 minutes (600 s).</small>
+              <small>FCC &sect;97.119 requires an ID at least every 10 minutes (600 s) while in use.</small>
+            </label>
+            <label class="switch switch-inline span-2">
+              <input type="checkbox" name="idle_id" />
+              <span class="switch-track"></span>
+              <span>ID when idle too, as a beacon <small class="muted">(off: IDs only follow activity)</small></span>
             </label>
             <label>ID length fallback
               <span class="input-unit"><input type="number" step="0.1" min="0.1" name="id_audio_duration" required /><span>s</span></span>

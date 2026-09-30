@@ -161,18 +161,19 @@ def test_ending_the_patch_while_a_user_talks_goes_back_to_repeating():
 def test_station_id_during_a_call_returns_to_the_call():
     c = controller()
     c.start_patch(1.0)
-    assert c.tick(100.0) == [AssertPTT(True), PlayAudio("id")]
+    assert c.tick(101.0) == [AssertPTT(True), PlayAudio("id")]
     assert c.state == TRANSMITTING_ID
-    assert c.tick(100.6) == []
+    assert c.tick(101.6) == []
     assert c.state == PATCH
+    assert c.tick(201.0) == [AssertPTT(True), PlayAudio("id")]  # still on the air, so still IDing
 
 
 def test_call_ending_during_the_id_drops_to_idle_after_it():
     c = controller()
     c.start_patch(1.0)
-    c.tick(100.0)
-    assert c.end_patch(100.2) == []
-    assert c.tick(100.6) == [AssertPTT(False)]
+    c.tick(101.0)
+    assert c.end_patch(101.2) == []
+    assert c.tick(101.6) == [AssertPTT(False)]
     assert c.state == IDLE
 
 

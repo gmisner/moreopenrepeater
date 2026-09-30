@@ -93,7 +93,7 @@ def test_ctcss_gating_ignores_key_up_without_matching_tone():
 
 
 def test_id_timer_preempts_from_idle_and_resumes_idle():
-    controller = RepeaterController(make_config(id_interval=1.0, id_audio_duration=0.5), now=0.0)
+    controller = RepeaterController(make_config(id_interval=1.0, id_audio_duration=0.5, idle_id=True), now=0.0)
 
     commands = controller.tick(now=1.0)
     assert controller.state == TRANSMITTING_ID
@@ -102,6 +102,66 @@ def test_id_timer_preempts_from_idle_and_resumes_idle():
     commands = controller.tick(now=1.6)
     assert controller.state == IDLE
     assert AssertPTT(active=False) in commands
+
+
+def test_no_id_while_the_repeater_is_idle():
+    controller = RepeaterController(make_config(), now=0.0)
+    for now in (100.0, 500.0, 5_000.0):
+        assert controller.tick(now) == []
+    assert controller.state == IDLE
+
+
+def test_first_key_up_starts_the_id_clock_and_one_id_follows_the_activity():
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.tick(now=400.0)
+    controller.handle_event(COSChanged(active=True), now=450.0)
+    controller.handle_event(COSChanged(active=False), now=452.0)
+    for now in (452.2, 453.3, 549.9):
+        controller.tick(now)
+    assert controller.state == IDLE
+
+    assert PlayAudio(clip="id") in controller.tick(now=550.0)
+    controller.tick(now=550.6)
+    assert controller.state == IDLE
+    assert controller.tick(now=650.0) == []
+    assert controller.tick(now=2_000.0) == []
+
+
+def test_ids_keep_coming_while_the_repeater_stays_in_use():
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    controller.handle_event(COSChanged(active=False), now=2.0)
+    controller.tick(now=2.2)
+    controller.tick(now=100.0)
+    assert controller.state == TRANSMITTING_ID
+
+    controller.tick(now=100.6)
+    controller.handle_event(COSChanged(active=True), now=120.0)
+    controller.handle_event(COSChanged(active=False), now=122.0)
+    controller.tick(now=122.2)
+    controller.tick(now=219.9)
+    assert controller.state == IDLE
+    assert PlayAudio(clip="id") in controller.tick(now=220.0)
+
+
+def test_an_announcement_counts_as_activity():
+    controller = RepeaterController(make_config(), now=0.0, clip_duration=lambda clip: 2.0)
+    controller.queue_announcement("tts:net tonight")
+    controller.tick(now=50.0)
+    controller.tick(now=52.0)
+    assert controller.state == IDLE
+    assert PlayAudio(clip="id") in controller.tick(now=150.0)
+
+
+def test_idle_id_ids_on_a_fixed_schedule_without_activity():
+    controller = RepeaterController(make_config(idle_id=True), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=50.0)
+    controller.handle_event(COSChanged(active=False), now=51.0)
+    controller.tick(now=51.2)
+    controller.tick(now=52.3)
+    assert PlayAudio(clip="id") in controller.tick(now=100.0)
+    controller.tick(now=100.6)
+    assert PlayAudio(clip="id") in controller.tick(now=200.0)
 
 
 def test_dtmf_macro_dispatches_command():
@@ -157,9 +217,9 @@ def test_a_carrier_without_the_required_tone_doesnt_hold_the_link_up():
 
 
 def test_changing_id_interval_reschedules_the_next_id_immediately():
-    controller = RepeaterController(make_config(id_interval=600.0), now=0.0)
+    controller = RepeaterController(make_config(id_interval=600.0, idle_id=True), now=0.0)
 
-    controller.update_config(make_config(id_interval=10.0), now=5.0)
+    controller.update_config(make_config(id_interval=10.0, idle_id=True), now=5.0)
 
     controller.tick(now=14.9)
     assert controller.state == IDLE
@@ -188,7 +248,7 @@ def test_enabling_required_ctcss_honours_a_tone_already_present():
 
 def test_id_state_uses_the_reported_clip_duration_when_known():
     controller = RepeaterController(
-        make_config(id_interval=10.0, id_audio_duration=0.5), now=0.0, clip_duration=lambda clip: 3.0
+        make_config(id_interval=10.0, id_audio_duration=0.5, idle_id=True), now=0.0, clip_duration=lambda clip: 3.0
     )
     controller.tick(now=10.0)
     controller.tick(now=12.9)

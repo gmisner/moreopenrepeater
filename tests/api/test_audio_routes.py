@@ -91,7 +91,7 @@ def test_preview_of_tts_without_an_engine_is_503():
 
 def test_id_state_lasts_as_long_as_the_rendered_voice_id():
     client, service, renderer, clock = make_client(
-        config=RepeaterConfig(callsign="W1AW", id_mode="voice", id_interval=10.0, id_audio_duration=0.5)
+        config=RepeaterConfig(callsign="W1AW", id_mode="voice", id_interval=10.0, id_audio_duration=0.5, idle_id=True)
     )
     renderer.warm(service.config)  # 2s of fake speech
 

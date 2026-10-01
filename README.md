@@ -264,6 +264,11 @@ several phases (see the plan file for the full breakdown):
   [docs/raspberry-pi.md](docs/raspberry-pi.md#backups).
 - **One-command Raspberry Pi install** (`scripts/install-pi.sh`), which CI runs on
   every push.
+- **Updates from the dashboard, in stable / beta / dev channels**: changes land on
+  dev (`main`) first and are promoted to beta and then stable by a GitHub Actions
+  workflow, only once their tests pass. The Updates page shows what's new on a
+  channel and installs it; a version that doesn't start is rolled back
+  automatically. See [docs/raspberry-pi.md](docs/raspberry-pi.md#6-updates).
 - **CI**: GitHub Actions runs the test suite on Python 3.11-3.14.
 
 ### Why a local Asterisk sidecar for linking?
@@ -330,7 +335,7 @@ nodes, and a recent-activity feed), Activity (airtime charts), Timing,
 Identification, Audio & tones (sounds, clip library and the live radio
 interface), DTMF macros (add/edit/rename/delete), Announcements, Weather
 alerts, APRS, APRS map, Simulator, Logs (filter/level/pause), Backup & restore, and for
-admins Users and Audit log. Each settings view saves only
+admins Users, Audit log and Updates. Each settings view saves only
 its own fields through `PUT /api/config`, with unsaved-change tracking.
 It has light and dark themes (following the system setting unless you pick one
 in the sidebar). On a phone the header keeps TX/RX lit on every page and a
@@ -350,11 +355,12 @@ curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scrip
 ```
 
 It installs the system packages, creates a `moreopenrepeater` service user,
-checks out the code in `/opt/moreopenrepeater`, sets up the CM108 udev rule,
-writes `/etc/moreopenrepeater/env` with a generated admin password (and the
-CM108's device if one is plugged in), and starts the systemd service. It
-prints the password and how to reach the dashboard at the end. Run it again
-to update. With `-s -- --allstar` after `bash`, it also installs AllStarLink
+checks out the stable release in `/opt/moreopenrepeater`, sets up the CM108 udev rule,
+writes `/etc/moreopenrepeater/env` with a generated admin password, and starts
+the systemd service. It prints the password and how to reach the dashboard at
+the end. Update from the dashboard's Updates page, or run it again. Add
+`-s -- --channel beta` (or `dev`) after `bash` to follow a pre-release channel.
+With `-s -- --allstar` after `bash`, it also installs AllStarLink
 (ASL3) and connects the controller to it. The manual steps, and how to reach the dashboard securely from
 other devices, are in `docs/raspberry-pi.md`.
 

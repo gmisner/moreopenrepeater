@@ -1,0 +1,11 @@
+[Unit]
+Description=Install the moreopenrepeater release the dashboard asked for
+# Started by moreopenrepeater-update.path; see scripts/update.sh.
+
+[Service]
+Type=oneshot
+ExecStart=/opt/moreopenrepeater/scripts/update.sh
+# /var/lib/moreopenrepeater-update: status.json and update.log, readable by the service.
+StateDirectory=moreopenrepeater-update
+StateDirectoryMode=0755
+TimeoutStartSec=30min

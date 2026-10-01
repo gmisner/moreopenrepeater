@@ -5,39 +5,52 @@
 #
 # Safe to run again: it updates the checkout and dependencies and restarts
 # the service, but never overwrites /etc/moreopenrepeater/env. What it does
-# is the manual procedure in docs/raspberry-pi.md.
+# is the manual procedure in docs/raspberry-pi.md. The dashboard's Updates
+# page runs it too (through scripts/update.sh).
 #
 # Options (append after `sudo bash -s --` when piping):
+#   --channel stable|beta|dev
+#              which releases to follow (default: the one chosen before, or
+#              stable); see "Updates" in docs/raspberry-pi.md
 #   --lan      listen on all interfaces instead of only the Pi itself
 #              (first install only; see "Security" in docs/raspberry-pi.md)
 #   --allstar  also install AllStarLink (ASL3) for linking and autopatch, and
 #              connect the controller to it (Debian 12 or 13; docs/allstar.md)
 #
-# Environment overrides: REPO_URL, BRANCH, INSTALL_DIR.
+# Environment overrides: REPO_URL, BRANCH (instead of the channel's branch),
+# INSTALL_DIR.
+#
+# It runs in two parts: the first fetches the code, then hands over to the
+# fetched copy of this script (--fetched), so an update always installs with
+# the new version's steps.
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/gmisner/moreopenrepeater.git}"
-BRANCH="${BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/moreopenrepeater}"
 SERVICE_USER=moreopenrepeater
 ENV_DIR=/etc/moreopenrepeater
 ENV_FILE="$ENV_DIR/env"
 LISTEN_LAN=0
 ALLSTAR=0
+CHANNEL=""
+FETCHED=0
 ASTERISK_DIR=/etc/asterisk
 AMI_USER=moreopenrepeater
 
-for arg in "$@"; do
-  case "$arg" in
-    --lan) LISTEN_LAN=1 ;;
-    --allstar) ALLSTAR=1 ;;
-    *) echo "Unknown option: $arg" >&2; exit 2 ;;
-  esac
-done
-
 step() { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31mError:\033[0m %s\n' "$*" >&2; exit 1; }
-as_service_user() { sudo -u "$SERVICE_USER" -H "$@"; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --lan) LISTEN_LAN=1 ;;
+    --allstar) ALLSTAR=1 ;;
+    --channel) CHANNEL="${2:-}"; shift ;;
+    --channel=*) CHANNEL="${1#--channel=}" ;;
+    --fetched) FETCHED=1 ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
 
 # Sets KEY=VALUE in the env file, uncommenting the line if it's there.
 set_env() {
@@ -102,6 +115,43 @@ install_allstar() {
 if [ "$ALLSTAR" -eq 1 ]; then asl_repo_package >/dev/null; fi
 command -v apt-get >/dev/null || fail "this installer needs a Debian-based system (Raspberry Pi OS, Debian, Ubuntu)."
 
+if [ -z "$CHANNEL" ] && [ -f "$ENV_FILE" ]; then CHANNEL="$(env_value MOREOPENREPEATER_UPDATE_CHANNEL)"; fi
+CHANNEL="${CHANNEL:-stable}"
+case "$CHANNEL" in
+  stable) CHANNEL_BRANCH=stable ;;
+  beta) CHANNEL_BRANCH=beta ;;
+  dev) CHANNEL_BRANCH=main ;;
+  *) fail "unknown channel '$CHANNEL' (choose stable, beta or dev)." ;;
+esac
+
+if [ "$FETCHED" -eq 0 ]; then
+  BRANCH="${BRANCH:-$CHANNEL_BRANCH}"
+  if ! command -v git >/dev/null; then
+    step "Installing git"
+    apt-get update -q
+    apt-get install -y -q --no-install-recommends git
+  fi
+
+  step "Fetching moreopenrepeater ($CHANNEL: $BRANCH) into $INSTALL_DIR"
+  if [ -d "$INSTALL_DIR/.git" ]; then
+    # The code belongs to root (earlier versions gave it to the service
+    # user), so the dashboard can't change what the updater runs as root.
+    find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o \( ! -user root -o ! -group root \) -exec chown -h root:root {} +
+    git -C "$INSTALL_DIR" fetch -q origin "$BRANCH"
+    git -C "$INSTALL_DIR" checkout -q -f -B "$BRANCH" FETCH_HEAD
+  else
+    if [ -e "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR")" ]; then
+      fail "$INSTALL_DIR exists and isn't a moreopenrepeater checkout; move it aside first."
+    fi
+    git clone -q --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+  fi
+
+  pass=(--fetched --channel "$CHANNEL")
+  if [ "$LISTEN_LAN" -eq 1 ]; then pass+=(--lan); fi
+  if [ "$ALLSTAR" -eq 1 ]; then pass+=(--allstar); fi
+  exec bash "$INSTALL_DIR/scripts/install-pi.sh" "${pass[@]}"
+fi
+
 step "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
@@ -121,27 +171,17 @@ usermod -aG audio,dialout "$SERVICE_USER"
 if getent group gpio >/dev/null; then
   usermod -aG gpio "$SERVICE_USER"
 fi
-
-step "Fetching moreopenrepeater ($BRANCH) into $INSTALL_DIR"
-FIRST_INSTALL=0
-if [ -d "$INSTALL_DIR/.git" ]; then
-  as_service_user git -C "$INSTALL_DIR" fetch -q origin "$BRANCH"
-  as_service_user git -C "$INSTALL_DIR" checkout -q "$BRANCH"
-  as_service_user git -C "$INSTALL_DIR" merge -q --ff-only "origin/$BRANCH"
-else
-  if [ -e "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR")" ]; then
-    fail "$INSTALL_DIR exists and isn't a moreopenrepeater checkout; move it aside first."
-  fi
-  FIRST_INSTALL=1
-  mkdir -p "$INSTALL_DIR"
-  chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
-  as_service_user git clone -q --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
-fi
+# Settings, recordings, logs and backups: the only part the service can write.
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$INSTALL_DIR/data"
+chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data"
+rm -rf "$INSTALL_DIR/.cache"  # pip's cache from when it ran as the service user
 
 step "Installing Python dependencies (this can take a few minutes on a Pi)"
-[ -x "$INSTALL_DIR/.venv/bin/python" ] || as_service_user python3 -m venv "$INSTALL_DIR/.venv"
-as_service_user "$INSTALL_DIR/.venv/bin/pip" install -q --no-cache-dir --upgrade pip
-as_service_user "$INSTALL_DIR/.venv/bin/pip" install -q --no-cache-dir -e "$INSTALL_DIR"
+[ -x "$INSTALL_DIR/.venv/bin/python" ] || python3 -m venv "$INSTALL_DIR/.venv"
+"$INSTALL_DIR/.venv/bin/pip" install -q --no-cache-dir --upgrade pip
+"$INSTALL_DIR/.venv/bin/pip" install -q --no-cache-dir -e "$INSTALL_DIR"
+# The service can't write bytecode next to root's files, so compile it now.
+"$INSTALL_DIR/.venv/bin/python" -m compileall -q "$INSTALL_DIR/src" >/dev/null
 
 step "Allowing access to CM108 USB radio interfaces"
 install -m 644 "$INSTALL_DIR/packaging/99-cm108.rules" /etc/udev/rules.d/99-cm108.rules
@@ -162,37 +202,45 @@ if [ ! -f "$ENV_FILE" ]; then
 elif [ "$LISTEN_LAN" -eq 1 ]; then
   echo "Note: --lan only applies to a first install; edit MOREOPENREPEATER_HOST in $ENV_FILE instead."
 fi
+set_env MOREOPENREPEATER_UPDATE_CHANNEL "$CHANNEL"
 
 if [ "$ALLSTAR" -eq 1 ]; then
   install_allstar
 fi
 
 step "Installing and (re)starting the service"
-install -m 644 "$INSTALL_DIR/packaging/moreopenrepeater.service" /etc/systemd/system/moreopenrepeater.service
+for unit in moreopenrepeater.service moreopenrepeater-update.service moreopenrepeater-update.path; do
+  install -m 644 "$INSTALL_DIR/packaging/$unit" "/etc/systemd/system/$unit"
+done
 systemctl daemon-reload
 systemctl enable -q moreopenrepeater
+systemctl enable -q --now moreopenrepeater-update.path
 systemctl restart moreopenrepeater
 
 PORT="$(env_value MOREOPENREPEATER_PORT)"
 PORT="${PORT:-8000}"
 printf 'Waiting for the dashboard to come up'
-for _ in $(seq 1 60); do
+up=0
+for _ in $(seq 1 90); do
   # Any HTTP answer (even 401) means it's up.
   if curl -s -o /dev/null "http://127.0.0.1:$PORT/api/session"; then
+    up=1
     echo " ok"
     break
   fi
   printf '.'
   sleep 1
 done
-systemctl is-active -q moreopenrepeater || fail "the service didn't start; see: journalctl -u moreopenrepeater -n 50"
+[ "$up" -eq 1 ] || fail "the dashboard didn't come up; see: journalctl -u moreopenrepeater -n 50"
+sleep 5  # and stays up
+systemctl is-active -q moreopenrepeater || fail "the service stopped after starting; see: journalctl -u moreopenrepeater -n 50"
 
 HOST="$(env_value MOREOPENREPEATER_HOST)"
 echo
-if [ "$FIRST_INSTALL" -eq 1 ]; then
-  echo "moreopenrepeater is installed and running."
+if [ -n "$GENERATED_PASSWORD" ]; then
+  echo "moreopenrepeater is installed and running ($CHANNEL channel, $(git -C "$INSTALL_DIR" rev-parse --short HEAD))."
 else
-  echo "moreopenrepeater is updated and running."
+  echo "moreopenrepeater is updated and running ($CHANNEL channel, $(git -C "$INSTALL_DIR" rev-parse --short HEAD))."
 fi
 if [ "$HOST" = "127.0.0.1" ] || [ -z "$HOST" ]; then
   echo "  Dashboard (on the Pi):  http://127.0.0.1:$PORT"

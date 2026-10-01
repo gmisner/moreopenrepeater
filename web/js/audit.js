@@ -23,6 +23,7 @@ const ACTIONS = [
   [/^PUT \/api\/users\//, "Changed a user"],
   [/^DELETE \/api\/users\/(.+)$/, "Deleted user $1"],
   [/^POST \/api\/simulate\/(.+)$/, "Simulator: $1"],
+  [/^POST \/api\/updates$/, "Started an update"],
   [/^DTMF (.+)$/, "Over the air: $1"],
 ];
 

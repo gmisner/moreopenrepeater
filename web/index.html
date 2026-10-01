@@ -32,6 +32,7 @@
     <symbol id="i-backup" viewBox="0 0 24 24"><path d="M12 4v11M8 11l4 4 4-4M5 19h14" /></symbol>
     <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5" /><path d="M3 20c.8-3.5 3.3-5.5 6-5.5s5.2 2 6 5.5" /><circle cx="17" cy="9" r="2.5" /><path d="M17 14.5c2 .3 3.5 2 4 4.5" /></symbol>
     <symbol id="i-audit" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1M9 13l2 2 4-4" /></symbol>
+    <symbol id="i-update" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9" /><path d="M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2" /></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
     <symbol id="i-car" viewBox="0 0 24 24"><path d="M4 16v-4l2.2-4.4A2 2 0 0 1 8 6.5h8a2 2 0 0 1 1.8 1.1L20 12v4z" /><path d="M4 12h16" /><circle cx="7.5" cy="16.5" r="1.5" /><circle cx="16.5" cy="16.5" r="1.5" /></symbol>
     <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7" /><circle cx="7" cy="17.5" r="1.5" /><circle cx="17" cy="17.5" r="1.5" /></symbol>
@@ -94,6 +95,7 @@
         <a href="#/backup" data-nav="backup"><svg class="icon" aria-hidden="true"><use href="#i-backup" /></svg>Backup &amp; restore</a>
         <a href="#/users" data-nav="users" data-admin-only hidden><svg class="icon" aria-hidden="true"><use href="#i-users" /></svg>Users</a>
         <a href="#/audit" data-nav="audit" data-admin-only hidden><svg class="icon" aria-hidden="true"><use href="#i-audit" /></svg>Audit log</a>
+        <a href="#/updates" data-nav="updates" data-admin-only hidden><svg class="icon" aria-hidden="true"><use href="#i-update" /></svg>Updates</a>
       </nav>
       <div class="sidebar-footer">
         <div id="theme-picker" class="segmented segmented-sm" role="group" aria-label="Color theme">
@@ -1332,6 +1334,53 @@
             </table>
           </div>
           <p id="audit-empty" class="muted small">Nothing yet.</p>
+        </div>
+      </section>
+
+      <!-- Updates (admins only) -->
+      <section class="view" data-view="updates" data-title="Updates" hidden>
+        <header class="view-header">
+          <h1>Updates</h1>
+          <p class="muted">New versions go to the dev channel first, then to beta for testing, and only then to stable.
+            Production repeaters should stay on stable.</p>
+        </header>
+        <p id="updates-unavailable" class="card muted" hidden>Updating from the dashboard needs an install made with
+          <code>scripts/install-pi.sh</code>. You can still see what each channel has.</p>
+        <div class="grid grid-2">
+          <div class="card">
+            <h2>Installed</h2>
+            <dl class="kv" id="updates-installed"></dl>
+          </div>
+          <div class="card">
+            <h2>Release channel</h2>
+            <div class="segmented" id="updates-channels" role="group" aria-label="Release channel">
+              <button type="button" data-channel="stable">Stable</button>
+              <button type="button" data-channel="beta">Beta</button>
+              <button type="button" data-channel="dev">Dev</button>
+            </div>
+            <p class="muted small" id="updates-channel-note"></p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h2 id="updates-check-title">Checking&hellip;</h2>
+            <button type="button" class="btn btn-ghost btn-sm" id="updates-refresh">Check again</button>
+          </div>
+          <p class="muted small" id="updates-check-detail"></p>
+          <ul class="commit-list" id="updates-commits"></ul>
+          <div class="form-actions">
+            <span class="muted small">The repeater goes off the air for a minute or two, and you may have to sign in again.</span>
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-primary" id="updates-install" disabled>Update</button>
+          </div>
+        </div>
+        <div class="card" id="updates-progress" hidden>
+          <div class="card-header">
+            <h2>Last update</h2>
+            <span id="updates-state"></span>
+          </div>
+          <p class="muted small" id="updates-message"></p>
+          <pre class="logs-view" id="updates-log"></pre>
         </div>
       </section>
 

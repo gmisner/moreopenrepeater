@@ -113,13 +113,19 @@ from .models import (
     StatusResponse,
     TransmissionResponse,
     TTSInfoResponse,
+    UpdateChannel,
+    UpdateCheckResponse,
+    UpdateRequest,
+    UpdatesResponse,
     WeatherAlertResponse,
     WeatherStatusResponse,
 )
 from .persistence import StateStore
 from .service import RepeaterService, StatusSnapshot
+from .updates import UpdateChecker, Updater, channel_from_env, installed_version, read_log, repo_from_checkout, updater_settings_from_env
 
-WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
+REPO_DIR = Path(__file__).resolve().parent.parent.parent
+WEB_DIR = REPO_DIR / "web"
 _REPO_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
 
@@ -325,6 +331,9 @@ def create_app(
     gpio: Optional[GpioControl] = None,
     node_directory: Optional[NodeDirectory] = None,
     links: Optional[LinkControl] = None,
+    updater: Optional[Updater] = None,
+    update_checker: Optional[UpdateChecker] = None,
+    update_channel: Optional[str] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -376,6 +385,9 @@ def create_app(
 
     service.aprs_summary = lambda: spoken_summary(aprs_stations.stations(aprs_window_start()), service.config, time.time())
     backups = backups or BackupFolder(None)
+    updater = updater or Updater(updater_settings_from_env(os.environ))
+    update_checker = update_checker or UpdateChecker(repo_from_checkout(REPO_DIR))
+    update_channel = update_channel or channel_from_env(os.environ)
     backup_sources = BackupSources(service, users, assets_store, recordings, activity_store, audit)
 
     def auth_enabled() -> bool:
@@ -910,6 +922,37 @@ def create_app(
         request.state.audit_detail = name
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, restore_backup_file, saved_backup_path(name), loop)
+
+    @app.get("/api/updates", response_model=UpdatesResponse, dependencies=admin_dependencies)
+    def get_updates() -> dict:
+        return {
+            "available": updater.available,
+            "channel": update_channel,
+            "version": installed_version(REPO_DIR),
+            "status": updater.status(),
+        }
+
+    @app.get("/api/updates/check", response_model=UpdateCheckResponse, dependencies=admin_dependencies)
+    def check_for_update(channel: UpdateChannel, refresh: bool = False) -> dict:
+        version = installed_version(REPO_DIR)
+        return update_checker.check(channel, version["sha"] if version else "", refresh=refresh)
+
+    @app.get("/api/updates/log", response_model=list[str], dependencies=admin_dependencies)
+    def get_update_log() -> list[str]:
+        return read_log(updater.settings) if updater.settings else []
+
+    @app.post("/api/updates", response_model=UpdatesResponse, dependencies=admin_dependencies)
+    def start_update(body: UpdateRequest, request: Request) -> dict:
+        request.state.audit_detail = body.channel
+        if not updater.available:
+            raise HTTPException(status_code=409, detail="Updates are only available on installs made with install-pi.sh")
+        if updater.busy():
+            raise HTTPException(status_code=409, detail="An update is already in progress")
+        try:
+            updater.request(body.channel)
+        except OSError as error:
+            raise HTTPException(status_code=500, detail=f"Couldn't ask the updater: {error.strerror or error}") from None
+        return get_updates()
 
     @app.get("/api/audio/tts", response_model=TTSInfoResponse, dependencies=auth_dependencies)
     def get_tts_info() -> TTSInfoResponse:

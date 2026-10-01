@@ -1,0 +1,55 @@
+name: promote
+
+# Moves a release channel forward: main -> beta, or beta -> stable (see
+# "Updates" in docs/raspberry-pi.md). Only a commit whose tests passed can be
+# promoted, and only as a fast-forward, so a channel never jumps backwards.
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel to move forward
+        type: choice
+        options: [beta, stable]
+        required: true
+      commit:
+        description: Commit to promote (default the newest on main for beta, on beta for stable)
+        required: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Promote
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          if [ "$CHANNEL" = beta ]; then source=main; else source=beta; fi
+          sha="$(git rev-parse --verify "${COMMIT:-origin/$source}^{commit}")"
+          if ! git merge-base --is-ancestor "$sha" "origin/$source"; then
+            echo "::error::$sha isn't on $source; promote to beta first."
+            exit 1
+          fi
+          passed="$(gh run list --workflow tests.yml --commit "$sha" --status success --limit 1 --json databaseId --jq length)"
+          if [ "$passed" != 1 ]; then
+            echo "::error::The tests haven't passed on $sha."
+            exit 1
+          fi
+          before="$(git rev-parse --verify -q "origin/$CHANNEL" || echo none)"
+          git push origin "$sha:refs/heads/$CHANNEL"
+          {
+            echo "### $CHANNEL is now $(git log -1 --format='%h %s' "$sha")"
+            if [ "$before" != none ]; then
+              echo
+              echo "New on $CHANNEL:"
+              git log --format='- %h %s' "$before..$sha"
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"

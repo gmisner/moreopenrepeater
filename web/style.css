@@ -635,6 +635,17 @@ td audio { height: 2rem; width: 14rem; max-width: 100%; }
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ---------- updates ---------- */
+
+#updates-channels { margin-bottom: var(--space-2); }
+#updates-log { height: 40vh; }
+.commit-list { list-style: none; margin: 0 0 var(--space-3); padding: 0; max-height: 18rem; overflow-y: auto; }
+.commit-list:empty { display: none; }
+.commit-list li { display: flex; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); font-size: var(--text-sm); }
+.commit-list li:last-child { border-bottom: none; }
+.commit-list code { color: var(--muted); font-family: var(--mono); font-size: var(--text-xs); flex: none; padding-top: 1px; }
+.commit-list .commit-date { margin-left: auto; color: var(--muted); font-size: var(--text-xs); flex: none; }
 .log-warning { color: var(--amber); }
 .log-error, .log-critical { color: var(--red); }
 .log-debug { color: var(--muted); }

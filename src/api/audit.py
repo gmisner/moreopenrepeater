@@ -7,13 +7,12 @@ Request bodies are never stored, so passwords can't end up here.
 """
 from __future__ import annotations
 
-import sqlite3
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from .persistence import copy_database, load_database
+from .persistence import copy_database, load_database, open_database
 
 RETENTION_DAYS = 365
 
@@ -31,9 +30,7 @@ class AuditLog:
     """`path=None` keeps everything in memory (tests)."""
 
     def __init__(self, path: Optional[Path] = None) -> None:
-        if path is not None:
-            path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(path) if path else ":memory:", check_same_thread=False)
+        self._conn = open_database(path)
         self._lock = threading.Lock()
         with self._lock, self._conn:
             self._conn.execute(

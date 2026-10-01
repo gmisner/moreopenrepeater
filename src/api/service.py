@@ -108,6 +108,7 @@ class StatusSnapshot:
     last_clip: Optional[str]
     timestamp: float
     transmitter_enabled: bool = True
+    locked_out: bool = False
 
 
 class RepeaterService:
@@ -136,6 +137,7 @@ class RepeaterService:
         self.audit_hook: Optional[Callable[[str, str, str], None]] = None  # (actor, action, detail)
         self.aprs_summary: Optional[Callable[[], str]] = None
         self.gpio_command: Optional[Callable[[str], str]] = None  # runs a gpio macro, returns what to say
+        self.lockout_hook: Optional[Callable[[bool], None]] = None  # the stuck-carrier lockout engaged/cleared
         self._action_source = "DTMF"
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
@@ -161,6 +163,7 @@ class RepeaterService:
         self._last_state = self.controller.state
         self._repeating = False
         self._kerchunks_filtered = 0
+        self._locked_out = False
         self._subscribers: set["asyncio.Queue[StatusSnapshot]"] = set()
 
     @property
@@ -198,6 +201,7 @@ class RepeaterService:
             last_clip=self.last_clip,
             timestamp=self._clock(),
             transmitter_enabled=self.controller.config.transmitter_enabled,
+            locked_out=self.controller.locked_out,
         )
 
     def subscribe(self) -> "asyncio.Queue[StatusSnapshot]":
@@ -237,6 +241,13 @@ class RepeaterService:
         if filtered > self._kerchunks_filtered and self.activity is not None:
             self.activity.kerchunk_filtered(now)
         self._kerchunks_filtered = filtered
+        locked_out = self.controller.locked_out
+        if locked_out != self._locked_out:
+            self._locked_out = locked_out
+            if locked_out and self.activity is not None:
+                self.activity.locked_out(now)
+            if self.lockout_hook is not None:
+                self.lockout_hook(locked_out)
         state = self.controller.state
         if state != self._last_state:
             if self.activity is not None:
@@ -275,6 +286,9 @@ class RepeaterService:
     def end_patch(self) -> None:
         self.controller.set_patch_call_active(False)
         self._apply_commands(self.controller.end_patch(self._clock()))
+
+    def clear_lockout(self) -> None:
+        self._apply_commands(self.controller.clear_lockout(self._clock()))
 
     def run_macro(self, pattern: str, source: str) -> bool:
         """Run a saved macro as if its code had been dialed; `source` names what ran it."""
@@ -319,6 +333,10 @@ class RepeaterService:
         elif action.action == "gpio":
             text = self.gpio_command(action.argument) if self.gpio_command else "That output is not set up."
             self.speak(TTS_PREFIX + text)
+        elif action.action == "lockout_clear":
+            if self.controller.locked_out:
+                self.clear_lockout()
+                self.speak(TTS_PREFIX + "Lockout cleared")
         elif action.action == "parrot":
             if self.audio_output is None:
                 _logger.warning("parrot needs live audio, which isn't running")

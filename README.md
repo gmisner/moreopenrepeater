@@ -269,6 +269,13 @@ several phases (see the plan file for the full breakdown):
   workflow, only once their tests pass. The Updates page shows what's new on a
   channel and installs it; a version that doesn't start is rolled back
   automatically. See [docs/raspberry-pi.md](docs/raspberry-pi.md#6-updates).
+- **Alerts**: a message by ntfy, Telegram, email or webhook when the repeater
+  restarts after a crash or power cut, locks out, fails an update, overheats, sees
+  under-voltage or loses its audio. See [docs/raspberry-pi.md](docs/raspberry-pi.md#alerts).
+- **Stuck-carrier lockout**: repeated timeouts stop the repeating (IDs still go out)
+  until the channel is quiet, or it's cleared from the dashboard or by DTMF.
+- **SD card care**: few, batched writes, and an installer option that keeps the logs
+  in memory. See [docs/raspberry-pi.md](docs/raspberry-pi.md#sd-card).
 - **CI**: GitHub Actions runs the test suite on Python 3.11-3.14.
 
 ### Why a local Asterisk sidecar for linking?
@@ -335,7 +342,7 @@ nodes, and a recent-activity feed), Activity (airtime charts), Timing,
 Identification, Audio & tones (sounds, clip library and the live radio
 interface), DTMF macros (add/edit/rename/delete), Announcements, Weather
 alerts, APRS, APRS map, Simulator, Logs (filter/level/pause), Backup & restore, and for
-admins Users, Audit log and Updates. Each settings view saves only
+admins Users, Audit log, Alerts & health and Updates. Each settings view saves only
 its own fields through `PUT /api/config`, with unsaved-change tracking.
 It has light and dark themes (following the system setting unless you pick one
 in the sidebar). On a phone the header keeps TX/RX lit on every page and a

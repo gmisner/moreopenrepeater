@@ -11,22 +11,24 @@ Row kinds:
   - "tx": the transmitter keyed, for any reason (duration)
   - "id" / "announcement": something the repeater said on its own
   - "kerchunk": a key-up too short to pass the kerchunk filter (never repeated)
+  - "lockout": the stuck-carrier lockout engaged
 """
 from __future__ import annotations
 
-import sqlite3
 import threading
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from controller.state_machine import RECEIVING, TIMEOUT
 
-from .persistence import copy_database, load_database
+from .persistence import copy_database, load_database, open_database
 
 KERCHUNK_SECONDS = 1.5  # shorter than this and nobody said anything
 RETENTION_DAYS = 400
+FLUSH_SECONDS = 60.0
 _SILENT_CLIPS = {"courtesy_tone", "timeout_tone"}
 
 
@@ -39,15 +41,20 @@ class ActivityRow:
 
 
 class ActivityStore:
-    """`path=None` keeps everything in memory (tests, or no data dir)."""
+    """`path=None` keeps everything in memory (tests, or no data dir).
 
-    def __init__(self, path: Optional[Path] = None) -> None:
-        if path is not None:
-            path.parent.mkdir(parents=True, exist_ok=True)
+    New rows are held in memory and written together at most every
+    FLUSH_SECONDS (and before anything reads them), to spare the SD card a
+    write per transmission."""
+
+    def __init__(self, path: Optional[Path] = None, clock: Callable[[], float] = time.monotonic) -> None:
         # One shared connection guarded by a lock: rows are written from the
         # event loop but summaries are read from FastAPI's worker threads.
-        self._conn = sqlite3.connect(str(path) if path else ":memory:", check_same_thread=False)
+        self._conn = open_database(path)
         self._lock = threading.Lock()
+        self._clock = clock
+        self._pending: list[ActivityRow] = []
+        self._pending_since: Optional[float] = None
         with self._lock, self._conn:
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS activity ("
@@ -57,11 +64,28 @@ class ActivityStore:
             self._conn.execute("CREATE INDEX IF NOT EXISTS activity_started_at ON activity (started_at)")
 
     def add(self, row: ActivityRow) -> None:
-        with self._lock, self._conn:
-            self._conn.execute(
+        with self._lock:
+            self._pending.append(row)
+            now = self._clock()
+            if self._pending_since is None:
+                self._pending_since = now
+            elif now - self._pending_since >= FLUSH_SECONDS:
+                self._flush()
+
+    def flush(self) -> None:
+        with self._lock:
+            self._flush()
+
+    def _flush(self) -> None:
+        if not self._pending:
+            return
+        with self._conn:
+            self._conn.executemany(
                 "INSERT INTO activity (kind, started_at, duration, timed_out) VALUES (?, ?, ?, ?)",
-                (row.kind, row.started_at, row.duration, int(row.timed_out)),
+                [(r.kind, r.started_at, r.duration, int(r.timed_out)) for r in self._pending],
             )
+        self._pending = []
+        self._pending_since = None
 
     def rows(self, since: float, until: float, kind: Optional[str] = None) -> list[ActivityRow]:
         query = "SELECT kind, started_at, duration, timed_out FROM activity WHERE started_at >= ? AND started_at < ?"
@@ -70,11 +94,13 @@ class ActivityStore:
             query += " AND kind = ?"
             params.append(kind)
         with self._lock:
+            self._flush()
             cursor = self._conn.execute(query + " ORDER BY started_at", params)
             return [ActivityRow(k, s, d, bool(t)) for k, s, d, t in cursor.fetchall()]
 
     def recent(self, kind: str, limit: int) -> list[ActivityRow]:
         with self._lock:
+            self._flush()
             cursor = self._conn.execute(
                 "SELECT kind, started_at, duration, timed_out FROM activity WHERE kind = ?"
                 " ORDER BY started_at DESC LIMIT ?",
@@ -83,15 +109,20 @@ class ActivityStore:
             return [ActivityRow(k, s, d, bool(t)) for k, s, d, t in cursor.fetchall()]
 
     def prune(self, older_than: float) -> int:
-        with self._lock, self._conn:
-            return self._conn.execute("DELETE FROM activity WHERE started_at < ?", (older_than,)).rowcount
+        with self._lock:
+            self._flush()
+            with self._conn:
+                return self._conn.execute("DELETE FROM activity WHERE started_at < ?", (older_than,)).rowcount
 
     def copy_to(self, path: Path) -> None:
         with self._lock:
+            self._flush()
             copy_database(self._conn, path)
 
     def replace_from(self, path: Path) -> None:
         with self._lock:
+            self._pending = []
+            self._pending_since = None
             load_database(self._conn, path)
 
 
@@ -123,6 +154,9 @@ class ActivityRecorder:
     def kerchunk_filtered(self, now: float) -> None:
         self.store.add(ActivityRow("kerchunk", now, 0.0))
 
+    def locked_out(self, now: float) -> None:
+        self.store.add(ActivityRow("lockout", now, 0.0))
+
 
 def summarize(rows: list[ActivityRow], since: datetime, until: datetime) -> dict:
     """Totals, plus user airtime by local hour of day and per local day."""
@@ -153,6 +187,7 @@ def summarize(rows: list[ActivityRow], since: datetime, until: datetime) -> dict
         "kerchunks": sum(1 for r in rx if r.duration < KERCHUNK_SECONDS),
         "kerchunks_filtered": sum(1 for r in rows if r.kind == "kerchunk"),
         "timeouts": sum(1 for r in rx if r.timed_out),
+        "lockouts": sum(1 for r in rows if r.kind == "lockout"),
         "longest_rx_seconds": max((r.duration for r in rx), default=0.0),
         "tx_seconds": sum(r.duration for r in rows if r.kind == "tx"),
         "ids": sum(1 for r in rows if r.kind == "id"),

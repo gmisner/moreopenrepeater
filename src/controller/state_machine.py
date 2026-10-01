@@ -5,7 +5,7 @@ timers via tick(now) -- there are no threads and no real time.sleep, so the
 whole thing can be driven deterministically from tests with a fake clock.
 
 Implemented as an explicit hand-rolled state machine rather than a generic
-FSM library: with eight states and a handful of transitions, an explicit
+FSM library: with nine states and a handful of transitions, an explicit
 dispatch is easier to read, easier to test exhaustively, and avoids an
 extra dependency for logic this size.
 """
@@ -37,6 +37,7 @@ TIMEOUT = "timeout"
 TRANSMITTING_ID = "transmitting_id"
 ANNOUNCING = "announcing"
 PATCH = "patch"  # autopatch call: transmitter held up carrying the phone audio
+LOCKOUT = "lockout"  # stuck carrier: nothing is repeated until the channel goes quiet
 
 MAX_QUEUED_ANNOUNCEMENTS = 10
 ANNOUNCEMENT_FALLBACK_DURATION = 10.0
@@ -56,6 +57,13 @@ class RepeaterConfig:
     id_audio_duration: float = 3.0
     require_ctcss_hz: Optional[float] = None
     kerchunk_delay: float = 0.0  # carrier must last this long before keying up from idle; 0 = off
+    # Stuck-carrier lockout: this many timeouts within lockout_window (a
+    # carrier that never drops times out again every tot_duration) stops all
+    # repeating until the channel has been quiet for lockout_clear_after.
+    # IDs still go out. 0 = off.
+    lockout_timeouts: int = 3
+    lockout_window: float = 900.0
+    lockout_clear_after: float = 60.0
     # Off: nothing transmits (no repeat, IDs or announcements), but DTMF is
     # still decoded so a control operator can turn it back on over the air.
     transmitter_enabled: bool = True
@@ -165,6 +173,10 @@ class RepeaterController:
         self._announcements: list[str] = []
         self._keyup_at: Optional[float] = None  # carrier seen while idle; keys up then if it lasts
         self.kerchunks_filtered = 0
+        self._timeouts: list[float] = []  # recent timeouts, for the lockout
+        self._locked_out = False
+        self._quiet_since: Optional[float] = now  # nobody (local or linked) has been keyed since
+        self.lockouts = 0
 
     # -- public API -------------------------------------------------------
 
@@ -193,6 +205,28 @@ class RepeaterController:
         """A local user is transmitting (carrier with the right CTCSS tone)."""
         return self._local_carrier and self._ctcss_present
 
+    @property
+    def locked_out(self) -> bool:
+        return self._locked_out
+
+    def clear_lockout(self, now: float) -> list[ControllerCommand]:
+        """End a stuck-carrier lockout early (it also clears by itself once
+        the channel has been quiet for `lockout_clear_after`)."""
+        if not self._locked_out:
+            return []
+        self._locked_out = False
+        self._timeouts = []
+        _logger.info("stuck-carrier lockout cleared")
+        if self.state == TRANSMITTING_ID and self._resume_state_after_id == LOCKOUT:
+            self._resume_state_after_id = IDLE
+            return []
+        if self.state != LOCKOUT:
+            return []
+        self._set_state(IDLE)
+        if self.config.transmitter_enabled and (self.carrier_present or self._remote_keyed):
+            return self._enter_receiving(now)
+        return []
+
     def set_patch_call_active(self, active: bool) -> None:
         """While a call is ringing or up, the hangup code ends it and the
         access code doesn't start another."""
@@ -220,6 +254,8 @@ class RepeaterController:
             return []
         if self.state != PATCH:
             return []
+        if self._locked_out:
+            return self._enter_idle(now)
         if self.carrier_present:
             return self._enter_receiving(now)
         return self._enter_courtesy_tone(now)
@@ -233,11 +269,14 @@ class RepeaterController:
             self._id_due_at = now + config.id_interval
         if config.require_ctcss_hz != previous.require_ctcss_hz:
             self._ctcss_present = config.require_ctcss_hz is None or self._last_ctcss_hz == config.require_ctcss_hz
+        commands: list[ControllerCommand] = []
+        if config.lockout_timeouts <= 0:
+            commands += self.clear_lockout(now)
         if previous.transmitter_enabled and not config.transmitter_enabled:
             self._keyup_at = None
-            if self.state != IDLE:
-                return self._enter_idle(now)
-        return []
+            if self.state not in (IDLE, LOCKOUT):
+                commands += self._enter_idle(now)
+        return commands
 
     def handle_event(self, event: ControllerEvent, now: float) -> list[ControllerCommand]:
         commands: list[ControllerCommand] = []
@@ -275,6 +314,10 @@ class RepeaterController:
         elif isinstance(event, LinkStateChanged):
             pass  # tracked by the link layer; no local repeater-state effect yet
 
+        if self.carrier_present or self._remote_keyed:
+            self._quiet_since = None
+        elif self._quiet_since is None:
+            self._quiet_since = now
         return commands
 
     def tick(self, now: float) -> list[ControllerCommand]:
@@ -285,8 +328,19 @@ class RepeaterController:
             if self.state == IDLE and self._ctcss_present:
                 commands += self._enter_receiving(now)
 
-        if self.state == RECEIVING and self._tot_deadline is not None and now >= self._tot_deadline:
-            commands += self._enter_timeout(now)
+        if self._tot_deadline is not None and now >= self._tot_deadline:
+            if self.state == RECEIVING:
+                commands += self._enter_timeout(now)
+            elif self.state == TIMEOUT:
+                self._tot_deadline = now + self.config.tot_duration
+                commands += self._count_timeout(now)
+
+        if (
+            self._locked_out
+            and self._quiet_since is not None
+            and now - self._quiet_since >= self.config.lockout_clear_after
+        ):
+            commands += self.clear_lockout(now)
 
         if self._state_deadline is not None and now >= self._state_deadline:
             if self.state == COURTESY_TONE:
@@ -304,7 +358,7 @@ class RepeaterController:
         if not self.config.transmitter_enabled:
             return commands
 
-        if self.state in (IDLE, HANG_TIME, PATCH) and self._id_due(now):
+        if self.state in (IDLE, HANG_TIME, PATCH, LOCKOUT) and self._id_due(now):
             commands += self._enter_id(now)
 
         if self.state == IDLE and self._announcements and self._keyup_at is None:
@@ -336,7 +390,9 @@ class RepeaterController:
             return []  # the other side is still talking
         if self.state == RECEIVING:
             if self._tot_deadline is not None and now >= self._tot_deadline:
-                return self._enter_timeout(now)
+                commands = self._enter_timeout(now)
+                # Already unkeyed, so there's nothing left to wait for.
+                return commands + (self._enter_idle(now) if self.state == TIMEOUT else [])
             return self._enter_courtesy_tone(now)
         if self.state == TIMEOUT:
             return self._enter_idle(now)
@@ -377,16 +433,35 @@ class RepeaterController:
         return []
 
     def _enter_idle(self, now: float) -> list[ControllerCommand]:
-        self._set_state(IDLE)
+        self._set_state(LOCKOUT if self._locked_out else IDLE)
         self._state_deadline = None
         self._tot_deadline = None
         return [AssertPTT(active=False)]
 
     def _enter_timeout(self, now: float) -> list[ControllerCommand]:
         self._set_state(TIMEOUT)
-        self._tot_deadline = None
+        self._tot_deadline = now + self.config.tot_duration  # a carrier that stays up times out again
         self._state_deadline = None
-        return [PlayAudio(clip="timeout_tone"), AssertPTT(active=False)]
+        return [PlayAudio(clip="timeout_tone"), AssertPTT(active=False)] + self._count_timeout(now)
+
+    def _count_timeout(self, now: float) -> list[ControllerCommand]:
+        limit = self.config.lockout_timeouts
+        if limit <= 0 or self._locked_out:
+            return []
+        window_start = now - self.config.lockout_window
+        self._timeouts = [t for t in self._timeouts if t > window_start] + [now]
+        if len(self._timeouts) < limit:
+            return []
+        self._locked_out = True
+        self._timeouts = []
+        self.lockouts += 1
+        _logger.warning(
+            "stuck-carrier lockout: %d timeouts in %.0f s; repeating stops until the channel is quiet for %.0f s",
+            limit, self.config.lockout_window, self.config.lockout_clear_after,
+        )
+        self._set_state(LOCKOUT)
+        self._tot_deadline = None
+        return [AssertPTT(active=False)]
 
     def _enter_id(self, now: float) -> list[ControllerCommand]:
         self._keyup_at = None
@@ -400,7 +475,7 @@ class RepeaterController:
     def _exit_id(self, now: float) -> list[ControllerCommand]:
         target = self._resume_state_after_id
         self._set_state(target)
-        if target == IDLE:
+        if target in (IDLE, LOCKOUT):
             self._state_deadline = None
             return [AssertPTT(active=False)]
         if target == PATCH:

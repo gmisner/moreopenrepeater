@@ -17,6 +17,10 @@ Environment=OPENBLAS_NUM_THREADS=1
 Environment=MOREOPENREPEATER_UPDATER=/var/lib/moreopenrepeater-update
 Environment=MOREOPENREPEATER_UPDATE_REQUEST=/opt/moreopenrepeater/data/update-request
 EnvironmentFile=/etc/moreopenrepeater/env
+# /run/moreopenrepeater (in memory) holds the log when the SD card is
+# protected (install-pi.sh --protect-sd); kept across restarts until reboot.
+RuntimeDirectory=moreopenrepeater
+RuntimeDirectoryPreserve=yes
 ExecStart=/opt/moreopenrepeater/.venv/bin/moreopenrepeater-api
 Restart=on-failure
 RestartSec=5

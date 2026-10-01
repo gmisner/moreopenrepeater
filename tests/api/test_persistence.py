@@ -120,3 +120,26 @@ def test_restoring_a_backup_with_an_invalid_value_is_rejected():
     response = client.post("/api/snapshot", json={"config": {"id_mode": "semaphore"}, "macros": []})
 
     assert response.status_code == 422
+
+
+def test_databases_use_a_write_ahead_log_but_copies_are_single_files(tmp_path):
+    import sqlite3
+
+    from api.audit import AuditLog
+    from api.persistence import database_has_table
+
+    log = AuditLog(tmp_path / "audit.db")
+    log.record(1.0, "admin", "PUT /api/config")
+    probe = sqlite3.connect(tmp_path / "audit.db")
+    assert probe.execute("PRAGMA journal_mode").fetchone() == ("wal",)
+    probe.close()
+
+    copy = tmp_path / "copy" / "audit.db"
+    copy.parent.mkdir()
+    log.copy_to(copy)
+
+    copy_conn = sqlite3.connect(copy)
+    assert copy_conn.execute("PRAGMA journal_mode").fetchone() == ("delete",)
+    copy_conn.close()
+    assert database_has_table(copy, "audit")
+    assert sorted(p.name for p in copy.parent.iterdir()) == ["audit.db"]

@@ -15,6 +15,7 @@ from controller.state_machine import (
     COURTESY_TONE,
     HANG_TIME,
     IDLE,
+    LOCKOUT,
     RECEIVING,
     TIMEOUT,
     TRANSMITTING_ID,
@@ -79,6 +80,157 @@ def test_timeout_timer_kills_transmit_and_requires_unkey_to_clear():
 
     controller.handle_event(COSChanged(active=False), now=3.0)
     assert controller.state == IDLE
+
+
+def test_timeout_noticed_at_unkey_returns_to_idle():
+    controller = RepeaterController(make_config(tot_duration=2.0), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+
+    commands = controller.handle_event(COSChanged(active=False), now=2.05)  # before the next tick
+
+    assert PlayAudio(clip="timeout_tone") in commands
+    assert controller.state == IDLE
+    controller.handle_event(COSChanged(active=True), now=3.0)
+    assert controller.state == RECEIVING
+
+
+def lockout_config(**overrides):
+    return make_config(
+        **{"tot_duration": 10.0, "lockout_timeouts": 3, "lockout_window": 60.0, "lockout_clear_after": 20.0, **overrides}
+    )
+
+
+def test_carrier_that_never_drops_locks_out_after_repeated_timeouts():
+    controller = RepeaterController(lockout_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+
+    controller.tick(now=10.0)
+    assert controller.state == TIMEOUT
+    controller.tick(now=20.0)
+    assert controller.state == TIMEOUT and not controller.locked_out
+    commands = controller.tick(now=30.0)
+
+    assert controller.state == LOCKOUT
+    assert controller.locked_out and controller.lockouts == 1
+    assert AssertPTT(active=False) in commands
+
+
+def test_flapping_carrier_locks_out_and_is_not_repeated():
+    controller = RepeaterController(lockout_config(tot_duration=5.0), now=0.0)
+    t = 0.0
+    for _ in range(3):
+        controller.handle_event(COSChanged(active=True), now=t)
+        controller.tick(now=t + 5.0)
+        controller.handle_event(COSChanged(active=False), now=t + 6.0)
+        t += 7.0
+    assert controller.state == LOCKOUT
+
+    commands = controller.handle_event(COSChanged(active=True), now=t)
+
+    assert controller.state == LOCKOUT
+    assert AssertPTT(active=True) not in commands
+
+
+def test_timeouts_spread_beyond_the_window_dont_lock_out():
+    controller = RepeaterController(lockout_config(tot_duration=5.0, lockout_window=30.0), now=0.0)
+    for t in (0.0, 20.0, 40.0, 60.0):
+        controller.handle_event(COSChanged(active=True), now=t)
+        controller.tick(now=t + 5.0)
+        controller.handle_event(COSChanged(active=False), now=t + 6.0)
+
+    assert not controller.locked_out
+    assert controller.state == IDLE
+
+
+def test_lockout_clears_once_the_channel_is_quiet():
+    controller = RepeaterController(lockout_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    for t in (10.0, 20.0, 30.0):
+        controller.tick(now=t)
+    assert controller.state == LOCKOUT
+
+    controller.handle_event(COSChanged(active=False), now=40.0)
+    controller.handle_event(COSChanged(active=True), now=50.0)  # back before the quiet period ends
+    controller.handle_event(COSChanged(active=False), now=55.0)
+    controller.tick(now=70.0)
+    assert controller.state == LOCKOUT
+
+    controller.tick(now=75.0)
+    assert controller.state == IDLE and not controller.locked_out
+    controller.handle_event(COSChanged(active=True), now=76.0)
+    assert controller.state == RECEIVING
+
+
+def test_lockout_still_ids():
+    controller = RepeaterController(lockout_config(id_interval=50.0), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    for t in (10.0, 20.0, 30.0):
+        controller.tick(now=t)
+
+    commands = controller.tick(now=50.0)
+    assert controller.state == TRANSMITTING_ID
+    assert PlayAudio(clip="id") in commands
+
+    commands = controller.tick(now=50.5)
+    assert controller.state == LOCKOUT
+    assert AssertPTT(active=False) in commands
+
+
+def test_announcements_wait_for_the_lockout_to_clear():
+    controller = RepeaterController(lockout_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    for t in (10.0, 20.0, 30.0):
+        controller.tick(now=t)
+    controller.queue_announcement("tts:hello")
+
+    controller.tick(now=31.0)
+    assert controller.state == LOCKOUT
+
+    controller.handle_event(COSChanged(active=False), now=32.0)
+    controller.tick(now=52.0)
+    assert controller.state == ANNOUNCING
+
+
+def test_clearing_by_hand_repeats_a_carrier_that_is_still_there():
+    controller = RepeaterController(lockout_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    for t in (10.0, 20.0, 30.0):
+        controller.tick(now=t)
+
+    commands = controller.clear_lockout(now=31.0)
+
+    assert controller.state == RECEIVING
+    assert AssertPTT(active=True) in commands
+    assert controller.clear_lockout(now=32.0) == []
+
+
+def test_turning_the_lockout_off_clears_it_and_stops_counting():
+    controller = RepeaterController(lockout_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    for t in (10.0, 20.0, 30.0):
+        controller.tick(now=t)
+
+    controller.update_config(lockout_config(lockout_timeouts=0), now=31.0)
+    assert not controller.locked_out
+    assert controller.state == RECEIVING
+
+    for t in (41.0, 51.0, 61.0, 71.0):
+        controller.tick(now=t)
+    assert controller.state == TIMEOUT
+
+
+def test_patch_ending_during_a_lockout_returns_to_it():
+    controller = RepeaterController(lockout_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    for t in (10.0, 20.0, 30.0):
+        controller.tick(now=t)
+    controller.start_patch(now=31.0)
+    assert controller.state == "patch"
+
+    commands = controller.end_patch(now=40.0)
+
+    assert controller.state == LOCKOUT
+    assert AssertPTT(active=False) in commands
 
 
 def test_ctcss_gating_ignores_key_up_without_matching_tone():

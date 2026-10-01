@@ -82,6 +82,7 @@ class LinuxHidrawDevice:
     """A real /dev/hidrawN device node."""
 
     def __init__(self, path: str) -> None:
+        self.path = path
         self._fd = os.open(path, os.O_RDWR)
 
     def write_report(self, report: bytes) -> None:

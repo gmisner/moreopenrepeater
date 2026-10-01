@@ -13,7 +13,6 @@ import asyncio
 import json
 import logging
 import math
-import sqlite3
 import threading
 import time
 from dataclasses import dataclass
@@ -23,6 +22,8 @@ from typing import AsyncIterator, Callable, Optional
 from controller.state_machine import RepeaterConfig
 from link.aprs_packet import AprsPosition, category, parse_packet
 from playout.tts import spell_callsign
+
+from .persistence import open_database
 
 _logger = logging.getLogger("moreopenrepeater.aprs")
 
@@ -91,9 +92,7 @@ class StationStore:
     """`path=None` keeps everything in memory (tests)."""
 
     def __init__(self, path: Optional[Path] = None) -> None:
-        if path is not None:
-            path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(path) if path else ":memory:", check_same_thread=False)
+        self._conn = open_database(path)
         self._lock = threading.Lock()
         with self._lock, self._conn:
             self._conn.executescript(

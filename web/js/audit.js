@@ -24,6 +24,11 @@ const ACTIONS = [
   [/^DELETE \/api\/users\/(.+)$/, "Deleted user $1"],
   [/^POST \/api\/simulate\/(.+)$/, "Simulator: $1"],
   [/^POST \/api\/updates$/, "Started an update"],
+  [/^PUT \/api\/alerts$/, "Changed alert settings"],
+  [/^POST \/api\/alerts\/test$/, "Sent a test alert"],
+  [/^POST \/api\/lockout\/clear$/, "Cleared a stuck-carrier lockout"],
+  [/^alert sent$/, "Sent an alert"],
+  [/^alert failed$/, "Couldn't send an alert"],
   [/^DTMF (.+)$/, "Over the air: $1"],
 ];
 

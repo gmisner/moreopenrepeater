@@ -138,7 +138,6 @@ if [ "$FETCHED" -eq 0 ]; then
     # The code belongs to root (earlier versions gave it to the service
     # user), so the dashboard can't change what the updater runs as root.
     find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o \( ! -user root -o ! -group root \) -exec chown -h root:root {} +
-    find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o ! -type l -perm /022 -exec chmod go-w {} +
     git -C "$INSTALL_DIR" fetch -q origin "$BRANCH"
     git -C "$INSTALL_DIR" checkout -q -f -B "$BRANCH" FETCH_HEAD
   else
@@ -147,6 +146,12 @@ if [ "$FETCHED" -eq 0 ]; then
     fi
     git clone -q --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
   fi
+  # Default ACLs (some systems put them on /opt) would make files writable
+  # by everyone whatever the umask.
+  if command -v setfacl >/dev/null; then
+    find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o ! -type l -exec setfacl -bk {} +
+  fi
+  find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o ! -type l -perm /022 -exec chmod go-w {} +
 
   pass=(--fetched --channel "$CHANNEL")
   if [ "$LISTEN_LAN" -eq 1 ]; then pass+=(--lan); fi

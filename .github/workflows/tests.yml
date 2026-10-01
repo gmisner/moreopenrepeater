@@ -51,8 +51,6 @@ jobs:
           curl -fsS -u "admin:$password" http://127.0.0.1:8000/api/status
       - name: The code belongs to root and only data/ to the service
         run: |
-          set -x
-          ls -l /opt/moreopenrepeater/src/api/app.py
           test "$(stat -c %U /opt/moreopenrepeater/src/api/app.py)" = root
           test "$(stat -c %U /opt/moreopenrepeater/.git)" = root
           test "$(stat -c %U /opt/moreopenrepeater/data)" = moreopenrepeater

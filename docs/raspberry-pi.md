@@ -16,6 +16,8 @@ curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scrip
 password), and running it again updates an existing install. Options go
 after `-s --`, following `bash`:
 
+- `--channel stable|beta|dev` picks which releases to follow (default
+  stable, or whatever was chosen before); see [Updates](#6-updates).
 - `--lan` listens on the local network instead of only on the Pi.
 - `--allstar` also installs AllStarLink (ASL3) from its apt repository, for
   linking and autopatch. It gives the controller an AMI login of its own
@@ -49,16 +51,19 @@ CW and spoken announcements can't render.
 Runs as its own unprivileged system user rather than `pi`/root -- the
 `audio_io.cm108` GPIO driver and `sounddevice` need real device access
 (handled by the udev rule + group membership below), but nothing here
-needs to run as root.
+needs to run as root. The code itself belongs to root and only `data/` to
+the service, so a compromised dashboard can't change the code (which the
+updater runs as root).
 
 ```
-sudo useradd --system --create-home --home-dir /opt/moreopenrepeater --shell /usr/sbin/nologin moreopenrepeater
+sudo useradd --system --no-create-home --home-dir /opt/moreopenrepeater --shell /usr/sbin/nologin moreopenrepeater
 sudo usermod -aG audio,dialout,gpio moreopenrepeater   # /dev/hidrawN (below), USB-serial, header pins
 
-sudo -u moreopenrepeater git clone <this repo's URL> /opt/moreopenrepeater
+sudo git clone --branch stable <this repo's URL> /opt/moreopenrepeater
 cd /opt/moreopenrepeater
-sudo -u moreopenrepeater python3 -m venv .venv
-sudo -u moreopenrepeater .venv/bin/pip install -e .
+sudo python3 -m venv .venv
+sudo .venv/bin/pip install -e .
+sudo install -d -o moreopenrepeater -g moreopenrepeater data
 ```
 
 An editable install (`-e .`) is deliberate, not just a dev convenience:
@@ -268,9 +273,9 @@ address in the env file.
 ## 5. Install and start the service
 
 ```
-sudo cp packaging/moreopenrepeater.service /etc/systemd/system/
+sudo cp packaging/moreopenrepeater.service packaging/moreopenrepeater-update.* /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now moreopenrepeater
+sudo systemctl enable --now moreopenrepeater moreopenrepeater-update.path
 sudo systemctl status moreopenrepeater
 ```
 
@@ -282,12 +287,51 @@ journalctl -u moreopenrepeater -f      # systemd/stdout view
 curl http://127.0.0.1:8000/api/logs?lines=50   # the app's own rotating log, same as the dashboard's Logs panel
 ```
 
-## 6. Updating
+## 6. Updates
+
+Releases come in three channels, so a change can be tried before it
+reaches repeaters on the air:
+
+| Channel | Branch | Gets |
+| --- | --- | --- |
+| Stable | `stable` | Releases that went through beta. The default; keep production repeaters here. |
+| Beta | `beta` | The next stable release while it's tested, on a test repeater. |
+| Dev | `main` | Every change as soon as it's pushed, before any testing. |
+
+A change lands on `main` (dev) first. Once its tests pass, the **promote**
+GitHub Actions workflow (Actions tab, "Run workflow") moves `beta` up to it;
+after it has run well on a test repeater, the same workflow moves `stable`
+up to `beta`. It only promotes commits whose tests passed, and only forward.
+From a terminal: `gh workflow run promote.yml -f channel=beta` (or
+`channel=stable`).
+
+To update, open the dashboard's **Updates** page (admins only). It shows the
+installed version and what the chosen channel has that's new; pick a channel
+and press **Update**. The repeater goes off the air for a minute or two, and
+you may have to sign in again afterwards. If the new version doesn't start,
+the previous one is put back and the page says so; the log of the last
+update is on the same page and in `/var/lib/moreopenrepeater-update/update.log`.
+
+How it works: the service can't update itself (it can't write the code), so
+the page writes the chosen channel to `data/update-request`.
+`moreopenrepeater-update.path` notices and starts
+`moreopenrepeater-update.service`, which runs `scripts/update.sh` as root:
+it runs the installer for that channel, reports progress in
+`/var/lib/moreopenrepeater-update/status.json`, and goes back to the previous
+commit if the service doesn't come up.
+
+From a terminal, run the installer again (add `--channel beta` to switch):
+
+```
+curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scripts/install-pi.sh | sudo bash
+```
+
+Or by hand:
 
 ```
 cd /opt/moreopenrepeater
-sudo -u moreopenrepeater git pull
-sudo -u moreopenrepeater .venv/bin/pip install -e .   # picks up any new/changed dependencies
+sudo git pull
+sudo .venv/bin/pip install -e .   # picks up any new/changed dependencies
 sudo systemctl restart moreopenrepeater
 ```
 

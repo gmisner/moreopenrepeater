@@ -11,6 +11,11 @@ WorkingDirectory=/opt/moreopenrepeater
 # Multithreaded BLAS makes the audio worker's small matrix products late now
 # and then on a Pi (waking the other cores costs more than it saves).
 Environment=OPENBLAS_NUM_THREADS=1
+# The dashboard's Updates page asks moreopenrepeater-update.path for an
+# update by writing the request file, and reads progress from the updater's
+# state directory.
+Environment=MOREOPENREPEATER_UPDATER=/var/lib/moreopenrepeater-update
+Environment=MOREOPENREPEATER_UPDATE_REQUEST=/opt/moreopenrepeater/data/update-request
 EnvironmentFile=/etc/moreopenrepeater/env
 ExecStart=/opt/moreopenrepeater/.venv/bin/moreopenrepeater-api
 Restart=on-failure

@@ -29,41 +29,84 @@ jobs:
 
   installer:
     # Runs scripts/install-pi.sh for real (the runner has systemd), then
-    # again to exercise the update path.
+    # again to exercise the update path, then updates the way the dashboard
+    # does (including a broken release that has to be rolled back).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Lint
-        run: shellcheck scripts/install-pi.sh
-      # The service user must own the repo it clones from (git refuses
-      # repositories owned by someone else), so hand it a copy.
+        run: shellcheck scripts/install-pi.sh scripts/update.sh
+      # A local copy with the channel branches, all at the commit under test.
       - name: Prepare a local clone source
         run: |
-          sudo useradd --system --no-create-home --home-dir /opt/moreopenrepeater --shell /usr/sbin/nologin moreopenrepeater
           sudo cp -r "$GITHUB_WORKSPACE" /tmp/src
-          sudo git -C /tmp/src checkout -q -B ci-install
-          sudo chown -R moreopenrepeater:moreopenrepeater /tmp/src
+          sudo git -C /tmp/src checkout -q --detach
+          for branch in stable beta main; do sudo git -C /tmp/src branch -f "$branch" HEAD; done
       - name: Install
-        run: sudo REPO_URL=/tmp/src BRANCH=ci-install bash scripts/install-pi.sh
+        run: sudo REPO_URL=/tmp/src bash scripts/install-pi.sh
       - name: Check the API answers with the generated password
         run: |
           password=$(sudo sed -n 's/^MOREOPENREPEATER_AUTH_PASSWORD=//p' /etc/moreopenrepeater/env)
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/status)" = 401
           curl -fsS -u "admin:$password" http://127.0.0.1:8000/api/status
+      - name: The code belongs to root and only data/ to the service
+        run: |
+          test "$(stat -c %U /opt/moreopenrepeater/src/api/app.py)" = root
+          test "$(stat -c %U /opt/moreopenrepeater/.git)" = root
+          test "$(stat -c %U /opt/moreopenrepeater/data)" = moreopenrepeater
+          if sudo -u moreopenrepeater touch /opt/moreopenrepeater/src/api/app.py; then exit 1; fi
+          sudo grep -qx MOREOPENREPEATER_UPDATE_CHANNEL=stable /etc/moreopenrepeater/env
+          systemctl is-enabled moreopenrepeater-update.path
       - name: Run again (update)
         run: |
           before=$(sudo md5sum /etc/moreopenrepeater/env)
-          sudo REPO_URL=/tmp/src BRANCH=ci-install bash scripts/install-pi.sh
+          sudo bash scripts/install-pi.sh
           test "$before" = "$(sudo md5sum /etc/moreopenrepeater/env)"
+          systemctl is-active moreopenrepeater
+      - name: Update to beta the way the dashboard does
+        run: |
+          sudo git -C /tmp/src -c user.name=ci -c user.email=ci@example.com commit -q --allow-empty -m "A beta release"
+          sudo git -C /tmp/src branch -f beta HEAD
+          sudo rm -f /var/lib/moreopenrepeater-update/status.json
+          echo beta | sudo -u moreopenrepeater tee /opt/moreopenrepeater/data/update-request >/dev/null
+          for _ in $(seq 1 300); do
+            state=$(sudo jq -r .state /var/lib/moreopenrepeater-update/status.json 2>/dev/null || true)
+            case "$state" in succeeded | failed | rolled_back) break ;; esac
+            sleep 2
+          done
+          sudo cat /var/lib/moreopenrepeater-update/update.log
+          test "$state" = succeeded
+          test "$(sudo git -C /opt/moreopenrepeater rev-parse HEAD)" = "$(sudo git -C /tmp/src rev-parse beta)"
+          sudo grep -qx MOREOPENREPEATER_UPDATE_CHANNEL=beta /etc/moreopenrepeater/env
+          systemctl is-active moreopenrepeater
+      - name: A release that doesn't start is rolled back
+        run: |
+          good=$(sudo git -C /opt/moreopenrepeater rev-parse HEAD)
+          echo 'raise SystemExit("broken on purpose")' | sudo tee -a /tmp/src/src/api/app.py >/dev/null
+          sudo git -C /tmp/src -c user.name=ci -c user.email=ci@example.com commit -qam "A broken release"
+          sudo git -C /tmp/src branch -f main HEAD
+          sudo rm -f /var/lib/moreopenrepeater-update/status.json
+          echo dev | sudo -u moreopenrepeater tee /opt/moreopenrepeater/data/update-request >/dev/null
+          for _ in $(seq 1 400); do
+            state=$(sudo jq -r .state /var/lib/moreopenrepeater-update/status.json 2>/dev/null || true)
+            case "$state" in succeeded | failed | rolled_back) break ;; esac
+            sleep 2
+          done
+          sudo cat /var/lib/moreopenrepeater-update/update.log
+          test "$state" = rolled_back
+          test "$(sudo git -C /opt/moreopenrepeater rev-parse HEAD)" = "$good"
+          sudo grep -qx MOREOPENREPEATER_UPDATE_CHANNEL=beta /etc/moreopenrepeater/env
           systemctl is-active moreopenrepeater
       # ASL3 is packaged for Debian only; on Ubuntu --allstar has to stop
       # before changing anything. (The ASL3 steps were run on Debian 12.)
       - name: --allstar refuses a system ASL3 doesn't support
         run: |
           before=$(sudo md5sum /etc/moreopenrepeater/env)
-          ! sudo REPO_URL=/tmp/src BRANCH=ci-install bash scripts/install-pi.sh --allstar 2>err.txt
+          if sudo bash scripts/install-pi.sh --allstar 2>err.txt; then exit 1; fi
           grep -q "Debian 12 (bookworm) and 13 (trixie)" err.txt
           test "$before" = "$(sudo md5sum /etc/moreopenrepeater/env)"
       - name: Service log
         if: always()
-        run: sudo journalctl -u moreopenrepeater -n 100 --no-pager
+        run: |
+          sudo journalctl -u moreopenrepeater -n 100 --no-pager
+          sudo journalctl -u moreopenrepeater-update -n 100 --no-pager

@@ -493,6 +493,46 @@ class TTSInfoResponse(BaseModel):
     engine: Optional[str]
 
 
+UpdateChannel = Literal["stable", "beta", "dev"]
+
+
+class CommitSummary(BaseModel):
+    sha: str
+    date: str
+    subject: str
+
+
+class UpdateRunStatus(BaseModel):
+    state: Literal["requested", "running", "succeeded", "failed", "rolled_back"]
+    channel: Optional[str] = None
+    started_at: Optional[float] = None
+    finished_at: Optional[float] = None
+    from_sha: Optional[str] = None
+    to_sha: Optional[str] = None
+    message: Optional[str] = None
+
+
+class UpdatesResponse(BaseModel):
+    available: bool  # installed with install-pi.sh, so the updater units exist
+    channel: UpdateChannel
+    version: Optional[CommitSummary]
+    status: Optional[UpdateRunStatus]
+
+
+class UpdateCheckResponse(BaseModel):
+    channel: UpdateChannel
+    branch: str
+    latest: Optional[CommitSummary]
+    relation: Optional[Literal["identical", "ahead", "behind", "diverged"]]
+    new_commits: list[CommitSummary]
+    new_commit_count: int = 0
+    error: Optional[str]
+
+
+class UpdateRequest(BaseModel):
+    channel: UpdateChannel
+
+
 class WeatherAlertResponse(BaseModel):
     id: str
     event: str

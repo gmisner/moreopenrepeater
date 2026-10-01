@@ -22,6 +22,7 @@ import { initSimulator } from "./js/simulator.js";
 import { applyStatus, connectStatusSocket, initStatus } from "./js/status.js";
 import { initThemePicker } from "./js/theme_picker.js";
 import { toastError } from "./js/ui.js";
+import { initUpdates } from "./js/updates.js";
 import { initUsage } from "./js/usage.js";
 import { initUsers } from "./js/users.js";
 import { initWeather, loadWeather } from "./js/weather.js";
@@ -53,6 +54,7 @@ async function main() {
   initBackup();
   initUsers();
   initAudit();
+  initUpdates();
 
   try {
     // Assets first so the clip dropdowns have options before config

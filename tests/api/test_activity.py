@@ -55,7 +55,9 @@ def test_store_round_trip_and_prune():
 
 def test_store_persists_to_a_file():
     path = Path(tempfile.mkdtemp()) / "activity.db"
-    ActivityStore(path).add(ActivityRow("rx", ts(START), 4.0))
+    store = ActivityStore(path)
+    store.add(ActivityRow("rx", ts(START), 4.0))
+    store.flush()
 
     assert len(ActivityStore(path).rows(0, ts(START) + 1)) == 1
 
@@ -153,3 +155,40 @@ def test_filtered_kerchunks_are_counted_separately():
     summary = client.get("/api/activity/summary?days=1").json()
     assert summary["kerchunks_filtered"] == 1
     assert summary["rx_count"] == 1
+
+
+def count_on_disk(path: Path) -> int:
+    import sqlite3
+
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute("SELECT COUNT(*) FROM activity").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_rows_are_written_in_batches(tmp_path):
+    clock = {"now": 0.0}
+    path = tmp_path / "activity.db"
+    store = ActivityStore(path, clock=lambda: clock["now"])
+
+    store.add(ActivityRow("rx", 1.0, 2.0))
+    clock["now"] = 30.0
+    store.add(ActivityRow("rx", 31.0, 2.0))
+    assert count_on_disk(path) == 0
+
+    clock["now"] = 61.0
+    store.add(ActivityRow("rx", 61.0, 2.0))
+    assert count_on_disk(path) == 3
+
+    store.add(ActivityRow("tx", 62.0, 1.0))
+    store.flush()
+    assert count_on_disk(path) == 4
+
+
+def test_reads_include_rows_not_written_yet(tmp_path):
+    store = ActivityStore(tmp_path / "activity.db")
+    store.add(ActivityRow("rx", 10.0, 2.0))
+
+    assert [r.started_at for r in store.rows(0, 100)] == [10.0]
+    assert len(store.recent("rx", 5)) == 1

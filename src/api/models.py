@@ -33,6 +33,7 @@ class StatusResponse(BaseModel):
     last_clip: Optional[str]
     timestamp: float
     transmitter_enabled: bool = True
+    locked_out: bool = False
 
 
 # GPIO3 is the PTT pin.
@@ -120,6 +121,9 @@ class ConfigResponse(BaseModel):
     id_audio_duration: float
     require_ctcss_hz: Optional[float]
     kerchunk_delay: float
+    lockout_timeouts: int
+    lockout_window: float
+    lockout_clear_after: float
     transmitter_enabled: bool
     callsign: str
     id_mode: Literal["voice", "cw", "both"]
@@ -203,6 +207,9 @@ class ConfigUpdateRequest(BaseModel):
     require_ctcss_hz: Optional[float] = None
     clear_require_ctcss_hz: bool = False
     kerchunk_delay: Optional[float] = Field(default=None, ge=0, le=3)
+    lockout_timeouts: Optional[int] = Field(default=None, ge=0, le=20)
+    lockout_window: Optional[float] = Field(default=None, ge=60, le=86400)
+    lockout_clear_after: Optional[float] = Field(default=None, ge=5, le=3600)
     transmitter_enabled: Optional[bool] = None
     callsign: Optional[str] = None
     id_mode: Optional[Literal["voice", "cw", "both"]] = None
@@ -533,6 +540,68 @@ class UpdateRequest(BaseModel):
     channel: UpdateChannel
 
 
+_URL_OR_EMPTY = r"^$|^https?://[^\s]+$"
+_ONE_LINE = r"^[^\r\n]*$"  # these go into email headers
+
+
+class AlertSettingsResponse(BaseModel):
+    """Everything but the secrets, which are only ever written."""
+
+    enabled: bool
+    ntfy_url: str
+    telegram_chat_id: str
+    email_to: str
+    email_from: str
+    smtp_host: str
+    smtp_port: int
+    smtp_security: Literal["starttls", "ssl", "none"]
+    smtp_username: str
+    temperature_limit_c: float
+
+
+class AlertSettingsRequest(BaseModel):
+    """Omitted fields are left as they are; an empty string clears one."""
+
+    enabled: Optional[bool] = None
+    ntfy_url: Optional[str] = Field(default=None, max_length=300, pattern=_URL_OR_EMPTY)
+    ntfy_token: Optional[str] = Field(default=None, max_length=200, pattern=_ONE_LINE)
+    telegram_token: Optional[str] = Field(default=None, max_length=200, pattern=r"^$|^[0-9]+:[A-Za-z0-9_-]+$")
+    telegram_chat_id: Optional[str] = Field(default=None, max_length=64, pattern=r"^$|^-?[0-9]+$|^@[A-Za-z0-9_]+$")
+    email_to: Optional[str] = Field(default=None, max_length=300, pattern=_ONE_LINE)
+    email_from: Optional[str] = Field(default=None, max_length=200, pattern=_ONE_LINE)
+    smtp_host: Optional[str] = Field(default=None, max_length=200, pattern=r"^[A-Za-z0-9.-]*$")
+    smtp_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    smtp_security: Optional[Literal["starttls", "ssl", "none"]] = None
+    smtp_username: Optional[str] = Field(default=None, max_length=200, pattern=_ONE_LINE)
+    smtp_password: Optional[str] = Field(default=None, max_length=200)
+    webhook_url: Optional[str] = Field(default=None, max_length=500, pattern=_URL_OR_EMPTY)
+    temperature_limit_c: Optional[float] = Field(default=None, ge=40, le=100)
+
+
+class SentAlert(BaseModel):
+    at: datetime
+    key: str
+    title: str
+    message: str
+    severity: Literal["info", "warning", "critical"]
+    sent: list[str]
+    errors: dict[str, str]
+    note: str
+
+
+class AlertsResponse(BaseModel):
+    settings: AlertSettingsResponse
+    secrets_set: dict[str, bool]  # which write-only fields have a value
+    channels: list[str]  # the ones set up well enough to send
+    recent: list[SentAlert]
+    system: dict[str, Any]  # api.health.SystemProbe.readings()
+    last_unexpected_stop: Optional[dict[str, Any]]
+
+
+class AlertTestResponse(BaseModel):
+    results: dict[str, Optional[str]]  # channel -> error, or None if it went
+
+
 class WeatherAlertResponse(BaseModel):
     id: str
     event: str
@@ -574,6 +643,7 @@ class ActivitySummaryResponse(BaseModel):
     kerchunks: int
     kerchunks_filtered: int
     timeouts: int
+    lockouts: int = 0
     longest_rx_seconds: float
     tx_seconds: float
     ids: int

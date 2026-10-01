@@ -21,11 +21,27 @@ from typing import Optional
 _logger = logging.getLogger("moreopenrepeater.persistence")
 
 
+def open_database(path: Optional[Path]) -> sqlite3.Connection:
+    """A connection shared between the event loop and worker threads (so
+    callers hold a lock). `path=None` is in memory. On disk it uses a
+    write-ahead log without an fsync per commit, which writes the SD card
+    far less; a power cut can lose the last moments, never the database."""
+    if path is None:
+        return sqlite3.connect(":memory:", check_same_thread=False)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path), check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
 def copy_database(conn: sqlite3.Connection, path: Path) -> None:
-    """Write a consistent copy of a live SQLite database to `path`."""
+    """Write a consistent copy of a live SQLite database to `path`, as a
+    single file whatever the live one's journal mode."""
     dest = sqlite3.connect(str(path))
     try:
         conn.backup(dest)
+        dest.execute("PRAGMA journal_mode=DELETE")
     finally:
         dest.close()
 

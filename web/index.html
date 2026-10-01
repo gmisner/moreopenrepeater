@@ -32,6 +32,7 @@
     <symbol id="i-backup" viewBox="0 0 24 24"><path d="M12 4v11M8 11l4 4 4-4M5 19h14" /></symbol>
     <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5" /><path d="M3 20c.8-3.5 3.3-5.5 6-5.5s5.2 2 6 5.5" /><circle cx="17" cy="9" r="2.5" /><path d="M17 14.5c2 .3 3.5 2 4 4.5" /></symbol>
     <symbol id="i-audit" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1M9 13l2 2 4-4" /></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></symbol>
     <symbol id="i-update" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9" /><path d="M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2" /></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
     <symbol id="i-car" viewBox="0 0 24 24"><path d="M4 16v-4l2.2-4.4A2 2 0 0 1 8 6.5h8a2 2 0 0 1 1.8 1.1L20 12v4z" /><path d="M4 12h16" /><circle cx="7.5" cy="16.5" r="1.5" /><circle cx="16.5" cy="16.5" r="1.5" /></symbol>
@@ -95,6 +96,7 @@
         <a href="#/backup" data-nav="backup"><svg class="icon" aria-hidden="true"><use href="#i-backup" /></svg>Backup &amp; restore</a>
         <a href="#/users" data-nav="users" data-admin-only hidden><svg class="icon" aria-hidden="true"><use href="#i-users" /></svg>Users</a>
         <a href="#/audit" data-nav="audit" data-admin-only hidden><svg class="icon" aria-hidden="true"><use href="#i-audit" /></svg>Audit log</a>
+        <a href="#/alerts" data-nav="alerts" data-admin-only hidden><svg class="icon" aria-hidden="true"><use href="#i-bell" /></svg>Alerts &amp; health</a>
         <a href="#/updates" data-nav="updates" data-admin-only hidden><svg class="icon" aria-hidden="true"><use href="#i-update" /></svg>Updates</a>
       </nav>
       <div class="sidebar-footer">
@@ -144,6 +146,15 @@
               <span class="indicator-value">none</span>
             </div>
           </div>
+        </div>
+
+        <div class="card lockout-card" id="lockout-card" role="alert" hidden>
+          <div class="card-header">
+            <h2>Locked out: stuck carrier</h2>
+            <button type="button" class="btn btn-danger btn-sm" id="lockout-clear" data-requires-write>Clear lockout</button>
+          </div>
+          <p class="muted small" id="lockout-detail">The receiver kept timing out, so the repeater has stopped repeating. IDs still go out.
+            It clears by itself once the channel has been quiet for a while.</p>
         </div>
 
         <div class="dash-columns">
@@ -317,6 +328,23 @@
             <label>Kerchunk filter
               <span class="input-unit"><input type="number" step="0.05" min="0" max="3" name="kerchunk_delay" required /><span>s</span></span>
               <small>A key-up must last this long before the repeater comes up. 0 turns the filter off.</small>
+            </label>
+          </div>
+          <h2 class="section-title">Stuck-carrier lockout</h2>
+          <p class="muted small">Interference or a stuck microphone makes the repeater time out again and again. After
+            enough timeouts it stops repeating (IDs still go out) until the channel has been quiet. A carrier that never
+            drops counts as another timeout every timeout period.</p>
+          <div class="form-grid">
+            <label>Lock out after
+              <span class="input-unit"><input type="number" step="1" min="0" max="20" name="lockout_timeouts" required /><span>timeouts</span></span>
+              <small>0 turns the lockout off.</small>
+            </label>
+            <label>Within
+              <span class="input-unit"><input type="number" step="1" min="60" max="86400" name="lockout_window" required /><span>s</span></span>
+            </label>
+            <label>Clear after quiet for
+              <span class="input-unit"><input type="number" step="1" min="5" max="3600" name="lockout_clear_after" required /><span>s</span></span>
+              <small>Or clear it from the dashboard, or with a DTMF macro.</small>
             </label>
           </div>
           <div class="form-actions">
@@ -627,6 +655,7 @@
                 <option value="parrot">Parrot (play next transmission back)</option>
                 <option value="tx_disable">Transmitter off</option>
                 <option value="tx_enable">Transmitter on</option>
+                <option value="lockout_clear">Clear a stuck-carrier lockout</option>
                 <option value="aprs">APRS stations nearby</option>
                 <option value="gpio">Switch a GPIO output</option>
               </select>
@@ -1334,6 +1363,127 @@
             </table>
           </div>
           <p id="audit-empty" class="muted small">Nothing yet.</p>
+        </div>
+      </section>
+
+      <!-- Alerts & health (admins only) -->
+      <section class="view" data-view="alerts" data-title="Alerts & health" hidden>
+        <header class="view-header view-header-row">
+          <div>
+            <h1>Alerts &amp; health</h1>
+            <p class="muted">A message on your phone when the repeater needs attention: a crash or power cut, a
+              stuck-carrier lockout, an update that didn't work, overheating or low voltage, or live audio stopping.</p>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" id="alerts-refresh">Refresh</button>
+        </header>
+        <p id="alerts-unexpected-stop" class="card muted" hidden></p>
+        <div class="grid grid-2">
+          <div class="card">
+            <h2>The Pi</h2>
+            <dl class="kv" id="health-system"></dl>
+          </div>
+          <div class="card">
+            <h2>Storage</h2>
+            <dl class="kv" id="health-disk"></dl>
+            <p class="muted small" id="health-sd-note" hidden>SD cards wear out from constant small writes.
+              Reinstalling with <code>--protect-sd</code> keeps the logs in memory; see "SD card" in
+              <code>docs/raspberry-pi.md</code>.</p>
+          </div>
+        </div>
+        <form class="card config-form" id="alerts-form" autocomplete="off">
+          <div class="card-header">
+            <h2>Where to send alerts</h2>
+            <span id="alerts-channels"></span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" name="enabled" />
+            <span class="switch-track"></span>
+            <span>Send alerts <small class="muted">&mdash; each problem once when it starts (and again when it's over),
+              at most a dozen an hour</small></span>
+          </label>
+          <h2 class="section-title">ntfy</h2>
+          <p class="muted small">Free push notifications. Install the <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a>
+            app, subscribe to a topic nobody could guess, and put its address here. Anyone who knows the topic can read the alerts.</p>
+          <div class="form-grid">
+            <label>Topic address
+              <input type="url" name="ntfy_url" placeholder="https://ntfy.sh/w1aw-repeater-x7k2" />
+            </label>
+            <label>Access token
+              <input type="password" name="ntfy_token" data-secret autocomplete="new-password" />
+              <small>Only for a server with access control.</small>
+            </label>
+          </div>
+          <h2 class="section-title">Telegram</h2>
+          <p class="muted small">Make a bot with @BotFather, send it a message, then put its token and your chat ID here.</p>
+          <div class="form-grid">
+            <label>Bot token
+              <input type="password" name="telegram_token" data-secret autocomplete="new-password" />
+            </label>
+            <label>Chat ID
+              <input type="text" name="telegram_chat_id" inputmode="numeric" placeholder="123456789" />
+            </label>
+          </div>
+          <h2 class="section-title">Email</h2>
+          <div class="form-grid">
+            <label>Send to
+              <input type="text" name="email_to" placeholder="you@example.com" />
+              <small>Separate several addresses with commas.</small>
+            </label>
+            <label>From
+              <input type="text" name="email_from" placeholder="the username below" />
+            </label>
+            <label>SMTP server
+              <input type="text" name="smtp_host" placeholder="smtp.gmail.com" />
+            </label>
+            <label>Port
+              <input type="number" name="smtp_port" min="1" max="65535" step="1" required />
+            </label>
+            <label>Security
+              <select name="smtp_security">
+                <option value="starttls">STARTTLS (usually port 587)</option>
+                <option value="ssl">SSL/TLS (usually port 465)</option>
+                <option value="none">None</option>
+              </select>
+            </label>
+            <label>Username
+              <input type="text" name="smtp_username" />
+            </label>
+            <label>Password
+              <input type="password" name="smtp_password" data-secret autocomplete="new-password" />
+              <small>For Gmail, an app password.</small>
+            </label>
+          </div>
+          <h2 class="section-title">Webhook</h2>
+          <div class="form-grid">
+            <label class="span-2">URL
+              <input type="password" name="webhook_url" data-secret autocomplete="new-password" placeholder="https://hooks.slack.com/services/…" />
+              <small>Gets a JSON POST. Slack and Discord webhook URLs work as they are.</small>
+            </label>
+          </div>
+          <h2 class="section-title">Limits</h2>
+          <div class="form-grid">
+            <label>CPU temperature alert
+              <span class="input-unit"><input type="number" name="temperature_limit_c" min="40" max="100" step="1" required /><span>°C</span></span>
+              <small>A Pi slows itself down at 80&ndash;85 °C.</small>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="alerts-test">Send a test alert</button>
+            <span class="spacer"></span>
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+          <ul class="test-results" id="alerts-test-results" hidden></ul>
+        </form>
+        <div class="card">
+          <h2>Recent alerts</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>When</th><th>Alert</th><th>Sent</th></tr></thead>
+              <tbody id="alerts-tbody"></tbody>
+            </table>
+          </div>
+          <p id="alerts-empty" class="muted small">None since the service started.</p>
         </div>
       </section>
 

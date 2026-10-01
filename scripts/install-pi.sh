@@ -16,6 +16,10 @@
 #              (first install only; see "Security" in docs/raspberry-pi.md)
 #   --allstar  also install AllStarLink (ASL3) for linking and autopatch, and
 #              connect the controller to it (Debian 12 or 13; docs/allstar.md)
+#   --protect-sd / --no-protect-sd
+#              keep the system journal and the controller's log in memory to
+#              spare the SD card, or stop doing so; remembered for later runs
+#              (see "SD card" in docs/raspberry-pi.md)
 #
 # Environment overrides: REPO_URL, BRANCH (instead of the channel's branch),
 # INSTALL_DIR.
@@ -35,8 +39,11 @@ LISTEN_LAN=0
 ALLSTAR=0
 CHANNEL=""
 FETCHED=0
+PROTECT_SD=""
 ASTERISK_DIR=/etc/asterisk
 AMI_USER=moreopenrepeater
+JOURNALD_DROPIN=/etc/systemd/journald.conf.d/60-moreopenrepeater.conf
+RAM_LOG=/run/moreopenrepeater/moreopenrepeater.log  # the service's RuntimeDirectory
 
 step() { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31mError:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -48,6 +55,8 @@ while [ $# -gt 0 ]; do
     --channel) CHANNEL="${2:-}"; shift ;;
     --channel=*) CHANNEL="${1#--channel=}" ;;
     --fetched) FETCHED=1 ;;
+    --protect-sd) PROTECT_SD=1 ;;
+    --no-protect-sd) PROTECT_SD=0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -112,6 +121,46 @@ install_allstar() {
   fi
 }
 
+# Logs are what a Pi writes most often; in memory they cost the SD card
+# nothing, at the price of starting afresh at every reboot.
+protect_sd() {
+  step "Protecting the SD card: logs in memory"
+  mkdir -p "$(dirname "$JOURNALD_DROPIN")"
+  cat >"$JOURNALD_DROPIN.new" <<'EOF'
+# From moreopenrepeater's install-pi.sh --protect-sd (undo with --no-protect-sd):
+# the system journal stays in memory, sparing the SD card, and starts afresh
+# at every reboot.
+[Journal]
+Storage=volatile
+RuntimeMaxUse=32M
+EOF
+  if cmp -s "$JOURNALD_DROPIN.new" "$JOURNALD_DROPIN"; then
+    rm -f "$JOURNALD_DROPIN.new"
+  else
+    mv "$JOURNALD_DROPIN.new" "$JOURNALD_DROPIN"
+    chmod 644 "$JOURNALD_DROPIN"
+    systemctl restart systemd-journald
+  fi
+  local log_path
+  log_path="$(env_value MOREOPENREPEATER_LOG_PATH)"
+  if [ -z "$log_path" ] || [ "$log_path" = "$RAM_LOG" ]; then
+    set_env MOREOPENREPEATER_LOG_PATH "$RAM_LOG"
+  else
+    echo "Note: MOREOPENREPEATER_LOG_PATH is set to $log_path in $ENV_FILE, so the controller's log stays there."
+  fi
+}
+
+unprotect_sd() {
+  if [ -f "$JOURNALD_DROPIN" ]; then
+    step "Turning off SD card protection"
+    rm -f "$JOURNALD_DROPIN"
+    systemctl restart systemd-journald
+  fi
+  if [ "$(env_value MOREOPENREPEATER_LOG_PATH)" = "$RAM_LOG" ]; then
+    sed -i -E "s|^MOREOPENREPEATER_LOG_PATH=.*|#MOREOPENREPEATER_LOG_PATH=|" "$ENV_FILE"
+  fi
+}
+
 [ "$(id -u)" -eq 0 ] || fail "run this with sudo."
 if [ "$ALLSTAR" -eq 1 ]; then asl_repo_package >/dev/null; fi
 command -v apt-get >/dev/null || fail "this installer needs a Debian-based system (Raspberry Pi OS, Debian, Ubuntu)."
@@ -156,6 +205,8 @@ if [ "$FETCHED" -eq 0 ]; then
   pass=(--fetched --channel "$CHANNEL")
   if [ "$LISTEN_LAN" -eq 1 ]; then pass+=(--lan); fi
   if [ "$ALLSTAR" -eq 1 ]; then pass+=(--allstar); fi
+  if [ "$PROTECT_SD" = 1 ]; then pass+=(--protect-sd); fi
+  if [ "$PROTECT_SD" = 0 ]; then pass+=(--no-protect-sd); fi
   exec bash "$INSTALL_DIR/scripts/install-pi.sh" "${pass[@]}"
 fi
 
@@ -210,6 +261,8 @@ elif [ "$LISTEN_LAN" -eq 1 ]; then
   echo "Note: --lan only applies to a first install; edit MOREOPENREPEATER_HOST in $ENV_FILE instead."
 fi
 set_env MOREOPENREPEATER_UPDATE_CHANNEL "$CHANNEL"
+if [ -n "$PROTECT_SD" ]; then set_env MOREOPENREPEATER_PROTECT_SD "$PROTECT_SD"; fi
+if [ "$(env_value MOREOPENREPEATER_PROTECT_SD)" = 1 ]; then protect_sd; else unprotect_sd; fi
 
 if [ "$ALLSTAR" -eq 1 ]; then
   install_allstar

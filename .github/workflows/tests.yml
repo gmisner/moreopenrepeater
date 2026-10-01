@@ -49,6 +49,7 @@ jobs:
           password=$(sudo sed -n 's/^MOREOPENREPEATER_AUTH_PASSWORD=//p' /etc/moreopenrepeater/env)
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/status)" = 401
           curl -fsS -u "admin:$password" http://127.0.0.1:8000/api/status
+          curl -fsS -u "admin:$password" http://127.0.0.1:8000/api/alerts | jq -e '.system.disk.total > 0'
       - name: The code belongs to root and only data/ to the service
         run: |
           test "$(stat -c %U /opt/moreopenrepeater/src/api/app.py)" = root
@@ -96,6 +97,18 @@ jobs:
           test "$state" = rolled_back
           test "$(sudo git -C /opt/moreopenrepeater rev-parse HEAD)" = "$good"
           sudo grep -qx MOREOPENREPEATER_UPDATE_CHANNEL=beta /etc/moreopenrepeater/env
+          systemctl is-active moreopenrepeater
+      - name: SD card protection on and off
+        run: |
+          sudo bash scripts/install-pi.sh --protect-sd
+          test -f /etc/systemd/journald.conf.d/60-moreopenrepeater.conf
+          sudo grep -qx MOREOPENREPEATER_PROTECT_SD=1 /etc/moreopenrepeater/env
+          sudo grep -qx MOREOPENREPEATER_LOG_PATH=/run/moreopenrepeater/moreopenrepeater.log /etc/moreopenrepeater/env
+          systemctl is-active moreopenrepeater
+          sudo test -s /run/moreopenrepeater/moreopenrepeater.log
+          sudo bash scripts/install-pi.sh --no-protect-sd
+          test ! -e /etc/systemd/journald.conf.d/60-moreopenrepeater.conf
+          if sudo grep -q '^MOREOPENREPEATER_LOG_PATH=' /etc/moreopenrepeater/env; then exit 1; fi
           systemctl is-active moreopenrepeater
       # ASL3 is packaged for Debian only; on Ubuntu --allstar has to stop
       # before changing anything. (The ASL3 steps were run on Debian 12.)

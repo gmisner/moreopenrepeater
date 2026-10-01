@@ -25,6 +25,8 @@ after `-s --`, following `bash`:
   [allstar.md](allstar.md). Then set up the node with `sudo asl-menu` and
   choose it on the dashboard's **AllStarLink** page. EchoLink is turned on
   from the same page.
+- `--protect-sd` keeps the logs in memory to spare the SD card, and
+  `--no-protect-sd` stops doing so; see [SD card](#sd-card).
 
 ```
 curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scripts/install-pi.sh | sudo bash -s -- --allstar
@@ -363,6 +365,76 @@ it tries again a minute later.
 A backup doesn't include the env file (the built-in admin and the Asterisk
 login) or Asterisk's own configuration, which holds the autopatch phone line.
 Keep a copy of `/etc/moreopenrepeater/env` and `/etc/asterisk/` too.
+
+## Alerts
+
+The dashboard's **Alerts & health** page (admins only) sends a message when
+the repeater needs attention:
+
+- it started again after a crash or a power cut, with roughly how long it was
+  off the air (it tells the two apart by whether the Pi rebooted);
+- the stuck-carrier lockout engaged, and when it cleared;
+- an update failed or was rolled back (and when one succeeded);
+- the CPU passed the temperature limit (80 °C unless you change it), or the Pi
+  reported under-voltage or throttling;
+- live audio stopped for more than a minute, or the CM108 interface was unplugged.
+
+It sends by [ntfy](https://ntfy.sh) (free push notifications to a phone app),
+a Telegram bot, email, or a webhook (Slack and Discord webhook URLs work as
+they are). "Send a test alert" tries every one that's set up. Each problem is
+sent once when it starts and once when it's over, the same alert isn't sent
+again within half an hour, and no more than a dozen go out an hour; a crash
+loop sends one alert, then a count. Every alert is listed on the page and in
+the audit log.
+
+The settings, tokens and passwords included, are kept in `data/alerts.json`,
+readable only by the service. They aren't part of the settings the dashboard
+reads back, or of backups, so set them up again after restoring onto a new
+card. Alerts need the internet; a repeater without it can still show its
+health on the page.
+
+The page also shows the CPU temperature, power and throttling flags, and how
+much has been written to the SD card.
+
+## SD card
+
+Dead SD cards are the usual way an unattended Pi dies: constant small writes
+wear them out. Out of the box the controller keeps its own writes small. Its
+databases use a write-ahead log without a sync per change, airtime
+statistics are written once a minute, and the settings file is only written
+when you save. Logs are the biggest remaining writer, and reinstalling with
+`--protect-sd` keeps them in memory:
+
+```
+curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scripts/install-pi.sh | sudo bash -s -- --protect-sd
+```
+
+That keeps the system journal in memory (`/etc/systemd/journald.conf.d/60-moreopenrepeater.conf`),
+and the controller's own log in `/run/moreopenrepeater`. Both start afresh at
+every reboot, so after a power cut the reason for it is gone. The crash and
+power-cut alerts above are what's left. The choice is remembered by later
+installs and updates; `--no-protect-sd` undoes it.
+
+A read-only root filesystem (Raspberry Pi OS's overlay file system) would
+protect the card further, but updates install into `/opt`, so they'd vanish
+at the next reboot; it isn't offered. A swap file on the card
+(`dphys-swapfile`) also writes to it; newer Raspberry Pi OS releases swap to
+compressed memory instead. Use a good card (an "endurance" or A1/A2 one),
+keep backups on a USB drive (see [Backups](#backups)), and the **Alerts &
+health** page shows how much has been written to the card since boot and
+over its life.
+
+## Stuck-carrier lockout
+
+Interference, a stuck microphone or a desensed receiver makes a repeater
+time out again and again, sending the timeout tone over and over. After 3
+timeouts within 15 minutes (a carrier that never drops counts again every
+timeout period) the controller stops repeating. IDs still go out, as the
+rules require. The dashboard shows a "Locked out" banner. It clears by itself
+once the channel has been quiet for a minute, or with the banner's **Clear
+lockout** button, or with a DTMF macro (the "Clear a stuck-carrier lockout"
+action). The numbers are on the **Timing** page; 0 timeouts turns the lockout off.
+Lockouts are counted on the Activity page and send an alert.
 
 ## Repeaters without internet
 

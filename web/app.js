@@ -1,4 +1,5 @@
 import { api } from "./js/api.js";
+import { initAlerts } from "./js/alerts.js";
 import { initAnnouncements, loadAnnouncements } from "./js/announcements.js";
 import { initAssets, loadAssets } from "./js/assets.js";
 import { initAudit } from "./js/audit.js";
@@ -55,6 +56,7 @@ async function main() {
   initUsers();
   initAudit();
   initUpdates();
+  initAlerts();
 
   try {
     // Assets first so the clip dropdowns have options before config

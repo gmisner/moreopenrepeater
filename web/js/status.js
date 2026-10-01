@@ -1,7 +1,7 @@
 import { api } from "./api.js";
 import { loadConfig } from "./config.js";
 import { store } from "./store.js";
-import { escapeHtml } from "./ui.js";
+import { escapeHtml, toast, toastError, withBusy } from "./ui.js";
 
 const STATE_DESCRIPTIONS = {
   idle: "Standing by — no signal",
@@ -12,6 +12,7 @@ const STATE_DESCRIPTIONS = {
   transmitting_id: "Transmitting station ID",
   announcing: "Playing a scheduled announcement",
   patch: "Autopatch phone call in progress",
+  lockout: "Locked out — stuck carrier; not repeating",
 };
 const MAX_ACTIVITY = 50;
 
@@ -61,6 +62,9 @@ function recordChanges(prev, next) {
   if (prev.transmitter_enabled !== next.transmitter_enabled) {
     addActivity(next.transmitter_enabled ? "Transmitter turned on" : "Transmitter turned off", "ptt");
   }
+  if (prev.locked_out !== next.locked_out) {
+    addActivity(next.locked_out ? "Stuck-carrier lockout engaged" : "Stuck-carrier lockout cleared", "lockout");
+  }
   const before = new Set(prev.linked_nodes);
   const after = new Set(next.linked_nodes);
   for (const node of after) if (!before.has(node)) addActivity(`Node ${node} linked`, "link");
@@ -73,6 +77,7 @@ export function applyStatus(status) {
   if (previous && previous.transmitter_enabled !== status.transmitter_enabled) loadConfig().catch(() => {});
   previous = status;
   document.getElementById("tx-disabled-tag").hidden = status.transmitter_enabled;
+  document.getElementById("lockout-card").hidden = !status.locked_out;
 
   setStateBadge(stateValue, status.state);
   stateDescription.textContent = STATE_DESCRIPTIONS[status.state] ?? "";
@@ -149,4 +154,15 @@ export function initStatus() {
     activityList.innerHTML = "";
     activityEmpty.hidden = false;
   });
+  const clearButton = document.getElementById("lockout-clear");
+  clearButton.addEventListener("click", () =>
+    withBusy(clearButton, async () => {
+      try {
+        applyStatus(await api("/api/lockout/clear", { method: "POST" }));
+        toast("Lockout cleared");
+      } catch (error) {
+        toastError(error);
+      }
+    }),
+  );
 }

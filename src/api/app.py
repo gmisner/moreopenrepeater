@@ -36,6 +36,7 @@ from playout.tts import TTSError, detect_tts
 from playout.wav import encode_wav
 from wx.nws import alert_areas, fetch_active_alerts, fetch_zone_geometry, missing_zones, speech_text
 
+from .activity import FLUSH_SECONDS as ACTIVITY_FLUSH_SECONDS
 from .activity import RETENTION_DAYS, ActivityRecorder, ActivityStore, summarize
 from .assets import AssetKind, AudioAssetStore
 from .auth import (
@@ -70,6 +71,10 @@ from .users import Role, UserError, UserStore
 from .logging_config import configure_logging
 from .models import (
     ActivitySummaryResponse,
+    AlertSettingsRequest,
+    AlertSettingsResponse,
+    AlertsResponse,
+    AlertTestResponse,
     AnnouncementFields,
     AprsMapResponse,
     AprsStationResponse,
@@ -120,6 +125,9 @@ from .models import (
     WeatherAlertResponse,
     WeatherStatusResponse,
 )
+from .health import CHECK_SECONDS as HEALTH_CHECK_SECONDS
+from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
+from .notify import SECRET_FIELDS, Notifier
 from .persistence import StateStore
 from .service import RepeaterService, StatusSnapshot
 from .updates import UpdateChecker, Updater, channel_from_env, installed_version, read_log, repo_from_checkout, updater_settings_from_env
@@ -152,6 +160,8 @@ DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.jso
 DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
 DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
 DEFAULT_NODE_LIST_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "allstar-nodes.txt"
+DEFAULT_ALERTS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "alerts.json"
+DEFAULT_RUN_MARKER_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "run-state.json"
 DEFAULT_BACKUP_DIR = Path(
     os.environ.get("MOREOPENREPEATER_BACKUP_DIR") or _resolve_data_root(os.environ, _REPO_DATA_DIR) / "backups"
 )
@@ -334,6 +344,9 @@ def create_app(
     updater: Optional[Updater] = None,
     update_checker: Optional[UpdateChecker] = None,
     update_channel: Optional[str] = None,
+    notifier: Optional[Notifier] = None,
+    run_marker: Optional[RunMarker] = None,
+    system_probe: Optional[SystemProbe] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -388,6 +401,18 @@ def create_app(
     updater = updater or Updater(updater_settings_from_env(os.environ))
     update_checker = update_checker or UpdateChecker(repo_from_checkout(REPO_DIR))
     update_channel = update_channel or channel_from_env(os.environ)
+    notifier = notifier or Notifier()
+    notifier.station = lambda: service.config.callsign
+    notifier.audit_hook = lambda at, action, detail: audit.record(at, "alerts", action, detail)
+    service.lockout_hook = lambda locked_out: notifier.post(lockout_alert(locked_out))
+    health = HealthMonitor(
+        notifier,
+        system_probe or SystemProbe(_resolve_data_root(os.environ, _REPO_DATA_DIR)),
+        run_marker or RunMarker(None),
+        audio_status=lambda: live_audio.status(),
+        cm108_path=lambda: getattr(getattr(cm108, "device", None), "path", None),
+        update_status=updater.status,
+    )
     backup_sources = BackupSources(service, users, assets_store, recordings, activity_store, audit)
 
     def auth_enabled() -> bool:
@@ -576,6 +601,23 @@ def create_app(
             await asyncio.sleep(BACKUP_CHECK_SECONDS)
             await loop.run_in_executor(None, backups.run_schedule, backup_sources, service.config, time.time())
 
+    async def activity_flush_loop() -> None:
+        while True:
+            await asyncio.sleep(ACTIVITY_FLUSH_SECONDS)
+            await asyncio.get_running_loop().run_in_executor(None, activity_store.flush)
+
+    async def health_loop() -> None:
+        loop = asyncio.get_running_loop()
+        for alert in await loop.run_in_executor(None, health.started):
+            notifier.post(alert)
+        while True:
+            await asyncio.sleep(HEALTH_CHECK_SECONDS)
+            try:
+                for alert in await loop.run_in_executor(None, health.check):
+                    notifier.post(alert)
+            except Exception:
+                logging.getLogger("moreopenrepeater.alerts").exception("unexpected error checking the system's health")
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         tasks: list[asyncio.Task] = []
@@ -597,6 +639,8 @@ def create_app(
             loop.run_in_executor(None, renderer.warm, service.config)
             service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
             tasks.append(asyncio.create_task(backup_loop()))
+            tasks.append(asyncio.create_task(health_loop()))
+            tasks.append(asyncio.create_task(activity_flush_loop()))
             if link_settings is not None:
                 tasks.append(asyncio.create_task(node_link_loop()))
                 tasks.append(asyncio.create_task(node_directory.run()))
@@ -612,6 +656,9 @@ def create_app(
         await allstar_node.stop()
         await autopatch.stop()
         live_audio.shutdown()
+        activity_store.flush()
+        if start_background_tick:
+            health.stopping()
 
     app = FastAPI(title="moreopenrepeater API", lifespan=lifespan)
     app.state.service = service
@@ -697,6 +744,13 @@ def create_app(
         request.state.audit_detail = describe_config_change(dataclasses.asdict(service.config), overrides)
         service.update_config(**overrides)
         return _config_response(service)
+
+    @app.post("/api/lockout/clear", response_model=StatusResponse, dependencies=auth_dependencies)
+    async def clear_lockout() -> StatusResponse:
+        if not service.controller.locked_out:
+            raise HTTPException(status_code=409, detail="The repeater isn't locked out")
+        service.clear_lockout()
+        return _status_response(service.snapshot())
 
     @app.post("/api/simulate/cos", response_model=StatusResponse, dependencies=auth_dependencies)
     async def simulate_cos(body: SimulateCOSRequest) -> StatusResponse:
@@ -953,6 +1007,37 @@ def create_app(
         except OSError as error:
             raise HTTPException(status_code=500, detail=f"Couldn't ask the updater: {error.strerror or error}") from None
         return get_updates()
+
+    def alerts_response() -> dict:
+        settings = notifier.settings
+        return {
+            "settings": AlertSettingsResponse(**{k: getattr(settings, k) for k in AlertSettingsResponse.model_fields}),
+            "secrets_set": {name: bool(getattr(settings, name)) for name in SECRET_FIELDS},
+            "channels": notifier.channels,
+            "recent": [{**entry, "at": datetime.fromtimestamp(entry["at"])} for entry in notifier.recent],
+            "system": health.probe.readings(),
+            "last_unexpected_stop": health.last_unexpected_stop,
+        }
+
+    # Plain `def`s: the system readings read files and may run vcgencmd.
+    @app.get("/api/alerts", response_model=AlertsResponse, dependencies=admin_dependencies)
+    def get_alerts() -> dict:
+        return alerts_response()
+
+    @app.put("/api/alerts", response_model=AlertsResponse, dependencies=admin_dependencies)
+    def put_alerts(body: AlertSettingsRequest, request: Request) -> dict:
+        changes = body.model_dump(exclude_none=True)
+        request.state.audit_detail = ", ".join(
+            name for name, value in changes.items() if value != getattr(notifier.settings, name)
+        )
+        notifier.update(**changes)
+        return alerts_response()
+
+    @app.post("/api/alerts/test", response_model=AlertTestResponse, dependencies=admin_dependencies)
+    async def test_alerts() -> dict:
+        if not notifier.channels:
+            raise HTTPException(status_code=409, detail="Set up at least one way to send alerts first")
+        return {"results": await notifier.send_test()}
 
     @app.get("/api/audio/tts", response_model=TTSInfoResponse, dependencies=auth_dependencies)
     def get_tts_info() -> TTSInfoResponse:
@@ -1342,6 +1427,8 @@ app = create_app(
     aprs_stations=StationStore(DEFAULT_APRS_PATH),
     backups=BackupFolder(DEFAULT_BACKUP_DIR),
     node_directory=NodeDirectory(DEFAULT_NODE_LIST_PATH),
+    notifier=Notifier(StateStore(DEFAULT_ALERTS_PATH)),
+    run_marker=RunMarker(StateStore(DEFAULT_RUN_MARKER_PATH)),
 )
 
 

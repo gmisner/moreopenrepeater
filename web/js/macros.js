@@ -20,6 +20,7 @@ const ACTION_LABELS = {
   parrot: "Parrot",
   tx_disable: "Transmitter off",
   tx_enable: "Transmitter on",
+  lockout_clear: "Clear lockout",
   aprs: "APRS stations nearby",
   gpio: "GPIO output",
 };

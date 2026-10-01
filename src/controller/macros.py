@@ -22,8 +22,10 @@ from .events import ControllerCommand, RunAction, SendLinkCommand
 #   tx_disable / tx_enable   turn the transmitter off/on (put a secret code in the pattern)
 #   aprs          speak how many APRS stations are nearby, and the closest
 #   gpio          switch a CM108 output: `<pin> on|off|toggle|pulse [seconds]`
+#   lockout_clear end a stuck-carrier lockout now
 MacroAction = Literal[
-    "link", "time", "weather", "id", "announcement", "say", "parrot", "tx_disable", "tx_enable", "aprs", "gpio"
+    "link", "time", "weather", "id", "announcement", "say", "parrot", "tx_disable", "tx_enable", "aprs", "gpio",
+    "lockout_clear",
 ]
 MACRO_ACTIONS: tuple[str, ...] = get_args(MacroAction)
 ACTIONS_NEEDING_ARGUMENT = frozenset({"link", "announcement", "say", "gpio"})

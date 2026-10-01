@@ -73,7 +73,7 @@ function renderSummary(s) {
       String(s.kerchunks),
       KERCHUNK_NOTE + kerchunkShare + (s.kerchunks_filtered ? ` · ${s.kerchunks_filtered} more filtered out` : ""),
     ),
-    stat("Timeouts", String(s.timeouts), "timeout timer tripped"),
+    stat("Timeouts", String(s.timeouts), "timeout timer tripped" + (s.lockouts ? ` · ${s.lockouts} stuck-carrier lockouts` : "")),
     stat("IDs / announcements", `${s.ids} / ${s.announcements}`),
   ].join("");
 

@@ -24,6 +24,7 @@
 # fetched copy of this script (--fetched), so an update always installs with
 # the new version's steps.
 set -euo pipefail
+umask 022  # nothing it writes may be writable by the service user
 
 REPO_URL="${REPO_URL:-https://github.com/gmisner/moreopenrepeater.git}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/moreopenrepeater}"
@@ -137,6 +138,7 @@ if [ "$FETCHED" -eq 0 ]; then
     # The code belongs to root (earlier versions gave it to the service
     # user), so the dashboard can't change what the updater runs as root.
     find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o \( ! -user root -o ! -group root \) -exec chown -h root:root {} +
+    find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o ! -type l -perm /022 -exec chmod go-w {} +
     git -C "$INSTALL_DIR" fetch -q origin "$BRANCH"
     git -C "$INSTALL_DIR" checkout -q -f -B "$BRANCH" FETCH_HEAD
   else

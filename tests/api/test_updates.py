@@ -191,6 +191,15 @@ def test_request_writes_the_channel_and_waits_for_the_updater(tmp_path):
     assert not updater.busy()
 
 
+def test_a_run_stamped_in_whole_seconds_still_answers_the_request(tmp_path):
+    updater, settings, now = make_updater(tmp_path, start=1000.4)
+    write_status(settings, state="succeeded", channel="stable", started_at=900.0)
+    updater.request("stable")
+    write_status(settings, state="running", channel="stable", started_at=1000.0)
+    now[0] += REQUEST_PICKUP_SECONDS + 1
+    assert updater.status()["state"] == "running"
+
+
 def test_a_request_nobody_picks_up_turns_into_a_failure(tmp_path):
     updater, _settings, now = make_updater(tmp_path)
     updater.request("dev")

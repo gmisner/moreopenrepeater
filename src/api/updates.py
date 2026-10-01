@@ -31,6 +31,9 @@ MAX_LISTED_COMMITS = 30
 # without it, something's wrong with the units.
 REQUEST_PICKUP_SECONDS = 60
 STALLED_AFTER_SECONDS = 45 * 60
+# A run that started this long before the request still counts as answering
+# it (older updaters stamp whole seconds).
+START_SLACK_SECONDS = 5
 MAX_LOG_LINES = 400
 
 
@@ -187,7 +190,9 @@ class Updater:
             return None
         status = read_status(self.settings)
         now = self._clock()
-        if self._requested_at is not None and (status is None or status.get("started_at", 0) < self._requested_at):
+        if self._requested_at is not None and (
+            status is None or status.get("started_at", 0) < self._requested_at - START_SLACK_SECONDS
+        ):
             if now - self._requested_at < REQUEST_PICKUP_SECONDS:
                 return {"state": "requested", "started_at": self._requested_at}
             return {"state": "failed", "started_at": self._requested_at, "message": "The updater didn't pick up the request. Is moreopenrepeater-update.path enabled?"}

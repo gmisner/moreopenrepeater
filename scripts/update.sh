@@ -54,7 +54,7 @@ main() {
   channel="$(head -c 32 "$REQUEST" | LC_ALL=C tr -dc '[:lower:]')"
   rm -f "$REQUEST"
   local started
-  started="$(date +%s)"
+  started="$(date +%s.%N)"
   case "$channel" in
     dev | beta | stable) ;;
     *)

@@ -168,6 +168,11 @@ class RepeaterConfig:
     net_schedules: list = field(default_factory=list)  # [{days, time, minutes, enabled}]
     homeassistant_url: str = ""  # e.g. http://homeassistant.local:8123, for `homeassistant` macros
     homeassistant_say_result: bool = True  # "Done." / "Failed." after a Home Assistant macro
+    # A page anyone can open, without signing in, at /listen (api.app).
+    public_page_enabled: bool = False
+    public_page_text: str = ""  # e.g. the frequency and tone
+    public_page_audio: bool = True  # let visitors listen live
+    public_page_max_listeners: int = 20
 
 
 class RepeaterController:

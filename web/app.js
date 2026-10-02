@@ -20,6 +20,7 @@ import { initMap } from "./js/map.js";
 import { initMacros, loadMacros } from "./js/macros.js";
 import { initControlCodes } from "./js/control_codes.js";
 import { initHomeAssistant } from "./js/homeassistant.js";
+import { initPublic } from "./js/public.js";
 import { initNet } from "./js/net.js";
 import { initRouter } from "./js/router.js";
 import { initSession } from "./js/session.js";
@@ -45,6 +46,7 @@ async function main() {
   initMacros();
   initControlCodes();
   initHomeAssistant();
+  initPublic();
   initAnnouncements();
   initNet();
   initWeather();

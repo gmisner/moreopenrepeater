@@ -309,6 +309,10 @@ several phases (see the plan file for the full breakdown):
   Activity page and automatic deletion after a set number of days.
 - **Listen live**: stream what's on the air (or what the receiver hears) to the
   dashboard in the browser.
+- **Public listening** (off until turned on): a `/listen` page anyone can open without
+  signing in, showing whether the repeater is on the air and playing it live, with a
+  cap on listeners. The controller can also feed Broadcastify or another Icecast
+  server through ffmpeg. See [docs/public-listening.md](docs/public-listening.md).
 - **Users and roles**: admin, operator and read-only viewer accounts, plus an audit
   log of every change and DTMF command with who made it.
 - **Full backups**: one `.zip` with the settings, macros, announcements, audio clips,

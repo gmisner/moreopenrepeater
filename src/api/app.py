@@ -79,6 +79,9 @@ from .models import (
     ControlCodeUser,
     HomeAssistantStatus,
     HomeAssistantTestRequest,
+    PublicStatus,
+    StreamResponse,
+    StreamSettingsRequest,
     AlertSettingsRequest,
     AlertSettingsResponse,
     AlertsResponse,
@@ -142,6 +145,7 @@ from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
 from .control_codes import ControlCodes, provisioning_uri
 from .homeassistant import TOKEN_ENV as HOMEASSISTANT_TOKEN_ENV
 from .homeassistant import HomeAssistant, HomeAssistantError
+from .stream import Streamer
 from .net import POLL_SECONDS as NET_POLL_SECONDS
 from .net import NetError, NetMode
 from .notify import SECRET_FIELDS, Notifier
@@ -184,6 +188,8 @@ DEFAULT_RUN_MARKER_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "run-
 DEFAULT_NETS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "nets.json"
 DEFAULT_AUTO_UPDATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "auto-update.json"
 DEFAULT_CONTROL_CODES_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "control-codes.json"
+DEFAULT_STREAM_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "stream.json"
+PUBLIC_LISTENERS_PER_ADDRESS = 3
 DEFAULT_BACKUP_DIR = Path(
     os.environ.get("MOREOPENREPEATER_BACKUP_DIR") or _resolve_data_root(os.environ, _REPO_DATA_DIR) / "backups"
 )
@@ -374,6 +380,8 @@ def create_app(
     auto_update_store: Optional[StateStore] = None,
     control_codes: Optional[ControlCodes] = None,
     homeassistant: Optional[HomeAssistant] = None,
+    stream_store: Optional[StateStore] = None,
+    streamer: Optional[Streamer] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -437,6 +445,8 @@ def create_app(
     service.code_checker = control_codes.check
     service.codes_locked = control_codes.locked
     homeassistant = homeassistant or HomeAssistant(service, os.environ.get(HOMEASSISTANT_TOKEN_ENV))
+    streamer = streamer or Streamer(live_audio.monitor, stream_store, lambda: renderer.sample_rate)
+    public_listeners: collections.Counter[str] = collections.Counter()
     aprs_stations = aprs_stations or StationStore()
     aprs_receiver = AprsReceiver(aprs_stations, lambda: service.config)
     service.add_config_listener(lambda _config: aprs_receiver.settings_changed())
@@ -729,6 +739,7 @@ def create_app(
             tasks.append(asyncio.create_task(backup_loop()))
             tasks.append(asyncio.create_task(net_loop()))
             tasks.append(asyncio.create_task(auto_update_loop()))
+            tasks.append(asyncio.create_task(streamer.run()))
             tasks.append(asyncio.create_task(health_loop()))
             tasks.append(asyncio.create_task(activity_flush_loop()))
             if link_settings is not None:
@@ -1563,6 +1574,39 @@ def create_app(
             raise HTTPException(status_code=502, detail=str(error)) from None
         return {"ok": True}
 
+    def stream_response() -> StreamResponse:
+        return StreamResponse(**streamer.public_settings(), status=streamer.status)
+
+    @app.get("/api/stream", response_model=StreamResponse, dependencies=admin_dependencies)
+    def get_stream() -> StreamResponse:
+        return stream_response()
+
+    @app.put("/api/stream", response_model=StreamResponse, dependencies=admin_dependencies)
+    def put_stream(body: StreamSettingsRequest) -> StreamResponse:
+        streamer.update(body.model_dump())
+        return stream_response()
+
+    def public_page_on() -> bool:
+        return service.saved_config.public_page_enabled
+
+    @app.get("/api/public/status", response_model=PublicStatus)
+    def public_status() -> PublicStatus:
+        """No sign-in: this is what /listen shows."""
+        if not public_page_on():
+            raise HTTPException(status_code=404, detail="Not found")
+        config = service.saved_config
+        snapshot = service.snapshot()
+        return PublicStatus(
+            callsign=config.callsign,
+            text=config.public_page_text,
+            on_air=snapshot.ptt_active,
+            receiving=snapshot.cos_active,
+            net=nets.current["name"] if nets.current else None,
+            audio=config.public_page_audio,
+            listeners=sum(public_listeners.values()),
+            max_listeners=config.public_page_max_listeners,
+        )
+
     @app.get("/api/control-codes", response_model=list[ControlCodeUser], dependencies=admin_dependencies)
     def list_control_codes() -> list[ControlCodeUser]:
         return [ControlCodeUser(**user) for user in control_codes.enrolled()]
@@ -1611,6 +1655,47 @@ def create_app(
             sender.cancel()
             live_audio.monitor.unsubscribe(queue)
 
+    def client_address(websocket: WebSocket) -> str:
+        forwarded = websocket.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        return forwarded or (websocket.client.host if websocket.client else "")
+
+    @app.websocket("/ws/public/audio")
+    async def ws_public_audio(websocket: WebSocket) -> None:
+        """What's on the air, for /listen: no sign-in, so it's off unless the
+        public page is on, and capped in total and per address."""
+        config = service.saved_config
+        if not (config.public_page_enabled and config.public_page_audio):
+            await websocket.close(code=1008)
+            return
+        address = client_address(websocket)
+        if sum(public_listeners.values()) >= config.public_page_max_listeners or public_listeners[address] >= PUBLIC_LISTENERS_PER_ADDRESS:
+            await websocket.close(code=1013)
+            return
+        public_listeners[address] += 1
+        try:
+            await websocket.accept()
+            queue = live_audio.monitor.subscribe("tx")
+
+            async def send_frames() -> None:
+                await websocket.send_json({"sample_rate": renderer.sample_rate})
+                while True:
+                    await websocket.send_bytes(await queue.get())
+                    if not (service.saved_config.public_page_enabled and service.saved_config.public_page_audio):
+                        await websocket.close(code=1008)
+                        return
+
+            sender = asyncio.create_task(send_frames())
+            try:
+                while (await websocket.receive())["type"] != "websocket.disconnect":
+                    pass
+            finally:
+                sender.cancel()
+                live_audio.monitor.unsubscribe(queue)
+        finally:
+            public_listeners[address] -= 1
+            if public_listeners[address] <= 0:
+                del public_listeners[address]
+
     @app.websocket("/ws/status")
     async def ws_status(websocket: WebSocket) -> None:
         if not websocket_allowed(websocket):
@@ -1637,6 +1722,12 @@ def create_app(
             if not is_signed_in(request):
                 return RedirectResponse("/login", status_code=303)
             return FileResponse(WEB_DIR / "index.html")
+
+        @app.get("/listen", response_model=None)
+        def listen_page() -> Response:
+            if not public_page_on():
+                raise HTTPException(status_code=404, detail="Not found")
+            return FileResponse(WEB_DIR / "listen.html")
 
         @app.get("/login", response_model=None)
         def login_page(request: Request) -> Response:
@@ -1667,6 +1758,7 @@ app = create_app(
     net_store=StateStore(DEFAULT_NETS_PATH),
     auto_update_store=StateStore(DEFAULT_AUTO_UPDATE_PATH),
     control_codes=ControlCodes(StateStore(DEFAULT_CONTROL_CODES_PATH)),
+    stream_store=StateStore(DEFAULT_STREAM_PATH),
 )
 
 

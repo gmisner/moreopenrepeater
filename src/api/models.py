@@ -236,6 +236,10 @@ class ConfigResponse(BaseModel):
     net_schedules: list[NetSchedule] = []
     homeassistant_url: str = ""
     homeassistant_say_result: bool = True
+    public_page_enabled: bool = False
+    public_page_text: str = ""
+    public_page_audio: bool = True
+    public_page_max_listeners: int = 20
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -360,6 +364,10 @@ class ConfigUpdateRequest(BaseModel):
     net_schedules: Optional[list[NetSchedule]] = Field(default=None, max_length=20)
     homeassistant_url: Optional[str] = Field(default=None, max_length=300, pattern=r"^$|^https?://[^\s]+$")
     homeassistant_say_result: Optional[bool] = None
+    public_page_enabled: Optional[bool] = None
+    public_page_text: Optional[str] = Field(default=None, max_length=500)
+    public_page_audio: Optional[bool] = None
+    public_page_max_listeners: Optional[int] = Field(default=None, ge=1, le=200)
 
     @model_validator(mode="after")
     def _net_link_needs_a_node(self) -> "ConfigUpdateRequest":
@@ -1075,3 +1083,51 @@ class HomeAssistantStatus(BaseModel):
 
 class HomeAssistantTestRequest(BaseModel):
     target: str = Field(pattern=HOMEASSISTANT_TARGET)
+
+
+class PublicStatus(BaseModel):
+    """What /listen shows to anyone, signed in or not."""
+
+    callsign: str
+    text: str
+    on_air: bool
+    receiving: bool
+    net: Optional[str]
+    audio: bool
+    listeners: int
+    max_listeners: int
+
+
+class StreamSettingsRequest(BaseModel):
+    enabled: bool = False
+    host: str = Field(default="", max_length=200, pattern=r"^$|^[A-Za-z0-9.\-]+$")
+    port: int = Field(default=80, ge=1, le=65535)
+    mount: str = Field(default="", max_length=200, pattern=r"^$|^/?[A-Za-z0-9_.\-/]+$")
+    username: str = Field(default="source", min_length=1, max_length=100)
+    password: Optional[str] = Field(default=None, max_length=200)  # None or "" keeps the saved one
+    name: str = Field(default="", max_length=100)
+    description: str = Field(default="", max_length=200)
+    genre: str = Field(default="", max_length=100)
+    bitrate: Literal[16, 24, 32] = 16
+    legacy_icecast: bool = False
+
+
+class StreamStatus(BaseModel):
+    state: Literal["off", "connecting", "streaming", "retrying", "error"]
+    detail: str
+    since: float
+
+
+class StreamResponse(BaseModel):
+    enabled: bool
+    host: str
+    port: int
+    mount: str
+    username: str
+    password_set: bool
+    name: str
+    description: str
+    genre: str
+    bitrate: int
+    legacy_icecast: bool
+    status: StreamStatus

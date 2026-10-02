@@ -497,6 +497,11 @@ the server or script (Terminal, iTerm, Cursor...) needs it in System Settings
 For a real Raspberry Pi deployment (systemd service, not `--reload`), see
 `docs/raspberry-pi.md`.
 
+## Support
+
+If moreopenrepeater runs your repeater and you'd like to chip in, you can
+[buy me a coffee](https://buymeacoffee.com/thegearbox).
+
 ## License
 
 moreopenrepeater is free software: you can redistribute it and/or modify it

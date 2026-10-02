@@ -326,3 +326,44 @@ def test_audio_devices_endpoint_reports_portaudio_errors():
 
     client = TestClient(create_app(start_background_tick=False, log_path=tmp / "t.log", audio_devices=broken))
     assert client.get("/api/audio/devices").status_code == 503
+
+
+def test_dtmf_is_decoded_but_not_transmitted():
+    import queue
+
+    from controller.events import DTMFDigit
+    from dsp.goertzel import dtmf_tone
+
+    live, service, _clock, _engines = make_live()
+    seen = []
+    handle = service.handle_audio_events
+    service.handle_audio_events = lambda events: (seen.extend(events), handle(events))
+    engine = live.engine
+    digit = dtmf_tone("5", RATE, int(0.2 * RATE)).astype(np.float32) * 0.5
+
+    signal = np.concatenate([tone(level=0.3, blocks=10, hz=400.0), digit, tone(level=0.3, blocks=10, hz=400.0)])
+    out = []
+    for start in range(0, len(signal), BLOCK):
+        engine.process_one(signal[start : start + BLOCK])
+        while True:  # the output queue only holds a few blocks
+            try:
+                out.append(engine._output.get_nowait().reshape(-1))
+            except queue.Empty:
+                break
+    out = np.concatenate(out)
+    assert DTMFDigit(digit="5") in seen
+    assert service.controller.state == RECEIVING and np.abs(out).max() > 0.1
+    spectrum = np.abs(np.fft.rfft(out)) / len(out)
+    freqs = np.fft.rfftfreq(len(out), 1 / RATE)
+    assert spectrum[np.argmin(np.abs(freqs - 770))] < 0.002
+    assert spectrum[np.argmin(np.abs(freqs - 1336))] < 0.002
+
+
+def test_dtmf_mute_tail_and_tx_delay_apply_without_restart():
+    live, service, _clock, engines = make_live()
+
+    service.update_config(dtmf_mute=False, squelch_tail_ms=120.0, tx_delay_ms=60.0)
+
+    settings = live.engine.processor.settings
+    assert len(engines) == 1
+    assert (settings.dtmf_mute, settings.squelch_tail_ms, settings.tx_delay_ms) == (False, 120.0, 60.0)

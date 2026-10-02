@@ -200,6 +200,9 @@ class ConfigResponse(BaseModel):
     ptt_gpio_pin: int
     ptt_polarity: Polarity
     vox_threshold_db: float
+    squelch_tail_ms: float = 0.0
+    tx_delay_ms: float = 0.0
+    dtmf_mute: bool = True
     monitor_enabled: bool = False
     monitor_name: str = ""
     monitor_input_device: str = ""
@@ -224,6 +227,8 @@ class ConfigResponse(BaseModel):
     link_radio_tx_ctcss_hz: Optional[float] = None
     link_radio_timeout: float = 180.0
     link_radio_courtesy_tone: bool = True
+    link_radio_squelch_tail_ms: float = 0.0
+    link_radio_tx_delay_ms: float = 0.0
     vox_hold: float
     tx_gain_db: float
     tx_ctcss_hz: Optional[float]
@@ -358,6 +363,9 @@ class ConfigUpdateRequest(BaseModel):
     ptt_gpio_pin: Optional[PiGpioPin] = None
     ptt_polarity: Optional[Polarity] = None
     vox_threshold_db: Optional[float] = Field(default=None, ge=-90, le=0)
+    squelch_tail_ms: Optional[float] = Field(default=None, ge=0, le=300)
+    tx_delay_ms: Optional[float] = Field(default=None, ge=0, le=500)
+    dtmf_mute: Optional[bool] = None
     monitor_enabled: Optional[bool] = None
     monitor_name: Optional[str] = Field(default=None, max_length=40)
     monitor_input_device: Optional[str] = Field(default=None, max_length=200)
@@ -383,6 +391,8 @@ class ConfigUpdateRequest(BaseModel):
     clear_link_radio_tx_ctcss_hz: bool = False
     link_radio_timeout: Optional[float] = Field(default=None, ge=30, le=1800)
     link_radio_courtesy_tone: Optional[bool] = None
+    link_radio_squelch_tail_ms: Optional[float] = Field(default=None, ge=0, le=300)
+    link_radio_tx_delay_ms: Optional[float] = Field(default=None, ge=0, le=500)
     vox_hold: Optional[float] = Field(default=None, ge=0, le=5)
     tx_gain_db: Optional[float] = Field(default=None, ge=-40, le=20)
     tx_ctcss_hz: Optional[float] = Field(default=None, ge=60, le=260)

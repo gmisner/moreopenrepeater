@@ -139,6 +139,9 @@ class LinkRadio:
             settings.vox_threshold_db = config.link_radio_vox_threshold_db
             settings.tx_gain_db = config.link_radio_tx_gain_db
             settings.tx_ctcss_hz = config.link_radio_tx_ctcss_hz
+            settings.squelch_tail_ms = config.link_radio_squelch_tail_ms
+            settings.tx_delay_ms = config.link_radio_tx_delay_ms
+            settings.dtmf_mute = config.dtmf_mute
 
     def status(self) -> dict:
         config = self._service.config
@@ -256,6 +259,9 @@ class LinkRadio:
                 vox_threshold_db=config.link_radio_vox_threshold_db,
                 tx_gain_db=config.link_radio_tx_gain_db,
                 tx_ctcss_hz=config.link_radio_tx_ctcss_hz,
+                squelch_tail_ms=config.link_radio_squelch_tail_ms,
+                tx_delay_ms=config.link_radio_tx_delay_ms,
+                dtmf_mute=config.dtmf_mute,
                 local_repeat=False,
             )
         )

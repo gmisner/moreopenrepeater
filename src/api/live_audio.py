@@ -60,7 +60,10 @@ _RESTART_FIELDS = (
     "ptt_polarity",
 )
 # Same names on RepeaterConfig and ProcessorSettings; applied without a restart.
-_LIVE_FIELDS = ("vox_threshold_db", "vox_hold", "tx_gain_db", "tx_ctcss_hz", "tx_ctcss_level_db")
+_LIVE_FIELDS = (
+    "vox_threshold_db", "vox_hold", "tx_gain_db", "tx_ctcss_hz", "tx_ctcss_level_db", "squelch_tail_ms", "tx_delay_ms",
+    "dtmf_mute",
+)
 
 
 def list_audio_devices() -> list[dict]:

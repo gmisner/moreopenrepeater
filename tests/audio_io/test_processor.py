@@ -76,7 +76,7 @@ def test_dtmf_digits_are_reported_while_carrier_is_up():
 
 
 def test_receive_audio_is_repeated_only_while_keyed_and_repeating():
-    p = AudioProcessor(ProcessorSettings(RATE))
+    p = AudioProcessor(ProcessorSettings(RATE, dtmf_mute=False))
     block = tone(1000, 0.02)
 
     assert not p.process(block).out.any()
@@ -89,7 +89,7 @@ def test_receive_audio_is_repeated_only_while_keyed_and_repeating():
 
 
 def test_tx_gain_is_applied():
-    p = AudioProcessor(ProcessorSettings(RATE, tx_gain_db=-6.0206))
+    p = AudioProcessor(ProcessorSettings(RATE, tx_gain_db=-6.0206, dtmf_mute=False))
     p.set_ptt(True)
     p.set_repeating(True)
 
@@ -170,7 +170,7 @@ def test_link_radio_processor_never_repeats_its_own_receiver():
 def test_port_gets_only_repeated_voice_and_its_audio_is_transmitted():
     from audio_io.patch import LinkAudio
 
-    p = AudioProcessor(ProcessorSettings(RATE, cos_source="external"))
+    p = AudioProcessor(ProcessorSettings(RATE, cos_source="external", dtmf_mute=False))
     port = LinkAudio(RATE)
     p.set_port(port)
     p.set_external_cos(True)
@@ -185,3 +185,111 @@ def test_port_gets_only_repeated_voice_and_its_audio_is_transmitted():
     p.set_ptt(True)
     out = p.process(np.zeros(BLOCK, dtype=np.float32)).out
     np.testing.assert_allclose(out, 0.1, atol=1e-6)
+
+
+def dtmf_energy(signal):
+    return max(magnitude_at(signal, 770), magnitude_at(signal, 1336))
+
+
+def repeating_processor(**settings):
+    p = AudioProcessor(ProcessorSettings(RATE, cos_source="external", **settings))
+    p.set_external_cos(True)
+    p.set_repeating(True)
+    p.set_ptt(True)
+    return p
+
+
+def transmitted(p, signal):
+    return np.concatenate([p.process(b).out for b in blocks(signal)])
+
+
+def test_dtmf_digits_are_not_retransmitted_but_the_voice_around_them_is():
+    p = repeating_processor()
+    voice = tone(400, 0.5)
+    digit = dtmf_tone("5", RATE, int(0.2 * RATE)).astype(np.float32)
+
+    results = [p.process(b) for b in blocks(np.concatenate([voice, digit, voice, silence(0.1)]))]
+    out = np.concatenate([r.out for r in results])
+
+    assert [e.digit for r in results for e in r.events if isinstance(e, DTMFDigit)] == ["5"]
+    assert dtmf_energy(out) < 0.01
+    assert magnitude_at(out[: int(0.4 * RATE)], 400) > 0.05
+    assert magnitude_at(out[int(0.8 * RATE) :], 400) > 0.05
+
+
+def test_a_digit_at_the_very_start_of_a_transmission_is_muted_from_its_first_block():
+    p = repeating_processor()
+    digit = dtmf_tone("#", RATE, int(0.2 * RATE)).astype(np.float32)
+
+    out = transmitted(p, np.concatenate([digit, silence(0.2)]))
+
+    assert not out.any()
+
+
+def test_dtmf_passes_when_muting_is_off():
+    p = repeating_processor(dtmf_mute=False)
+    digit = dtmf_tone("5", RATE, int(0.2 * RATE)).astype(np.float32)
+
+    out = transmitted(p, digit)
+
+    assert dtmf_energy(out) > 0.05
+
+
+def test_dtmf_is_muted_in_recordings_and_what_the_links_get():
+    from audio_io.patch import LinkAudio
+
+    p = repeating_processor()
+    link = LinkAudio(RATE)
+    p.set_link(link)
+    p.start_capture(5.0)
+    digit = dtmf_tone("7", RATE, int(0.2 * RATE)).astype(np.float32)
+
+    transmitted(p, np.concatenate([tone(400, 0.2), digit, tone(400, 0.2)]))
+
+    offered = []
+    while (b := link.take_radio()) is not None:
+        offered.append(b)
+    assert dtmf_energy(p.stop_capture()) < 0.01
+    assert offered and dtmf_energy(np.concatenate(offered)) < 0.01
+
+
+def test_repeat_audio_is_delayed_three_blocks_for_dtmf_muting():
+    p = repeating_processor()
+
+    outs = [p.process(b).out for b in blocks(tone(400, 0.1))]
+
+    assert [bool(o.any()) for o in outs] == [False, False, False, True, True]
+
+
+def test_squelch_tail_is_cut_when_the_carrier_drops():
+    p = repeating_processor(dtmf_mute=False, squelch_tail_ms=100)
+    signal = blocks(np.concatenate([tone(400, 0.4), (np.random.default_rng(2).standard_normal(int(0.1 * RATE)) * 0.3).astype(np.float32)]))
+    outs = []
+    for i, block in enumerate(signal):
+        if i == len(signal) - 1:
+            p.set_external_cos(False)  # squelch closes after the noise burst
+        outs.append(p.process(block).out)
+    outs += [p.process(np.zeros(BLOCK, dtype=np.float32)).out for _ in range(6)]
+    out = np.concatenate(outs)
+
+    noise_starts = int(0.4 * RATE) + 5 * BLOCK  # the 5-block (100 ms) delay
+    assert np.abs(out[noise_starts:]).max() == 0
+    assert magnitude_at(out[5 * BLOCK : noise_starts - BLOCK], 400) > 0.05
+
+
+def test_transmit_delay_keys_up_first_and_clips_wait_for_it():
+    p = AudioProcessor(ProcessorSettings(RATE, tx_delay_ms=50))
+    p.play(np.full(BLOCK * 2, 0.5, dtype=np.float32))
+
+    results = [p.process(np.zeros(BLOCK, dtype=np.float32)) for _ in range(6)]
+
+    assert [r.transmitting for r in results] == [True] * 5 + [False]
+    assert [bool(r.out.any()) for r in results] == [False, False, False, True, True, False]
+
+
+def test_transmit_delay_only_at_key_up():
+    p = repeating_processor(dtmf_mute=False, tx_delay_ms=40)
+
+    outs = [p.process(b).out for b in blocks(tone(400, 0.2))]
+
+    assert [bool(o.any()) for o in outs] == [False, False] + [True] * 8

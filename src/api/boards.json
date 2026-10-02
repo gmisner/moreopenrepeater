@@ -1,0 +1,82 @@
+[
+  {
+    "id": "cm108",
+    "name": "Generic CM108/CM119 USB interface",
+    "maker": "",
+    "kind": "usb",
+    "notes": "Any URI-style USB sound card interface: PTT on the chip's GPIO3, carrier detect on its VOL_DN input, pulled low on carrier. Set the levels yourself on the Audio page.",
+    "device_hints": ["USB Audio", "C-Media"],
+    "repeater": {"cos_source": "cm108", "cos_polarity": "low", "ptt_output": "cm108"},
+    "mixer": []
+  },
+  {
+    "id": "dmk-uri",
+    "name": "DMK URI",
+    "maker": "DMK Engineering",
+    "kind": "usb",
+    "notes": "PTT on GPIO3, carrier detect on VOL_DN (active low).",
+    "device_hints": ["USB Audio", "C-Media"],
+    "repeater": {"cos_source": "cm108", "cos_polarity": "low", "ptt_output": "cm108"},
+    "mixer": [["Speaker", "75%"], ["Mic", "18dB"]]
+  },
+  {
+    "id": "usb-rim-lite",
+    "name": "USB-RIM Lite",
+    "maker": "Repeater Builder",
+    "kind": "usb",
+    "notes": "PTT on GPIO3, carrier detect on VOL_DN (active low).",
+    "device_hints": ["USB Audio", "C-Media"],
+    "repeater": {"cos_source": "cm108", "cos_polarity": "low", "ptt_output": "cm108"},
+    "mixer": [["Speaker", "75%"], ["Mic", "18dB"]]
+  },
+  {
+    "id": "aioc",
+    "name": "AIOC (All-In-One-Cable)",
+    "maker": "skuep",
+    "kind": "usb",
+    "notes": "PTT through the AIOC's CM108-style interface (firmware 1.2 or newer). Carrier detect is the AIOC's virtual COS, which recent firmware sends on VOL_DN by default; if the repeater never opens, switch carrier detect to audio level (VOX) on the Audio page.",
+    "device_hints": ["All-In-One", "AIOC"],
+    "repeater": {"cos_source": "cm108", "cos_polarity": "low", "ptt_output": "cm108"},
+    "mixer": []
+  },
+  {
+    "id": "svxlink-card",
+    "name": "SVXLink Card",
+    "maker": "F5UII/F8ASB",
+    "kind": "pi",
+    "notes": "A Pi HAT with two USB sound cards. Port 1 is the repeater; port 2 can run a link radio. Carrier detect and PTT are Pi header pins.",
+    "device_hints": ["USB Audio", "C-Media"],
+    "repeater": {"cos_source": "gpio", "cos_gpio_pin": 19, "cos_polarity": "low", "ptt_output": "gpio", "ptt_gpio_pin": 16, "ptt_polarity": "high"},
+    "link": {"link_radio_cos": "gpio", "link_radio_cos_gpio_pin": 18, "link_radio_cos_polarity": "low", "link_radio_ptt": "gpio", "link_radio_ptt_gpio_pin": 17, "link_radio_ptt_polarity": "high"},
+    "mixer": [["Speaker", "75%"], ["Mic", "69%"]]
+  },
+  {
+    "id": "svxlink-basic",
+    "name": "SVXLink Basic Board",
+    "maker": "Richard Neese",
+    "kind": "pi",
+    "notes": "A Pi board with two USB sound cards. Port 1 is the repeater; port 2 can run a link radio. Carrier detect (active high) and PTT are Pi header pins.",
+    "device_hints": ["USB Audio", "C-Media"],
+    "repeater": {"cos_source": "gpio", "cos_gpio_pin": 23, "cos_polarity": "high", "ptt_output": "gpio", "ptt_gpio_pin": 24, "ptt_polarity": "high"},
+    "link": {"link_radio_cos": "gpio", "link_radio_cos_gpio_pin": 25, "link_radio_cos_polarity": "high", "link_radio_ptt": "gpio", "link_radio_ptt_gpio_pin": 18, "link_radio_ptt_polarity": "high"},
+    "mixer": [["Speaker", "75%"], ["Mic", "69%"]]
+  },
+  {
+    "id": "ics-1x",
+    "name": "ICS Pi Repeater 1X",
+    "maker": "ICS Controllers",
+    "kind": "pi",
+    "unsupported": "Its PTT is on an I/O expander, not a Pi header pin, and each port is one channel of a stereo codec. moreopenrepeater can't drive either yet.",
+    "repeater": {},
+    "mixer": []
+  },
+  {
+    "id": "ics-2x",
+    "name": "ICS Pi Repeater 2X",
+    "maker": "ICS Controllers",
+    "kind": "pi",
+    "unsupported": "Its PTT is on an I/O expander, not a Pi header pin, and each port is one channel of a stereo codec. moreopenrepeater can't drive either yet.",
+    "repeater": {},
+    "mixer": []
+  }
+]

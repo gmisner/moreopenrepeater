@@ -199,6 +199,8 @@ class ConfigResponse(BaseModel):
     wx_poll_interval: float
     wx_repeat_minutes: float
     audio_enabled: bool
+    board_preset: str = ""
+    setup_wizard_done: bool = False
     audio_input_device: str
     audio_output_device: str
     cos_source: CosSource
@@ -371,6 +373,7 @@ class ConfigUpdateRequest(BaseModel):
     wx_poll_interval: Optional[float] = Field(default=None, ge=30)
     wx_repeat_minutes: Optional[float] = Field(default=None, ge=0)
     audio_enabled: Optional[bool] = None
+    setup_wizard_done: Optional[bool] = None
     audio_input_device: Optional[str] = None
     audio_output_device: Optional[str] = None
     cos_source: Optional[CosSource] = None
@@ -881,6 +884,40 @@ class AudioDeviceResponse(BaseModel):
     inputs: int
     outputs: int
     default_samplerate: float
+
+
+class BoardResponse(BaseModel):
+    id: str
+    name: str
+    maker: str
+    kind: Literal["usb", "pi"]
+    notes: str
+    device_hints: list[str]
+    two_port: bool
+    mixer: list[tuple[str, str]]
+    unsupported: Optional[str]
+
+
+class BoardApplyRequest(BaseModel):
+    input_device: Optional[str] = Field(default=None, max_length=200)
+    output_device: Optional[str] = Field(default=None, max_length=200)
+    link_input_device: Optional[str] = Field(default=None, max_length=200)
+    link_output_device: Optional[str] = Field(default=None, max_length=200)
+    set_mixer: bool = True
+
+
+class MixerResultResponse(BaseModel):
+    card: int
+    control: str
+    value: str
+    error: Optional[str]
+
+
+class BoardApplyResponse(BaseModel):
+    config: ConfigResponse
+    mixer: list[MixerResultResponse]
+    # Sound devices whose ALSA card couldn't be found, so their levels weren't set.
+    mixer_skipped: list[str]
 
 
 class LinkAudioResponse(BaseModel):

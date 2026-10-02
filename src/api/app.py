@@ -61,6 +61,7 @@ from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkSched
 from .node_directory import NodeDirectory
 from .autopatch import Autopatch, patch_settings_from_env
 from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_backup, restore_backup, write_backup
+from .boards import WIRING_FIELDS, alsa_card, apply_mixer, load_boards, preset_changes, run_amixer
 from .sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
 from .sip_trunk import AsteriskSetupError, SipTrunk, TrunkSettings
 from .aprs_map import AprsReceiver, StationStore, bearing_degrees, distance_km, map_center, spoken_summary
@@ -106,6 +107,9 @@ from .models import (
     AudioDeviceResponse,
     AudioEngineResponse,
     AllStarNodeRequest,
+    BoardApplyRequest,
+    BoardApplyResponse,
+    BoardResponse,
     EchoLinkRequest,
     EchoLinkStatusResponse,
     GpioOutputRequest,
@@ -409,6 +413,7 @@ def create_app(
     monitor_recordings: Optional[RecordingStore] = None,
     monitor_receiver: Optional[MonitorReceiverService] = None,
     link_radio: Optional[LinkRadio] = None,
+    run_mixer: Callable[[list[str]], object] = run_amixer,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -933,9 +938,63 @@ def create_app(
         for clear_field in clear_fields:
             if getattr(update, clear_field):
                 overrides[clear_field.removeprefix("clear_")] = None
-        request.state.audit_detail = describe_config_change(dataclasses.asdict(service.saved_config), overrides)
+        saved = service.saved_config
+        if saved.board_preset and any(overrides.get(name, getattr(saved, name)) != getattr(saved, name) for name in WIRING_FIELDS):
+            overrides["board_preset"] = ""
+        request.state.audit_detail = describe_config_change(dataclasses.asdict(saved), overrides)
         service.update_config(**overrides)
         return _config_response(service)
+
+    boards = {board.id: board for board in load_boards()}
+
+    @app.get("/api/boards", response_model=list[BoardResponse], dependencies=auth_dependencies)
+    def get_boards() -> list[BoardResponse]:
+        return [
+            BoardResponse(
+                **{name: getattr(board, name) for name in ("id", "name", "maker", "kind", "notes", "unsupported")},
+                device_hints=list(board.device_hints),
+                two_port=board.link is not None,
+                mixer=list(board.mixer),
+            )
+            for board in boards.values()
+        ]
+
+    @app.post("/api/boards/{board_id}/apply", response_model=BoardApplyResponse, dependencies=auth_dependencies)
+    async def apply_board(board_id: str, body: BoardApplyRequest, request: Request) -> BoardApplyResponse:
+        board = boards.get(board_id)
+        if board is None:
+            raise HTTPException(status_code=404, detail="No such interface board")
+        if board.unsupported:
+            raise HTTPException(status_code=409, detail=f"{board.name} isn't supported yet: {board.unsupported}")
+        changes = preset_changes(board, body.input_device, body.output_device, body.link_input_device, body.link_output_device)
+        request.state.audit_detail = board.name
+        service.update_config(**changes)
+        config = service.saved_config
+        mixer, skipped = [], []
+        if body.set_mixer and board.mixer:
+            devices = [config.audio_output_device]
+            if config.link_radio_enabled and board.link:
+                devices.append(config.link_radio_output_device)
+            cards = []
+            for device in devices:
+                card = alsa_card(device)
+                if card is None:
+                    skipped.append(device or "System default")
+                elif card not in cards:
+                    cards.append(card)
+            results = await asyncio.get_running_loop().run_in_executor(None, apply_mixer, cards, board.mixer, run_mixer)
+            mixer = [dataclasses.asdict(result) for result in results]
+        return BoardApplyResponse(config=_config_response(service), mixer=mixer, mixer_skipped=skipped)
+
+    @app.post("/api/audio/test-id", response_model=StatusResponse, dependencies=auth_dependencies)
+    async def test_id() -> StatusResponse:
+        if not service.saved_config.audio_enabled:
+            raise HTTPException(status_code=409, detail="Turn on live audio first")
+        try:
+            await render_and_queue("id")
+        except TTSError as error:
+            raise HTTPException(status_code=503, detail=str(error))
+        return _status_response(service.snapshot())
 
     @app.post("/api/lockout/clear", response_model=StatusResponse, dependencies=auth_dependencies)
     async def clear_lockout() -> StatusResponse:

@@ -125,6 +125,8 @@ class RepeaterConfig:
     wx_poll_interval: float = 120.0
     wx_repeat_minutes: float = 0.0  # 0 = announce each alert once
     audio_enabled: bool = False
+    board_preset: str = ""  # the api.boards preset last applied; "" = set up by hand
+    setup_wizard_done: bool = False  # the dashboard's first-run wizard was finished or skipped
     audio_input_device: str = ""  # PortAudio device name; "" = system default
     audio_output_device: str = ""
     cos_source: Literal["vox", "ctcss", "cm108", "gpio"] = "vox"  # "gpio" = a Raspberry Pi header pin

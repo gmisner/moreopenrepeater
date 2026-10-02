@@ -1,5 +1,6 @@
 import { api } from "./api.js";
 import { loadConfig } from "./config.js";
+import { refreshFolds } from "./folds.js";
 import { currentView, router } from "./router.js";
 import { session } from "./session.js";
 import { store } from "./store.js";
@@ -158,6 +159,7 @@ function populateTrunk(trunk, prefix) {
   else chooseProvider();
   showProvider(elements.provider.value);
   trunkFormDirty = false;
+  refreshFolds();
 }
 
 const SIP_MODULE = /pjsip|pjproject|rtp|sorcery|codec/;

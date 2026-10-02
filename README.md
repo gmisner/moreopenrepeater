@@ -279,6 +279,9 @@ several phases (see the plan file for the full breakdown):
   so the audit log shows whose code ran a command. Five wrong codes lock codes out
   for 10 minutes. The secrets live in `data/control-codes.json`, separate from the
   settings and backups, so moving to a new controller means setting codes up again.
+- **Home Assistant**: a DTMF macro can call a Home Assistant webhook trigger or fire
+  an event, and the repeater says whether it worked. See
+  [docs/homeassistant.md](docs/homeassistant.md).
 - **CM108 GPIO pins**: the interface's spare pins (GPIO1, 2 and 4, plus 5-8 on CM119
   chips) can be outputs, switched from the dashboard or a DTMF macro (on, off,
   toggle, or on for a few seconds) or on a weekly schedule, or inputs whose state

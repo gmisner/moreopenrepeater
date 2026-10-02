@@ -166,6 +166,8 @@ class RepeaterConfig:
     net_end_say: str = ""
     net_max_minutes: float = 120.0  # a net left running ends by itself
     net_schedules: list = field(default_factory=list)  # [{days, time, minutes, enabled}]
+    homeassistant_url: str = ""  # e.g. http://homeassistant.local:8123, for `homeassistant` macros
+    homeassistant_say_result: bool = True  # "Done." / "Failed." after a Home Assistant macro
 
 
 class RepeaterController:

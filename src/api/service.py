@@ -146,6 +146,7 @@ class RepeaterService:
         self.net_hook: Optional[Callable[[str, str], None]] = None  # ("net_start" | "net_end", who asked)
         self.code_checker: Optional[Callable[[str], Optional[str]]] = None  # one-time code -> whose it is (api.control_codes)
         self.codes_locked: Callable[[], bool] = lambda: False
+        self.homeassistant_hook: Optional[Callable[[str, str, str], None]] = None  # (target, source, pattern)
         self._action_source = "DTMF"
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
@@ -402,6 +403,11 @@ class RepeaterService:
                 _logger.warning("net mode isn't available")
             else:
                 self.net_hook(action.action, source)
+        elif action.action == "homeassistant":
+            if self.homeassistant_hook is None:
+                self.speak(TTS_PREFIX + "Home Assistant is not set up.")
+            else:
+                self.homeassistant_hook(action.argument, source, action.pattern)
         elif action.action == "parrot":
             if self.audio_output is None:
                 _logger.warning("parrot needs live audio, which isn't running")

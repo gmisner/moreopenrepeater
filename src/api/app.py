@@ -77,6 +77,8 @@ from .models import (
     ControlCodeSetup,
     ControlCodeStatus,
     ControlCodeUser,
+    HomeAssistantStatus,
+    HomeAssistantTestRequest,
     AlertSettingsRequest,
     AlertSettingsResponse,
     AlertsResponse,
@@ -138,6 +140,8 @@ from .models import (
 from .health import CHECK_SECONDS as HEALTH_CHECK_SECONDS
 from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
 from .control_codes import ControlCodes, provisioning_uri
+from .homeassistant import TOKEN_ENV as HOMEASSISTANT_TOKEN_ENV
+from .homeassistant import HomeAssistant, HomeAssistantError
 from .net import POLL_SECONDS as NET_POLL_SECONDS
 from .net import NetError, NetMode
 from .notify import SECRET_FIELDS, Notifier
@@ -369,6 +373,7 @@ def create_app(
     net_store: Optional[StateStore] = None,
     auto_update_store: Optional[StateStore] = None,
     control_codes: Optional[ControlCodes] = None,
+    homeassistant: Optional[HomeAssistant] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -431,6 +436,7 @@ def create_app(
     control_codes = control_codes or ControlCodes(None)
     service.code_checker = control_codes.check
     service.codes_locked = control_codes.locked
+    homeassistant = homeassistant or HomeAssistant(service, os.environ.get(HOMEASSISTANT_TOKEN_ENV))
     aprs_stations = aprs_stations or StationStore()
     aprs_receiver = AprsReceiver(aprs_stations, lambda: service.config)
     service.add_config_listener(lambda _config: aprs_receiver.settings_changed())
@@ -1543,6 +1549,19 @@ def create_app(
         username = code_owner(request)
         control_codes.remove(username)
         return ControlCodeStatus(**control_codes.status(username))
+
+    @app.get("/api/homeassistant", response_model=HomeAssistantStatus, dependencies=auth_dependencies)
+    def homeassistant_status() -> HomeAssistantStatus:
+        return HomeAssistantStatus(token_set=homeassistant.token_set)
+
+    @app.post("/api/homeassistant/test", dependencies=auth_dependencies)
+    async def test_homeassistant(request: Request, body: HomeAssistantTestRequest) -> dict:
+        data = {**homeassistant.payload("test", actor_of(request)), "test": True}
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, homeassistant.send, body.target, data)
+        except HomeAssistantError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from None
+        return {"ok": True}
 
     @app.get("/api/control-codes", response_model=list[ControlCodeUser], dependencies=admin_dependencies)
     def list_control_codes() -> list[ControlCodeUser]:

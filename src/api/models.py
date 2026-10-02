@@ -234,6 +234,8 @@ class ConfigResponse(BaseModel):
     net_end_say: str = ""
     net_max_minutes: float = 120.0
     net_schedules: list[NetSchedule] = []
+    homeassistant_url: str = ""
+    homeassistant_say_result: bool = True
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -356,6 +358,8 @@ class ConfigUpdateRequest(BaseModel):
     net_end_say: Optional[str] = Field(default=None, max_length=500)
     net_max_minutes: Optional[float] = Field(default=None, ge=10, le=24 * 60)
     net_schedules: Optional[list[NetSchedule]] = Field(default=None, max_length=20)
+    homeassistant_url: Optional[str] = Field(default=None, max_length=300, pattern=r"^$|^https?://[^\s]+$")
+    homeassistant_say_result: Optional[bool] = None
 
     @model_validator(mode="after")
     def _net_link_needs_a_node(self) -> "ConfigUpdateRequest":
@@ -474,6 +478,8 @@ class MacroCreateRequest(BaseModel):
             raise ValueError(f"a {self.action!r} macro needs a command")
         if self.action == "gpio":
             parse_gpio_command(self.command)
+        if self.action == "homeassistant" and not re.fullmatch(HOMEASSISTANT_TARGET, self.command.strip()):
+            raise ValueError("a Home Assistant macro needs a webhook ID or event:<type> (letters, digits, _ . -)")
         return self
 
 
@@ -1058,3 +1064,14 @@ class ControlCodeConfirmRequest(BaseModel):
 class ControlCodeUser(BaseModel):
     username: str
     since: float
+
+
+HOMEASSISTANT_TARGET = r"^(event:)?[A-Za-z0-9_.\-]{1,100}$"
+
+
+class HomeAssistantStatus(BaseModel):
+    token_set: bool
+
+
+class HomeAssistantTestRequest(BaseModel):
+    target: str = Field(pattern=HOMEASSISTANT_TARGET)

@@ -404,7 +404,9 @@ GitHub Actions workflow (Actions tab, "Run workflow") moves `beta` up to it;
 after it has run well on a test repeater, the same workflow moves `stable`
 up to `beta`. It only promotes commits whose tests passed, and only forward.
 From a terminal: `gh workflow run promote.yml -f channel=beta` (or
-`channel=stable`).
+`channel=stable`). Each move of `stable` is also published as a GitHub
+release, tagged by date (such as `v2026.10.02`), with notes listing the pull
+requests merged since the last one.
 
 To update, open the dashboard's **Updates** page (admins only). It shows the
 installed version and what the chosen channel has that's new; pick a channel

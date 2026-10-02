@@ -28,6 +28,7 @@ import { initSession } from "./js/session.js";
 import { initSimulator } from "./js/simulator.js";
 import { applyStatus, connectStatusSocket, initStatus } from "./js/status.js";
 import { initThemePicker } from "./js/theme_picker.js";
+import { initTranscripts } from "./js/transcripts.js";
 import { toastError } from "./js/ui.js";
 import { initUpdates } from "./js/updates.js";
 import { initUsage } from "./js/usage.js";
@@ -61,6 +62,7 @@ async function main() {
   initGpioSchedules();
   initMap();
   initUsage();
+  initTranscripts();
   initSimulator();
   initLogs();
   initBackup();

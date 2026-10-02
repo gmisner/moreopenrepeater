@@ -2,6 +2,7 @@ import { api } from "./api.js";
 import { currentView, router } from "./router.js";
 import { session } from "./session.js";
 import { escapeHtml, formatTimestamp, toast, toastError, withBusy } from "./ui.js";
+import { transcriptHtml } from "./usage.js";
 
 const boxesTbody = document.getElementById("mailbox-boxes-tbody");
 const boxesEmpty = document.getElementById("mailbox-boxes-empty");
@@ -11,6 +12,7 @@ const form = document.getElementById("mailbox-box-form");
 const submit = document.getElementById("mailbox-box-submit");
 const cancel = document.getElementById("mailbox-box-cancel");
 const pinNote = document.getElementById("mailbox-pin-note");
+const formHeading = form.previousElementSibling;
 
 let editing = null;
 let shownMessages = "";
@@ -40,7 +42,7 @@ function render({ boxes, messages }) {
   }
 
   // Re-rendering would stop a message that's playing, so only redraw on change.
-  const ids = messages.map((m) => m.id).join(",");
+  const ids = messages.map((m) => `${m.id}:${m.transcript ?? ""}`).join(",");
   if (ids === shownMessages) return;
   shownMessages = ids;
   messagesTbody.innerHTML = "";
@@ -56,6 +58,12 @@ function render({ boxes, messages }) {
       <td class="row-actions"><button type="button" class="btn btn-danger btn-sm">Delete</button></td>`;
     row.querySelector("button").addEventListener("click", () => removeMessage(message));
     messagesTbody.appendChild(row);
+    if (message.transcript != null) {
+      const text = document.createElement("tr");
+      text.className = "transcript-row";
+      text.innerHTML = `<td colspan="5" class="small">${transcriptHtml(message.transcript, message.callsigns)}</td>`;
+      messagesTbody.appendChild(text);
+    }
   }
 }
 
@@ -67,6 +75,7 @@ function startEdit(box) {
   form.elements.pin.value = "";
   pinNote.textContent = box.pin_set ? "Leave blank to keep the current PIN." : "4 to 8 digits.";
   submit.textContent = "Save mailbox";
+  formHeading.textContent = `Change mailbox ${box.box}`;
   cancel.hidden = false;
   form.elements.name.focus();
 }
@@ -77,6 +86,7 @@ function stopEdit() {
   form.elements.box.readOnly = false;
   pinNote.textContent = "4 to 8 digits.";
   submit.textContent = "Add mailbox";
+  formHeading.textContent = "Add a mailbox";
   cancel.hidden = true;
 }
 

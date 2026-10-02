@@ -304,6 +304,11 @@
               <button type="submit" class="btn btn-primary">Save</button>
             </div>
           </form>
+          <form id="recordings-search" class="inline-form" role="search">
+            <label class="grow">Search the transcripts
+              <input type="search" name="q" maxlength="100" placeholder="A word, or a callsign like W1AW" />
+            </label>
+          </form>
           <div class="table-wrap">
             <table>
               <thead><tr><th>When</th><th>Length</th><th>Listen</th><th></th></tr></thead>
@@ -312,6 +317,34 @@
           </div>
           <p id="recordings-empty" class="muted small">No recordings yet.</p>
         </div>
+        <form class="card config-form" data-config-form id="transcription-form">
+          <h2>Transcripts</h2>
+          <p class="muted small">Turn recordings and mailbox messages into text, with the callsigns heard picked
+            out, so they can be searched. Recordings need to be turned on above.</p>
+          <div class="form-grid">
+            <label class="span-2">Transcribe with
+              <select name="transcription_engine">
+                <option value="off">Off</option>
+                <option value="vosk">Vosk, on this controller</option>
+                <option value="openai">A Whisper server (OpenAI-compatible)</option>
+              </select>
+            </label>
+            <label class="span-2" data-transcription="openai">Server address
+              <input type="text" name="transcription_url" placeholder="http://whisper.local:8000/v1/audio/transcriptions" pattern="(https?://\S+)?" title="http:// or https:// and the address" />
+              <small>The full <code>/v1/audio/transcriptions</code> address: a whisper.cpp or faster-whisper server on
+                your network, or OpenAI (which sends the audio to them).</small>
+            </label>
+            <label data-transcription="openai">Model
+              <input type="text" name="transcription_model" maxlength="100" placeholder="whisper-1" />
+            </label>
+          </div>
+          <p class="muted small" id="transcription-status"></p>
+          <div class="form-actions">
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
       </section>
 
       <!-- Timing -->
@@ -1032,6 +1065,7 @@
             </table>
           </div>
           <p id="mailbox-boxes-empty" class="muted small">No mailboxes yet.</p>
+          <h3>Add a mailbox</h3>
           <form id="mailbox-box-form" class="form-grid">
             <label>Number
               <input type="text" name="box" required inputmode="numeric" maxlength="6" pattern="[0-9]{1,6}" placeholder="12" />

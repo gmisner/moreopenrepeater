@@ -147,6 +147,10 @@ class RepeaterConfig:
     mailbox_max_seconds: float = 60.0
     mailbox_retention_days: float = 14.0
     mailbox_reminder_minutes: float = 60.0  # "messages waiting for mailbox 12"; 0 = never
+    # Transcripts of recordings and mailbox messages (api.transcripts).
+    transcription_engine: Literal["off", "vosk", "openai"] = "off"
+    transcription_url: str = "https://api.openai.com/v1/audio/transcriptions"
+    transcription_model: str = "whisper-1"
     backup_enabled: bool = False  # scheduled backups to the backup folder
     backup_interval_hours: float = 24.0
     backup_keep: int = 7

@@ -22,6 +22,7 @@ PttOutput = Literal["cm108", "gpio"]
 PiGpioPin = Annotated[int, Field(ge=2, le=27)]
 Role = Literal["admin", "operator", "viewer", "listener"]
 PublicPageMode = Literal["off", "signed_in", "anyone"]
+TranscriptionEngine = Literal["off", "vosk", "openai"]
 
 # A hostname, or an IPv4/IPv6 address with an optional /prefix, as PJSIP's identify `match` takes.
 _SOURCE = re.compile(r"^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|[0-9A-Fa-f:.]{2,45})(?:/\d{1,3})?$")
@@ -248,6 +249,9 @@ class ConfigResponse(BaseModel):
     mailbox_max_seconds: float = 60.0
     mailbox_retention_days: float = 14.0
     mailbox_reminder_minutes: float = 60.0
+    transcription_engine: TranscriptionEngine = "off"
+    transcription_url: str = "https://api.openai.com/v1/audio/transcriptions"
+    transcription_model: str = "whisper-1"
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -383,6 +387,9 @@ class ConfigUpdateRequest(BaseModel):
     mailbox_max_seconds: Optional[float] = Field(default=None, ge=5, le=180)
     mailbox_retention_days: Optional[float] = Field(default=None, ge=1, le=365)
     mailbox_reminder_minutes: Optional[float] = Field(default=None, ge=0, le=24 * 60)
+    transcription_engine: Optional[TranscriptionEngine] = None
+    transcription_url: Optional[str] = Field(default=None, max_length=300, pattern=r"^(https?://\S+)?$")
+    transcription_model: Optional[str] = Field(default=None, min_length=1, max_length=100)
 
     @model_validator(mode="after")
     def _net_link_needs_a_node(self) -> "ConfigUpdateRequest":
@@ -762,6 +769,8 @@ class RecordingResponse(BaseModel):
     id: str
     started_at: datetime
     duration: float
+    transcript: Optional[str] = None  # None until transcribed
+    callsigns: list[str] = []
 
 
 class ActivitySummaryResponse(BaseModel):
@@ -1166,6 +1175,19 @@ class MailboxMessageResponse(BaseModel):
     box: str
     left_at: datetime
     duration: float
+    transcript: Optional[str] = None
+    callsigns: list[str] = []
+
+
+class TranscriptionStatus(BaseModel):
+    engine: TranscriptionEngine
+    vosk_installed: bool
+    vosk_model: bool
+    vosk_model_dir: str
+    api_key_set: bool
+    pending: int
+    transcribed: int
+    last_error: Optional[str]
 
 
 class MailboxResponse(BaseModel):

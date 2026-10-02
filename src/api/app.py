@@ -84,6 +84,7 @@ from .models import (
     MailboxMessageResponse,
     MailboxResponse,
     PublicStatus,
+    TranscriptionStatus,
     StreamResponse,
     StreamSettingsRequest,
     AlertSettingsRequest,
@@ -151,6 +152,8 @@ from .homeassistant import TOKEN_ENV as HOMEASSISTANT_TOKEN_ENV
 from .homeassistant import HomeAssistant, HomeAssistantError
 from .mailbox import Mailbox, MailboxStore, is_mailbox_clip
 from .stream import Streamer
+from .transcripts import API_KEY_ENV as TRANSCRIPTION_KEY_ENV
+from .transcripts import VOSK_MODEL_ENV, Transcriber, VoskEngine, callsigns, read_transcript
 from .net import POLL_SECONDS as NET_POLL_SECONDS
 from .net import NetError, NetMode
 from .notify import SECRET_FIELDS, Notifier
@@ -186,6 +189,9 @@ DEFAULT_ACTIVITY_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "activi
 DEFAULT_RECORDINGS_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "recordings"
 DEFAULT_MAILBOX_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "mailbox"
 MAILBOX_TICK_SECONDS = 60.0
+DEFAULT_VOSK_MODEL_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "vosk-model"
+TRANSCRIBE_POLL_SECONDS = 15.0
+RECORDING_SEARCH_LIMIT = 500
 DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.json"
 DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
 DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
@@ -278,9 +284,10 @@ def _audit_response(entry: AuditEntry) -> AuditEntryResponse:
     )
 
 
-def _recording_response(recording: RecordingInfo) -> RecordingResponse:
+def _recording_response(recording: RecordingInfo, transcript: Optional[str]) -> RecordingResponse:
     return RecordingResponse(
-        id=recording.id, started_at=datetime.fromtimestamp(recording.started_at), duration=recording.duration
+        id=recording.id, started_at=datetime.fromtimestamp(recording.started_at), duration=recording.duration,
+        transcript=transcript, callsigns=callsigns(transcript or ""),
     )
 
 
@@ -390,6 +397,7 @@ def create_app(
     stream_store: Optional[StateStore] = None,
     streamer: Optional[Streamer] = None,
     mailbox_store: Optional[MailboxStore] = None,
+    transcriber: Optional[Transcriber] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -461,6 +469,11 @@ def create_app(
     streamer = streamer or Streamer(live_audio.monitor, stream_store, lambda: renderer.sample_rate)
     mailbox = Mailbox(service, mailbox_store, renderer, net_active=lambda: nets.current is not None)
     mailbox.audit_hook = service.audit_hook
+    transcriber = transcriber or Transcriber(
+        service, [recordings, mailbox_store],
+        VoskEngine(Path(os.environ.get(VOSK_MODEL_ENV) or DEFAULT_VOSK_MODEL_DIR)),
+        os.environ.get(TRANSCRIPTION_KEY_ENV),
+    )
     public_listeners: collections.Counter[str] = collections.Counter()
     aprs_stations = aprs_stations or StationStore()
     aprs_receiver = AprsReceiver(aprs_stations, lambda: service.config)
@@ -701,6 +714,17 @@ def create_app(
             except Exception:
                 logging.getLogger("moreopenrepeater.mailbox").exception("unexpected error in the mailbox")
 
+    async def transcribe_loop() -> None:
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(TRANSCRIBE_POLL_SECONDS)
+            if service.config.transcription_engine == "off":
+                continue
+            try:
+                await loop.run_in_executor(None, transcriber.run_pending)
+            except Exception:
+                logging.getLogger("moreopenrepeater.transcripts").exception("unexpected error transcribing")
+
     async def net_loop() -> None:
         while True:
             await asyncio.sleep(NET_POLL_SECONDS)
@@ -768,6 +792,7 @@ def create_app(
             tasks.append(asyncio.create_task(auto_update_loop()))
             tasks.append(asyncio.create_task(streamer.run()))
             tasks.append(asyncio.create_task(mailbox_loop()))
+            tasks.append(asyncio.create_task(transcribe_loop()))
             tasks.append(asyncio.create_task(health_loop()))
             tasks.append(asyncio.create_task(activity_flush_loop()))
             if link_settings is not None:
@@ -1476,8 +1501,31 @@ def create_app(
         return path
 
     @app.get("/api/recordings", response_model=list[RecordingResponse], dependencies=auth_dependencies)
-    def list_recordings(limit: int = 50) -> list[RecordingResponse]:
-        return [_recording_response(r) for r in recordings.list(limit)]
+    def list_recordings(limit: int = Query(default=50, ge=1, le=500), q: str = Query(default="", max_length=100)) -> list[RecordingResponse]:
+        """`q` searches the transcripts (words, or a callsign however it was said)."""
+        q = q.strip()
+        found = []
+        for recording in recordings.list(RECORDING_SEARCH_LIMIT if q else limit):
+            response = _recording_response(recording, read_transcript(recordings, recording.id))
+            if q and q.upper() not in response.callsigns and q.lower() not in (response.transcript or "").lower():
+                continue
+            found.append(response)
+            if len(found) >= limit:
+                break
+        return found
+
+    @app.get("/api/transcription", response_model=TranscriptionStatus, dependencies=auth_dependencies)
+    def get_transcription_status() -> TranscriptionStatus:
+        return TranscriptionStatus(
+            engine=service.config.transcription_engine,
+            vosk_installed=transcriber.vosk.installed(),
+            vosk_model=transcriber.vosk.model_present(),
+            vosk_model_dir=str(transcriber.vosk.model_dir),
+            api_key_set=bool(transcriber.api_key),
+            pending=len(transcriber.pending()) if service.config.transcription_engine != "off" else 0,
+            transcribed=transcriber.status.transcribed,
+            last_error=transcriber.status.last_error,
+        )
 
     @app.get("/api/recordings/{recording_id}/audio", dependencies=auth_dependencies)
     def get_recording_audio(recording_id: str) -> FileResponse:
@@ -1498,7 +1546,10 @@ def create_app(
                 for box, info in mailbox_store.boxes().items()
             ],
             messages=[
-                MailboxMessageResponse(id=m.id, box=m.box, left_at=datetime.fromtimestamp(m.left_at), duration=m.duration)
+                MailboxMessageResponse(
+                    id=m.id, box=m.box, left_at=datetime.fromtimestamp(m.left_at), duration=m.duration,
+                    transcript=(text := read_transcript(mailbox_store, m.id)), callsigns=callsigns(text or ""),
+                )
                 for m in reversed(messages)
             ],
         )

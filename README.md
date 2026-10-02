@@ -307,6 +307,11 @@ several phases (see the plan file for the full breakdown):
   instead of repeated, then played back.
 - **Recordings**: optionally save every repeated transmission, with playback on the
   Activity page and automatic deletion after a set number of days.
+- **Transcripts**: recordings and mailbox messages turned into text, with the
+  callsigns heard picked out (even said phonetically) and a search box on the
+  Activity page. Transcribe on the controller with Vosk, or send the audio to a
+  Whisper server on your network or OpenAI. See
+  [docs/transcripts.md](docs/transcripts.md).
 - **Voice mailbox**: leave a short message for another station over the air (`*7`,
   the mailbox number, `#`, then key up and talk). A reminder names the mailboxes with
   messages waiting, and the owner plays or deletes them with a PIN. Admins set up

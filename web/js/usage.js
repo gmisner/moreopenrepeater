@@ -15,8 +15,12 @@ const tbody = document.getElementById("usage-tbody");
 const empty = document.getElementById("usage-empty");
 const recordingsTbody = document.getElementById("recordings-tbody");
 const recordingsEmpty = document.getElementById("recordings-empty");
+const searchForm = document.getElementById("recordings-search");
+const SEARCH_DELAY_MS = 300;
 
 let days = 7;
+let search = "";
+let searchTimer = null;
 
 function formatAirtime(seconds) {
   if (seconds < 60) return `${Math.round(seconds)}s`;
@@ -120,13 +124,21 @@ function renderTransmissions(transmissions) {
 
 let shownRecordings = "";
 
+export function transcriptHtml(transcript, callsigns) {
+  if (transcript == null) return "";
+  if (!transcript) return '<span class="muted">Nothing understood.</span>';
+  const tags = callsigns.map((c) => `<span class="tag">${escapeHtml(c)}</span>`).join(" ");
+  return `${tags ? `${tags} ` : ""}${escapeHtml(transcript)}`;
+}
+
 function renderRecordings(recordings) {
   // Re-rendering would stop a recording that's playing, so only redraw on change.
-  const ids = recordings.map((r) => r.id).join(",");
-  if (ids === shownRecordings) return;
-  shownRecordings = ids;
+  const key = search + "|" + recordings.map((r) => `${r.id}:${r.transcript ?? ""}`).join(",");
+  if (key === shownRecordings) return;
+  shownRecordings = key;
   recordingsTbody.innerHTML = "";
   recordingsEmpty.hidden = recordings.length > 0;
+  recordingsEmpty.textContent = search ? "No transcripts match." : "No recordings yet.";
   for (const r of recordings) {
     const row = document.createElement("tr");
     row.innerHTML = `
@@ -137,6 +149,12 @@ function renderRecordings(recordings) {
     `;
     row.querySelector("button").addEventListener("click", () => removeRecording(r));
     recordingsTbody.appendChild(row);
+    if (r.transcript != null) {
+      const text = document.createElement("tr");
+      text.className = "transcript-row";
+      text.innerHTML = `<td colspan="4" class="small">${transcriptHtml(r.transcript, r.callsigns)}</td>`;
+      recordingsTbody.appendChild(text);
+    }
   }
 }
 
@@ -155,7 +173,7 @@ async function load() {
   const [summary, transmissions, recordings] = await Promise.all([
     api(`/api/activity/summary?days=${days}`),
     api("/api/activity/transmissions?limit=25"),
-    api("/api/recordings?limit=50"),
+    api(`/api/recordings?limit=50${search ? `&q=${encodeURIComponent(search)}` : ""}`),
   ]);
   renderSummary(summary);
   renderTransmissions(transmissions);
@@ -163,6 +181,14 @@ async function load() {
 }
 
 export function initUsage() {
+  searchForm.addEventListener("submit", (event) => event.preventDefault());
+  searchForm.elements.q.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      search = searchForm.elements.q.value.trim();
+      load().catch(toastError);
+    }, SEARCH_DELAY_MS);
+  });
   for (const button of rangeButtons) {
     button.addEventListener("click", () => {
       days = Number(button.dataset.days);

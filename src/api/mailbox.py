@@ -142,8 +142,16 @@ class MailboxStore:
         return sum(self.delete_message(m.id) for m in self.messages(box))
 
     def sidecars(self, clip_id: str) -> list[Path]:
-        """Files kept beside a message (a transcript, api.transcripts)."""
+        """Files kept beside a message (its transcript)."""
         return [] if self.directory is None else [self.directory / f"{clip_id}.txt"]
+
+    def transcript_path(self, message_id: str) -> Path:
+        if not _MESSAGE_ID.match(message_id):
+            raise KeyError(message_id)
+        return self.path_for(message_id).with_suffix(".txt")
+
+    def recent_ids(self, limit: int) -> list[str]:
+        return [m.id for m in reversed(self.messages())][:limit]
 
     def prune(self, older_than: float, now: float) -> int:
         """Expires messages left before `older_than`, and playback clips that have gone out."""

@@ -13,7 +13,7 @@ This page is a summary, not legal advice. The rules are at
 
 | Rule | What the controller does |
 | --- | --- |
-| Identify at the end of a transmission or series of transmissions, and at least every 15 minutes during one, by voice or Morse (§95.1751) | Caps the ID interval at 15 minutes (900 s). A shorter interval is kept. Put the GMRS call sign (such as `WRXX123`) in the **Callsign** field. |
+| Identify at the end of a transmission or series of transmissions, and at least every 15 minutes during one, by voice or Morse (§95.1751) | Caps the ID interval at 15 minutes (900 s). A shorter interval is kept. A long ID takes the place of a regular one, so it doesn't change how often IDs go out. Put the GMRS call sign (such as `WRXX123`) in the **Callsign** field. |
 | No connection to the telephone network (§95.1749) | Turns off the autopatch, including incoming calls. |
 | No transmitting messages that arrive over a wireline control link (§95.1733(a)(8)) | Turns off AllStarLink and EchoLink linking. Existing links are dropped when GMRS mode is turned on, nodes that link in from outside are disconnected, and DTMF link commands are ignored. |
 | APRS is an amateur service | Turns off APRS beaconing and the APRS map. |

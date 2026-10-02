@@ -227,6 +227,7 @@ LOGIN_FAILURE_DELAY_SECONDS = 1.0
 MAX_PREVIEW_CLIP_LENGTH = 2000
 ANNOUNCEMENT_POLL_SECONDS = 1.0
 WEATHER_DISABLED_POLL_SECONDS = 5.0
+LONG_ID_WARM_SECONDS = 20.0
 
 _aprs_logger = logging.getLogger("moreopenrepeater.aprs")
 _announce_logger = logging.getLogger("moreopenrepeater.announcements")
@@ -767,6 +768,11 @@ def create_app(
             await asyncio.sleep(BACKUP_CHECK_SECONDS)
             await loop.run_in_executor(None, backups.run_schedule, backup_sources, service.config, time.time())
 
+    async def long_id_loop() -> None:
+        while True:
+            await asyncio.sleep(LONG_ID_WARM_SECONDS)
+            await asyncio.get_running_loop().run_in_executor(None, renderer.warm_long_id, service.config)
+
     async def activity_flush_loop() -> None:
         while True:
             await asyncio.sleep(ACTIVITY_FLUSH_SECONDS)
@@ -814,6 +820,7 @@ def create_app(
             tasks.append(asyncio.create_task(transcribe_loop()))
             tasks.append(asyncio.create_task(health_loop()))
             tasks.append(asyncio.create_task(activity_flush_loop()))
+            tasks.append(asyncio.create_task(long_id_loop()))
             if link_settings is not None:
                 tasks.append(asyncio.create_task(node_link_loop()))
                 tasks.append(asyncio.create_task(node_directory.run()))

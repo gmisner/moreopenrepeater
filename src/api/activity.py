@@ -149,7 +149,7 @@ class ActivityRecorder:
     def clip_played(self, clip: str, now: float) -> None:
         if clip in _SILENT_CLIPS:
             return
-        self.store.add(ActivityRow("id" if clip == "id" else "announcement", now, 0.0))
+        self.store.add(ActivityRow("id" if clip in ("id", "id_long") else "announcement", now, 0.0))
 
     def kerchunk_filtered(self, now: float) -> None:
         self.store.add(ActivityRow("kerchunk", now, 0.0))

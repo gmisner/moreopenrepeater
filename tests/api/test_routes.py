@@ -64,6 +64,36 @@ def test_put_config_can_clear_require_ctcss_hz():
     assert response.json()["require_ctcss_hz"] is None
 
 
+def test_put_config_sets_and_clears_the_long_id_settings():
+    client, service, clock = make_client()
+
+    response = client.put(
+        "/api/config",
+        json={
+            "long_id_mode": "both",
+            "long_id_interval": 1800,
+            "long_id_text": "{callsign} at {time}",
+            "long_id_asset_id": "abc",
+            "cw_id_suffix": "/R",
+            "id_skip_short_seconds": 1.5,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["long_id_mode"], body["long_id_interval"], body["cw_id_suffix"]) == ("both", 1800, "/R")
+    assert service.config.id_skip_short_seconds == 1.5
+    assert client.put("/api/config", json={"clear_long_id_asset_id": True}).json()["long_id_asset_id"] is None
+
+
+def test_put_config_rejects_a_cw_suffix_that_isnt_a_slash_suffix():
+    client, service, clock = make_client()
+
+    for suffix in ("R", "/", "/TOOLONG", "/R R"):
+        assert client.put("/api/config", json={"cw_id_suffix": suffix}).status_code == 422
+    assert client.put("/api/config", json={"cw_id_suffix": ""}).status_code == 200
+
+
 def test_simulate_cos_endpoint_transitions_state():
     client, service, clock = make_client()
 

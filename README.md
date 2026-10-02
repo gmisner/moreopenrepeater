@@ -229,6 +229,12 @@ several phases (see the plan file for the full breakdown):
   clock, so the repeater IDs every interval while it's in use and once after the
   last of it, then stays quiet until someone keys up (§97.119). A switch turns on
   idle IDs every interval around the clock, as a beacon.
+- **Short and long IDs**: a long ID (say, "This is W1AW. The time is 2 15 P M.")
+  can take the place of the regular one once an hour or at any interval, spoken
+  from text with `{callsign}` and `{time}` or from an uploaded clip, optionally
+  followed by CW. The CW ID can carry a suffix such as `/R`, and transmissions
+  shorter than a set length (kerchunks) can be left out of what makes an ID due.
+  The repeater still keyed up for those, so check your rules before using it.
 - **A courtesy tone for each source**: local users, linked stations and the end of
   a phone call can each have their own built-in tone or uploaded clip, so listeners
   can tell who just unkeyed.

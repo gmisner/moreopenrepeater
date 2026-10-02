@@ -42,6 +42,7 @@ from controller.state_machine import IDLE, PATCH, RECEIVING, RepeaterConfig, Rep
 from audio_io.patch import LinkAudio, PatchAudio
 
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, ClipRenderer
+from playout.tts import spoken_time
 from wx.nws import AlertTracker, WeatherAlert, meets_severity, parse_alerts, speech_text
 
 from .activity import ActivityRecorder
@@ -54,12 +55,6 @@ LINK_RADIO_NODE = "link-radio"  # ...and for the link radio hearing the far end 
 
 WEATHER_SUMMARY_MAX = 3
 MAX_HELD_ANNOUNCEMENTS = 10
-
-
-def spoken_time(now: datetime) -> str:
-    hour = now.hour % 12 or 12
-    minutes = "o'clock" if now.minute == 0 else f"{now.minute:02d}" if now.minute >= 10 else f"oh {now.minute}"
-    return f"{hour} {minutes} {'A M' if now.hour < 12 else 'P M'}"
 
 
 def talking_clock_text(now: datetime) -> str:

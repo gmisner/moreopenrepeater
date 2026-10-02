@@ -55,6 +55,11 @@ class RepeaterConfig:
     # Off: ID only while there's been activity since the last one. On: ID every
     # interval around the clock, like a beacon.
     idle_id: bool = False
+    # "simplex": one radio on one frequency, a node for the links. Local users
+    # aren't repeated; the transmitter keys for linked stations, IDs, clips and
+    # courtesy tones, and never over a signal on the channel.
+    node_mode: Literal["repeater", "simplex"] = "repeater"
+    simplex_courtesy_tone: bool = True  # after a local user, on a simplex node
     # A transmission shorter than this (a kerchunk) doesn't make an ID owed; 0 = every one does.
     id_skip_short_seconds: float = 0.0
     # The long ID takes the place of the regular one once long_id_interval has
@@ -255,6 +260,7 @@ class RepeaterController:
         self._id_owed = False  # transmitted since the last ID
         self._long_id_due_at = now + config.long_id_interval
         self._pending_tx_since: Optional[float] = None  # a transmission not yet long enough to make an ID owed
+        self._receiving_ptt = False  # the transmitter is up in RECEIVING (always, except on a simplex node)
         self._resume_state_after_id = IDLE
         self._remote_keyed: set[str] = set()
         self._announcements: list[str] = []
@@ -358,7 +364,7 @@ class RepeaterController:
             self._long_id_due_at = now + config.long_id_interval
         if config.require_ctcss_hz != previous.require_ctcss_hz:
             self._ctcss_present = config.require_ctcss_hz is None or self._last_ctcss_hz == config.require_ctcss_hz
-        commands: list[ControllerCommand] = []
+        commands: list[ControllerCommand] = self._sync_receiving_ptt(now)
         if config.lockout_timeouts <= 0:
             commands += self.clear_lockout(now)
         if previous.transmitter_enabled and not config.transmitter_enabled:
@@ -414,6 +420,8 @@ class RepeaterController:
                     commands += self._on_cos_changed(False, now, remote=True)
         elif isinstance(event, LinkStateChanged):
             pass  # tracked by the link layer; no local repeater-state effect yet
+        if isinstance(event, (COSChanged, RemoteKeyed)):
+            commands += self._sync_receiving_ptt(now)
 
         if self.carrier_present or self._remote_keyed:
             self._quiet_since = None
@@ -455,7 +463,7 @@ class RepeaterController:
 
         if self._state_deadline is not None and now >= self._state_deadline:
             if self.state == COURTESY_TONE:
-                commands += self._enter_hang_time(now)
+                commands += self._end_simplex_courtesy_tone(now) if self._simplex else self._enter_hang_time(now)
             elif self.state == HANG_TIME:
                 commands += self._enter_idle(now)
             elif self.state == TRANSMITTING_ID:
@@ -530,19 +538,54 @@ class RepeaterController:
             self._id_due_at = now + self.config.id_interval
         self._id_owed = True
 
+    @property
+    def _simplex(self) -> bool:
+        return self.config.node_mode == "simplex"
+
+    def _receive_ptt(self) -> bool:
+        """Whether to transmit while RECEIVING. A simplex node shares one
+        frequency with its local users: it sends linked stations, but never
+        over anyone on the channel (with or without the right CTCSS tone)."""
+        if not self._simplex:
+            return True
+        return bool(self._remote_keyed) and not self._local_carrier
+
+    def _sync_receiving_ptt(self, now: float) -> list[ControllerCommand]:
+        if self.state != RECEIVING or self._receive_ptt() == self._receiving_ptt:
+            return []
+        self._receiving_ptt = not self._receiving_ptt
+        if self._receiving_ptt:
+            self._note_transmission(now)
+        return [AssertPTT(active=self._receiving_ptt)]
+
     def _enter_receiving(self, now: float) -> list[ControllerCommand]:
-        if self.config.id_skip_short_seconds > 0 and not self._id_owed:
+        self._receiving_ptt = self._receive_ptt()
+        if not self._receiving_ptt:
+            pass  # a local user on a simplex node: nothing is transmitted, so no ID is owed for it
+        elif self.config.id_skip_short_seconds > 0 and not self._id_owed and not self._simplex:
             self._pending_tx_since = now  # counts once it's been on the air long enough
         else:
             self._note_transmission(now)
         self._set_state(RECEIVING)
         self._tot_deadline = now + self.config.tot_duration
         self._state_deadline = None
-        return [AssertPTT(active=True)]
+        return [AssertPTT(active=self._receiving_ptt)]
+
+    def _end_simplex_courtesy_tone(self, now: float) -> list[ControllerCommand]:
+        """No hang time on a simplex node: holding the transmitter up would
+        keep the next local user from being heard."""
+        commands = self._enter_idle(now)
+        if self.config.transmitter_enabled and (self.carrier_present or self._remote_keyed):
+            commands += self._enter_receiving(now)
+        return commands
 
     def _enter_courtesy_tone(self, now: float, clip: str) -> list[ControllerCommand]:
         """`clip` says who unkeyed last: "courtesy_tone" (a local user),
         "courtesy_tone_link" or "courtesy_tone_patch"."""
+        if self._simplex:
+            if clip == "courtesy_tone" and not self.config.simplex_courtesy_tone:
+                return self._enter_idle(now)
+            self._note_transmission(now)  # the tone keys the transmitter itself
         self._set_state(COURTESY_TONE)
         self._tot_deadline = None
         self._state_deadline = now + self.config.courtesy_tone_duration

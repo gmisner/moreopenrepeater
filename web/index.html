@@ -78,6 +78,7 @@
         <span class="muted small">Station</span>
         <strong id="station-callsign">(no callsign)</strong>
         <span class="tag" id="gmrs-tag" hidden>GMRS</span>
+        <span class="tag" id="simplex-tag" hidden>Simplex</span>
       </div>
       <nav class="nav" id="nav">
         <a href="#/dashboard" data-nav="dashboard"><svg class="icon" aria-hidden="true"><use href="#i-dashboard" /></svg>Dashboard</a>
@@ -371,7 +372,7 @@
             </label>
             <label>Hang time
               <span class="input-unit"><input type="number" step="0.1" min="0.1" name="hang_time" required /><span>s</span></span>
-              <small>Transmitter stays keyed this long after the courtesy tone.</small>
+              <small>Transmitter stays keyed this long after the courtesy tone. Not used on a simplex node.</small>
             </label>
             <label>Timeout timer (TOT)
               <span class="input-unit"><input type="number" step="1" min="1" name="tot_duration" required /><span>s</span></span>
@@ -386,6 +387,24 @@
               <small>A key-up must last this long before the repeater comes up. 0 turns the filter off.</small>
             </label>
           </div>
+          <h2 class="section-title">Repeater or simplex node</h2>
+          <p class="muted small">A simplex node is one radio on one frequency. Local users go to the links (AllStar,
+            EchoLink, the link radio) but aren't repeated, and linked stations go out when nobody local is talking.
+            There's no hang time, and no phone patch.</p>
+          <div class="form-grid form-grid-fill">
+            <label>Mode
+              <select name="node_mode">
+                <option value="repeater">Repeater</option>
+                <option value="simplex">Simplex node</option>
+              </select>
+            </label>
+          </div>
+          <label class="switch">
+            <input type="checkbox" name="simplex_courtesy_tone" />
+            <span class="switch-track"></span>
+            <span>Courtesy tone after a local user <small class="muted">&mdash; simplex node only; tells them the node
+              heard them</small></span>
+          </label>
           <h2 class="section-title">Stuck-carrier lockout</h2>
           <p class="muted small">Interference or a stuck microphone makes the repeater time out again and again. After
             enough timeouts it stops repeating (IDs still go out) until the channel has been quiet. A carrier that never

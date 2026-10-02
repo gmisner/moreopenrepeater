@@ -367,3 +367,21 @@ def test_dtmf_mute_tail_and_tx_delay_apply_without_restart():
     settings = live.engine.processor.settings
     assert len(engines) == 1
     assert (settings.dtmf_mute, settings.squelch_tail_ms, settings.tx_delay_ms) == (False, 120.0, 60.0)
+
+
+def test_simplex_node_hears_a_local_user_without_transmitting():
+    live, service, _clock, engines = make_live(
+        RepeaterConfig(callsign="W1AW", audio_enabled=True, vox_threshold_db=-30, vox_hold=0.1, node_mode="simplex")
+    )
+    engine = live.engine
+    assert engine.processor.settings.local_repeat is False
+
+    feed(engine, tone(blocks=5))
+    assert service.controller.state == RECEIVING
+    assert engine.processor.repeating_voice  # still sent to the links
+    assert service.ptt_active is False and engine.transmitting is False
+
+    service.update_config(node_mode="repeater")
+    assert len(engines) == 1
+    assert engine.processor.settings.local_repeat is True
+    assert service.ptt_active is True

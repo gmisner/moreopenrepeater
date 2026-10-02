@@ -145,6 +145,8 @@ function renderHeld() {
     let text = "";
     if (config.gmrs_mode) {
       text = `${GMRS_HELD[feature]} The settings below are kept for when GMRS mode is turned off on the Identification page.`;
+    } else if (config.node_mode === "simplex" && feature === "autopatch") {
+      text = "The phone patch is off on a simplex node: a call holds the transmitter up, so nobody local could break in. The mode is on the Timing page.";
     } else if (netActive && feature === "autopatch" && config.net_hold_autopatch) {
       text = "The phone patch is off until the net ends.";
     }
@@ -156,9 +158,11 @@ function renderHeld() {
 function renderSummaries(config) {
   document.getElementById("station-callsign").textContent = config.callsign || "(no callsign)";
   document.getElementById("gmrs-tag").hidden = !config.gmrs_mode;
+  document.getElementById("simplex-tag").hidden = config.node_mode !== "simplex";
   renderHeld();
   document.getElementById("station-summary").innerHTML = kv([
     ["Callsign", escapeHtml(config.callsign || "not set")],
+    ["Mode", config.node_mode === "simplex" ? "Simplex node" : "Repeater"],
     ["ID mode", escapeHtml(config.id_mode.toUpperCase())],
     ["ID every", `${formatDuration(config.id_interval)}${config.idle_id ? "" : " in use"}`],
     ["Timeout", formatDuration(config.tot_duration)],

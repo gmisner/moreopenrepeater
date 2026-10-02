@@ -213,6 +213,7 @@ class LiveAudio:
             settings = self.engine.processor.settings
             for field in _LIVE_FIELDS:
                 setattr(settings, field, getattr(config, field))
+            settings.local_repeat = config.node_mode == "repeater"
 
     def status(self) -> dict:
         config = self._service.config
@@ -385,6 +386,7 @@ class LiveAudio:
             ProcessorSettings(
                 sample_rate=rate,
                 cos_source="external" if cos_source in ("cm108", "gpio") else cos_source,
+                local_repeat=config.node_mode == "repeater",
                 **{field: getattr(config, field) for field in _LIVE_FIELDS},
             )
         )

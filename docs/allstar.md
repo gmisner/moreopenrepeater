@@ -24,6 +24,12 @@ without the required CTCSS tone, or a parrot recording, isn't sent. If the
 local user and a linked station talk at once, the repeater stays up until
 both have finished.
 
+On a simplex node (Timing page), local users still go to the node, but the
+controller holds linked stations off the air until the local user unkeys,
+since one radio can't transmit and receive at once. `rpt.conf` stays the
+same in both modes: the controller does the half duplex itself, so switching
+doesn't restart Asterisk.
+
 The AMI connection (`MOREOPENREPEATER_AMI_*`) is separate. It shows links
 and remote key-ups on the dashboard and sends DTMF macros' link commands.
 Set up both for a complete AllStar node.

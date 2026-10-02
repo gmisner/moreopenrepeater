@@ -27,6 +27,7 @@ from .events import (
     RemoteKeyed,
 )
 from .autopatch import AutopatchDialer
+from .mailbox import MailboxDialer
 from .macros import DTMFCommandDecoder, Macro
 
 IDLE = "idle"
@@ -138,6 +139,14 @@ class RepeaterConfig:
     autopatch_ring_seconds: float = 30.0
     autopatch_incoming_enabled: bool = False  # answer calls to the phone line
     autopatch_incoming_pin: str = ""  # callers key it in; calls aren't answered without one
+    # Voice mailbox (controller.mailbox, api.mailbox).
+    mailbox_enabled: bool = False
+    mailbox_leave_code: str = "*7"
+    mailbox_play_code: str = "*8"
+    mailbox_delete_code: str = "*9"
+    mailbox_max_seconds: float = 60.0
+    mailbox_retention_days: float = 14.0
+    mailbox_reminder_minutes: float = 60.0  # "messages waiting for mailbox 12"; 0 = never
     backup_enabled: bool = False  # scheduled backups to the backup folder
     backup_interval_hours: float = 24.0
     backup_keep: int = 7
@@ -192,6 +201,7 @@ class RepeaterController:
         self.state = IDLE
         self._dtmf = DTMFCommandDecoder(macros or [])
         self._patch_dialer = AutopatchDialer()
+        self._mailbox_dialer = MailboxDialer()
         self._local_carrier = False
         self._ctcss_present = config.require_ctcss_hz is None
         self._last_ctcss_hz: Optional[float] = None
@@ -309,6 +319,10 @@ class RepeaterController:
                 commands += self._enter_idle(now)
         return commands
 
+    def _mailbox_codes(self) -> dict[str, str]:
+        config = self.config
+        return {"leave": config.mailbox_leave_code, "play": config.mailbox_play_code, "delete": config.mailbox_delete_code}
+
     def handle_event(self, event: ControllerEvent, now: float) -> list[ControllerCommand]:
         commands: list[ControllerCommand] = []
 
@@ -319,6 +333,10 @@ class RepeaterController:
                 patch_command = self._patch_dialer.carrier_dropped(self.config.autopatch_access_code)
                 if patch_command is not None:
                     commands.append(patch_command)
+            if not event.active and self.config.mailbox_enabled:
+                mailbox_command = self._mailbox_dialer.carrier_dropped(self._mailbox_codes())
+                if mailbox_command is not None:
+                    commands.append(mailbox_command)
         elif isinstance(event, CTCSSChanged):
             self._last_ctcss_hz = event.tone_hz
             self._ctcss_present = (
@@ -334,6 +352,10 @@ class RepeaterController:
                 )
                 if patch_command is not None:
                     commands.append(patch_command)
+            if self.config.mailbox_enabled:
+                mailbox_command = self._mailbox_dialer.handle_digit(event.digit, now, self._mailbox_codes())
+                if mailbox_command is not None:
+                    commands.append(mailbox_command)
         elif isinstance(event, RemoteKeyed):
             if event.keyed:
                 self._remote_keyed.add(event.node_id)
@@ -388,6 +410,7 @@ class RepeaterController:
 
         self._dtmf.tick(now)
         self._patch_dialer.tick(now)
+        self._mailbox_dialer.tick(now)
 
         if not self.config.transmitter_enabled:
             return commands

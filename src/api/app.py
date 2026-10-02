@@ -79,6 +79,10 @@ from .models import (
     ControlCodeUser,
     HomeAssistantStatus,
     HomeAssistantTestRequest,
+    MailboxBoxRequest,
+    MailboxBoxResponse,
+    MailboxMessageResponse,
+    MailboxResponse,
     PublicStatus,
     StreamResponse,
     StreamSettingsRequest,
@@ -145,6 +149,7 @@ from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
 from .control_codes import ControlCodes, provisioning_uri
 from .homeassistant import TOKEN_ENV as HOMEASSISTANT_TOKEN_ENV
 from .homeassistant import HomeAssistant, HomeAssistantError
+from .mailbox import Mailbox, MailboxStore, is_mailbox_clip
 from .stream import Streamer
 from .net import POLL_SECONDS as NET_POLL_SECONDS
 from .net import NetError, NetMode
@@ -179,6 +184,8 @@ DEFAULT_DATA_DIR = _resolve_data_dir(os.environ, _REPO_DATA_DIR)
 DEFAULT_STATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "state.json"
 DEFAULT_ACTIVITY_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "activity.db"
 DEFAULT_RECORDINGS_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "recordings"
+DEFAULT_MAILBOX_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "mailbox"
+MAILBOX_TICK_SECONDS = 60.0
 DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.json"
 DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
 DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
@@ -382,6 +389,7 @@ def create_app(
     homeassistant: Optional[HomeAssistant] = None,
     stream_store: Optional[StateStore] = None,
     streamer: Optional[Streamer] = None,
+    mailbox_store: Optional[MailboxStore] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -391,7 +399,12 @@ def create_app(
     configure_logging(log_path)
     assets_store = assets_store or AudioAssetStore(DEFAULT_DATA_DIR)
     recordings = recordings or RecordingStore(None)
-    renderer = renderer or ClipRenderer(assets_store.path_for, tts=detect_tts(), recording_path=recordings.path_for)
+    mailbox_store = mailbox_store or MailboxStore(None, None)
+
+    def clip_recording_path(clip_id: str) -> Path:
+        return mailbox_store.path_for(clip_id) if is_mailbox_clip(clip_id) else recordings.path_for(clip_id)
+
+    renderer = renderer or ClipRenderer(assets_store.path_for, tts=detect_tts(), recording_path=clip_recording_path)
     service = service or RepeaterService(state_store=state_store)
     if service.renderer is None:
         service.renderer = renderer
@@ -446,6 +459,8 @@ def create_app(
     service.codes_locked = control_codes.locked
     homeassistant = homeassistant or HomeAssistant(service, os.environ.get(HOMEASSISTANT_TOKEN_ENV))
     streamer = streamer or Streamer(live_audio.monitor, stream_store, lambda: renderer.sample_rate)
+    mailbox = Mailbox(service, mailbox_store, renderer, net_active=lambda: nets.current is not None)
+    mailbox.audit_hook = service.audit_hook
     public_listeners: collections.Counter[str] = collections.Counter()
     aprs_stations = aprs_stations or StationStore()
     aprs_receiver = AprsReceiver(aprs_stations, lambda: service.config)
@@ -676,6 +691,16 @@ def create_app(
                 _weather_logger.exception("unexpected error checking NWS alerts")
             await asyncio.sleep(config.wx_poll_interval)
 
+    async def mailbox_loop() -> None:
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(MAILBOX_TICK_SECONDS)
+            try:
+                await loop.run_in_executor(None, mailbox.prune)
+                mailbox.remind()
+            except Exception:
+                logging.getLogger("moreopenrepeater.mailbox").exception("unexpected error in the mailbox")
+
     async def net_loop() -> None:
         while True:
             await asyncio.sleep(NET_POLL_SECONDS)
@@ -742,6 +767,7 @@ def create_app(
             tasks.append(asyncio.create_task(net_loop()))
             tasks.append(asyncio.create_task(auto_update_loop()))
             tasks.append(asyncio.create_task(streamer.run()))
+            tasks.append(asyncio.create_task(mailbox_loop()))
             tasks.append(asyncio.create_task(health_loop()))
             tasks.append(asyncio.create_task(activity_flush_loop()))
             if link_settings is not None:
@@ -1463,6 +1489,56 @@ def create_app(
         recordings.delete(recording_id)
         return {"deleted": recording_id}
 
+    def mailbox_response() -> MailboxResponse:
+        messages = mailbox_store.messages()
+        counts = collections.Counter(m.box for m in messages)
+        return MailboxResponse(
+            boxes=[
+                MailboxBoxResponse(box=box, name=info["name"], pin_set=bool(info.get("pin")), messages=counts[box])
+                for box, info in mailbox_store.boxes().items()
+            ],
+            messages=[
+                MailboxMessageResponse(id=m.id, box=m.box, left_at=datetime.fromtimestamp(m.left_at), duration=m.duration)
+                for m in reversed(messages)
+            ],
+        )
+
+    @app.get("/api/mailbox", response_model=MailboxResponse, dependencies=admin_dependencies)
+    def get_mailbox() -> MailboxResponse:
+        return mailbox_response()
+
+    @app.put("/api/mailbox/boxes/{box}", response_model=MailboxResponse, dependencies=admin_dependencies)
+    def put_mailbox_box(body: MailboxBoxRequest, box: str = UrlPath(pattern=r"^[0-9]{1,6}$")) -> MailboxResponse:
+        if box not in mailbox_store.boxes() and body.pin is None:
+            raise HTTPException(status_code=400, detail="A new mailbox needs a PIN")
+        mailbox_store.set_box(box, body.name.strip(), body.pin)
+        return mailbox_response()
+
+    @app.delete("/api/mailbox/boxes/{box}", response_model=MailboxResponse, dependencies=admin_dependencies)
+    def delete_mailbox_box(box: str) -> MailboxResponse:
+        if not mailbox_store.delete_box(box):
+            raise HTTPException(status_code=404, detail=f"No mailbox {box!r}")
+        return mailbox_response()
+
+    def mailbox_message_path(message_id: str) -> Path:
+        try:
+            path = mailbox_store.path_for(message_id)
+        except KeyError:
+            path = None
+        if path is None or not path.exists() or message_id.startswith("mailbox-play-"):
+            raise HTTPException(status_code=404, detail=f"No message with id {message_id!r}")
+        return path
+
+    @app.get("/api/mailbox/messages/{message_id}/audio", dependencies=admin_dependencies)
+    def get_mailbox_message_audio(message_id: str) -> FileResponse:
+        return FileResponse(mailbox_message_path(message_id), media_type="audio/wav")
+
+    @app.delete("/api/mailbox/messages/{message_id}", response_model=MailboxResponse, dependencies=admin_dependencies)
+    def delete_mailbox_message(message_id: str) -> MailboxResponse:
+        mailbox_message_path(message_id)
+        mailbox_store.delete_message(message_id)
+        return mailbox_response()
+
     @app.get("/api/logs", response_model=list[str], dependencies=auth_dependencies)
     def get_logs(lines: int = 200) -> list[str]:
         if not log_path.exists():
@@ -1782,6 +1858,7 @@ app = create_app(
     state_store=StateStore(DEFAULT_STATE_PATH),
     activity_store=ActivityStore(DEFAULT_ACTIVITY_PATH),
     recordings=RecordingStore(DEFAULT_RECORDINGS_DIR),
+    mailbox_store=MailboxStore(DEFAULT_MAILBOX_DIR, StateStore(DEFAULT_MAILBOX_DIR / "boxes.json")),
     users=UserStore(StateStore(DEFAULT_USERS_PATH)),
     audit=AuditLog(DEFAULT_AUDIT_PATH),
     aprs_stations=StationStore(DEFAULT_APRS_PATH),

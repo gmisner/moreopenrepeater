@@ -18,6 +18,7 @@ import { initListen } from "./js/listen.js";
 import { initLogs } from "./js/logs.js";
 import { initMap } from "./js/map.js";
 import { initMacros, loadMacros } from "./js/macros.js";
+import { initMailbox } from "./js/mailbox.js";
 import { initControlCodes } from "./js/control_codes.js";
 import { initHomeAssistant } from "./js/homeassistant.js";
 import { initPublic } from "./js/public.js";
@@ -47,6 +48,7 @@ async function main() {
   initControlCodes();
   initHomeAssistant();
   initPublic();
+  initMailbox();
   initAnnouncements();
   initNet();
   initWeather();

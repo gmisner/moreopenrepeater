@@ -241,6 +241,13 @@ class ConfigResponse(BaseModel):
     public_page_text: str = ""
     public_page_audio: bool = True
     public_page_max_listeners: int = 20
+    mailbox_enabled: bool = False
+    mailbox_leave_code: str = "*7"
+    mailbox_play_code: str = "*8"
+    mailbox_delete_code: str = "*9"
+    mailbox_max_seconds: float = 60.0
+    mailbox_retention_days: float = 14.0
+    mailbox_reminder_minutes: float = 60.0
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -369,6 +376,13 @@ class ConfigUpdateRequest(BaseModel):
     public_page_text: Optional[str] = Field(default=None, max_length=500)
     public_page_audio: Optional[bool] = None
     public_page_max_listeners: Optional[int] = Field(default=None, ge=1, le=200)
+    mailbox_enabled: Optional[bool] = None
+    mailbox_leave_code: Optional[str] = Field(default=None, pattern=r"^[0-9A-D*]{1,8}$")
+    mailbox_play_code: Optional[str] = Field(default=None, pattern=r"^[0-9A-D*]{1,8}$")
+    mailbox_delete_code: Optional[str] = Field(default=None, pattern=r"^[0-9A-D*]{1,8}$")
+    mailbox_max_seconds: Optional[float] = Field(default=None, ge=5, le=180)
+    mailbox_retention_days: Optional[float] = Field(default=None, ge=1, le=365)
+    mailbox_reminder_minutes: Optional[float] = Field(default=None, ge=0, le=24 * 60)
 
     @model_validator(mode="after")
     def _net_link_needs_a_node(self) -> "ConfigUpdateRequest":
@@ -1133,3 +1147,27 @@ class StreamResponse(BaseModel):
     bitrate: int
     legacy_icecast: bool
     status: StreamStatus
+
+
+class MailboxBoxRequest(BaseModel):
+    name: str = Field(default="", max_length=60)
+    pin: Optional[str] = Field(default=None, pattern=r"^[0-9]{4,8}$")  # None keeps the current PIN
+
+
+class MailboxBoxResponse(BaseModel):
+    box: str
+    name: str
+    pin_set: bool
+    messages: int
+
+
+class MailboxMessageResponse(BaseModel):
+    id: str
+    box: str
+    left_at: datetime
+    duration: float
+
+
+class MailboxResponse(BaseModel):
+    boxes: list[MailboxBoxResponse]
+    messages: list[MailboxMessageResponse]

@@ -307,6 +307,10 @@ several phases (see the plan file for the full breakdown):
   instead of repeated, then played back.
 - **Recordings**: optionally save every repeated transmission, with playback on the
   Activity page and automatic deletion after a set number of days.
+- **Voice mailbox**: leave a short message for another station over the air (`*7`,
+  the mailbox number, `#`, then key up and talk). A reminder names the mailboxes with
+  messages waiting, and the owner plays or deletes them with a PIN. Admins set up
+  mailboxes and can listen on the dashboard. See [docs/mailbox.md](docs/mailbox.md).
 - **Listen live**: stream what's on the air (or what the receiver hears) to the
   dashboard in the browser.
 - **Public listening** (off until turned on): a `/listen` page showing whether the

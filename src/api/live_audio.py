@@ -133,6 +133,9 @@ class LiveAudio:
         self.error: Optional[str] = None
         self._parrot_armed_at: Optional[float] = None
         self._parrot_recording = False
+        # The next transmission recorded instead of repeated, for someone else (api.mailbox).
+        self._capture_armed: Optional[tuple[float, float, Callable[[np.ndarray, float], None]]] = None
+        self._capture_callback: Optional[Callable[[np.ndarray, float], None]] = None
         self._capture_started_at: Optional[float] = None
         self._patch: Optional[PatchAudio] = None
         self._link: Optional[LinkAudio] = None
@@ -221,8 +224,13 @@ class LiveAudio:
             armed_at = self._parrot_armed_at
             self._parrot_armed_at = None
             self._parrot_recording = armed_at is not None and now - armed_at < PARROT_ARMED_SECONDS
+            capture, self._capture_armed = self._capture_armed, None
             if self._parrot_recording:
                 processor.start_capture(MAX_PARROT_SECONDS)
+                self._capture_started_at = now
+            elif capture is not None and now - capture[0] < PARROT_ARMED_SECONDS:
+                processor.start_capture(capture[1])
+                self._capture_callback = capture[2]
                 self._capture_started_at = now
             else:
                 processor.set_repeating(True)
@@ -235,10 +243,15 @@ class LiveAudio:
             return
         started_at, self._capture_started_at = self._capture_started_at, None
         parrot, self._parrot_recording = self._parrot_recording, False
+        callback, self._capture_callback = self._capture_callback, None
         samples = processor.stop_capture()
         if len(samples) < MIN_RECORDING_SECONDS * self._renderer.sample_rate:
             return
-        if self._loop is not None:
+        if self._loop is None:
+            return
+        if callback is not None:
+            self._loop.run_in_executor(None, callback, samples, started_at)
+        else:
             self._loop.run_in_executor(None, self._save_recording, samples, started_at, parrot)
 
     def set_patch(self, patch: Optional[PatchAudio]) -> None:
@@ -256,6 +269,14 @@ class LiveAudio:
             _logger.warning("parrot needs live audio and a recordings directory")
             return False
         self._parrot_armed_at = self._clock()
+        return True
+
+    def arm_capture(self, max_seconds: float, on_done: Callable[[np.ndarray, float], None]) -> bool:
+        """Records the next transmission (instead of repeating it) and hands
+        it to `on_done(samples, started_at)` on a worker thread."""
+        if self.engine is None:
+            return False
+        self._capture_armed = (self._clock(), max_seconds, on_done)
         return True
 
     def play(self, clip: str) -> None:
@@ -392,4 +413,6 @@ class LiveAudio:
                 self._service.handle_audio_events(released)
         self._capture_started_at = None
         self._parrot_recording = False
+        self._capture_armed = None
+        self._capture_callback = None
         self.error = None

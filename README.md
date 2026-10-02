@@ -58,7 +58,8 @@ The dashboard, with a station transmitting while a net is running:
   layer (`/dev/hidrawN`); the GPIO bit-packing logic is unit tested via a
   fake in-memory device, no real hardware required. `AudioProcessor` is the
   per-20 ms-block logic of a live repeater (software COS by audio level,
-  CTCSS or an external pin; DTMF; repeat audio with TX gain; clip playback),
+  CTCSS or an external pin; DTMF, muted from the repeated audio; squelch-tail
+  removal; transmit delay; repeat audio with TX gain; clip playback),
   with no threads or devices so it's tested on synthetic signals.
   `AudioEngine` runs it against real devices: the PortAudio callback only
   moves blocks, a worker thread does the processing, and PTT follows what
@@ -271,7 +272,11 @@ several phases (see the plan file for the full breakdown):
 - **DTMF local control**: macros can speak the time, read the weather alerts, play
   an announcement or any text, send the ID, start a parrot test, say which APRS
   stations are nearby, turn the transmitter off and on (with a PIN in the macro
-  code or a one-time code), or switch a CM108 GPIO output.
+  code or a one-time code), or switch a CM108 GPIO output. The tones are muted from
+  everything that goes out (on by default), so a code can't be copied off the air.
+- **Squelch-tail removal and transmit delay**: cut the receiver's noise burst from
+  the end of each transmission, and key up a moment before any audio for a slow
+  transmitter.
 - **One-time DTMF codes**: a PIN keyed over the air can be overheard and replayed. A
   macro can instead need a 6-digit code from an authenticator app (TOTP, RFC 6238),
   keyed right after the pattern. Each code works once and only for about a minute.

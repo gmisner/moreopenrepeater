@@ -288,3 +288,13 @@ def test_a_radio_keyed_by_its_own_vox_needs_no_ptt_line():
 
     assert rig.link.engine is not None and rig.link.engine._ptt_output is None
     assert rig.header.pins == {}
+
+
+def test_link_radio_gets_its_own_tail_and_delay_and_the_repeaters_dtmf_muting():
+    rig = Rig(dataclasses.replace(CONFIG, link_radio_tx_delay_ms=80.0, dtmf_mute=False))
+    settings = rig.link.engine.processor.settings
+    assert (settings.tx_delay_ms, settings.dtmf_mute) == (80.0, False)
+
+    rig.service.update_config(link_radio_squelch_tail_ms=100.0, dtmf_mute=True)
+
+    assert settings.squelch_tail_ms == 100.0 and settings.dtmf_mute is True

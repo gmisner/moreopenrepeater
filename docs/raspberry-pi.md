@@ -198,6 +198,27 @@ meter. "CTCSS tone present" opens only when a sub-audible tone is decoded,
 which requires the receiver's audio to be unfiltered (discriminator or
 flat audio) so the tone reaches the sound card.
 
+Three settings shape the audio around each transmission:
+
+- **Mute DTMF tones** (Transmit audio, on by default): commands are still
+  decoded, but the tones are never transmitted, sent to AllStar or the link
+  radio, recorded, or put on the public listening page or Broadcastify. That
+  way nobody can copy a control code off the air. Repeated audio runs 60 ms
+  behind the receiver, so a digit is silenced from its first moment. The
+  dashboard's "Receiver" listen source still carries the raw receiver audio,
+  for checking levels.
+- **Squelch-tail removal** (Carrier detect): cut this many milliseconds from
+  the end of each transmission, so the burst of noise before the receiver's
+  squelch closes isn't repeated. 100-200 ms suits most receivers. Repeated
+  audio is delayed by the same amount (or by 60 ms, if that's longer).
+- **Transmit delay** (PTT): key up, then wait before any audio, for a
+  transmitter, a power amplifier, or listeners' squelch that's slow to open.
+  Clips such as the ID wait out the delay instead of losing their start.
+  50-100 ms suits most radios.
+
+The link radio has its own transmit delay and squelch-tail removal, and
+follows the DTMF muting setting.
+
 ### Monitor receiver
 
 A second receiver can be plugged into a second USB sound card and set up under

@@ -196,6 +196,11 @@ class DTMFDetector:
     _candidate_count: int = field(default=0, init=False, repr=False)
     _last_reported_digit: Optional[str] = field(default=None, init=False, repr=False)
 
+    @property
+    def holding(self) -> Optional[str]:
+        """The reported digit whose tones are still present in the last block."""
+        return self._last_reported_digit
+
     def process(self, block: np.ndarray) -> Optional[str]:
         row_magnitudes = _goertzel_magnitudes(block, self.sample_rate, DTMF_ROW_FREQUENCIES_HZ)
         col_magnitudes = _goertzel_magnitudes(block, self.sample_rate, DTMF_COL_FREQUENCIES_HZ)

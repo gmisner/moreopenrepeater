@@ -644,6 +644,10 @@
                     <span class="input-unit"><input type="number" step="0.05" min="0" max="5" name="vox_hold" required /><span>s</span></span>
                     <small>How long audio can drop out before the carrier counts as gone.</small>
                   </label>
+                  <label>Squelch-tail removal
+                    <span class="input-unit"><input type="number" step="10" min="0" max="300" name="squelch_tail_ms" required /><span>ms</span></span>
+                    <small>Cut this much from the end of each transmission, so the receiver's noise burst isn't repeated. Delays repeated audio by the same amount. 0 = off.</small>
+                  </label>
                 </div>
               </div>
             </details>
@@ -667,6 +671,10 @@
                       <option value="low">Active low</option>
                     </select>
                   </label>
+                  <label>Transmit delay
+                    <span class="input-unit"><input type="number" step="10" min="0" max="500" name="tx_delay_ms" required /><span>ms</span></span>
+                    <small>Key up, then wait this long before any audio, for a transmitter (or listeners' squelch) that's slow to open. 50&ndash;100&nbsp;ms suits most radios. 0 = off.</small>
+                  </label>
                 </div>
               </div>
             </details>
@@ -685,6 +693,11 @@
                   <label>CTCSS level
                     <span class="input-unit"><input type="number" step="1" min="-40" max="-6" name="tx_ctcss_level_db" required /><span>dBFS</span></span>
                     <small>Adjust for about 500&ndash;750 Hz of deviation on the transmitter.</small>
+                  </label>
+                  <label class="switch span-2">
+                    <input type="checkbox" name="dtmf_mute" />
+                    <span class="switch-track"></span>
+                    <span>Mute DTMF tones <small class="muted">&mdash; commands are still decoded, but the tones aren't transmitted, sent to links or recorded, so nobody can copy a control code off the air</small></span>
                   </label>
                 </div>
               </div>
@@ -859,6 +872,12 @@
             <label>Link timeout
               <span class="input-unit"><input type="number" step="1" min="30" max="1800" name="link_radio_timeout" required /><span>s</span></span>
               <small>The longest one transmission goes out the link radio.</small>
+            </label>
+            <label>Transmit delay
+              <span class="input-unit"><input type="number" step="10" min="0" max="500" name="link_radio_tx_delay_ms" required /><span>ms</span></span>
+            </label>
+            <label>Squelch-tail removal
+              <span class="input-unit"><input type="number" step="10" min="0" max="300" name="link_radio_squelch_tail_ms" required /><span>ms</span></span>
             </label>
             <label class="switch">
               <input type="checkbox" name="link_radio_courtesy_tone" />

@@ -120,6 +120,9 @@ class RepeaterConfig:
     ptt_gpio_pin: int = 17  # header pin 11
     ptt_polarity: Literal["high", "low"] = "high"  # the level that keys the transmitter
     vox_threshold_db: float = -40.0
+    squelch_tail_ms: float = 0.0  # cut from the end of each received transmission (the noise burst)
+    tx_delay_ms: float = 0.0  # keyed, but silent, for this long before any audio
+    dtmf_mute: bool = True  # DTMF tones are decoded but never passed on
     # A listen-only second receiver (api.monitor_receiver); never transmitted.
     monitor_enabled: bool = False
     monitor_name: str = ""  # "Aviation 119.1"
@@ -145,6 +148,8 @@ class RepeaterConfig:
     link_radio_tx_gain_db: float = 0.0
     link_radio_tx_ctcss_hz: Optional[float] = None  # for a far repeater that needs a tone
     link_radio_timeout: float = 180.0
+    link_radio_squelch_tail_ms: float = 0.0
+    link_radio_tx_delay_ms: float = 0.0
     link_radio_courtesy_tone: bool = True
     vox_hold: float = 0.4
     tx_gain_db: float = 0.0

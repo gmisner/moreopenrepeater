@@ -82,7 +82,7 @@ def test_link_radio_audio_goes_over_only_while_there_is_a_signal():
 
 
 def test_processor_sends_the_node_only_what_it_repeats():
-    processor = AudioProcessor(ProcessorSettings(sample_rate=RATE, cos_source="external"))
+    processor = AudioProcessor(ProcessorSettings(sample_rate=RATE, cos_source="external", dtmf_mute=False))
     link = LinkAudio(RATE)
     processor.set_link(link)
     processor.set_external_cos(True)

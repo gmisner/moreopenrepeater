@@ -18,15 +18,20 @@ const SUMMARIES = {
   "audio-devices": (f) => `${optionText(f.audio_input_device)} in, ${optionText(f.audio_output_device)} out`,
   "audio-cos": (f) => {
     const source = f.cos_source.value;
-    if (source === "vox") return `Audio level, opens at ${f.vox_threshold_db.value} dBFS`;
-    if (source === "ctcss") return "CTCSS tone present";
+    const tail = Number(f.squelch_tail_ms.value) ? `, tail cut ${f.squelch_tail_ms.value} ms` : "";
+    if (source === "vox") return `Audio level, opens at ${f.vox_threshold_db.value} dBFS${tail}`;
+    if (source === "ctcss") return `CTCSS tone present${tail}`;
     const input = source === "gpio" ? `GPIO${f.cos_gpio_pin.value}` : "CM108 COS input";
-    return `${input}, active ${f.cos_polarity.value}`;
+    return `${input}, active ${f.cos_polarity.value}${tail}`;
   },
-  "audio-ptt": (f) =>
-    f.ptt_output.value === "gpio" ? `GPIO${f.ptt_gpio_pin.value}, active ${f.ptt_polarity.value}` : "CM108 interface",
+  "audio-ptt": (f) => {
+    const delay = Number(f.tx_delay_ms.value) ? `, ${f.tx_delay_ms.value} ms delay` : "";
+    const output = f.ptt_output.value === "gpio" ? `GPIO${f.ptt_gpio_pin.value}, active ${f.ptt_polarity.value}` : "CM108 interface";
+    return output + delay;
+  },
   "audio-tx": (f) =>
-    `Gain ${signed(f.tx_gain_db.value)} dB, ${f.tx_ctcss_hz.value ? `CTCSS ${tone(f.tx_ctcss_hz.value)}` : "no CTCSS tone"}`,
+    `Gain ${signed(f.tx_gain_db.value)} dB, ${f.tx_ctcss_hz.value ? `CTCSS ${tone(f.tx_ctcss_hz.value)}` : "no CTCSS tone"}` +
+    (f.dtmf_mute.checked ? ", DTMF muted" : ", DTMF passed through"),
 
   "tone-link": (f) => courtesyTone(f, "courtesy_tone_link"),
   "tone-patch": (f) => courtesyTone(f, "courtesy_tone_patch"),

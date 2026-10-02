@@ -40,6 +40,10 @@ _SUBAUDIBLE_CUTOFF_HZ = 280.0
 _SUBAUDIBLE_TAPS = 401
 _VOX_HYSTERESIS_DB = 3.0
 _CTCSS_ANALYZE_EVERY_BLOCKS = 5  # CTCSS needs a 1 s window anyway; ~100 ms decisions are plenty
+# A digit is reported on its second block, and the block before those may
+# hold its first few milliseconds: three blocks of delay mute it all.
+_DTMF_MUTE_BLOCKS = 3
+_DTMF_MUTE_HANG_BLOCKS = 2  # the tones' tail, and the gap before a next digit
 
 
 @dataclass
@@ -56,6 +60,37 @@ class ProcessorSettings:
     dtmf_threshold: float = 0.05
     # False for a link radio: what it receives goes to the repeater, not back out its own transmitter.
     local_repeat: bool = True
+    dtmf_mute: bool = True  # never pass DTMF tones on (transmitter, links, recordings)
+    squelch_tail_ms: float = 0.0  # cut this much received audio from the end of each transmission
+    tx_delay_ms: float = 0.0  # silence after keying up, before any audio
+
+
+class _DelayLine:
+    """Received audio held back a few blocks on its way to everything
+    downstream, so audio already received can still be muted: the start of
+    a DTMF digit, or the squelch tail before the carrier dropped."""
+
+    def __init__(self) -> None:
+        self._blocks: "collections.deque[np.ndarray]" = collections.deque()
+        self._muted: "collections.deque[bool]" = collections.deque()
+
+    def append(self, block: np.ndarray) -> None:
+        self._blocks.append(block)
+        self._muted.append(False)
+
+    def mute_last(self, count: int) -> None:
+        for i in range(max(0, len(self._muted) - count), len(self._muted)):
+            self._muted[i] = True
+
+    def release(self, delay_blocks: int) -> np.ndarray:
+        """The block from `delay_blocks` ago (silence if muted, or while filling up)."""
+        out: Optional[np.ndarray] = None
+        while len(self._blocks) > delay_blocks:
+            block, muted = self._blocks.popleft(), self._muted.popleft()
+            out = np.zeros_like(block) if muted else block
+        if out is None:
+            return np.zeros_like(self._blocks[-1])
+        return out
 
 
 def _highpass_kernel(cutoff_ratio: float) -> np.ndarray:
@@ -101,6 +136,10 @@ class AudioProcessor:
         self._patch: Optional[PatchAudio] = None
         self._link: Optional[LinkAudio] = None
         self._port: Optional[LinkAudio] = None
+        self._delay = _DelayLine()
+        self._dtmf_hang = 0
+        self._was_keyed = False
+        self._lead_blocks = 0
 
     @property
     def repeating_voice(self) -> bool:
@@ -157,24 +196,28 @@ class AudioProcessor:
         block = np.asarray(block, dtype=np.float32).reshape(-1)
         events: list[ControllerEvent] = []
         self.rx_level_db = level_db(block)
-        capture = self._capture
-        if capture is not None and len(capture) * len(block) < self._capture_limit:
-            capture.append(block.copy())
 
         tone = self._detect_ctcss(block)
         if tone != self.ctcss_hz:
             self.ctcss_hz = tone
             events.append(CTCSSChanged(tone_hz=tone))
 
+        self._delay.append(block)
         cos = self._carrier(block)
         if cos != self.cos_open:
             self.cos_open = cos
             events.append(COSChanged(active=cos))
+            if not cos:
+                self._delay.mute_last(self._tail_blocks(len(block)))
 
-        if self.cos_open:
-            digit = self._dtmf.process(block)
-            if digit is not None:
-                events.append(DTMFDigit(digit=digit))
+        digit = self._dtmf.process(block) if self.cos_open else None
+        if digit is not None:
+            events.append(DTMFDigit(digit=digit))
+        self._mute_dtmf(digit)
+        block = self._delay.release(self._delay_blocks(len(block)))
+        capture = self._capture
+        if capture is not None and len(capture) * len(block) < self._capture_limit:
+            capture.append(block.copy())
 
         encode_hz = self.settings.tx_ctcss_hz
         patch = self._patch
@@ -202,18 +245,46 @@ class AudioProcessor:
             far_end = port.exchange(voice, self.repeating_voice)
             if self._ptt:
                 out += far_end
+        # A clip keeps the transmitter keyed until it finishes, even if the
+        # controller already dropped PTT (e.g. the timeout tone).
+        transmitting = self._ptt or self.playing
+        if transmitting and not self._was_keyed:
+            self._lead_blocks = math.ceil(self.settings.tx_delay_ms / 1000 * self.settings.sample_rate / len(block) - 1e-9)
+        self._was_keyed = transmitting
+        if self._lead_blocks > 0:
+            # Keyed, but nothing goes out yet; clips wait rather than lose their start.
+            self._lead_blocks -= 1
+            out.fill(0)
+            return ProcessResult(out=out, transmitting=transmitting, events=events)
         clip = self._next_clip_samples(len(block))
         if clip is not None:
             out[: len(clip)] += clip
-        # A clip keeps the transmitter keyed until it finishes, even if the
-        # controller already dropped PTT (e.g. the timeout tone).
-        transmitting = self._ptt or clip is not None
         if not transmitting:
             out.fill(0)
         elif encode_hz:
             out += self._ctcss_tone(encode_hz, len(block))
         np.clip(out, -1.0, 1.0, out=out)
         return ProcessResult(out=out, transmitting=transmitting, events=events)
+
+    def _tail_blocks(self, n: int) -> int:
+        return math.ceil(self.settings.squelch_tail_ms / 1000 * self.settings.sample_rate / n - 1e-9)
+
+    def _delay_blocks(self, n: int) -> int:
+        return max(_DTMF_MUTE_BLOCKS if self.settings.dtmf_mute else 0, self._tail_blocks(n))
+
+    def _mute_dtmf(self, digit: Optional[str]) -> None:
+        if not self.settings.dtmf_mute:
+            self._dtmf_hang = 0
+            return
+        if digit is not None:
+            self._delay.mute_last(_DTMF_MUTE_BLOCKS)
+            self._dtmf_hang = _DTMF_MUTE_HANG_BLOCKS
+        elif self.cos_open and self._dtmf.holding is not None:
+            self._delay.mute_last(1)
+            self._dtmf_hang = _DTMF_MUTE_HANG_BLOCKS
+        elif self._dtmf_hang > 0:
+            self._delay.mute_last(1)
+            self._dtmf_hang -= 1
 
     def _ctcss_tone(self, hz: float, n: int) -> np.ndarray:
         step = 2 * math.pi * hz / self.settings.sample_rate

@@ -4,6 +4,39 @@ A modern, Python-native ham radio repeater controller for Raspberry Pi --
 a from-scratch reimagining of [OpenRepeater](https://github.com/OpenRepeater/openrepeater)
 with custom repeater-control logic (not a wrapper around Asterisk's `app_rpt`).
 
+## Screenshots
+
+The dashboard, with a station transmitting while a net is running:
+
+![Dashboard showing the repeater receiving, PTT, COS and CTCSS indicators, a net-running banner and recent activity](docs/images/screenshots/dashboard.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/screenshots/net.png" alt="Net page with a running net, five check-ins and past nets" /></td>
+    <td width="50%"><img src="docs/images/screenshots/activity.png" alt="Activity page with airtime by hour of day and per day" /></td>
+  </tr>
+  <tr>
+    <td><b>Net mode</b>: check-ins logged during the net, past nets downloadable as CSV.</td>
+    <td><b>Activity</b>: airtime by hour and by day, kerchunks, timeouts and IDs.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/screenshots/courtesy-tones.png" alt="Audio and tones page with separate courtesy tones after linked stations and phone calls" /></td>
+    <td><img src="docs/images/screenshots/macros.png" alt="DTMF macros page listing talking clock, weather, parrot and net macros" /></td>
+  </tr>
+  <tr>
+    <td><b>Courtesy tones</b>: one each for local users, linked stations and phone calls, with previews.</td>
+    <td><b>DTMF macros</b>: over-the-air commands, from a talking clock to starting a net.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/screenshots/updates.png" alt="Updates page with release channels and automatic updates in a quiet window" /></td>
+    <td><img src="docs/images/screenshots/simulator.png" alt="Simulator page with carrier, CTCSS, DTMF keypad and remote node controls" /></td>
+  </tr>
+  <tr>
+    <td><b>Updates</b>: stable, beta and dev channels, and automatic updates overnight.</td>
+    <td><b>Simulator</b>: try the controller with no radio attached.</td>
+  </tr>
+</table>
+
 ## Architecture
 
 - **`dsp`** -- CTCSS/DTMF Goertzel-algorithm tone decode and encode. Pure

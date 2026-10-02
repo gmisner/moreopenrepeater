@@ -14,6 +14,7 @@ const CLEARABLE_FIELDS = new Set([
   "courtesy_tone_patch_asset_id",
   "net_courtesy_tone_asset_id",
   "id_asset_id",
+  "long_id_asset_id",
   "timeout_tone_asset_id",
   "aprs_lat",
   "aprs_lon",

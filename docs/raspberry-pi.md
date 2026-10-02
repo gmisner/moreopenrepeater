@@ -272,7 +272,7 @@ far station ──> link radio RX ──> repeater TX (link courtesy tone)
   transmission out the link radio with the timeout tone. The link stays off until
   that user unkeys.
 - **It identifies** with the station ID (the same CW or voice ID as the
-  repeater) within the repeater's ID interval of its first transmission, and
+  repeater, never the long ID) within the repeater's ID interval of its first transmission, and
   every interval while it keeps transmitting, keying up by itself if needed,
   but never over the far end (47 CFR 97.119). If the link frequency is in a
   band or service with different rules, check them, and set the ID interval

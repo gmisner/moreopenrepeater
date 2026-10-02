@@ -146,6 +146,11 @@ class ConfigResponse(BaseModel):
     id_interval: float
     idle_id: bool
     id_audio_duration: float
+    id_skip_short_seconds: float = 0.0
+    long_id_mode: Literal["off", "voice", "both"] = "off"
+    long_id_interval: float = 3600.0
+    long_id_text: str = ""
+    long_id_asset_id: Optional[str] = None
     require_ctcss_hz: Optional[float]
     kerchunk_delay: float
     lockout_timeouts: int
@@ -156,6 +161,7 @@ class ConfigResponse(BaseModel):
     id_mode: Literal["voice", "cw", "both"]
     cw_wpm: float
     cw_tone_hz: float
+    cw_id_suffix: str = ""
     courtesy_tone_asset_id: Optional[str]
     id_asset_id: Optional[str]
     timeout_tone_asset_id: Optional[str]
@@ -294,6 +300,12 @@ class ConfigUpdateRequest(BaseModel):
     id_interval: Optional[float] = Field(default=None, gt=0)
     idle_id: Optional[bool] = None
     id_audio_duration: Optional[float] = Field(default=None, gt=0)
+    id_skip_short_seconds: Optional[float] = Field(default=None, ge=0, le=10)
+    long_id_mode: Optional[Literal["off", "voice", "both"]] = None
+    long_id_interval: Optional[float] = Field(default=None, ge=300, le=86400)
+    long_id_text: Optional[str] = Field(default=None, max_length=300)
+    long_id_asset_id: Optional[str] = None
+    clear_long_id_asset_id: bool = False
     require_ctcss_hz: Optional[float] = None
     clear_require_ctcss_hz: bool = False
     kerchunk_delay: Optional[float] = Field(default=None, ge=0, le=3)
@@ -305,6 +317,7 @@ class ConfigUpdateRequest(BaseModel):
     id_mode: Optional[Literal["voice", "cw", "both"]] = None
     cw_wpm: Optional[float] = Field(default=None, gt=0)
     cw_tone_hz: Optional[float] = Field(default=None, gt=0)
+    cw_id_suffix: Optional[str] = Field(default=None, pattern=r"^(/[A-Za-z0-9]{1,5})?$")
     courtesy_tone_asset_id: Optional[str] = None
     id_asset_id: Optional[str] = None
     timeout_tone_asset_id: Optional[str] = None

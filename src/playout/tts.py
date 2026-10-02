@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional, Protocol
 
@@ -46,6 +47,12 @@ def spell_callsign(callsign: str, phonetic: bool) -> str:
     if phonetic:
         return " ".join(ITU_PHONETIC.get(c, c) for c in chars)
     return " ".join(chars)
+
+
+def spoken_time(now: datetime) -> str:
+    hour = now.hour % 12 or 12
+    minutes = "o'clock" if now.minute == 0 else f"{now.minute:02d}" if now.minute >= 10 else f"oh {now.minute}"
+    return f"{hour} {minutes} {'A M' if now.hour < 12 else 'P M'}"
 
 
 def format_voice_id(template: str, callsign: str, phonetic: bool) -> str:

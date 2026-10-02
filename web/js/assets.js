@@ -9,6 +9,7 @@ const ASSIGNMENT_FIELDS = [
   "courtesy_tone_patch_asset_id",
   "net_courtesy_tone_asset_id",
   "id_asset_id",
+  "long_id_asset_id",
   "timeout_tone_asset_id",
 ];
 

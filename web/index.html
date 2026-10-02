@@ -452,6 +452,10 @@
               <span class="input-unit"><input type="number" step="0.1" min="0.1" name="id_audio_duration" required /><span>s</span></span>
               <small>Only used until the ID audio has been rendered and measured.</small>
             </label>
+            <label>Ignore short transmissions
+              <span class="input-unit"><input type="number" step="0.5" min="0" max="10" name="id_skip_short_seconds" required /><span>s</span></span>
+              <small>A transmission shorter than this (a kerchunk) doesn't make an ID due. 0: every one does.</small>
+            </label>
           </div>
           <div class="fold-list">
             <details class="fold" data-summary="cw-id">
@@ -463,6 +467,10 @@
                   </label>
                   <label>CW tone
                     <span class="input-unit"><input type="number" step="1" min="100" max="3000" name="cw_tone_hz" required /><span>Hz</span></span>
+                  </label>
+                  <label>Suffix
+                    <input type="text" name="cw_id_suffix" placeholder="none" pattern="(/[A-Za-z0-9]{1,5})?" autocapitalize="characters" />
+                    <small>Sent after the callsign, e.g. <code>/R</code> for a repeater.</small>
                   </label>
                 </div>
               </div>
@@ -489,9 +497,38 @@
                 </div>
               </div>
             </details>
+            <details class="fold" data-summary="long-id">
+              <summary><span class="fold-name">Long ID</span><span class="fold-hint"></span></summary>
+              <div class="fold-body">
+                <p class="muted small">A fuller ID, sent less often in place of the regular one: say the time, the
+                  repeater's location, or the net schedule.</p>
+                <div class="form-grid">
+                  <label>Long ID
+                    <select name="long_id_mode">
+                      <option value="off">Off</option>
+                      <option value="voice">Voice</option>
+                      <option value="both">Voice, then CW</option>
+                    </select>
+                  </label>
+                  <label>Every
+                    <span class="input-unit"><input type="number" step="60" min="300" max="86400" name="long_id_interval" required /><span>s</span></span>
+                    <small>e.g. 3600 for once an hour.</small>
+                  </label>
+                  <label class="span-2">What to say
+                    <input type="text" name="long_id_text" maxlength="300" placeholder="This is {callsign}. The time is {time}." />
+                    <small><code>{callsign}</code> is your callsign, spelled out; <code>{time}</code> is the local time.</small>
+                  </label>
+                  <label>Clip instead
+                    <select name="long_id_asset_id" data-asset-select="id" data-empty-label="(text-to-speech)"><option value="">(text-to-speech)</option></select>
+                    <small>Upload one as a Voice ID under Audio &amp; tones.</small>
+                  </label>
+                </div>
+              </div>
+            </details>
           </div>
           <div class="form-actions">
             <button type="button" class="btn btn-ghost" data-preview-clip="id">&#9654; Preview ID</button>
+            <button type="button" class="btn btn-ghost" data-preview-clip="id_long">&#9654; Preview long ID</button>
             <span class="spacer"></span>
             <span class="dirty-note">Unsaved changes</span>
             <button type="button" class="btn btn-ghost" data-reset>Discard</button>

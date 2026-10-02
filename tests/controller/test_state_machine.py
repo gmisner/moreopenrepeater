@@ -391,6 +391,87 @@ def test_changing_id_interval_reschedules_the_next_id_immediately():
     assert controller.state == TRANSMITTING_ID
 
 
+def test_the_long_id_takes_the_place_of_the_regular_one_once_its_interval_passes():
+    durations = {"id": 1.0, "id_long": 4.0}
+    controller = RepeaterController(
+        make_config(id_interval=100.0, idle_id=True, long_id_mode="voice", long_id_interval=300.0),
+        now=0.0,
+        clip_duration=durations.get,
+    )
+    played = []
+    for now in range(0, 1001):
+        played += [c.clip for c in controller.tick(float(now)) if isinstance(c, PlayAudio)]
+    assert played == ["id", "id", "id_long", "id", "id", "id_long", "id", "id", "id_long", "id"]
+
+
+def test_the_long_id_lasts_as_long_as_its_clip():
+    controller = RepeaterController(
+        make_config(id_interval=10.0, idle_id=True, long_id_mode="voice", long_id_interval=300.0),
+        now=-300.0,
+        clip_duration={"id": 1.0, "id_long": 4.0}.get,
+    )
+    assert PlayAudio(clip="id_long") in controller.tick(now=0.0)
+    controller.tick(now=3.9)
+    assert controller.state == TRANSMITTING_ID
+    controller.tick(now=4.0)
+    assert controller.state == IDLE
+
+
+def test_no_long_id_when_it_is_off():
+    controller = RepeaterController(make_config(id_interval=10.0, idle_id=True, long_id_interval=300.0), now=-300.0)
+    assert PlayAudio(clip="id") in controller.tick(now=0.0)
+
+
+def test_changing_long_id_interval_reschedules_the_next_long_id():
+    controller = RepeaterController(
+        make_config(id_interval=10.0, idle_id=True, long_id_mode="voice", long_id_interval=300.0), now=-300.0
+    )
+    controller.update_config(
+        make_config(id_interval=10.0, idle_id=True, long_id_mode="voice", long_id_interval=600.0), now=-5.0
+    )
+    assert PlayAudio(clip="id") in controller.tick(now=0.0)
+
+
+def test_a_short_transmission_doesnt_make_an_id_owed():
+    controller = RepeaterController(make_config(id_skip_short_seconds=2.0), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=10.0)
+    controller.tick(now=11.0)
+    controller.handle_event(COSChanged(active=False), now=11.5)
+    for now in (11.7, 13.0, 200.0, 2_000.0):
+        assert not any(isinstance(c, PlayAudio) and c.clip == "id" for c in controller.tick(now))
+
+
+def test_a_long_enough_transmission_owes_an_id_from_when_it_started():
+    controller = RepeaterController(make_config(id_skip_short_seconds=2.0), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=10.0)
+    controller.tick(now=12.0)
+    controller.handle_event(COSChanged(active=False), now=30.0)
+    controller.tick(now=30.2)
+    controller.tick(now=31.3)
+    controller.tick(now=109.9)
+    assert controller.state == IDLE
+    assert PlayAudio(clip="id") in controller.tick(now=110.0)
+
+
+def test_a_transmission_counts_when_it_ends_after_the_threshold_between_ticks():
+    controller = RepeaterController(make_config(id_skip_short_seconds=2.0), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=10.0)
+    controller.handle_event(COSChanged(active=False), now=13.0)
+    controller.tick(now=13.2)
+    controller.tick(now=14.3)
+    assert PlayAudio(clip="id") in controller.tick(now=110.0)
+
+
+def test_announcements_always_owe_an_id_even_when_short_transmissions_are_skipped():
+    controller = RepeaterController(
+        make_config(id_skip_short_seconds=5.0), now=0.0, clip_duration=lambda clip: 1.0
+    )
+    controller.queue_announcement("tts:hello")
+    controller.tick(now=50.0)
+    controller.tick(now=51.0)
+    assert PlayAudio(clip="id") in controller.tick(now=150.0)
+
+
 def test_enabling_required_ctcss_closes_carrier_access_immediately():
     controller = RepeaterController(make_config(), now=0.0)
 

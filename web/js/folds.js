@@ -52,10 +52,16 @@ const SUMMARIES = {
   },
 
   "cw-id": (f) =>
-    `${f.id_mode.value === "voice" ? "Not used with voice IDs · " : ""}${f.cw_wpm.value} WPM, ${f.cw_tone_hz.value} Hz`,
+    `${f.id_mode.value === "voice" ? "Not used with voice IDs · " : ""}${f.cw_wpm.value} WPM, ${f.cw_tone_hz.value} Hz` +
+    (f.cw_id_suffix.value ? `, ${f.cw_id_suffix.value.toUpperCase()}` : ""),
   "voice-id": (f) =>
     `${f.id_mode.value === "cw" ? "Not used with CW IDs · " : ""}“${f.voice_id_text.value.trim() || "{callsign} repeater"}”` +
     (f.id_phonetic.checked ? ", phonetic" : ""),
+  "long-id": (f) => {
+    if (f.long_id_mode.value === "off") return "Off";
+    const what = f.long_id_asset_id.value ? `Clip: ${optionText(f.long_id_asset_id)}` : `“${f.long_id_text.value.trim()}”`;
+    return `Every ${formatDuration(Number(f.long_id_interval.value))}: ${what}${f.long_id_mode.value === "both" ? ", then CW" : ""}`;
+  },
 
   "aprs-position": (f) =>
     f.aprs_lat.value && f.aprs_lon.value

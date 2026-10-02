@@ -55,6 +55,14 @@ class RepeaterConfig:
     # Off: ID only while there's been activity since the last one. On: ID every
     # interval around the clock, like a beacon.
     idle_id: bool = False
+    # A transmission shorter than this (a kerchunk) doesn't make an ID owed; 0 = every one does.
+    id_skip_short_seconds: float = 0.0
+    # The long ID takes the place of the regular one once long_id_interval has
+    # passed since the last long ID: a fuller message, less often.
+    long_id_mode: Literal["off", "voice", "both"] = "off"  # "both": voice, then CW
+    long_id_interval: float = 3600.0
+    long_id_text: str = "This is {callsign}. The time is {time}."
+    long_id_asset_id: Optional[str] = None
     id_audio_duration: float = 3.0
     require_ctcss_hz: Optional[float] = None
     kerchunk_delay: float = 0.0  # carrier must last this long before keying up from idle; 0 = off
@@ -72,6 +80,7 @@ class RepeaterConfig:
     id_mode: Literal["voice", "cw", "both"] = "voice"
     cw_wpm: float = 20.0
     cw_tone_hz: float = 700.0
+    cw_id_suffix: str = ""  # sent after the callsign in CW, e.g. "/R"
     courtesy_tone_asset_id: Optional[str] = None
     id_asset_id: Optional[str] = None
     timeout_tone_asset_id: Optional[str] = None
@@ -244,6 +253,8 @@ class RepeaterController:
         self._state_deadline: Optional[float] = None
         self._id_due_at = now + config.id_interval
         self._id_owed = False  # transmitted since the last ID
+        self._long_id_due_at = now + config.long_id_interval
+        self._pending_tx_since: Optional[float] = None  # a transmission not yet long enough to make an ID owed
         self._resume_state_after_id = IDLE
         self._remote_keyed: set[str] = set()
         self._announcements: list[str] = []
@@ -343,6 +354,8 @@ class RepeaterController:
         self.config = config
         if config.id_interval != previous.id_interval:
             self._id_due_at = now + config.id_interval
+        if config.long_id_interval != previous.long_id_interval:
+            self._long_id_due_at = now + config.long_id_interval
         if config.require_ctcss_hz != previous.require_ctcss_hz:
             self._ctcss_present = config.require_ctcss_hz is None or self._last_ctcss_hz == config.require_ctcss_hz
         commands: list[ControllerCommand] = []
@@ -419,6 +432,13 @@ class RepeaterController:
             if self.state == IDLE and self._ctcss_present:
                 commands += self._enter_receiving(now)
 
+        if self._pending_tx_since is not None:
+            if self.state not in (RECEIVING, TIMEOUT):
+                self._pending_tx_since = None
+            elif now - self._pending_tx_since >= self.config.id_skip_short_seconds:
+                self._note_transmission(self._pending_tx_since)
+                self._pending_tx_since = None
+
         if self._tot_deadline is not None and now >= self._tot_deadline:
             if self.state == RECEIVING:
                 commands += self._enter_timeout(now)
@@ -481,6 +501,10 @@ class RepeaterController:
         if (self._local_carrier and self._ctcss_present) if remote else self._remote_keyed:
             return []  # the other side is still talking
         if self.state == RECEIVING:
+            if self._pending_tx_since is not None:
+                if now - self._pending_tx_since >= self.config.id_skip_short_seconds:
+                    self._note_transmission(self._pending_tx_since)
+                self._pending_tx_since = None
             if self._tot_deadline is not None and now >= self._tot_deadline:
                 commands = self._enter_timeout(now)
                 # Already unkeyed, so there's nothing left to wait for.
@@ -507,7 +531,10 @@ class RepeaterController:
         self._id_owed = True
 
     def _enter_receiving(self, now: float) -> list[ControllerCommand]:
-        self._note_transmission(now)
+        if self.config.id_skip_short_seconds > 0 and not self._id_owed:
+            self._pending_tx_since = now  # counts once it's been on the air long enough
+        else:
+            self._note_transmission(now)
         self._set_state(RECEIVING)
         self._tot_deadline = now + self.config.tot_duration
         self._state_deadline = None
@@ -561,10 +588,14 @@ class RepeaterController:
         self._keyup_at = None
         self._resume_state_after_id = self.state
         self._set_state(TRANSMITTING_ID)
-        self._state_deadline = now + (self._clip_duration("id") or self.config.id_audio_duration)
+        clip = "id"
+        if self.config.long_id_mode != "off" and now >= self._long_id_due_at:
+            clip = "id_long"
+            self._long_id_due_at = now + self.config.long_id_interval
+        self._state_deadline = now + (self._clip_duration(clip) or self.config.id_audio_duration)
         self._id_due_at = now + self.config.id_interval
         self._id_owed = False
-        return [AssertPTT(active=True), PlayAudio(clip="id")]
+        return [AssertPTT(active=True), PlayAudio(clip=clip)]
 
     def _exit_id(self, now: float) -> list[ControllerCommand]:
         target = self._resume_state_after_id

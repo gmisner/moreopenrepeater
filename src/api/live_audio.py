@@ -98,6 +98,30 @@ def cm108_from_env(env: dict, find: Callable[[], list[dict]] = find_interfaces) 
     return _unkeyed(CM108Interface(device))
 
 
+def link_cm108_from_env(
+    env: dict, repeater: Optional[CM108Interface], find: Callable[[], list[dict]] = find_interfaces
+) -> Optional[CM108Interface]:
+    """The link radio's CM108 (api.link_radio). `MOREOPENREPEATER_LINK_CM108_HIDRAW`:
+    a /dev/hidrawN path, "off", or "auto" (the default) for the first one
+    plugged in that the repeater isn't using."""
+    setting = env.get("MOREOPENREPEATER_LINK_CM108_HIDRAW", "").strip() or "auto"
+    if setting == "off":
+        return None
+    if setting == "auto":
+        taken = getattr(repeater.device, "path", None) if repeater is not None else None
+        spare = [found for found in find() if found["path"] != taken]
+        if not spare:
+            return None
+        setting = spare[0]["path"]
+    try:
+        device = LinuxHidrawDevice(setting)
+    except OSError as error:
+        _logger.error("couldn't open the link radio's CM108 at %s: %s", setting, error)
+        return None
+    _logger.info("using the CM108 interface at %s for the link radio", setting)
+    return _unkeyed(CM108Interface(device))
+
+
 def _unkeyed(interface: CM108Interface) -> CM108Interface:
     """A CM108 keeps its outputs when the process holding it dies, so a
     crash or watchdog restart mid-transmission can leave the radio keyed."""
@@ -139,6 +163,7 @@ class LiveAudio:
         self._capture_started_at: Optional[float] = None
         self._patch: Optional[PatchAudio] = None
         self._link: Optional[LinkAudio] = None
+        self._port: Optional[LinkAudio] = None
         self._ptt_output: Optional[Callable[[bool], None]] = None
         self.monitor = AudioMonitor()
 
@@ -264,6 +289,16 @@ class LiveAudio:
         if self.engine is not None:
             self.engine.processor.set_link(link)
 
+    def set_port(self, port: Optional[LinkAudio]) -> None:
+        self._port = port
+        if self.engine is not None:
+            self.engine.processor.set_port(port)
+
+    @property
+    def repeating_voice(self) -> bool:
+        engine = self.engine
+        return engine is not None and engine.processor.repeating_voice
+
     def arm_parrot(self) -> bool:
         if self.engine is None or self._recordings is None or not self._recordings.enabled:
             _logger.warning("parrot needs live audio and a recordings directory")
@@ -354,6 +389,7 @@ class LiveAudio:
         processor.set_repeating(self._service.repeating)
         processor.set_patch(self._patch)
         processor.set_link(self._link)
+        processor.set_port(self._port)
         engine = self._engine_factory(
             processor,
             int(rate * BLOCK_SECONDS),

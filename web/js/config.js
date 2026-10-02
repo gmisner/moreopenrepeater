@@ -20,6 +20,7 @@ const CLEARABLE_FIELDS = new Set([
   "wx_lat",
   "wx_lon",
   "tx_ctcss_hz",
+  "link_radio_tx_ctcss_hz",
   "aprs_frequency_mhz",
   "aprs_offset_mhz",
   "aprs_tone_hz",

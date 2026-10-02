@@ -130,6 +130,22 @@ class RepeaterConfig:
     monitor_gpio_polarity: Literal["low", "high"] = "low"
     monitor_gain_db: float = 0.0
     monitor_record: bool = False
+    # A second radio linking the repeater to a far station (api.link_radio).
+    link_radio_enabled: bool = False
+    link_radio_name: str = ""  # "Link to W1XYZ"
+    link_radio_input_device: str = ""
+    link_radio_output_device: str = ""
+    link_radio_cos: Literal["vox", "ctcss", "cm108", "gpio"] = "vox"  # "cm108": a second CM108
+    link_radio_cos_polarity: Literal["low", "high"] = "low"
+    link_radio_cos_gpio_pin: int = 23  # header pin 16
+    link_radio_vox_threshold_db: float = -40.0
+    link_radio_ptt: Literal["cm108", "gpio", "none"] = "gpio"  # "none": the radio keys on audio (its own VOX)
+    link_radio_ptt_gpio_pin: int = 24  # header pin 18
+    link_radio_ptt_polarity: Literal["high", "low"] = "high"
+    link_radio_tx_gain_db: float = 0.0
+    link_radio_tx_ctcss_hz: Optional[float] = None  # for a far repeater that needs a tone
+    link_radio_timeout: float = 180.0
+    link_radio_courtesy_tone: bool = True
     vox_hold: float = 0.4
     tx_gain_db: float = 0.0
     tx_ctcss_hz: Optional[float] = None  # sub-audible tone added to everything transmitted

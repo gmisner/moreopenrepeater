@@ -223,6 +223,59 @@ stream, and nothing connects it to the transmitter, the controller, the public
 listening page or Broadcastify. Retransmitting other services isn't allowed
 (47 CFR 97.113).
 
+### Link radio
+
+A second transceiver on its own USB sound card can link the repeater to a
+far station over RF, such as another repeater's input or a simplex link
+frequency. Set it up under **Audio & tones → Link radio**. Live audio has to
+be on, and the link radio needs its own input and output devices, not the
+repeater's (or the monitor receiver's).
+
+```
+local user ──> repeater RX ──┬──> repeater TX
+                             └──> link radio TX ──> far station
+far station ──> link radio RX ──> repeater TX (link courtesy tone)
+```
+
+- **Local users go out the link radio.** Its transmitter keys while the
+  repeater repeats a local user, then unkeys half a second after they do
+  (with a courtesy tone on the link if that's ticked). Kerchunks, signals
+  without the access tone, and the repeater's own IDs and announcements aren't
+  sent.
+- **The far end keys the repeater** like a linked node: shared timeout,
+  and the link courtesy tone when it unkeys. What the far end says is never sent
+  back out the link radio.
+- **It never transmits over the far end.** While the link radio hears a
+  signal, its transmitter stays off.
+- **Its own timeout** (**Link timeout**, 3 minutes by default) ends one long
+  transmission out the link radio with the timeout tone. The link stays off until
+  that user unkeys.
+- **It identifies** with the station ID (the same CW or voice ID as the
+  repeater) within the repeater's ID interval of its first transmission, and
+  every interval while it keeps transmitting, keying up by itself if needed,
+  but never over the far end (47 CFR 97.119). If the link frequency is in a
+  band or service with different rules, check them, and set the ID interval
+  to suit.
+
+Detect the far end with **Audio level (VOX)** (for a radio whose squelch
+mutes its audio), **CTCSS tone present**, a **Raspberry Pi GPIO pin** (GPIO23,
+header pin 16, by default) or a **second CM108's COS input**. Key it with a
+**Raspberry Pi GPIO pin** (GPIO24, header pin 18, by default; through a
+transistor as above), a **second CM108's PTT**, or **nothing** for a radio
+that keys itself on audio with its own VOX. Pins can't be shared with the
+repeater's PTT and COS or the monitor's squelch. The second CM108 is found
+by itself at startup (the first one the repeater isn't using). Pick one with
+`MOREOPENREPEATER_LINK_CM108_HIDRAW=/dev/hidrawN` in the env file, or set
+it to `off`. **Transmit CTCSS tone** adds a tone under the link transmitter for
+a far repeater that needs one to open.
+
+To connect and disconnect the link over the air, add DTMF macros with the
+"Link radio on" and "Link radio off" actions (put a secret code in the
+pattern). They save the setting and say what they did.
+
+The link radio carries audio only. Remote base mode, which tunes the radio
+over a CAT cable, isn't supported yet.
+
 ## 4. Configuration (systemd EnvironmentFile)
 
 ```

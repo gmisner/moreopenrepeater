@@ -17,6 +17,7 @@ import { initConfig, loadConfig } from "./js/config.js";
 import { initListen } from "./js/listen.js";
 import { initLogs } from "./js/logs.js";
 import { initMap } from "./js/map.js";
+import { initLinkRadio } from "./js/link_radio.js";
 import { initMonitorReceiver } from "./js/monitor_receiver.js";
 import { initMacros, loadMacros } from "./js/macros.js";
 import { initMailbox } from "./js/mailbox.js";
@@ -46,6 +47,7 @@ async function main() {
   initAssets();
   initAudio();
   initMonitorReceiver();
+  initLinkRadio();
   initListen();
   initMacros();
   initControlCodes();

@@ -18,6 +18,7 @@ WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
 CosSource = Literal["vox", "ctcss", "cm108", "gpio"]
 Polarity = Literal["low", "high"]
 PttOutput = Literal["cm108", "gpio"]
+LinkRadioPtt = Literal["cm108", "gpio", "none"]
 # BCM numbers on the 40-pin header; GPIO0/1 are reserved for HAT EEPROMs.
 PiGpioPin = Annotated[int, Field(ge=2, le=27)]
 Role = Literal["admin", "operator", "viewer", "listener"]
@@ -208,6 +209,21 @@ class ConfigResponse(BaseModel):
     monitor_gpio_polarity: Polarity = "low"
     monitor_gain_db: float = 0.0
     monitor_record: bool = False
+    link_radio_enabled: bool = False
+    link_radio_name: str = ""
+    link_radio_input_device: str = ""
+    link_radio_output_device: str = ""
+    link_radio_cos: CosSource = "vox"
+    link_radio_cos_polarity: Polarity = "low"
+    link_radio_cos_gpio_pin: int = 23
+    link_radio_vox_threshold_db: float = -40.0
+    link_radio_ptt: LinkRadioPtt = "gpio"
+    link_radio_ptt_gpio_pin: int = 24
+    link_radio_ptt_polarity: Polarity = "high"
+    link_radio_tx_gain_db: float = 0.0
+    link_radio_tx_ctcss_hz: Optional[float] = None
+    link_radio_timeout: float = 180.0
+    link_radio_courtesy_tone: bool = True
     vox_hold: float
     tx_gain_db: float
     tx_ctcss_hz: Optional[float]
@@ -351,6 +367,22 @@ class ConfigUpdateRequest(BaseModel):
     monitor_gpio_polarity: Optional[Polarity] = None
     monitor_gain_db: Optional[float] = Field(default=None, ge=-20, le=20)
     monitor_record: Optional[bool] = None
+    link_radio_enabled: Optional[bool] = None
+    link_radio_name: Optional[str] = Field(default=None, max_length=40)
+    link_radio_input_device: Optional[str] = Field(default=None, max_length=200)
+    link_radio_output_device: Optional[str] = Field(default=None, max_length=200)
+    link_radio_cos: Optional[CosSource] = None
+    link_radio_cos_polarity: Optional[Polarity] = None
+    link_radio_cos_gpio_pin: Optional[PiGpioPin] = None
+    link_radio_vox_threshold_db: Optional[float] = Field(default=None, ge=-90, le=0)
+    link_radio_ptt: Optional[LinkRadioPtt] = None
+    link_radio_ptt_gpio_pin: Optional[PiGpioPin] = None
+    link_radio_ptt_polarity: Optional[Polarity] = None
+    link_radio_tx_gain_db: Optional[float] = Field(default=None, ge=-40, le=20)
+    link_radio_tx_ctcss_hz: Optional[float] = Field(default=None, ge=60, le=260)
+    clear_link_radio_tx_ctcss_hz: bool = False
+    link_radio_timeout: Optional[float] = Field(default=None, ge=30, le=1800)
+    link_radio_courtesy_tone: Optional[bool] = None
     vox_hold: Optional[float] = Field(default=None, ge=0, le=5)
     tx_gain_db: Optional[float] = Field(default=None, ge=-40, le=20)
     tx_ctcss_hz: Optional[float] = Field(default=None, ge=60, le=260)
@@ -1214,6 +1246,21 @@ class TranscriptionStatus(BaseModel):
 class MailboxResponse(BaseModel):
     boxes: list[MailboxBoxResponse]
     messages: list[MailboxMessageResponse]
+
+
+class LinkRadioStatus(BaseModel):
+    enabled: bool
+    running: bool
+    error: Optional[str]
+    name: str
+    rx_level_db: float
+    receiving: bool
+    transmitting: bool
+    timed_out: bool
+    id_owed: bool
+    device_sample_rate: Optional[int]
+    dropped_input_blocks: int
+    starved_output_blocks: int
 
 
 class MonitorReceiverStatus(BaseModel):

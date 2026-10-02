@@ -786,6 +786,106 @@
           </div>
         </form>
 
+        <form class="card config-form" data-config-form id="link-radio-form">
+          <div class="card-header">
+            <h2>Link radio</h2>
+            <span id="link-radio-state" class="tag">off</span>
+          </div>
+          <p class="muted small">A second radio on its own sound device that links this repeater to a far station:
+            another repeater's input, or a simplex link. Local users go out the link radio, and what it hears is
+            transmitted here with the link courtesy tone. It never transmits over the far end, has its own timeout,
+            and identifies with the station ID at least every ID interval while in use (47&nbsp;CFR&nbsp;97.119).</p>
+          <label class="switch">
+            <input type="checkbox" name="link_radio_enabled" />
+            <span class="switch-track"></span>
+            <span>Connect the link radio</span>
+          </label>
+          <div class="form-grid">
+            <label>Name
+              <input type="text" name="link_radio_name" maxlength="40" placeholder="Link to W1XYZ" />
+            </label>
+            <label>Input (link receiver)
+              <select name="link_radio_input_device" data-audio-devices="inputs"><option value="">System default</option></select>
+              <small>Its own sound device, not the repeater's.</small>
+            </label>
+            <label>Output (link transmitter)
+              <select name="link_radio_output_device" data-audio-devices="outputs"><option value="">System default</option></select>
+            </label>
+            <label>Detect the far end by
+              <select name="link_radio_cos">
+                <option value="vox">Audio level (VOX)</option>
+                <option value="ctcss">CTCSS tone present</option>
+                <option value="cm108">A second CM108's COS input</option>
+                <option value="gpio">Raspberry Pi GPIO pin</option>
+              </select>
+            </label>
+            <label data-link-cos="vox">VOX threshold
+              <span class="input-unit"><input type="number" step="1" min="-90" max="0" name="link_radio_vox_threshold_db" required /><span>dBFS</span></span>
+            </label>
+            <label data-link-cos="gpio">COS pin
+              <span class="input-unit"><input type="number" step="1" min="2" max="27" name="link_radio_cos_gpio_pin" required /><span>GPIO</span></span>
+              <small>BCM number; GPIO23 is header pin 16. 3.3&nbsp;V only.</small>
+            </label>
+            <label data-link-cos="gpio cm108">COS polarity
+              <select name="link_radio_cos_polarity">
+                <option value="low">Active low (pulled to ground on carrier)</option>
+                <option value="high">Active high</option>
+              </select>
+            </label>
+            <label>Key the link radio with
+              <select name="link_radio_ptt">
+                <option value="gpio">Raspberry Pi GPIO pin</option>
+                <option value="cm108">A second CM108's PTT</option>
+                <option value="none">Nothing (the radio's own VOX keys it)</option>
+              </select>
+            </label>
+            <label data-link-ptt="gpio">PTT pin
+              <span class="input-unit"><input type="number" step="1" min="2" max="27" name="link_radio_ptt_gpio_pin" required /><span>GPIO</span></span>
+              <small>BCM number; GPIO24 is header pin 18. Drive the radio through a transistor.</small>
+            </label>
+            <label data-link-ptt="gpio">PTT polarity
+              <select name="link_radio_ptt_polarity">
+                <option value="high">Active high (pin goes high to transmit)</option>
+                <option value="low">Active low</option>
+              </select>
+            </label>
+            <label>Transmit gain
+              <span class="input-unit"><input type="number" step="0.5" min="-40" max="20" name="link_radio_tx_gain_db" required /><span>dB</span></span>
+            </label>
+            <label>Transmit CTCSS tone
+              <span class="input-unit"><input type="number" step="0.1" min="60" max="260" name="link_radio_tx_ctcss_hz" placeholder="off" list="ctcss-tones" /><span>Hz</span></span>
+              <small>For a far repeater that needs a tone to open.</small>
+            </label>
+            <label>Link timeout
+              <span class="input-unit"><input type="number" step="1" min="30" max="1800" name="link_radio_timeout" required /><span>s</span></span>
+              <small>The longest one transmission goes out the link radio.</small>
+            </label>
+            <label class="switch">
+              <input type="checkbox" name="link_radio_courtesy_tone" />
+              <span class="switch-track"></span>
+              <span>Courtesy tone on the link when a local user unkeys</span>
+            </label>
+          </div>
+          <div class="level-meter" title="Link receive level">
+            <div class="level-meter-fill" id="link-radio-level-fill"></div>
+            <div class="level-meter-threshold" id="link-radio-level-threshold" title="VOX threshold"></div>
+          </div>
+          <div class="level-readout small">
+            <span>RX <strong id="link-radio-level-text">&ndash;</strong></span>
+            <span id="link-radio-rx" class="tag">far end</span>
+            <span id="link-radio-tx" class="tag">TX</span>
+            <span class="spacer"></span>
+            <span id="link-radio-health" class="muted"></span>
+          </div>
+          <p id="link-radio-error" class="form-error" hidden></p>
+          <div class="form-actions">
+            <span class="spacer"></span>
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+
         <form class="card" id="gpio-form">
           <div class="card-header">
             <h2>CM108 GPIO pins</h2>
@@ -882,6 +982,8 @@
                 <option value="tx_disable">Transmitter off</option>
                 <option value="tx_enable">Transmitter on</option>
                 <option value="lockout_clear">Clear a stuck-carrier lockout</option>
+                <option value="link_radio_on">Link radio on</option>
+                <option value="link_radio_off">Link radio off</option>
                 <option value="net_start">Start net mode</option>
                 <option value="net_end">End net mode</option>
                 <option value="aprs">APRS stations nearby</option>

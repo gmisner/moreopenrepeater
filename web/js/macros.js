@@ -21,6 +21,8 @@ const ACTION_LABELS = {
   tx_disable: "Transmitter off",
   tx_enable: "Transmitter on",
   lockout_clear: "Clear lockout",
+  link_radio_on: "Link radio on",
+  link_radio_off: "Link radio off",
   net_start: "Start net",
   net_end: "End net",
   aprs: "APRS stations nearby",

@@ -66,7 +66,8 @@ from .sip_trunk import AsteriskSetupError, SipTrunk, TrunkSettings
 from .aprs_map import AprsReceiver, StationStore, bearing_degrees, distance_km, map_center, spoken_summary
 from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
 from .audit import AuditEntry, AuditLog, describe_config_change
-from .live_audio import LiveAudio, cm108_from_env, list_audio_devices
+from .link_radio import LinkRadio
+from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env, list_audio_devices
 from .monitor import AudioMonitor
 from .monitor_receiver import MonitorReceiverService
 from .recordings import RecordingInfo, RecordingStore
@@ -85,6 +86,7 @@ from .models import (
     MailboxMessageResponse,
     MailboxResponse,
     ListenSource,
+    LinkRadioStatus,
     MonitorReceiverStatus,
     PublicStatus,
     RecordingSource,
@@ -405,6 +407,7 @@ def create_app(
     transcriber: Optional[Transcriber] = None,
     monitor_recordings: Optional[RecordingStore] = None,
     monitor_receiver: Optional[MonitorReceiverService] = None,
+    link_radio: Optional[LinkRadio] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -430,6 +433,13 @@ def create_app(
     live_audio = live_audio or LiveAudio(service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings)
     monitor_receiver = monitor_receiver or MonitorReceiverService(service, renderer.sample_rate, monitor_recordings)
     cm108 = live_audio.cm108
+    link_radio = link_radio or LinkRadio(
+        service,
+        renderer,
+        sending=lambda: live_audio.repeating_voice,
+        attach_port=live_audio.set_port,
+        find_cm108=lambda: link_cm108_from_env(os.environ, cm108),
+    )
     gpio = gpio or GpioControl(service, cm108)
     service.gpio_command = gpio.run_command
     autopatch = autopatch or Autopatch(service, patch_settings_from_env(os.environ))
@@ -810,6 +820,8 @@ def create_app(
                 tasks.append(asyncio.create_task(link_schedule_loop()))
             live_audio.attach(loop)
             monitor_receiver.attach(loop)
+            link_radio.attach(loop)
+            tasks.append(asyncio.create_task(link_radio.run()))
             await autopatch.start()
             await allstar_node.start()
             sd_notify("READY=1")
@@ -828,6 +840,7 @@ def create_app(
         await autopatch.stop()
         live_audio.shutdown()
         monitor_receiver.shutdown()
+        link_radio.shutdown()
         activity_store.flush()
         if start_background_tick:
             health.stopping()
@@ -1558,6 +1571,10 @@ def create_app(
     @app.get("/api/monitor-receiver", response_model=MonitorReceiverStatus, dependencies=auth_dependencies)
     def get_monitor_receiver() -> MonitorReceiverStatus:
         return MonitorReceiverStatus(**monitor_receiver.status())
+
+    @app.get("/api/link-radio", response_model=LinkRadioStatus, dependencies=auth_dependencies)
+    def get_link_radio() -> LinkRadioStatus:
+        return LinkRadioStatus(**link_radio.status())
 
     def mailbox_response() -> MailboxResponse:
         messages = mailbox_store.messages()

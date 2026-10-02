@@ -1,0 +1,21 @@
+name: Feature request
+description: Something you'd like your repeater or the dashboard to do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you'd like to do
+      description: What you're trying to do on your repeater, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+      description: Settings, DTMF commands or dashboard pages you have in mind, if any.
+  - type: textarea
+    id: elsewhere
+    attributes:
+      label: Elsewhere
+      description: If another controller (OpenRepeater, app_rpt, a hardware controller) does this, how does it work there?

@@ -3,6 +3,8 @@ name: promote
 # Moves a release channel forward: main -> beta, or beta -> stable (see
 # "Updates" in docs/raspberry-pi.md). Only a commit whose tests passed can be
 # promoted, and only as a fast-forward, so a channel never jumps backwards.
+# Promoting to stable also publishes a GitHub release with notes from the
+# pull requests merged since the last one.
 on:
   workflow_dispatch:
     inputs:
@@ -53,3 +55,15 @@ jobs:
               git log --format='- %h %s' "$before..$sha"
             fi
           } >>"$GITHUB_STEP_SUMMARY"
+          # Each stable release also gets a GitHub release, tagged by date.
+          if [ "$CHANNEL" = stable ] && [ "$before" != "$sha" ]; then
+            base="v$(date -u +%Y.%m.%d)"
+            tag="$base"
+            n=2
+            while git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; do
+              tag="$base.$n"
+              n=$((n + 1))
+            done
+            gh release create "$tag" --target "$sha" --title "$tag" --generate-notes --latest
+            echo "Released as [$tag]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$tag)." >>"$GITHUB_STEP_SUMMARY"
+          fi

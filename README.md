@@ -1,5 +1,7 @@
 # moreopenrepeater
 
+[![tests](https://github.com/gmisner/moreopenrepeater/actions/workflows/tests.yml/badge.svg)](https://github.com/gmisner/moreopenrepeater/actions/workflows/tests.yml)
+
 A modern, Python-native ham radio repeater controller for Raspberry Pi --
 a from-scratch reimagining of [OpenRepeater](https://github.com/OpenRepeater/openrepeater)
 with custom repeater-control logic (not a wrapper around Asterisk's `app_rpt`).

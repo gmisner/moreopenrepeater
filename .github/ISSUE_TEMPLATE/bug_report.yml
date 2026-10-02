@@ -1,0 +1,59 @@
+name: Bug report
+description: Something isn't working on your repeater or in the dashboard.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. For a security problem, please don't open an issue here; see the security policy instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      description: The steps, settings or radio traffic that lead to it, if you know them.
+      placeholder: |
+        1. Turn on net mode
+        2. Key up from a linked node
+        3. ...
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Release channel
+      options:
+        - stable
+        - beta
+        - dev (main)
+        - Running from a git checkout
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Installed version
+      description: The commit shown on the dashboard's Updates page.
+      placeholder: e.g. 49d5a7c
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware
+      description: Computer, audio interface and radios. Leave out what doesn't apply.
+      placeholder: |
+        Computer: Raspberry Pi 4, Raspberry Pi OS 12 (bookworm)
+        Audio interface: AIOC / CM108 board / USB sound card
+        PTT and COS: CM108 GPIO / Pi GPIO / VOX
+        Radios: ...
+        AllStarLink: yes / no
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        From the dashboard's Logs page, or `journalctl -u moreopenrepeater -n 200`. Remove passwords, tokens, phone numbers and API keys first.
+      render: text

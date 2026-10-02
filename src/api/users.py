@@ -3,7 +3,8 @@
 Roles:
   - admin: everything, including managing users and reading the audit log;
   - operator: changes settings, macros, announcements, audio;
-  - viewer: read-only (status, settings, activity, listening).
+  - viewer: read-only (status, settings, activity, listening);
+  - listener: only the listening page at /listen, nothing of the dashboard.
 
 The account from `MOREOPENREPEATER_AUTH_USER`/`_PASSWORD` (see `api.auth`)
 is always an admin and lives outside this store, so a lost users file can
@@ -20,8 +21,8 @@ from typing import Literal, Optional
 
 from .persistence import StateStore
 
-Role = Literal["admin", "operator", "viewer"]
-ROLES: tuple[Role, ...] = ("admin", "operator", "viewer")
+Role = Literal["admin", "operator", "viewer", "listener"]
+ROLES: tuple[Role, ...] = ("admin", "operator", "viewer", "listener")
 
 # 16 MiB of memory and roughly 50 ms per check on a Raspberry Pi 4.
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2**14, 8, 1

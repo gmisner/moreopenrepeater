@@ -1,24 +1,36 @@
 # Public listening
 
-Two ways to let people hear the repeater without a dashboard account, both on the
+Two ways to let people hear the repeater without the dashboard, both on the
 dashboard's **Public listening** page and both off until you turn them on.
 
-## The public page
+## The listening page
 
-Turn on **Public page** and anyone who can reach the controller can open
-`http://<controller>:8000/listen` without signing in. It shows the callsign, your
-text (the frequency and tone, say), whether the repeater is on the air, and
-whether a net is in session. With **Visitors can listen live** on, it has a
-Listen button that plays what's transmitted, the same audio as the dashboard's
-Listen live.
+The page at `http://<controller>:8000/listen` shows the callsign, your text (the
+frequency and tone, say), whether the repeater is on the air, and whether a net is
+in session. With **Visitors can listen live** on, it has a Listen button that
+plays what's transmitted, the same audio as the dashboard's Listen live.
+
+**Listening page** sets who can open it:
+
+- **Off**: nobody; `/listen` is "not found".
+- **Signed-in accounts only**: `/listen` asks for a sign-in first, then comes back.
+  Any dashboard account works. For people who should only listen (club members,
+  say), add a **Listener** account on the Users page: it signs in straight to
+  `/listen` and is refused the dashboard and the rest of the API. Delete the
+  account to take it away.
+- **Anyone, without signing in**: open to whoever can reach the controller.
+
+Switching it off, or from Anyone to Signed-in only, takes effect at once: the page
+says it's off (or asks for a sign-in), and listeners who no longer qualify are cut
+off.
 
 The page can't change anything. It reads `/api/public/status` and
-`/ws/public/audio`, which answer only while the page is on; the rest of the API
-still needs a sign-in.
+`/ws/public/audio`, which follow the setting above; the rest of the API still
+needs a dashboard account.
 
 Each listener takes about 256 kbps of the controller's upload (uncompressed
-16 kHz audio), so the number at once is capped (20 by default, at most 3 from one
-address). For a bigger audience, use a Broadcastify feed instead: Broadcastify
+16 kHz audio), so the number at once is capped (20 by default). Listeners who
+aren't signed in are also limited to 3 from one address. For a bigger audience, use a Broadcastify feed instead: Broadcastify
 serves the listeners, and the controller sends one 16 kbps stream.
 
 ### Putting it on the internet
@@ -40,7 +52,8 @@ listen.example.org {
 ```
 
 Behind a proxy, the per-address limit uses the `X-Forwarded-For` header, which
-Caddy and nginx set.
+Caddy and nginx set. For **Signed-in accounts only**, also pass `/login`,
+`/js/login.js`, `/api/login` and `/api/logout`, so listeners can sign in and out.
 
 ## Broadcastify or another Icecast server
 

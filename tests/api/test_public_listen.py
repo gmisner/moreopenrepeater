@@ -33,20 +33,20 @@ def test_public_page_is_off_by_default(tmp_path, monkeypatch):
 
 
 def test_public_page_shows_status_without_signing_in(tmp_path, monkeypatch):
-    client, _service = make_client(tmp_path, monkeypatch, public_page_enabled=True, public_page_text="146.940 -600 PL 100")
+    client, _service = make_client(tmp_path, monkeypatch, public_page_mode="anyone", public_page_text="146.940 -600 PL 100")
     client.post("/api/users", json={"username": "alice", "password": "password1", "role": "admin"})
     assert client.get("/api/status").status_code == 401
 
     status = client.get("/api/public/status").json()
     assert status == {
         "callsign": "W1AW", "text": "146.940 -600 PL 100", "on_air": False, "receiving": False,
-        "net": None, "audio": True, "listeners": 0, "max_listeners": 20,
+        "net": None, "audio": True, "listeners": 0, "max_listeners": 20, "username": None,
     }
     assert "Listen live" in client.get("/listen").text
 
 
 def test_public_audio_is_capped_per_address(tmp_path, monkeypatch):
-    client, _service = make_client(tmp_path, monkeypatch, public_page_enabled=True)
+    client, _service = make_client(tmp_path, monkeypatch, public_page_mode="anyone")
     with client.websocket_connect("/ws/public/audio") as a, client.websocket_connect("/ws/public/audio") as b:
         with client.websocket_connect("/ws/public/audio") as c:
             assert a.receive_json()["sample_rate"] and b.receive_json() and c.receive_json()
@@ -58,7 +58,7 @@ def test_public_audio_is_capped_per_address(tmp_path, monkeypatch):
 
 
 def test_public_audio_can_be_off_while_the_page_is_on(tmp_path, monkeypatch):
-    client, _service = make_client(tmp_path, monkeypatch, public_page_enabled=True, public_page_audio=False)
+    client, _service = make_client(tmp_path, monkeypatch, public_page_mode="anyone", public_page_audio=False)
     assert client.get("/api/public/status").json()["audio"] is False
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/ws/public/audio") as ws:
@@ -199,3 +199,83 @@ def test_streamer_without_ffmpeg_or_settings():
         task.cancel()
 
     asyncio.run(go())
+
+
+def make_auth_client(tmp_path, monkeypatch, mode):
+    monkeypatch.setattr(importlib.import_module("api.app"), "LOGIN_FAILURE_DELAY_SECONDS", 0)
+    client, service = make_client(tmp_path, monkeypatch, public_page_mode=mode)
+    client.post("/api/users", json={"username": "alice", "password": "password1", "role": "admin"})
+    client.post("/api/login", json={"username": "alice", "password": "password1"})
+    client.post("/api/users", json={"username": "lena", "password": "password1", "role": "listener"})
+    client.post("/api/logout")
+    return client, service
+
+
+def login(client, username):
+    assert client.post("/api/login", json={"username": username, "password": "password1"}).status_code == 200
+
+
+def test_old_saved_switch_becomes_a_mode():
+    from api.service import config_from_snapshot
+
+    assert config_from_snapshot({"config": {"public_page_enabled": True}}).public_page_mode == "anyone"
+    assert config_from_snapshot({"config": {"public_page_enabled": False}}).public_page_mode == "off"
+    assert config_from_snapshot({"config": {}}).public_page_mode == "off"
+
+
+def test_signed_in_mode_asks_for_a_sign_in(tmp_path, monkeypatch):
+    client, _service = make_auth_client(tmp_path, monkeypatch, "signed_in")
+    assert client.get("/api/public/status").status_code == 401
+    response = client.get("/listen", follow_redirects=False)
+    assert response.status_code == 303 and response.headers["location"] == "/login?next=/listen"
+    with pytest.raises(WebSocketDisconnect) as closed:
+        with client.websocket_connect("/ws/public/audio") as ws:
+            ws.receive_json()
+    assert closed.value.code == 1008
+
+    login(client, "alice")
+    assert client.get("/api/public/status").json()["username"] == "alice"
+    assert client.get("/listen").status_code == 200
+    with client.websocket_connect("/ws/public/audio") as ws:
+        assert ws.receive_json()["sample_rate"]
+
+
+def test_listener_accounts_get_only_the_listening_page(tmp_path, monkeypatch):
+    client, _service = make_auth_client(tmp_path, monkeypatch, "signed_in")
+    login(client, "lena")
+    assert client.get("/api/status").status_code == 403
+    assert client.get("/api/config").status_code == 403
+    assert client.post("/api/me/control-code").status_code == 403
+    assert client.get("/", follow_redirects=False).headers["location"] == "/listen"
+    assert client.get("/listen").status_code == 200
+    assert client.get("/api/public/status").json()["username"] == "lena"
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws/status") as ws:
+            ws.receive_json()
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws/audio") as ws:
+            ws.receive_json()
+
+    # Signed-in listeners aren't held to the per-address cap.
+    sockets = [client.websocket_connect("/ws/public/audio") for _ in range(4)]
+    try:
+        for ws in sockets:
+            ws.__enter__().receive_json()
+        assert client.get("/api/public/status").json()["listeners"] == 4
+    finally:
+        for ws in sockets:
+            ws.__exit__(None, None, None)
+
+
+def test_listener_page_closes_when_switched_off(tmp_path, monkeypatch):
+    client, service = make_auth_client(tmp_path, monkeypatch, "signed_in")
+    login(client, "lena")
+    service.update_config(public_page_mode="off")
+    assert client.get("/listen").status_code == 404
+    assert client.get("/api/public/status").status_code == 404
+
+
+def test_anyone_mode_with_sign_in_on(tmp_path, monkeypatch):
+    client, _service = make_auth_client(tmp_path, monkeypatch, "anyone")
+    assert client.get("/api/public/status").json()["username"] is None
+    assert client.get("/listen").status_code == 200

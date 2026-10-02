@@ -12,6 +12,9 @@ const netLine = document.getElementById("public-net");
 const audioBlock = document.getElementById("public-audio");
 const listenButton = document.getElementById("public-listen");
 const listenStatus = document.getElementById("public-listen-status");
+const userLine = document.getElementById("public-user");
+const usernameEl = document.getElementById("public-username");
+const signOutButton = document.getElementById("public-signout");
 
 let context = null;
 let socket = null;
@@ -31,6 +34,8 @@ function showState(status) {
   netLine.textContent = status.net ? `${status.net} is in session.` : "";
   netLine.hidden = !status.net;
   audioBlock.hidden = !status.audio;
+  usernameEl.textContent = status.username ?? "";
+  userLine.hidden = !status.username;
   if (!status.audio && socket) stop();
   if (!socket) {
     listenStatus.textContent =
@@ -41,6 +46,10 @@ function showState(status) {
 async function poll() {
   try {
     const response = await fetch("/api/public/status", { cache: "no-store" });
+    if (response.status === 401) {
+      location.replace("/login?next=/listen");
+      return;
+    }
     if (response.status === 404) {
       stateBadge.textContent = "This page is turned off.";
       stateBadge.className = "state-badge state-unknown";
@@ -101,5 +110,10 @@ function stop() {
 }
 
 listenButton.addEventListener("click", () => (socket ? stop() : start()));
+signOutButton.addEventListener("click", async () => {
+  stop();
+  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+  location.replace("/login?next=/listen");
+});
 poll();
 setInterval(poll, POLL_MS);

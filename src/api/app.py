@@ -528,6 +528,8 @@ def create_app(
         if identity is None:
             raise HTTPException(status_code=401, detail="Not authenticated")
         request.state.identity = identity
+        if identity.role == "listener":
+            raise HTTPException(status_code=403, detail="Listener accounts can only use the listening page")
         if identity.role == "viewer" and request.method not in SAFE_METHODS:
             raise HTTPException(status_code=403, detail="Your account is read-only")
 
@@ -1586,14 +1588,27 @@ def create_app(
         streamer.update(body.model_dump())
         return stream_response()
 
-    def public_page_on() -> bool:
-        return service.saved_config.public_page_enabled
+    def public_page_mode() -> str:
+        return service.saved_config.public_page_mode
+
+    def listen_identity(conn: HTTPConnection) -> Optional[Identity]:
+        """Who's signed in, for the listening page; None if nobody is (or
+        sign-in is off, where everyone would count as the admin)."""
+        return identify(conn) if auth_enabled() else None
+
+    def may_open_listen_page(conn: HTTPConnection) -> bool:
+        mode = public_page_mode()
+        return mode == "anyone" or (mode == "signed_in" and identify(conn) is not None)
 
     @app.get("/api/public/status", response_model=PublicStatus)
-    def public_status() -> PublicStatus:
-        """No sign-in: this is what /listen shows."""
-        if not public_page_on():
+    def public_status(request: Request) -> PublicStatus:
+        """What /listen shows: open to anyone or only to signed-in accounts,
+        depending on the listening page setting."""
+        if public_page_mode() == "off":
             raise HTTPException(status_code=404, detail="Not found")
+        if not may_open_listen_page(request):
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        identity = listen_identity(request)
         config = service.saved_config
         snapshot = service.snapshot()
         return PublicStatus(
@@ -1605,6 +1620,7 @@ def create_app(
             audio=config.public_page_audio,
             listeners=sum(public_listeners.values()),
             max_listeners=config.public_page_max_listeners,
+            username=identity.username if identity else None,
         )
 
     @app.get("/api/control-codes", response_model=list[ControlCodeUser], dependencies=admin_dependencies)
@@ -1622,15 +1638,19 @@ def create_app(
     def get_audit(limit: int = Query(default=200, ge=1, le=2000)) -> list[AuditEntryResponse]:
         return [_audit_response(e) for e in audit.recent(limit)]
 
+    def same_origin(websocket: WebSocket) -> bool:
+        # WebSocket handshakes aren't subject to CORS, so a page on another
+        # origin could otherwise open one with the user's session cookie.
+        origin = websocket.headers.get("origin")
+        return not origin or urlsplit(origin).netloc == websocket.headers.get("host")
+
     def websocket_allowed(websocket: WebSocket) -> bool:
         if not auth_enabled():
             return True
-        # WebSocket handshakes aren't subject to CORS, so a page on another
-        # origin could otherwise open this with the user's session cookie.
-        origin = websocket.headers.get("origin")
-        if origin and urlsplit(origin).netloc != websocket.headers.get("host"):
+        if not same_origin(websocket):
             return False
-        return identify(websocket) is not None
+        identity = identify(websocket)
+        return identity is not None and identity.role != "listener"
 
     @app.websocket("/ws/audio")
     async def ws_audio(websocket: WebSocket, source: MonitorSource = "tx") -> None:
@@ -1661,17 +1681,26 @@ def create_app(
 
     @app.websocket("/ws/public/audio")
     async def ws_public_audio(websocket: WebSocket) -> None:
-        """What's on the air, for /listen: no sign-in, so it's off unless the
-        public page is on, and capped in total and per address."""
+        """What's on the air, for /listen. Capped in total; listeners who
+        aren't signed in are also capped per address."""
         config = service.saved_config
-        if not (config.public_page_enabled and config.public_page_audio):
+        identity = listen_identity(websocket) if same_origin(websocket) else None
+        signed_in = identity is not None or not auth_enabled()
+
+        def allowed() -> bool:
+            config = service.saved_config
+            mode = config.public_page_mode
+            return config.public_page_audio and (mode == "anyone" or (mode == "signed_in" and signed_in))
+
+        if not allowed():
             await websocket.close(code=1008)
             return
-        address = client_address(websocket)
-        if sum(public_listeners.values()) >= config.public_page_max_listeners or public_listeners[address] >= PUBLIC_LISTENERS_PER_ADDRESS:
+        key = f"user:{identity.username}" if identity else client_address(websocket)
+        full = sum(public_listeners.values()) >= config.public_page_max_listeners
+        if full or (identity is None and public_listeners[key] >= PUBLIC_LISTENERS_PER_ADDRESS):
             await websocket.close(code=1013)
             return
-        public_listeners[address] += 1
+        public_listeners[key] += 1
         try:
             await websocket.accept()
             queue = live_audio.monitor.subscribe("tx")
@@ -1680,7 +1709,7 @@ def create_app(
                 await websocket.send_json({"sample_rate": renderer.sample_rate})
                 while True:
                     await websocket.send_bytes(await queue.get())
-                    if not (service.saved_config.public_page_enabled and service.saved_config.public_page_audio):
+                    if not allowed():
                         await websocket.close(code=1008)
                         return
 
@@ -1692,9 +1721,9 @@ def create_app(
                 sender.cancel()
                 live_audio.monitor.unsubscribe(queue)
         finally:
-            public_listeners[address] -= 1
-            if public_listeners[address] <= 0:
-                del public_listeners[address]
+            public_listeners[key] -= 1
+            if public_listeners[key] <= 0:
+                del public_listeners[key]
 
     @app.websocket("/ws/status")
     async def ws_status(websocket: WebSocket) -> None:
@@ -1719,14 +1748,19 @@ def create_app(
 
         @app.get("/", response_model=None)
         def index(request: Request) -> Response:
-            if not is_signed_in(request):
+            identity = identify(request)
+            if identity is None:
                 return RedirectResponse("/login", status_code=303)
+            if identity.role == "listener":
+                return RedirectResponse("/listen", status_code=303)
             return FileResponse(WEB_DIR / "index.html")
 
         @app.get("/listen", response_model=None)
-        def listen_page() -> Response:
-            if not public_page_on():
+        def listen_page(request: Request) -> Response:
+            if public_page_mode() == "off":
                 raise HTTPException(status_code=404, detail="Not found")
+            if not may_open_listen_page(request):
+                return RedirectResponse("/login?next=/listen", status_code=303)
             return FileResponse(WEB_DIR / "listen.html")
 
         @app.get("/login", response_model=None)

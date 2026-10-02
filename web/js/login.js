@@ -1,6 +1,8 @@
 const form = document.getElementById("login-form");
 const errorEl = document.getElementById("login-error");
 const submitButton = form.querySelector("button[type=submit]");
+// Only the listening page can be asked for, so the link can't send people off-site.
+const next = new URLSearchParams(location.search).get("next") === "/listen" ? "/listen" : "/";
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -14,7 +16,7 @@ form.addEventListener("submit", async (event) => {
       body: JSON.stringify(Object.fromEntries(new FormData(form))),
     });
     if (response.ok) {
-      location.replace("/");
+      location.replace(next);
       return;
     }
     const error = await response.json().catch(() => ({}));

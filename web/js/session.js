@@ -1,7 +1,7 @@
 import { api } from "./api.js";
 import { toastError } from "./ui.js";
 
-const ROLE_LABELS = { admin: "admin", operator: "operator", viewer: "read-only" };
+const ROLE_LABELS = { admin: "admin", operator: "operator", viewer: "read-only", listener: "listener" };
 
 export let session = null;
 
@@ -10,6 +10,10 @@ export async function initSession() {
   session = await api("/api/session");
   if (session.auth_required && !session.authenticated) {
     location.replace("/login");
+    return false;
+  }
+  if (session.role === "listener") {
+    location.replace("/listen");
     return false;
   }
   document.body.dataset.role = session.role;

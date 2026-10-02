@@ -318,6 +318,11 @@ several phases (see the plan file for the full breakdown):
   mailboxes and can listen on the dashboard. See [docs/mailbox.md](docs/mailbox.md).
 - **Listen live**: stream what's on the air (or what the receiver hears) to the
   dashboard in the browser.
+- **Monitor receiver**: a second, listen-only receiver on its own sound input (an
+  aviation frequency, a weather channel, the repeater from across town), with its own
+  squelch, a player on the dashboard, and optional recordings and transcripts. It's
+  receive-only by construction and is never transmitted. See
+  [docs/raspberry-pi.md](docs/raspberry-pi.md#monitor-receiver).
 - **Public listening** (off until turned on): a `/listen` page showing whether the
   repeater is on the air and playing it live, open to anyone or only to signed-in
   accounts, with a cap on listeners. Listener accounts get that page and none of the

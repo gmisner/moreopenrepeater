@@ -37,9 +37,9 @@ function meterPercent(db) {
 // Device dropdowns list what PortAudio reports now, plus the saved device
 // even if it's unplugged, so saving another setting doesn't silently drop it.
 function renderDeviceSelects() {
-  for (const select of form.querySelectorAll("[data-audio-devices]")) {
+  for (const select of document.querySelectorAll("[data-audio-devices]")) {
     const saved = store.state.config?.[select.name] ?? "";
-    const current = form.classList.contains("dirty") ? select.value : saved;
+    const current = select.form.classList.contains("dirty") ? select.value : saved;
     const names = devices.filter((d) => d[select.dataset.audioDevices] > 0).map((d) => d.name);
     select.innerHTML = '<option value="">System default</option>';
     for (const name of names) select.add(new Option(name, name));

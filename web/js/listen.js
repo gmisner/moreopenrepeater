@@ -1,3 +1,4 @@
+import { store } from "./store.js";
 import { toastError } from "./ui.js";
 
 // Frames arrive every ~100 ms; play this far behind to ride out network jitter.
@@ -8,9 +9,10 @@ const NO_AUDIO_MS = 2000;
 const toggle = document.getElementById("listen-toggle");
 const statusLine = document.getElementById("listen-status");
 const sourceButtons = document.querySelectorAll("#listen-source button");
+const monitorButton = document.getElementById("listen-monitor");
 
 const IDLE_TEXT = statusLine.textContent;
-const SOURCE_TEXT = { tx: "on-air audio", rx: "the receiver" };
+const SOURCE_TEXT = { tx: "on-air audio", rx: "the receiver", monitor: "the monitor receiver" };
 
 let source = "tx";
 let context = null;
@@ -39,7 +41,9 @@ function showStatus() {
   statusLine.textContent =
     Date.now() - lastFrameAt < NO_AUDIO_MS
       ? `Listening to ${SOURCE_TEXT[source]}.`
-      : "Connected, but no audio is coming through. Is live audio turned on under Audio & tones?";
+      : source === "monitor"
+        ? "Connected, but no audio is coming through. Is the monitor receiver running under Audio & tones?"
+        : "Connected, but no audio is coming through. Is live audio turned on under Audio & tones?";
 }
 
 function connect() {
@@ -91,18 +95,26 @@ function stop() {
   statusLine.textContent = IDLE_TEXT;
 }
 
+function choose(name) {
+  source = name;
+  for (const b of sourceButtons) b.classList.toggle("active", b.dataset.source === name);
+  if (socket) {
+    const ws = socket;
+    socket = null;
+    ws.close();
+    connect();
+  }
+}
+
+function renderMonitorButton(config) {
+  monitorButton.hidden = !config.monitor_enabled;
+  monitorButton.textContent = config.monitor_name || "Monitor";
+  SOURCE_TEXT.monitor = config.monitor_name || "the monitor receiver";
+  if (!config.monitor_enabled && source === "monitor") choose("tx");
+}
+
 export function initListen() {
   toggle.addEventListener("click", () => (socket ? stop() : start()));
-  for (const button of sourceButtons) {
-    button.addEventListener("click", () => {
-      source = button.dataset.source;
-      for (const b of sourceButtons) b.classList.toggle("active", b === button);
-      if (socket) {
-        const ws = socket;
-        socket = null;
-        ws.close();
-        connect();
-      }
-    });
-  }
+  for (const button of sourceButtons) button.addEventListener("click", () => choose(button.dataset.source));
+  store.addEventListener("config", ({ detail: config }) => renderMonitorButton(config));
 }

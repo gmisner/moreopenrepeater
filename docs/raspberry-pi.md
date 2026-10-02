@@ -198,6 +198,31 @@ meter. "CTCSS tone present" opens only when a sub-audible tone is decoded,
 which requires the receiver's audio to be unfiltered (discriminator or
 flat audio) so the tone reaches the sound card.
 
+### Monitor receiver
+
+A second receiver can be plugged into a second USB sound card and set up under
+**Audio & tones → Monitor receiver**: an aviation or weather frequency, or a
+radio listening to the repeater from across town. Pick its sound card as the
+input. It has to be a different device from the repeater's receiver. Then
+choose a squelch:
+
+- **Audio level**: for a radio whose squelch mutes its audio output. Set the
+  threshold a few dB above the idle level on the meter.
+- **Raspberry Pi GPIO pin**: the radio's COS or busy line on a header pin
+  (GPIO22, header pin 15, by default; 3.3 V only). It can't share a pin with the
+  repeater's PTT or COS.
+- **Always open**: everything the radio puts out.
+
+Listen to it with the **Monitor** button (it shows the name you give it) on
+the dashboard's Listen live card. With recording on, each transmission it hears
+is saved under **Activity → Recordings → Monitor receiver**, kept as long as
+the repeater's recordings, and transcribed if transcripts are on.
+
+The monitor is receive-only by construction. It opens an input-only audio
+stream, and nothing connects it to the transmitter, the controller, the public
+listening page or Broadcastify. Retransmitting other services isn't allowed
+(47 CFR 97.113).
+
 ## 4. Configuration (systemd EnvironmentFile)
 
 ```

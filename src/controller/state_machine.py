@@ -120,6 +120,16 @@ class RepeaterConfig:
     ptt_gpio_pin: int = 17  # header pin 11
     ptt_polarity: Literal["high", "low"] = "high"  # the level that keys the transmitter
     vox_threshold_db: float = -40.0
+    # A listen-only second receiver (api.monitor_receiver); never transmitted.
+    monitor_enabled: bool = False
+    monitor_name: str = ""  # "Aviation 119.1"
+    monitor_input_device: str = ""
+    monitor_squelch: Literal["vox", "gpio", "open"] = "vox"
+    monitor_vox_threshold_db: float = -40.0
+    monitor_gpio_pin: int = 22  # header pin 15
+    monitor_gpio_polarity: Literal["low", "high"] = "low"
+    monitor_gain_db: float = 0.0
+    monitor_record: bool = False
     vox_hold: float = 0.4
     tx_gain_db: float = 0.0
     tx_ctcss_hz: Optional[float] = None  # sub-audible tone added to everything transmitted

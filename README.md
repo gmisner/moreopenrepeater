@@ -323,6 +323,12 @@ several phases (see the plan file for the full breakdown):
   squelch, a player on the dashboard, and optional recordings and transcripts. It's
   receive-only by construction and is never transmitted. See
   [docs/raspberry-pi.md](docs/raspberry-pi.md#monitor-receiver).
+- **Link radio**: a second radio on its own sound card linking the repeater to a far
+  station over RF (another repeater's input, or a simplex link). Local users go out the
+  link radio and the far end is transmitted here with the link courtesy tone. It never
+  transmits over the far end, and it has its own timeout and its own station ID. PTT
+  and COS use Pi header pins or a second CM108, and DTMF macros connect or disconnect
+  it. See [docs/raspberry-pi.md](docs/raspberry-pi.md#link-radio).
 - **Public listening** (off until turned on): a `/listen` page showing whether the
   repeater is on the air and playing it live, open to anyone or only to signed-in
   accounts, with a cap on listeners. Listener accounts get that page and none of the

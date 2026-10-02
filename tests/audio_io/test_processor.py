@@ -152,3 +152,36 @@ def test_ctcss_encode_strips_the_received_tone_from_repeated_audio():
     assert magnitude_at(out, 88.5) < 0.005  # the user's tone is gone
     assert abs(magnitude_at(out, 1000) - 0.3) < 0.02  # voice passes
     assert abs(magnitude_at(out, 131.8) - 0.1) < 0.01  # the repeater's tone is there
+
+
+def test_link_radio_processor_never_repeats_its_own_receiver():
+    p = AudioProcessor(ProcessorSettings(RATE, cos_source="external", local_repeat=False))
+    p.set_external_cos(True)
+    p.set_repeating(True)
+    p.set_ptt(True)
+
+    result = p.process(tone(1000, 0.02))
+
+    assert result.transmitting and not result.out.any()
+    assert p.repeating_voice
+
+
+
+def test_port_gets_only_repeated_voice_and_its_audio_is_transmitted():
+    from audio_io.patch import LinkAudio
+
+    p = AudioProcessor(ProcessorSettings(RATE, cos_source="external"))
+    port = LinkAudio(RATE)
+    p.set_port(port)
+    p.set_external_cos(True)
+    p.process(tone(1000, 0.02))
+    assert port.take_radio() is None  # carrier, but the controller isn't repeating it
+
+    p.set_repeating(True)
+    p.process(tone(1000, 0.02))
+    assert port.take_radio().any()
+
+    port.add_phone(np.full(BLOCK * 4, 0.1, dtype=np.float32))
+    p.set_ptt(True)
+    out = p.process(np.zeros(BLOCK, dtype=np.float32)).out
+    np.testing.assert_allclose(out, 0.1, atol=1e-6)

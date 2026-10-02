@@ -54,6 +54,8 @@ class ProcessorSettings:
     tx_ctcss_level_db: float = -20.0
     ctcss_threshold: float = 0.05
     dtmf_threshold: float = 0.05
+    # False for a link radio: what it receives goes to the repeater, not back out its own transmitter.
+    local_repeat: bool = True
 
 
 def _highpass_kernel(cutoff_ratio: float) -> np.ndarray:
@@ -98,6 +100,12 @@ class AudioProcessor:
         self._ctcss_phase = 0.0
         self._patch: Optional[PatchAudio] = None
         self._link: Optional[LinkAudio] = None
+        self._port: Optional[LinkAudio] = None
+
+    @property
+    def repeating_voice(self) -> bool:
+        """A local user is being repeated (what the links are sent)."""
+        return self.cos_open and self._repeating
 
     # -- controls (service thread) -----------------------------------------
 
@@ -120,6 +128,10 @@ class AudioProcessor:
         """Exchange audio with the AllStar node: audio being repeated goes to
         the node, and the node's audio is transmitted while PTT is up."""
         self._link = link
+
+    def set_port(self, port: Optional[LinkAudio]) -> None:
+        """The same exchange with the link radio (api.link_radio)."""
+        self._port = port
 
     def start_capture(self, max_seconds: float) -> None:
         """Keep a copy of received audio (for recording or parrot)."""
@@ -167,13 +179,14 @@ class AudioProcessor:
         encode_hz = self.settings.tx_ctcss_hz
         patch = self._patch
         link = self._link
+        port = self._port
         # Filtered continuously (not just while repeating) so the filter's
         # history is warm the moment repeating starts. The phone and the
         # node never get the user's CTCSS tone either.
-        voice = self._subaudible_filter.process(block) if encode_hz or patch or link else block
+        voice = self._subaudible_filter.process(block) if encode_hz or patch or link or port else block
         repeat_audio = voice if encode_hz else block
         out = np.zeros_like(block)
-        if self._ptt and self._repeating:
+        if self._ptt and self._repeating and self.settings.local_repeat:
             out += repeat_audio * (10 ** (self.settings.tx_gain_db / 20))
         if patch is not None:
             phone = patch.exchange(voice, self.cos_open)
@@ -182,9 +195,13 @@ class AudioProcessor:
         if link is not None:
             # Only what the controller is repeating: not a kerchunk, a
             # signal without the required CTCSS, or a parrot recording.
-            node = link.exchange(voice, self.cos_open and self._repeating)
+            node = link.exchange(voice, self.repeating_voice)
             if self._ptt:
                 out += node
+        if port is not None:
+            far_end = port.exchange(voice, self.repeating_voice)
+            if self._ptt:
+                out += far_end
         clip = self._next_clip_samples(len(block))
         if clip is not None:
             out[: len(clip)] += clip

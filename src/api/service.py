@@ -50,6 +50,7 @@ from .persistence import StateStore
 _logger = logging.getLogger("moreopenrepeater.service")
 
 LINK_AUDIO_NODE = "allstar"  # RemoteKeyed's node_id for the AllStar node's own transmitter
+LINK_RADIO_NODE = "link-radio"  # ...and for the link radio hearing the far end (api.link_radio)
 
 WEATHER_SUMMARY_MAX = 3
 MAX_HELD_ANNOUNCEMENTS = 10
@@ -391,6 +392,10 @@ class RepeaterService:
         elif action.action == "tx_enable":
             self.update_config(transmitter_enabled=True)
             self.speak(TTS_PREFIX + "Transmitter enabled")
+        elif action.action in ("link_radio_on", "link_radio_off"):
+            on = action.action == "link_radio_on"
+            self.update_config(link_radio_enabled=on)
+            self.speak(TTS_PREFIX + ("Link radio on" if on else "Link radio off"))
         elif action.action == "time":
             self.speak(TTS_PREFIX + talking_clock_text(self._wall_clock()))
         elif action.action == "weather":
@@ -516,6 +521,11 @@ class RepeaterService:
             else:
                 self.linked_nodes.discard(event.node_id)
         self._apply_commands(self.controller.handle_event(event, self._clock()))
+
+    def link_radio_keyed(self, keyed: bool) -> None:
+        """The link radio started or stopped hearing the far end."""
+        _logger.info("link radio %s", "receiving" if keyed else "clear")
+        self._apply_commands(self.controller.handle_event(RemoteKeyed(node_id=LINK_RADIO_NODE, keyed=keyed), self._clock()))
 
     def update_config(self, **overrides: object) -> RepeaterConfig:
         """Change saved settings; returns the new saved settings."""

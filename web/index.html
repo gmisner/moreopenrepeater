@@ -1391,74 +1391,105 @@
           </div>
         </div>
         <form class="card config-form" id="alerts-form" autocomplete="off">
-          <div class="card-header">
-            <h2>Where to send alerts</h2>
-            <span id="alerts-channels"></span>
-          </div>
+          <h2>Where to send alerts</h2>
           <label class="switch">
             <input type="checkbox" name="enabled" />
             <span class="switch-track"></span>
             <span>Send alerts <small class="muted">&mdash; each problem once when it starts (and again when it's over),
               at most a dozen an hour</small></span>
           </label>
-          <h2 class="section-title">ntfy</h2>
-          <p class="muted small">Free push notifications. Install the <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a>
-            app, subscribe to a topic nobody could guess, and put its address here. Anyone who knows the topic can read the alerts.</p>
-          <div class="form-grid">
-            <label>Topic address
-              <input type="url" name="ntfy_url" placeholder="https://ntfy.sh/w1aw-repeater-x7k2" />
-            </label>
-            <label>Access token
-              <input type="password" name="ntfy_token" data-secret autocomplete="new-password" />
-              <small>Only for a server with access control.</small>
-            </label>
-          </div>
-          <h2 class="section-title">Telegram</h2>
-          <p class="muted small">Make a bot with @BotFather, send it a message, then put its token and your chat ID here.</p>
-          <div class="form-grid">
-            <label>Bot token
-              <input type="password" name="telegram_token" data-secret autocomplete="new-password" />
-            </label>
-            <label>Chat ID
-              <input type="text" name="telegram_chat_id" inputmode="numeric" placeholder="123456789" />
-            </label>
-          </div>
-          <h2 class="section-title">Email</h2>
-          <div class="form-grid">
-            <label>Send to
-              <input type="text" name="email_to" placeholder="you@example.com" />
-              <small>Separate several addresses with commas.</small>
-            </label>
-            <label>From
-              <input type="text" name="email_from" placeholder="the username below" />
-            </label>
-            <label>SMTP server
-              <input type="text" name="smtp_host" placeholder="smtp.gmail.com" />
-            </label>
-            <label>Port
-              <input type="number" name="smtp_port" min="1" max="65535" step="1" required />
-            </label>
-            <label>Security
-              <select name="smtp_security">
-                <option value="starttls">STARTTLS (usually port 587)</option>
-                <option value="ssl">SSL/TLS (usually port 465)</option>
-                <option value="none">None</option>
-              </select>
-            </label>
-            <label>Username
-              <input type="text" name="smtp_username" />
-            </label>
-            <label>Password
-              <input type="password" name="smtp_password" data-secret autocomplete="new-password" />
-              <small>For Gmail, an app password.</small>
-            </label>
-          </div>
-          <h2 class="section-title">Webhook</h2>
-          <div class="form-grid">
-            <label class="span-2">URL
-              <input type="password" name="webhook_url" data-secret autocomplete="new-password" placeholder="https://hooks.slack.com/services/…" />
-              <small>Gets a JSON POST. Slack and Discord webhook URLs work as they are.</small>
-            </label>
+          <div class="channel-list">
+            <details class="channel" data-channel="ntfy">
+              <summary>
+                <span class="channel-name">ntfy</span>
+                <span class="channel-hint">Push notifications to a phone app</span>
+                <span data-channel-status></span>
+              </summary>
+              <div class="channel-body">
+                <p class="muted small">Free. Install the <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a>
+                  app, subscribe to a topic nobody could guess, and put its address here. Anyone who knows the topic can read the alerts.</p>
+                <div class="form-grid">
+                  <label>Topic address
+                    <input type="url" name="ntfy_url" placeholder="https://ntfy.sh/w1aw-repeater-x7k2" />
+                  </label>
+                  <label>Access token
+                    <input type="password" name="ntfy_token" data-secret autocomplete="new-password" />
+                    <small>Only for a server with access control.</small>
+                  </label>
+                </div>
+              </div>
+            </details>
+            <details class="channel" data-channel="telegram">
+              <summary>
+                <span class="channel-name">Telegram</span>
+                <span class="channel-hint">Messages from a bot</span>
+                <span data-channel-status></span>
+              </summary>
+              <div class="channel-body">
+                <p class="muted small">Make a bot with @BotFather, send it a message, then put its token and your chat ID here.</p>
+                <div class="form-grid">
+                  <label>Bot token
+                    <input type="password" name="telegram_token" data-secret autocomplete="new-password" />
+                  </label>
+                  <label>Chat ID
+                    <input type="text" name="telegram_chat_id" inputmode="numeric" placeholder="123456789" />
+                  </label>
+                </div>
+              </div>
+            </details>
+            <details class="channel" data-channel="email">
+              <summary>
+                <span class="channel-name">Email</span>
+                <span class="channel-hint">Through your mail provider's SMTP server</span>
+                <span data-channel-status></span>
+              </summary>
+              <div class="channel-body">
+                <div class="form-grid">
+                  <label>Send to
+                    <input type="text" name="email_to" placeholder="you@example.com" />
+                    <small>Separate several addresses with commas.</small>
+                  </label>
+                  <label>From
+                    <input type="text" name="email_from" placeholder="the username below" />
+                  </label>
+                  <label>SMTP server
+                    <input type="text" name="smtp_host" placeholder="smtp.gmail.com" />
+                  </label>
+                  <label>Port
+                    <input type="number" name="smtp_port" min="1" max="65535" step="1" required />
+                  </label>
+                  <label>Security
+                    <select name="smtp_security">
+                      <option value="starttls">STARTTLS (usually port 587)</option>
+                      <option value="ssl">SSL/TLS (usually port 465)</option>
+                      <option value="none">None</option>
+                    </select>
+                  </label>
+                  <label>Username
+                    <input type="text" name="smtp_username" />
+                  </label>
+                  <label>Password
+                    <input type="password" name="smtp_password" data-secret autocomplete="new-password" />
+                    <small>For Gmail, an app password.</small>
+                  </label>
+                </div>
+              </div>
+            </details>
+            <details class="channel" data-channel="webhook">
+              <summary>
+                <span class="channel-name">Webhook</span>
+                <span class="channel-hint">Slack, Discord or anything that takes a JSON POST</span>
+                <span data-channel-status></span>
+              </summary>
+              <div class="channel-body">
+                <div class="form-grid">
+                  <label class="span-2">URL
+                    <input type="password" name="webhook_url" data-secret autocomplete="new-password" placeholder="https://hooks.slack.com/services/…" />
+                    <small>Gets a JSON POST. Slack and Discord webhook URLs work as they are.</small>
+                  </label>
+                </div>
+              </div>
+            </details>
           </div>
           <h2 class="section-title">Limits</h2>
           <div class="form-grid">

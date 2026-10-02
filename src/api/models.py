@@ -20,7 +20,8 @@ Polarity = Literal["low", "high"]
 PttOutput = Literal["cm108", "gpio"]
 # BCM numbers on the 40-pin header; GPIO0/1 are reserved for HAT EEPROMs.
 PiGpioPin = Annotated[int, Field(ge=2, le=27)]
-Role = Literal["admin", "operator", "viewer"]
+Role = Literal["admin", "operator", "viewer", "listener"]
+PublicPageMode = Literal["off", "signed_in", "anyone"]
 
 # A hostname, or an IPv4/IPv6 address with an optional /prefix, as PJSIP's identify `match` takes.
 _SOURCE = re.compile(r"^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|[0-9A-Fa-f:.]{2,45})(?:/\d{1,3})?$")
@@ -236,7 +237,7 @@ class ConfigResponse(BaseModel):
     net_schedules: list[NetSchedule] = []
     homeassistant_url: str = ""
     homeassistant_say_result: bool = True
-    public_page_enabled: bool = False
+    public_page_mode: PublicPageMode = "off"
     public_page_text: str = ""
     public_page_audio: bool = True
     public_page_max_listeners: int = 20
@@ -364,7 +365,7 @@ class ConfigUpdateRequest(BaseModel):
     net_schedules: Optional[list[NetSchedule]] = Field(default=None, max_length=20)
     homeassistant_url: Optional[str] = Field(default=None, max_length=300, pattern=r"^$|^https?://[^\s]+$")
     homeassistant_say_result: Optional[bool] = None
-    public_page_enabled: Optional[bool] = None
+    public_page_mode: Optional[PublicPageMode] = None
     public_page_text: Optional[str] = Field(default=None, max_length=500)
     public_page_audio: Optional[bool] = None
     public_page_max_listeners: Optional[int] = Field(default=None, ge=1, le=200)
@@ -1086,7 +1087,7 @@ class HomeAssistantTestRequest(BaseModel):
 
 
 class PublicStatus(BaseModel):
-    """What /listen shows to anyone, signed in or not."""
+    """What /listen shows."""
 
     callsign: str
     text: str
@@ -1096,6 +1097,7 @@ class PublicStatus(BaseModel):
     audio: bool
     listeners: int
     max_listeners: int
+    username: Optional[str] = None  # who's signed in, for a Sign out button
 
 
 class StreamSettingsRequest(BaseModel):

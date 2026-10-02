@@ -72,7 +72,10 @@ def _known_fields(data: dict, known: set[str], what: str) -> dict:
 
 
 def config_from_snapshot(data: dict) -> RepeaterConfig:
-    return RepeaterConfig(**_known_fields(data.get("config", {}), _CONFIG_FIELDS, "config"))
+    config = dict(data.get("config", {}))
+    if "public_page_enabled" in config:  # saved before public_page_mode
+        config.setdefault("public_page_mode", "anyone" if config.pop("public_page_enabled") else "off")
+    return RepeaterConfig(**_known_fields(config, _CONFIG_FIELDS, "config"))
 
 
 def macros_from_snapshot(data: dict) -> list[Macro]:

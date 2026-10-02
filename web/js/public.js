@@ -19,7 +19,7 @@ const STATUS_POLL_MS = 3000;
 let poller = null;
 
 function renderLink(config) {
-  pageLink.hidden = !config.public_page_enabled;
+  pageLink.hidden = config.public_page_mode === "off";
   pageUrl.textContent = `${location.origin}/listen`;
 }
 

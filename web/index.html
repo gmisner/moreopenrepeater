@@ -888,14 +888,20 @@
       <section class="view" data-view="public" data-title="Public listening" hidden>
         <header class="view-header">
           <h1>Public listening</h1>
-          <p class="muted">Let people hear the repeater without signing in: a page of its own, a Broadcastify feed, or both.</p>
+          <p class="muted">Let people hear the repeater without the dashboard: a listening page of its own, a Broadcastify feed, or both.</p>
         </header>
         <form class="card config-form" data-config-form id="public-page-form">
-          <label class="switch">
-            <input type="checkbox" name="public_page_enabled" />
-            <span class="switch-track"></span>
-            <span>Public page <small class="muted">&mdash; anyone who can reach this controller can open it, without signing in</small></span>
-          </label>
+          <div class="form-grid">
+            <label class="span-2">Listening page
+              <select name="public_page_mode">
+                <option value="off">Off</option>
+                <option value="signed_in">Signed-in accounts only</option>
+                <option value="anyone">Anyone, without signing in</option>
+              </select>
+              <small>&ldquo;Signed-in accounts only&rdquo; asks for a sign-in first. Any account works, and a Listener account
+                (added on the Users page) gets this page and nothing else.</small>
+            </label>
+          </div>
           <p class="small" id="public-page-link" hidden>The page is at <a id="public-page-url" href="/listen" target="_blank" rel="noopener"></a>.</p>
           <div class="form-grid">
             <label class="span-2">Text on the page
@@ -909,7 +915,7 @@
             </label>
             <label>Listeners at once
               <input type="number" name="public_page_max_listeners" min="1" max="200" step="1" required />
-              <small>Each listener takes about 256 kbps of this controller's upload. At most 3 from one address.</small>
+              <small>Each listener takes about 256 kbps of this controller's upload. Without a sign-in, at most 3 from one address.</small>
             </label>
           </div>
           <div class="form-actions">
@@ -1642,7 +1648,8 @@
       <section class="view" data-view="users" data-title="Users" hidden>
         <header class="view-header">
           <h1>Users</h1>
-          <p class="muted">Admins manage everything, operators change repeater settings, viewers can only look and listen.</p>
+          <p class="muted">Admins manage everything, operators change repeater settings, viewers can only look and listen.
+            Listeners only get the listening page at <code>/listen</code>, none of the dashboard.</p>
         </header>
         <p id="users-auth-off" class="card muted" hidden>Sign-in is currently off, so anyone who can reach this page has full control. Add an admin below to turn it on &mdash; you'll be asked to sign in straight away.</p>
         <div class="card">
@@ -1666,6 +1673,7 @@
             <label>Role
               <select name="role">
                 <option value="viewer">Viewer</option>
+                <option value="listener">Listener (listening page only)</option>
                 <option value="operator">Operator</option>
                 <option value="admin">Admin</option>
               </select>

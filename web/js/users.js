@@ -3,8 +3,8 @@ import { currentView, router } from "./router.js";
 import { session } from "./session.js";
 import { escapeHtml, toast, toastError, withBusy } from "./ui.js";
 
-const ROLES = ["admin", "operator", "viewer"];
-const ROLE_LABELS = { admin: "Admin", operator: "Operator", viewer: "Viewer" };
+const ROLES = ["admin", "operator", "viewer", "listener"];
+const ROLE_LABELS = { admin: "Admin", operator: "Operator", viewer: "Viewer", listener: "Listener" };
 
 const tbody = document.getElementById("users-tbody");
 const form = document.getElementById("user-form");

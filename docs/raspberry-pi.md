@@ -38,7 +38,7 @@ The rest of this page is the same procedure by hand.
 
 ```
 sudo apt update
-sudo apt install -y python3-venv python3-dev libportaudio2 espeak-ng
+sudo apt install -y python3-venv python3-dev libportaudio2 espeak-ng alsa-utils
 ```
 
 `libportaudio2` is PortAudio's runtime library, needed by `sounddevice`
@@ -46,7 +46,8 @@ sudo apt install -y python3-venv python3-dev libportaudio2 espeak-ng
 attached. `espeak-ng` gives the voice ID, announcements and weather alerts
 a text-to-speech voice (`pico2wave` from `libttspico-utils` also works and
 sounds better, if your distribution has it). Without one, IDs fall back to
-CW and spoken announcements can't render.
+CW and spoken announcements can't render. `alsa-utils` provides `amixer`,
+which interface board presets use to set the sound card's levels.
 
 ## 2. Dedicated user + install location
 
@@ -186,6 +187,33 @@ carrier must go through a transistor, as in
 [cm108-wiring.md](cm108-wiring.md#cos) (collector to GPIO27, still "Active
 low"). "Active high" turns on the pull-down instead, for a 3.3 V signal that
 goes high on carrier.
+
+### Setup wizard and interface boards
+
+The first time an admin opens the dashboard, a setup wizard asks for the
+callsign and station ID, the interface board, and the sound devices. It then
+sends a test ID and offers to create an admin account. It can be skipped, and
+run again from **Audio & tones → Radio interface → Run setup wizard**.
+
+Picking a board sets its PTT and carrier-detect wiring and, if asked, its
+mixer levels (with `amixer`, on the ALSA card of the chosen output device;
+the service user's `audio` group membership gives it access):
+
+| Board | PTT | Carrier detect | Levels |
+|---|---|---|---|
+| Generic CM108/CM119 USB interface | CM108 GPIO3 | CM108 VOL_DN, active low | (left alone) |
+| DMK URI | CM108 GPIO3 | CM108 VOL_DN, active low | Speaker 75%, Mic 18 dB |
+| USB-RIM Lite | CM108 GPIO3 | CM108 VOL_DN, active low | Speaker 75%, Mic 18 dB |
+| AIOC | CM108 GPIO3 | virtual COS on VOL_DN | (left alone) |
+| SVXLink Card (F5UII/F8ASB) | GPIO16; port 2: GPIO17 | GPIO19, active low; port 2: GPIO18 | Speaker 75%, Mic 69% |
+| SVXLink Basic Board | GPIO24; port 2: GPIO18 | GPIO23, active high; port 2: GPIO25 | Speaker 75%, Mic 69% |
+
+On the two-port boards, port 2 becomes the [link radio](#link-radio) when
+its sound devices are chosen. The ICS Pi Repeater boards are listed but
+can't be selected yet: their PTT is on an I/O expander rather than a header
+pin, and each port is one channel of a stereo codec. The presets are in
+`src/api/boards.json`. Changing the wiring by hand afterwards marks the
+station as set up by hand.
 
 ### Audio devices
 

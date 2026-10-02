@@ -653,6 +653,10 @@
           <p class="muted small">Run the repeater on this computer's sound devices: receive audio comes in on the
             input, and repeated audio, tones and IDs go out on the output. Without a carrier-detect wire, the
             repeater can open on audio level or on a CTCSS tone.</p>
+          <div class="board-line">
+            <span class="muted small">Interface board: <strong id="board-preset-name">set up by hand</strong></span>
+            <button type="button" class="btn btn-ghost btn-sm" data-open-wizard data-requires-write>Run setup wizard</button>
+          </div>
           <label class="switch">
             <input type="checkbox" name="audio_enabled" />
             <span class="switch-track"></span>
@@ -2598,6 +2602,107 @@
       <button type="button" id="nav-toggle" aria-controls="sidebar" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-more" /></svg>More</button>
     </nav>
   </div>
+
+  <dialog id="setup-wizard" class="wizard" aria-labelledby="wizard-title">
+    <div class="wizard-head">
+      <span class="label" id="wizard-progress"></span>
+      <button type="button" class="btn btn-ghost btn-sm" id="wizard-skip">Skip setup</button>
+    </div>
+    <h1 id="wizard-title"></h1>
+
+    <section data-step="station" data-title="Welcome to moreopenrepeater">
+      <p class="muted">A few questions get the repeater on the air. Everything here can be changed later, and you
+        can run this again from Audio &amp; tones.</p>
+      <div class="form-grid">
+        <label>Callsign
+          <input type="text" id="wizard-callsign" placeholder="e.g. W1AW" autocapitalize="characters" autocomplete="off" spellcheck="false" />
+        </label>
+        <label>Station ID
+          <select id="wizard-id-mode">
+            <option value="voice">Voice</option>
+            <option value="cw">CW (Morse)</option>
+            <option value="both">Both</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section data-step="board" data-title="Radio interface" hidden>
+      <p class="muted">Pick the board or cable between this computer and the radio. It sets the carrier-detect and PTT
+        wiring, and the sound card levels.</p>
+      <label>Interface
+        <select id="wizard-board"></select>
+      </label>
+      <p class="muted wizard-note" id="wizard-board-notes"></p>
+      <label class="switch" id="wizard-mixer-row">
+        <input type="checkbox" id="wizard-mixer" checked />
+        <span class="switch-track"></span>
+        <span>Set the sound card levels <span class="muted" id="wizard-mixer-levels"></span></span>
+      </label>
+    </section>
+
+    <section data-step="devices" data-title="Sound devices" hidden>
+      <p class="muted">Choose the sound card the repeater's radio is plugged into.</p>
+      <div class="form-grid">
+        <label>Input (receiver)
+          <select id="wizard-input"></select>
+        </label>
+        <label>Output (transmitter)
+          <select id="wizard-output"></select>
+        </label>
+      </div>
+      <div id="wizard-link" hidden>
+        <label class="switch wizard-gap">
+          <input type="checkbox" id="wizard-link-on" />
+          <span class="switch-track"></span>
+          <span>Port 2 has a link radio</span>
+        </label>
+        <div class="form-grid" id="wizard-link-devices" hidden>
+          <label>Link radio input
+            <select id="wizard-link-input"></select>
+          </label>
+          <label>Link radio output
+            <select id="wizard-link-output"></select>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section data-step="test" data-title="Test the transmitter" hidden>
+      <p class="muted">Send the station ID and check that the radio keys up and the ID is heard on another radio.
+        Key up on the input to check that carrier detect lights up.</p>
+      <div class="btn-row">
+        <button type="button" class="btn" id="wizard-test">Send test ID</button>
+        <span class="tag" id="wizard-engine">off</span>
+        <span class="tag" id="wizard-cos">carrier</span>
+        <span class="tag" id="wizard-tx">TX</span>
+      </div>
+      <p class="muted wizard-note" id="wizard-engine-error" hidden></p>
+      <ul class="wizard-mixer-results" id="wizard-mixer-results" hidden></ul>
+    </section>
+
+    <section data-step="account" data-title="Your admin account" hidden>
+      <p class="muted" id="wizard-account-intro"></p>
+      <div class="form-grid">
+        <label>Username
+          <input type="text" id="wizard-username" autocomplete="username" spellcheck="false" />
+        </label>
+        <label>Password
+          <input type="password" id="wizard-password" autocomplete="new-password" minlength="8" />
+        </label>
+        <label>Password again
+          <input type="password" id="wizard-password-2" autocomplete="new-password" minlength="8" />
+        </label>
+      </div>
+    </section>
+
+    <p class="wizard-error" id="wizard-error" role="alert" hidden></p>
+    <div class="wizard-actions">
+      <button type="button" class="btn btn-ghost" id="wizard-back">Back</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-primary" id="wizard-next">Next</button>
+    </div>
+  </dialog>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <script type="module" src="/app.js"></script>

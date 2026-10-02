@@ -238,7 +238,7 @@ fi
 step "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q --no-install-recommends git python3-venv python3-dev libportaudio2 espeak-ng curl
+apt-get install -y -q --no-install-recommends git python3-venv python3-dev libportaudio2 espeak-ng curl alsa-utils
 
 python3 - <<'EOF' || fail "Python 3.11 or newer is required (Raspberry Pi OS Bookworm or later)."
 import sys

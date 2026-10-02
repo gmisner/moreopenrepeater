@@ -269,6 +269,9 @@ several phases (see the plan file for the full breakdown):
 - **Live audio on any sound device**, with software carrier detect (VOX or CTCSS)
   for interfaces with no COS wire, a live level meter, and hardware PTT/COS from a
   CM108 interface or the Raspberry Pi's own header pins, with either COS polarity.
+  A first-run setup wizard and presets for common interface boards (DMK URI,
+  USB-RIM Lite, AIOC, the SVXLink boards) set the wiring and mixer levels; see
+  [docs/raspberry-pi.md](docs/raspberry-pi.md#setup-wizard-and-interface-boards).
   [docs/cm108-wiring.md](docs/cm108-wiring.md) turns a plain USB sound dongle into
   an interface. Devices open at whatever rate they support; audio is resampled to
   16 kHz internally. `scripts/benchmark_audio.py` times the per-block work (about 1%
@@ -469,7 +472,7 @@ It installs the system packages, creates a `moreopenrepeater` service user,
 checks out the stable release in `/opt/moreopenrepeater`, sets up the CM108 udev rule,
 writes `/etc/moreopenrepeater/env` with a generated admin password, and starts
 the systemd service. It prints the password and how to reach the dashboard at
-the end. Update from the dashboard's Updates page, or run it again. Add
+the end; the dashboard then walks through a short setup wizard. Update from the dashboard's Updates page, or run it again. Add
 `-s -- --channel beta` (or `dev`) after `bash` to follow a pre-release channel.
 With `-s -- --allstar` after `bash`, it also installs AllStarLink
 (ASL3) and connects the controller to it. The manual steps, and how to reach the dashboard securely from

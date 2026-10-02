@@ -37,6 +37,7 @@ import { initUpdates } from "./js/updates.js";
 import { initUsage } from "./js/usage.js";
 import { initUsers } from "./js/users.js";
 import { initWeather, loadWeather } from "./js/weather.js";
+import { initWizard } from "./js/wizard.js";
 
 async function main() {
   initThemePicker();
@@ -76,6 +77,7 @@ async function main() {
   initAudit();
   initUpdates();
   initAlerts();
+  initWizard();
   // Last, so fold summaries describe values the other modules just filled in.
   initFolds();
 

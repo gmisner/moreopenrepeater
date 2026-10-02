@@ -35,6 +35,7 @@
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></symbol>
     <symbol id="i-update" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9" /><path d="M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2" /></symbol>
     <symbol id="i-net" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1M8.5 10h.01M8.5 14h.01M8.5 18h.01M11.5 10H16M11.5 14H16M11.5 18H14" /></symbol>
+    <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3" /><rect x="3.5" y="14" width="4" height="6.5" rx="1.5" /><rect x="16.5" y="14" width="4" height="6.5" rx="1.5" /></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
     <symbol id="i-car" viewBox="0 0 24 24"><path d="M4 16v-4l2.2-4.4A2 2 0 0 1 8 6.5h8a2 2 0 0 1 1.8 1.1L20 12v4z" /><path d="M4 12h16" /><circle cx="7.5" cy="16.5" r="1.5" /><circle cx="16.5" cy="16.5" r="1.5" /></symbol>
     <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7" /><circle cx="7" cy="17.5" r="1.5" /><circle cx="17" cy="17.5" r="1.5" /></symbol>
@@ -93,6 +94,7 @@
         <a href="#/allstar" data-nav="allstar"><svg class="icon" aria-hidden="true"><use href="#i-links" /></svg>AllStarLink</a>
         <a href="#/aprs" data-nav="aprs"><svg class="icon" aria-hidden="true"><use href="#i-radio" /></svg>APRS</a>
         <a href="#/map" data-nav="map"><svg class="icon" aria-hidden="true"><use href="#i-pin" /></svg>APRS map</a>
+        <a href="#/public" data-nav="public"><svg class="icon" aria-hidden="true"><use href="#i-headphones" /></svg>Public listening</a>
         <span class="nav-group">Tools</span>
         <a href="#/simulator" data-nav="simulator"><svg class="icon" aria-hidden="true"><use href="#i-simulator" /></svg>Simulator</a>
         <a href="#/logs" data-nav="logs"><svg class="icon" aria-hidden="true"><use href="#i-logs" /></svg>Logs</a>
@@ -740,7 +742,7 @@
           <h1>DTMF macros</h1>
           <p class="muted">Digit patterns users can key in over the air: repeater functions like a talking
             clock, or commands for the link layer (e.g. <code>*81</code> &rarr; <code>disconnect_all</code>). For
-            control-operator functions, put a secret code in the pattern (e.g. <code>*99</code> + your PIN).</p>
+            control-operator functions, require a one-time code (below) or put a PIN in the pattern (e.g. <code>*99</code> + your PIN).</p>
         </header>
         <div class="card">
           <div class="table-wrap">
@@ -773,6 +775,7 @@
                 <option value="net_end">End net mode</option>
                 <option value="aprs">APRS stations nearby</option>
                 <option value="gpio">Switch a GPIO output</option>
+                <option value="homeassistant">Home Assistant</option>
               </select>
             </label>
             <label>Description
@@ -804,10 +807,165 @@
             <label data-macro-arg="gpio" data-gpio-pulse>For
               <span class="input-unit"><input type="number" name="gpio_seconds" min="0.1" max="60" step="0.1" value="1" /><span>s</span></span>
             </label>
+            <label data-macro-arg="homeassistant" class="span-2">Webhook ID or event
+              <input type="text" name="ha_target" placeholder="porch_light or event:repeater_porch" pattern="(event:)?[A-Za-z0-9_.\-]{1,100}" title="A webhook ID, or event: and an event type (letters, digits, _ . -)" />
+              <small>A webhook ID from a Home Assistant automation's webhook trigger, or <code>event:</code> and an
+                event type to fire (needs the access token).</small>
+            </label>
+            <label class="inline-check span-2"><input type="checkbox" name="needs_code" /> Needs a one-time code, keyed right after the pattern</label>
           </div>
           <div class="form-actions">
             <button type="button" class="btn btn-ghost" id="macro-cancel" hidden>Cancel edit</button>
             <button type="submit" class="btn btn-primary" id="macro-submit">Add macro</button>
+          </div>
+        </form>
+        <form class="card config-form" data-config-form id="homeassistant-form">
+          <h2>Home Assistant</h2>
+          <p class="muted small">A Home Assistant macro calls a webhook trigger or fires an event, and your automations
+            take it from there. Anyone who hears the digits can key them again, so give these macros a one-time code
+            or a PIN, and keep them away from anything safety-related like locks or garage doors.</p>
+          <div class="form-grid">
+            <label>Home Assistant address
+              <input type="text" name="homeassistant_url" placeholder="http://homeassistant.local:8123" pattern="https?://\S+" title="http:// or https:// and the address" />
+              <small>As this controller reaches it.</small>
+            </label>
+            <label class="switch">
+              <input type="checkbox" name="homeassistant_say_result" />
+              <span class="switch-track"></span>
+              <span>Say &ldquo;Done&rdquo; or &ldquo;Failed&rdquo; afterwards</span>
+            </label>
+          </div>
+          <p class="muted small" id="homeassistant-token"></p>
+          <div class="inline-form">
+            <label class="grow">Try a webhook ID or event
+              <input type="text" id="homeassistant-test-target" placeholder="porch_light" />
+            </label>
+            <button type="button" class="btn btn-ghost" id="homeassistant-test">Send a test</button>
+          </div>
+          <div class="form-actions">
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+        <div class="card" id="codes-card" data-requires-write>
+          <h2>One-time codes</h2>
+          <p class="muted small">Anyone listening can repeat a DTMF code they overhear. For a macro that needs a
+            one-time code, key the pattern and then the 6-digit code from an authenticator app (Google Authenticator,
+            1Password, Authy and the like). A code works once, and only for about a minute.</p>
+          <p id="code-status" class="small"></p>
+          <div id="code-setup" class="code-setup" hidden>
+            <div id="code-qr" class="code-qr"></div>
+            <div>
+              <p class="small">Scan this with your authenticator app, or type in the key
+                <code id="code-secret"></code>. Then enter the code the app shows to finish.</p>
+              <form id="code-confirm-form" class="inline-form">
+                <label>Code from the app
+                  <input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456" required />
+                </label>
+                <button type="submit" class="btn btn-primary">Finish setup</button>
+              </form>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-danger" id="code-remove" hidden>Remove my codes</button>
+            <button type="button" class="btn btn-primary" id="code-begin">Set up codes</button>
+          </div>
+          <div data-admin-only>
+            <h3>Who can key codes</h3>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>User</th><th>Since</th><th></th></tr></thead>
+                <tbody id="codes-tbody"></tbody>
+              </table>
+            </div>
+            <p id="codes-empty" class="muted small">Nobody has set up one-time codes yet.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Public listening -->
+      <section class="view" data-view="public" data-title="Public listening" hidden>
+        <header class="view-header">
+          <h1>Public listening</h1>
+          <p class="muted">Let people hear the repeater without signing in: a page of its own, a Broadcastify feed, or both.</p>
+        </header>
+        <form class="card config-form" data-config-form id="public-page-form">
+          <label class="switch">
+            <input type="checkbox" name="public_page_enabled" />
+            <span class="switch-track"></span>
+            <span>Public page <small class="muted">&mdash; anyone who can reach this controller can open it, without signing in</small></span>
+          </label>
+          <p class="small" id="public-page-link" hidden>The page is at <a id="public-page-url" href="/listen" target="_blank" rel="noopener"></a>.</p>
+          <div class="form-grid">
+            <label class="span-2">Text on the page
+              <input type="text" name="public_page_text" maxlength="500" placeholder="146.940 MHz, -0.6 MHz, 100.0 Hz tone" />
+              <small>Shown under the callsign. The page also shows whether the repeater is on the air and whether a net is in session.</small>
+            </label>
+            <label class="switch">
+              <input type="checkbox" name="public_page_audio" />
+              <span class="switch-track"></span>
+              <span>Visitors can listen live <small class="muted">&mdash; only what's transmitted</small></span>
+            </label>
+            <label>Listeners at once
+              <input type="number" name="public_page_max_listeners" min="1" max="200" step="1" required />
+              <small>Each listener takes about 256 kbps of this controller's upload. At most 3 from one address.</small>
+            </label>
+          </div>
+          <div class="form-actions">
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+        <form class="card" id="stream-form" data-admin-only>
+          <h2>Broadcastify / Icecast feed</h2>
+          <p class="muted small">Sends what's on the air to an Icecast server as a 16 kbps MP3 stream, the format
+            Broadcastify asks for. Broadcastify gives you the server, port, mount and password when it approves a feed.
+            Needs ffmpeg (<code>sudo apt install ffmpeg</code>).</p>
+          <p class="small"><span class="tag" id="stream-state">off</span> <span id="stream-detail" class="muted"></span></p>
+          <label class="switch">
+            <input type="checkbox" name="enabled" />
+            <span class="switch-track"></span>
+            <span>Stream</span>
+          </label>
+          <div class="form-grid">
+            <label>Server
+              <input type="text" name="host" placeholder="audio9.broadcastify.com" pattern="[A-Za-z0-9.\-]+" />
+            </label>
+            <label>Port
+              <input type="number" name="port" min="1" max="65535" step="1" value="80" required />
+            </label>
+            <label>Mount
+              <input type="text" name="mount" placeholder="abc123xyz" pattern="\/?[A-Za-z0-9_.\-\/]+" />
+            </label>
+            <label>Username
+              <input type="text" name="username" value="source" required />
+            </label>
+            <label>Password
+              <input type="password" name="password" autocomplete="new-password" placeholder="" />
+              <small id="stream-password-note">Kept on this controller only, out of backups.</small>
+            </label>
+            <label>Bitrate
+              <select name="bitrate">
+                <option value="16">16 kbps (Broadcastify)</option>
+                <option value="24">24 kbps</option>
+                <option value="32">32 kbps</option>
+              </select>
+            </label>
+            <label>Stream name
+              <input type="text" name="name" maxlength="100" placeholder="W1AW repeater" />
+            </label>
+            <label>Genre
+              <input type="text" name="genre" maxlength="100" />
+            </label>
+            <label class="span-2">Description
+              <input type="text" name="description" maxlength="200" />
+            </label>
+            <label class="inline-check span-2"><input type="checkbox" name="legacy_icecast" /> Older server (Icecast before 2.4)</label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save</button>
           </div>
         </form>
       </section>

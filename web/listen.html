@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Listen live</title>
+  <meta name="theme-color" content="#111317" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f3f4f6" media="(prefers-color-scheme: light)" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="login-body">
+  <main class="login-card public-card">
+    <div class="brand brand-large">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 14 11.6 27.5M16 14l4.4 13.5M13.2 22.6h5.6" />
+          <path d="M20.2 6.8a6 6 0 0 1 0 8.4M11.8 6.8a6 6 0 0 0 0 8.4" />
+          <path d="M23.4 3.6a10.5 10.5 0 0 1 0 14.8M8.6 3.6a10.5 10.5 0 0 0 0 14.8" opacity=".55" />
+        </g>
+        <circle cx="16" cy="11" r="2.6" fill="currentColor" />
+      </svg>
+      <span id="public-callsign">Repeater</span>
+    </div>
+    <p id="public-text" class="muted" hidden></p>
+    <p class="public-state"><span id="public-state" class="state-badge state-unknown">Connecting…</span></p>
+    <p id="public-net" class="small" hidden></p>
+    <div id="public-audio" hidden>
+      <button type="button" class="btn btn-primary btn-block" id="public-listen">Listen live</button>
+      <p id="public-listen-status" class="muted small" aria-live="polite"></p>
+    </div>
+  </main>
+  <script type="module" src="/js/public_listen.js"></script>
+</body>
+</html>

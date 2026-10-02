@@ -25,6 +25,7 @@ const ACTION_LABELS = {
   net_end: "End net",
   aprs: "APRS stations nearby",
   gpio: "GPIO output",
+  homeassistant: "Home Assistant",
 };
 
 const GPIO_VERBS = { on: "on", off: "off", toggle: "toggle", pulse: "on for" };
@@ -42,6 +43,7 @@ function details(macro) {
     return announcement ? escapeHtml(announcement.name) : '<span class="tag tag-warn">missing announcement</span>';
   }
   if (macro.action === "say") return `&ldquo;${escapeHtml(macro.command)}&rdquo;`;
+  if (macro.action === "homeassistant") return `<code>${escapeHtml(macro.command)}</code>`;
   if (macro.action === "gpio") {
     const [pin, verb, seconds] = macro.command.split(/\s+/);
     const settings = store.state.config?.gpio_pins?.[pin];
@@ -60,7 +62,7 @@ function render(macros) {
     const row = document.createElement("tr");
     row.classList.toggle("editing", macro.pattern === editingPattern);
     row.innerHTML = `
-      <td><code>${escapeHtml(macro.pattern)}</code></td>
+      <td><code>${escapeHtml(macro.pattern)}</code>${macro.needs_code ? ' <span class="tag" title="Keyed with a one-time code">+ code</span>' : ""}</td>
       <td>${escapeHtml(macro.description) || '<span class="muted">—</span>'}</td>
       <td>${escapeHtml(ACTION_LABELS[macro.action] ?? macro.action)}</td>
       <td>${details(macro)}</td>
@@ -101,6 +103,7 @@ function showArgumentFields() {
   form.elements.command.required = action === "link";
   form.elements.say_text.required = action === "say";
   form.elements.announcement_id.required = action === "announcement";
+  form.elements.ha_target.required = action === "homeassistant";
   const pulse = form.querySelector("[data-gpio-pulse]");
   pulse.hidden = action !== "gpio" || form.elements.gpio_verb.value !== "pulse";
   form.elements.gpio_seconds.disabled = pulse.hidden;
@@ -110,9 +113,11 @@ function startEdit(macro) {
   editingPattern = macro.pattern;
   form.reset();
   for (const field of ["pattern", "description", "action", "node_id"]) form.elements[field].value = macro[field];
+  form.elements.needs_code.checked = macro.needs_code;
   if (macro.action === "link") form.elements.command.value = macro.command;
   if (macro.action === "say") form.elements.say_text.value = macro.command;
   if (macro.action === "announcement") form.elements.announcement_id.value = macro.command;
+  if (macro.action === "homeassistant") form.elements.ha_target.value = macro.command;
   if (macro.action === "gpio") {
     const [pin, verb, seconds] = macro.command.split(/\s+/);
     form.elements.gpio_pin.value = pin;
@@ -142,13 +147,15 @@ function collect() {
   const els = form.elements;
   const action = els.action.value;
   const gpio = `${els.gpio_pin.value} ${els.gpio_verb.value}${els.gpio_verb.value === "pulse" ? ` ${els.gpio_seconds.value}` : ""}`;
-  const command = { link: els.command.value, say: els.say_text.value, announcement: els.announcement_id.value, gpio }[action] ?? "";
+  const command =
+    { link: els.command.value, say: els.say_text.value, announcement: els.announcement_id.value, gpio, homeassistant: els.ha_target.value }[action] ?? "";
   return {
     pattern: els.pattern.value.trim().toUpperCase(),
     description: els.description.value.trim(),
     action,
     command: command.trim(),
     node_id: action === "link" ? els.node_id.value.trim() : "",
+    needs_code: els.needs_code.checked,
   };
 }
 

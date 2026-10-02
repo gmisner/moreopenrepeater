@@ -19,6 +19,7 @@ from typing import Callable, Optional, Protocol, Union
 from controller.announcements import Announcement, AnnouncementScheduler, announcement_from_dict
 from controller.events import (
     AssertPTT,
+    CodedCommand,
     COSChanged,
     CTCSSChanged,
     ControllerCommand,
@@ -143,6 +144,9 @@ class RepeaterService:
         self.gpio_command: Optional[Callable[[str], str]] = None  # runs a gpio macro, returns what to say
         self.lockout_hook: Optional[Callable[[bool], None]] = None  # the stuck-carrier lockout engaged/cleared
         self.net_hook: Optional[Callable[[str, str], None]] = None  # ("net_start" | "net_end", who asked)
+        self.code_checker: Optional[Callable[[str], Optional[str]]] = None  # one-time code -> whose it is (api.control_codes)
+        self.codes_locked: Callable[[], bool] = lambda: False
+        self.homeassistant_hook: Optional[Callable[[str, str, str], None]] = None  # (target, source, pattern)
         self._action_source = "DTMF"
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
@@ -253,7 +257,7 @@ class RepeaterService:
 
     def _apply_commands(self, commands: list[ControllerCommand]) -> None:
         now = self._wall_clock().timestamp()
-        actions: list[Union[RunAction, DialPatch, HangupPatch]] = []
+        actions: list[Union[RunAction, CodedCommand, DialPatch, HangupPatch]] = []
         for command in commands:
             if isinstance(command, AssertPTT):
                 if self.activity is not None and command.active != self.ptt_active:
@@ -272,7 +276,7 @@ class RepeaterService:
                     _logger.warning("link command %r ignored: linking is off in GMRS mode", command.command)
                 else:
                     self._link_command_sink(command)
-            elif isinstance(command, (RunAction, DialPatch, HangupPatch)):
+            elif isinstance(command, (RunAction, CodedCommand, DialPatch, HangupPatch)):
                 actions.append(command)
         filtered = self.controller.kerchunks_filtered
         if filtered > self._kerchunks_filtered and self.activity is not None:
@@ -301,8 +305,28 @@ class RepeaterService:
         for action in actions:
             if isinstance(action, RunAction):
                 self._run_action(action)
+            elif isinstance(action, CodedCommand):
+                self._run_coded(action)
             else:
                 self._run_patch_command(action)
+
+    def _run_coded(self, coded: CodedCommand) -> None:
+        user = self.code_checker(coded.code) if self.code_checker is not None else None
+        if user is None:
+            locked = self.codes_locked()
+            _logger.warning("macro %s: one-time code rejected%s", coded.pattern, " (locked out)" if locked else "")
+            if self.audit_hook is not None:
+                self.audit_hook("DTMF", "DTMF code rejected", coded.pattern)
+            self.speak(TTS_PREFIX + ("Codes are locked out. Try again later." if locked else "Code rejected."))
+            return
+        source = f"DTMF ({user})"
+        if isinstance(coded.command, SendLinkCommand) and self.audit_hook is not None:
+            self.audit_hook(source, f"{source} link", coded.command.command)
+        self._action_source = source
+        try:
+            self._apply_commands([coded.command])
+        finally:
+            self._action_source = "DTMF"
 
     def _run_patch_command(self, command: Union[DialPatch, HangupPatch]) -> None:
         if isinstance(command, HangupPatch):
@@ -379,6 +403,11 @@ class RepeaterService:
                 _logger.warning("net mode isn't available")
             else:
                 self.net_hook(action.action, source)
+        elif action.action == "homeassistant":
+            if self.homeassistant_hook is None:
+                self.speak(TTS_PREFIX + "Home Assistant is not set up.")
+            else:
+                self.homeassistant_hook(action.argument, source, action.pattern)
         elif action.action == "parrot":
             if self.audio_output is None:
                 _logger.warning("parrot needs live audio, which isn't running")

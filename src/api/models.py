@@ -234,6 +234,12 @@ class ConfigResponse(BaseModel):
     net_end_say: str = ""
     net_max_minutes: float = 120.0
     net_schedules: list[NetSchedule] = []
+    homeassistant_url: str = ""
+    homeassistant_say_result: bool = True
+    public_page_enabled: bool = False
+    public_page_text: str = ""
+    public_page_audio: bool = True
+    public_page_max_listeners: int = 20
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -356,6 +362,12 @@ class ConfigUpdateRequest(BaseModel):
     net_end_say: Optional[str] = Field(default=None, max_length=500)
     net_max_minutes: Optional[float] = Field(default=None, ge=10, le=24 * 60)
     net_schedules: Optional[list[NetSchedule]] = Field(default=None, max_length=20)
+    homeassistant_url: Optional[str] = Field(default=None, max_length=300, pattern=r"^$|^https?://[^\s]+$")
+    homeassistant_say_result: Optional[bool] = None
+    public_page_enabled: Optional[bool] = None
+    public_page_text: Optional[str] = Field(default=None, max_length=500)
+    public_page_audio: Optional[bool] = None
+    public_page_max_listeners: Optional[int] = Field(default=None, ge=1, le=200)
 
     @model_validator(mode="after")
     def _net_link_needs_a_node(self) -> "ConfigUpdateRequest":
@@ -457,6 +469,7 @@ class MacroResponse(BaseModel):
     command: str
     node_id: str
     action: MacroAction
+    needs_code: bool
 
 
 class MacroCreateRequest(BaseModel):
@@ -465,6 +478,7 @@ class MacroCreateRequest(BaseModel):
     command: str = ""
     node_id: str = ""
     action: MacroAction = "link"
+    needs_code: bool = False
 
     @model_validator(mode="after")
     def _command_when_needed(self) -> "MacroCreateRequest":
@@ -472,6 +486,8 @@ class MacroCreateRequest(BaseModel):
             raise ValueError(f"a {self.action!r} macro needs a command")
         if self.action == "gpio":
             parse_gpio_command(self.command)
+        if self.action == "homeassistant" and not re.fullmatch(HOMEASSISTANT_TARGET, self.command.strip()):
+            raise ValueError("a Home Assistant macro needs a webhook ID or event:<type> (letters, digits, _ . -)")
         return self
 
 
@@ -1033,3 +1049,85 @@ class NetStartRequest(BaseModel):
 class NetCheckInRequest(BaseModel):
     callsign: str = Field(pattern=r"^[A-Za-z0-9/-]{1,15}$")
     notes: str = Field(default="", max_length=300)
+
+
+class ControlCodeStatus(BaseModel):
+    enrolled: bool
+    since: Optional[float] = None
+    pending: bool = False
+
+
+class ControlCodeSetup(BaseModel):
+    """Shown once: the secret for an authenticator app, as text and a QR code."""
+
+    secret: str
+    uri: str
+    qr_svg: str
+
+
+class ControlCodeConfirmRequest(BaseModel):
+    code: str = Field(pattern=r"^[0-9]{6}$")
+
+
+class ControlCodeUser(BaseModel):
+    username: str
+    since: float
+
+
+HOMEASSISTANT_TARGET = r"^(event:)?[A-Za-z0-9_.\-]{1,100}$"
+
+
+class HomeAssistantStatus(BaseModel):
+    token_set: bool
+
+
+class HomeAssistantTestRequest(BaseModel):
+    target: str = Field(pattern=HOMEASSISTANT_TARGET)
+
+
+class PublicStatus(BaseModel):
+    """What /listen shows to anyone, signed in or not."""
+
+    callsign: str
+    text: str
+    on_air: bool
+    receiving: bool
+    net: Optional[str]
+    audio: bool
+    listeners: int
+    max_listeners: int
+
+
+class StreamSettingsRequest(BaseModel):
+    enabled: bool = False
+    host: str = Field(default="", max_length=200, pattern=r"^$|^[A-Za-z0-9.\-]+$")
+    port: int = Field(default=80, ge=1, le=65535)
+    mount: str = Field(default="", max_length=200, pattern=r"^$|^/?[A-Za-z0-9_.\-/]+$")
+    username: str = Field(default="source", min_length=1, max_length=100)
+    password: Optional[str] = Field(default=None, max_length=200)  # None or "" keeps the saved one
+    name: str = Field(default="", max_length=100)
+    description: str = Field(default="", max_length=200)
+    genre: str = Field(default="", max_length=100)
+    bitrate: Literal[16, 24, 32] = 16
+    legacy_icecast: bool = False
+
+
+class StreamStatus(BaseModel):
+    state: Literal["off", "connecting", "streaming", "retrying", "error"]
+    detail: str
+    since: float
+
+
+class StreamResponse(BaseModel):
+    enabled: bool
+    host: str
+    port: int
+    mount: str
+    username: str
+    password_set: bool
+    name: str
+    description: str
+    genre: str
+    bitrate: int
+    legacy_icecast: bool
+    status: StreamStatus

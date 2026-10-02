@@ -22,6 +22,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
+import segno
 from starlette.background import BackgroundTask
 from starlette.requests import HTTPConnection
 
@@ -72,6 +73,15 @@ from .users import Role, UserError, UserStore
 from .logging_config import configure_logging
 from .models import (
     ActivitySummaryResponse,
+    ControlCodeConfirmRequest,
+    ControlCodeSetup,
+    ControlCodeStatus,
+    ControlCodeUser,
+    HomeAssistantStatus,
+    HomeAssistantTestRequest,
+    PublicStatus,
+    StreamResponse,
+    StreamSettingsRequest,
     AlertSettingsRequest,
     AlertSettingsResponse,
     AlertsResponse,
@@ -132,6 +142,10 @@ from .models import (
 )
 from .health import CHECK_SECONDS as HEALTH_CHECK_SECONDS
 from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
+from .control_codes import ControlCodes, provisioning_uri
+from .homeassistant import TOKEN_ENV as HOMEASSISTANT_TOKEN_ENV
+from .homeassistant import HomeAssistant, HomeAssistantError
+from .stream import Streamer
 from .net import POLL_SECONDS as NET_POLL_SECONDS
 from .net import NetError, NetMode
 from .notify import SECRET_FIELDS, Notifier
@@ -173,6 +187,9 @@ DEFAULT_ALERTS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "alerts.j
 DEFAULT_RUN_MARKER_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "run-state.json"
 DEFAULT_NETS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "nets.json"
 DEFAULT_AUTO_UPDATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "auto-update.json"
+DEFAULT_CONTROL_CODES_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "control-codes.json"
+DEFAULT_STREAM_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "stream.json"
+PUBLIC_LISTENERS_PER_ADDRESS = 3
 DEFAULT_BACKUP_DIR = Path(
     os.environ.get("MOREOPENREPEATER_BACKUP_DIR") or _resolve_data_root(os.environ, _REPO_DATA_DIR) / "backups"
 )
@@ -361,6 +378,10 @@ def create_app(
     watchdog: Optional[Watchdog] = None,
     net_store: Optional[StateStore] = None,
     auto_update_store: Optional[StateStore] = None,
+    control_codes: Optional[ControlCodes] = None,
+    homeassistant: Optional[HomeAssistant] = None,
+    stream_store: Optional[StateStore] = None,
+    streamer: Optional[Streamer] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -420,6 +441,12 @@ def create_app(
     audit = audit or AuditLog()
     service.audit_hook = lambda actor, action, detail: audit.record(time.time(), actor, action, detail)
     nets.audit_hook = service.audit_hook
+    control_codes = control_codes or ControlCodes(None)
+    service.code_checker = control_codes.check
+    service.codes_locked = control_codes.locked
+    homeassistant = homeassistant or HomeAssistant(service, os.environ.get(HOMEASSISTANT_TOKEN_ENV))
+    streamer = streamer or Streamer(live_audio.monitor, stream_store, lambda: renderer.sample_rate)
+    public_listeners: collections.Counter[str] = collections.Counter()
     aprs_stations = aprs_stations or StationStore()
     aprs_receiver = AprsReceiver(aprs_stations, lambda: service.config)
     service.add_config_listener(lambda _config: aprs_receiver.settings_changed())
@@ -712,6 +739,7 @@ def create_app(
             tasks.append(asyncio.create_task(backup_loop()))
             tasks.append(asyncio.create_task(net_loop()))
             tasks.append(asyncio.create_task(auto_update_loop()))
+            tasks.append(asyncio.create_task(streamer.run()))
             tasks.append(asyncio.create_task(health_loop()))
             tasks.append(asyncio.create_task(activity_flush_loop()))
             if link_settings is not None:
@@ -1502,7 +1530,93 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"No user {username!r}") from None
         except UserError as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
+        control_codes.remove(username)
         return list_users()
+
+    def code_owner(request: Request) -> str:
+        return request.state.identity.username or "local"
+
+    @app.get("/api/me/control-code", response_model=ControlCodeStatus, dependencies=auth_dependencies)
+    def my_control_code(request: Request) -> ControlCodeStatus:
+        return ControlCodeStatus(**control_codes.status(code_owner(request)))
+
+    @app.post("/api/me/control-code", response_model=ControlCodeSetup, dependencies=auth_dependencies)
+    def begin_control_code(request: Request) -> ControlCodeSetup:
+        username = code_owner(request)
+        secret = control_codes.begin(username)
+        uri = provisioning_uri(secret, username, service.config.callsign or "MoreOpenRepeater")
+        qr_svg = segno.make(uri, error="m").svg_inline(scale=5, dark="#000", light="#fff")
+        return ControlCodeSetup(secret=secret, uri=uri, qr_svg=qr_svg)
+
+    @app.post("/api/me/control-code/confirm", response_model=ControlCodeStatus, dependencies=auth_dependencies)
+    def confirm_control_code(request: Request, body: ControlCodeConfirmRequest) -> ControlCodeStatus:
+        username = code_owner(request)
+        if not control_codes.confirm(username, body.code):
+            raise HTTPException(status_code=400, detail="That code doesn't match. Check the phone's clock and try the newest code.")
+        return ControlCodeStatus(**control_codes.status(username))
+
+    @app.delete("/api/me/control-code", response_model=ControlCodeStatus, dependencies=auth_dependencies)
+    def remove_my_control_code(request: Request) -> ControlCodeStatus:
+        username = code_owner(request)
+        control_codes.remove(username)
+        return ControlCodeStatus(**control_codes.status(username))
+
+    @app.get("/api/homeassistant", response_model=HomeAssistantStatus, dependencies=auth_dependencies)
+    def homeassistant_status() -> HomeAssistantStatus:
+        return HomeAssistantStatus(token_set=homeassistant.token_set)
+
+    @app.post("/api/homeassistant/test", dependencies=auth_dependencies)
+    async def test_homeassistant(request: Request, body: HomeAssistantTestRequest) -> dict:
+        data = {**homeassistant.payload("test", actor_of(request)), "test": True}
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, homeassistant.send, body.target, data)
+        except HomeAssistantError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from None
+        return {"ok": True}
+
+    def stream_response() -> StreamResponse:
+        return StreamResponse(**streamer.public_settings(), status=streamer.status)
+
+    @app.get("/api/stream", response_model=StreamResponse, dependencies=admin_dependencies)
+    def get_stream() -> StreamResponse:
+        return stream_response()
+
+    @app.put("/api/stream", response_model=StreamResponse, dependencies=admin_dependencies)
+    def put_stream(body: StreamSettingsRequest) -> StreamResponse:
+        streamer.update(body.model_dump())
+        return stream_response()
+
+    def public_page_on() -> bool:
+        return service.saved_config.public_page_enabled
+
+    @app.get("/api/public/status", response_model=PublicStatus)
+    def public_status() -> PublicStatus:
+        """No sign-in: this is what /listen shows."""
+        if not public_page_on():
+            raise HTTPException(status_code=404, detail="Not found")
+        config = service.saved_config
+        snapshot = service.snapshot()
+        return PublicStatus(
+            callsign=config.callsign,
+            text=config.public_page_text,
+            on_air=snapshot.ptt_active,
+            receiving=snapshot.cos_active,
+            net=nets.current["name"] if nets.current else None,
+            audio=config.public_page_audio,
+            listeners=sum(public_listeners.values()),
+            max_listeners=config.public_page_max_listeners,
+        )
+
+    @app.get("/api/control-codes", response_model=list[ControlCodeUser], dependencies=admin_dependencies)
+    def list_control_codes() -> list[ControlCodeUser]:
+        return [ControlCodeUser(**user) for user in control_codes.enrolled()]
+
+    @app.delete("/api/control-codes/{username}", response_model=list[ControlCodeUser], dependencies=admin_dependencies)
+    def remove_control_code(username: str) -> list[ControlCodeUser]:
+        if username not in {user["username"] for user in control_codes.enrolled()}:
+            raise HTTPException(status_code=404, detail=f"{username!r} hasn't set up one-time codes")
+        control_codes.remove(username)
+        return list_control_codes()
 
     @app.get("/api/audit", response_model=list[AuditEntryResponse], dependencies=admin_dependencies)
     def get_audit(limit: int = Query(default=200, ge=1, le=2000)) -> list[AuditEntryResponse]:
@@ -1541,6 +1655,47 @@ def create_app(
             sender.cancel()
             live_audio.monitor.unsubscribe(queue)
 
+    def client_address(websocket: WebSocket) -> str:
+        forwarded = websocket.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        return forwarded or (websocket.client.host if websocket.client else "")
+
+    @app.websocket("/ws/public/audio")
+    async def ws_public_audio(websocket: WebSocket) -> None:
+        """What's on the air, for /listen: no sign-in, so it's off unless the
+        public page is on, and capped in total and per address."""
+        config = service.saved_config
+        if not (config.public_page_enabled and config.public_page_audio):
+            await websocket.close(code=1008)
+            return
+        address = client_address(websocket)
+        if sum(public_listeners.values()) >= config.public_page_max_listeners or public_listeners[address] >= PUBLIC_LISTENERS_PER_ADDRESS:
+            await websocket.close(code=1013)
+            return
+        public_listeners[address] += 1
+        try:
+            await websocket.accept()
+            queue = live_audio.monitor.subscribe("tx")
+
+            async def send_frames() -> None:
+                await websocket.send_json({"sample_rate": renderer.sample_rate})
+                while True:
+                    await websocket.send_bytes(await queue.get())
+                    if not (service.saved_config.public_page_enabled and service.saved_config.public_page_audio):
+                        await websocket.close(code=1008)
+                        return
+
+            sender = asyncio.create_task(send_frames())
+            try:
+                while (await websocket.receive())["type"] != "websocket.disconnect":
+                    pass
+            finally:
+                sender.cancel()
+                live_audio.monitor.unsubscribe(queue)
+        finally:
+            public_listeners[address] -= 1
+            if public_listeners[address] <= 0:
+                del public_listeners[address]
+
     @app.websocket("/ws/status")
     async def ws_status(websocket: WebSocket) -> None:
         if not websocket_allowed(websocket):
@@ -1567,6 +1722,12 @@ def create_app(
             if not is_signed_in(request):
                 return RedirectResponse("/login", status_code=303)
             return FileResponse(WEB_DIR / "index.html")
+
+        @app.get("/listen", response_model=None)
+        def listen_page() -> Response:
+            if not public_page_on():
+                raise HTTPException(status_code=404, detail="Not found")
+            return FileResponse(WEB_DIR / "listen.html")
 
         @app.get("/login", response_model=None)
         def login_page(request: Request) -> Response:
@@ -1596,6 +1757,8 @@ app = create_app(
     run_marker=RunMarker(StateStore(DEFAULT_RUN_MARKER_PATH)),
     net_store=StateStore(DEFAULT_NETS_PATH),
     auto_update_store=StateStore(DEFAULT_AUTO_UPDATE_PATH),
+    control_codes=ControlCodes(StateStore(DEFAULT_CONTROL_CODES_PATH)),
+    stream_store=StateStore(DEFAULT_STREAM_PATH),
 )
 
 

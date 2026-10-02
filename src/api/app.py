@@ -67,7 +67,8 @@ from .aprs_map import AprsReceiver, StationStore, bearing_degrees, distance_km, 
 from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
 from .audit import AuditEntry, AuditLog, describe_config_change
 from .live_audio import LiveAudio, cm108_from_env, list_audio_devices
-from .monitor import MonitorSource
+from .monitor import AudioMonitor
+from .monitor_receiver import MonitorReceiverService
 from .recordings import RecordingInfo, RecordingStore
 from .users import Role, UserError, UserStore
 from .logging_config import configure_logging
@@ -83,7 +84,10 @@ from .models import (
     MailboxBoxResponse,
     MailboxMessageResponse,
     MailboxResponse,
+    ListenSource,
+    MonitorReceiverStatus,
     PublicStatus,
+    RecordingSource,
     TranscriptionStatus,
     StreamResponse,
     StreamSettingsRequest,
@@ -188,6 +192,7 @@ DEFAULT_STATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "state.jso
 DEFAULT_ACTIVITY_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "activity.db"
 DEFAULT_RECORDINGS_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "recordings"
 DEFAULT_MAILBOX_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "mailbox"
+DEFAULT_MONITOR_RECORDINGS_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "monitor-recordings"
 MAILBOX_TICK_SECONDS = 60.0
 DEFAULT_VOSK_MODEL_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "vosk-model"
 TRANSCRIBE_POLL_SECONDS = 15.0
@@ -398,6 +403,8 @@ def create_app(
     streamer: Optional[Streamer] = None,
     mailbox_store: Optional[MailboxStore] = None,
     transcriber: Optional[Transcriber] = None,
+    monitor_recordings: Optional[RecordingStore] = None,
+    monitor_receiver: Optional[MonitorReceiverService] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -408,6 +415,7 @@ def create_app(
     assets_store = assets_store or AudioAssetStore(DEFAULT_DATA_DIR)
     recordings = recordings or RecordingStore(None)
     mailbox_store = mailbox_store or MailboxStore(None, None)
+    monitor_recordings = monitor_recordings or RecordingStore(None)
 
     def clip_recording_path(clip_id: str) -> Path:
         return mailbox_store.path_for(clip_id) if is_mailbox_clip(clip_id) else recordings.path_for(clip_id)
@@ -420,6 +428,7 @@ def create_app(
         service.activity = ActivityRecorder(activity_store or ActivityStore())
     activity_store = service.activity.store
     live_audio = live_audio or LiveAudio(service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings)
+    monitor_receiver = monitor_receiver or MonitorReceiverService(service, renderer.sample_rate, monitor_recordings)
     cm108 = live_audio.cm108
     gpio = gpio or GpioControl(service, cm108)
     service.gpio_command = gpio.run_command
@@ -470,7 +479,7 @@ def create_app(
     mailbox = Mailbox(service, mailbox_store, renderer, net_active=lambda: nets.current is not None)
     mailbox.audit_hook = service.audit_hook
     transcriber = transcriber or Transcriber(
-        service, [recordings, mailbox_store],
+        service, [recordings, mailbox_store, monitor_recordings],
         VoskEngine(Path(os.environ.get(VOSK_MODEL_ENV) or DEFAULT_VOSK_MODEL_DIR)),
         os.environ.get(TRANSCRIPTION_KEY_ENV),
     )
@@ -800,6 +809,7 @@ def create_app(
                 tasks.append(asyncio.create_task(node_directory.run()))
                 tasks.append(asyncio.create_task(link_schedule_loop()))
             live_audio.attach(loop)
+            monitor_receiver.attach(loop)
             await autopatch.start()
             await allstar_node.start()
             sd_notify("READY=1")
@@ -817,6 +827,7 @@ def create_app(
         await allstar_node.stop()
         await autopatch.stop()
         live_audio.shutdown()
+        monitor_receiver.shutdown()
         activity_store.flush()
         if start_background_tick:
             health.stopping()
@@ -1491,9 +1502,12 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"No asset with id {asset_id!r}")
         return FileResponse(path, media_type="audio/wav")
 
-    def recording_path(recording_id: str) -> Path:
+    def recording_store(source: str) -> RecordingStore:
+        return monitor_recordings if source == "monitor" else recordings
+
+    def recording_path(recording_id: str, source: str = "repeater") -> Path:
         try:
-            path = recordings.path_for(recording_id)
+            path = recording_store(source).path_for(recording_id)
         except KeyError:
             path = None
         if path is None or not path.exists():
@@ -1501,12 +1515,16 @@ def create_app(
         return path
 
     @app.get("/api/recordings", response_model=list[RecordingResponse], dependencies=auth_dependencies)
-    def list_recordings(limit: int = Query(default=50, ge=1, le=500), q: str = Query(default="", max_length=100)) -> list[RecordingResponse]:
+    def list_recordings(
+        limit: int = Query(default=50, ge=1, le=500), q: str = Query(default="", max_length=100),
+        source: RecordingSource = "repeater",
+    ) -> list[RecordingResponse]:
         """`q` searches the transcripts (words, or a callsign however it was said)."""
         q = q.strip()
+        store = recording_store(source)
         found = []
-        for recording in recordings.list(RECORDING_SEARCH_LIMIT if q else limit):
-            response = _recording_response(recording, read_transcript(recordings, recording.id))
+        for recording in store.list(RECORDING_SEARCH_LIMIT if q else limit):
+            response = _recording_response(recording, read_transcript(store, recording.id))
             if q and q.upper() not in response.callsigns and q.lower() not in (response.transcript or "").lower():
                 continue
             found.append(response)
@@ -1528,14 +1546,18 @@ def create_app(
         )
 
     @app.get("/api/recordings/{recording_id}/audio", dependencies=auth_dependencies)
-    def get_recording_audio(recording_id: str) -> FileResponse:
-        return FileResponse(recording_path(recording_id), media_type="audio/wav")
+    def get_recording_audio(recording_id: str, source: RecordingSource = "repeater") -> FileResponse:
+        return FileResponse(recording_path(recording_id, source), media_type="audio/wav")
 
     @app.delete("/api/recordings/{recording_id}", dependencies=auth_dependencies)
-    def delete_recording(recording_id: str) -> dict:
-        recording_path(recording_id)
-        recordings.delete(recording_id)
+    def delete_recording(recording_id: str, source: RecordingSource = "repeater") -> dict:
+        recording_path(recording_id, source)
+        recording_store(source).delete(recording_id)
         return {"deleted": recording_id}
+
+    @app.get("/api/monitor-receiver", response_model=MonitorReceiverStatus, dependencies=auth_dependencies)
+    def get_monitor_receiver() -> MonitorReceiverStatus:
+        return MonitorReceiverStatus(**monitor_receiver.status())
 
     def mailbox_response() -> MailboxResponse:
         messages = mailbox_store.messages()
@@ -1780,13 +1802,14 @@ def create_app(
         return identity is not None and identity.role != "listener"
 
     @app.websocket("/ws/audio")
-    async def ws_audio(websocket: WebSocket, source: MonitorSource = "tx") -> None:
+    async def ws_audio(websocket: WebSocket, source: ListenSource = "tx") -> None:
         """Binary frames of 16-bit little-endian mono PCM at the processing rate."""
         if not websocket_allowed(websocket):
             await websocket.close(code=1008)
             return
         await websocket.accept()
-        queue = live_audio.monitor.subscribe(source)
+        monitor: AudioMonitor = monitor_receiver.monitor if source == "monitor" else live_audio.monitor
+        queue = monitor.subscribe("rx" if source == "monitor" else source)
 
         async def send_frames() -> None:
             await websocket.send_json({"sample_rate": renderer.sample_rate, "source": source})
@@ -1800,7 +1823,7 @@ def create_app(
                 pass
         finally:
             sender.cancel()
-            live_audio.monitor.unsubscribe(queue)
+            monitor.unsubscribe(queue)
 
     def client_address(websocket: WebSocket) -> str:
         forwarded = websocket.headers.get("x-forwarded-for", "").split(",")[0].strip()
@@ -1909,6 +1932,7 @@ app = create_app(
     state_store=StateStore(DEFAULT_STATE_PATH),
     activity_store=ActivityStore(DEFAULT_ACTIVITY_PATH),
     recordings=RecordingStore(DEFAULT_RECORDINGS_DIR),
+    monitor_recordings=RecordingStore(DEFAULT_MONITOR_RECORDINGS_DIR),
     mailbox_store=MailboxStore(DEFAULT_MAILBOX_DIR, StateStore(DEFAULT_MAILBOX_DIR / "boxes.json")),
     users=UserStore(StateStore(DEFAULT_USERS_PATH)),
     audit=AuditLog(DEFAULT_AUDIT_PATH),

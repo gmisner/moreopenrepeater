@@ -22,6 +22,9 @@ PttOutput = Literal["cm108", "gpio"]
 PiGpioPin = Annotated[int, Field(ge=2, le=27)]
 Role = Literal["admin", "operator", "viewer", "listener"]
 PublicPageMode = Literal["off", "signed_in", "anyone"]
+MonitorSquelch = Literal["vox", "gpio", "open"]
+ListenSource = Literal["tx", "rx", "monitor"]  # on air, the repeater's receiver, the monitor receiver
+RecordingSource = Literal["repeater", "monitor"]
 TranscriptionEngine = Literal["off", "vosk", "openai"]
 
 # A hostname, or an IPv4/IPv6 address with an optional /prefix, as PJSIP's identify `match` takes.
@@ -196,6 +199,15 @@ class ConfigResponse(BaseModel):
     ptt_gpio_pin: int
     ptt_polarity: Polarity
     vox_threshold_db: float
+    monitor_enabled: bool = False
+    monitor_name: str = ""
+    monitor_input_device: str = ""
+    monitor_squelch: MonitorSquelch = "vox"
+    monitor_vox_threshold_db: float = -40.0
+    monitor_gpio_pin: int = 22
+    monitor_gpio_polarity: Polarity = "low"
+    monitor_gain_db: float = 0.0
+    monitor_record: bool = False
     vox_hold: float
     tx_gain_db: float
     tx_ctcss_hz: Optional[float]
@@ -330,6 +342,15 @@ class ConfigUpdateRequest(BaseModel):
     ptt_gpio_pin: Optional[PiGpioPin] = None
     ptt_polarity: Optional[Polarity] = None
     vox_threshold_db: Optional[float] = Field(default=None, ge=-90, le=0)
+    monitor_enabled: Optional[bool] = None
+    monitor_name: Optional[str] = Field(default=None, max_length=40)
+    monitor_input_device: Optional[str] = Field(default=None, max_length=200)
+    monitor_squelch: Optional[MonitorSquelch] = None
+    monitor_vox_threshold_db: Optional[float] = Field(default=None, ge=-90, le=0)
+    monitor_gpio_pin: Optional[PiGpioPin] = None
+    monitor_gpio_polarity: Optional[Polarity] = None
+    monitor_gain_db: Optional[float] = Field(default=None, ge=-20, le=20)
+    monitor_record: Optional[bool] = None
     vox_hold: Optional[float] = Field(default=None, ge=0, le=5)
     tx_gain_db: Optional[float] = Field(default=None, ge=-40, le=20)
     tx_ctcss_hz: Optional[float] = Field(default=None, ge=60, le=260)
@@ -1193,3 +1214,16 @@ class TranscriptionStatus(BaseModel):
 class MailboxResponse(BaseModel):
     boxes: list[MailboxBoxResponse]
     messages: list[MailboxMessageResponse]
+
+
+class MonitorReceiverStatus(BaseModel):
+    enabled: bool
+    running: bool
+    error: Optional[str]
+    name: str
+    level_db: float
+    squelch_open: bool
+    device_sample_rate: Optional[int]
+    sample_rate: int
+    dropped_input_blocks: int
+    listeners: int

@@ -219,6 +219,7 @@
                   <div class="segmented" id="listen-source" role="group" aria-label="Audio to listen to">
                     <button type="button" data-source="tx" class="active" title="Everything the repeater transmits">On air</button>
                     <button type="button" data-source="rx" title="Everything the receiver hears, repeated or not">Receiver</button>
+                    <button type="button" data-source="monitor" id="listen-monitor" title="The listen-only monitor receiver" hidden>Monitor</button>
                   </div>
                   <button type="button" class="btn btn-sm" id="listen-toggle">Listen</button>
                 </div>
@@ -304,6 +305,10 @@
               <button type="submit" class="btn btn-primary">Save</button>
             </div>
           </form>
+          <div class="segmented segmented-sm" id="recordings-source" role="group" aria-label="Recordings from" hidden>
+            <button type="button" data-source="repeater" class="active">Repeater</button>
+            <button type="button" data-source="monitor">Monitor receiver</button>
+          </div>
           <form id="recordings-search" class="inline-form" role="search">
             <label class="grow">Search the transcripts
               <input type="search" name="q" maxlength="100" placeholder="A word, or a callsign like W1AW" />
@@ -702,6 +707,77 @@
             expected a signal: on macOS, the app running the server (Terminal, iTerm, Cursor&hellip;) needs Microphone
             permission in System Settings &rsaquo; Privacy &amp; Security &rsaquo; Microphone, then a restart.</p>
           <p id="audio-engine-error" class="form-error" hidden></p>
+          <div class="form-actions">
+            <span class="spacer"></span>
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+
+        <form class="card config-form" data-config-form id="monitor-form">
+          <div class="card-header">
+            <h2>Monitor receiver</h2>
+            <span id="monitor-state" class="tag">off</span>
+          </div>
+          <p class="muted small">A second, listen-only receiver on its own sound input: an aviation frequency, a
+            weather channel, or the repeater's own signal from across town. Hear it on the dashboard and record it.
+            It is never transmitted or put on the public listening page, since retransmitting other services isn't
+            allowed (47&nbsp;CFR&nbsp;97.113).</p>
+          <label class="switch">
+            <input type="checkbox" name="monitor_enabled" />
+            <span class="switch-track"></span>
+            <span>Turn on the monitor receiver</span>
+          </label>
+          <div class="form-grid">
+            <label>Name
+              <input type="text" name="monitor_name" maxlength="40" placeholder="Aviation 119.1" />
+              <small>Shown on the dashboard's Listen live card.</small>
+            </label>
+            <label>Input
+              <select name="monitor_input_device" data-audio-devices="inputs"><option value="">System default</option></select>
+              <small>Its own sound device, not the repeater's receiver.</small>
+            </label>
+            <label>Squelch
+              <select name="monitor_squelch">
+                <option value="vox">Audio level</option>
+                <option value="gpio">Raspberry Pi GPIO pin (the radio's COS)</option>
+                <option value="open">Always open</option>
+              </select>
+            </label>
+            <label data-monitor-squelch="vox">Squelch threshold
+              <span class="input-unit"><input type="number" step="1" min="-90" max="0" name="monitor_vox_threshold_db" required /><span>dBFS</span></span>
+            </label>
+            <label data-monitor-squelch="gpio">Squelch pin
+              <span class="input-unit"><input type="number" step="1" min="2" max="27" name="monitor_gpio_pin" required /><span>GPIO</span></span>
+              <small>BCM number; GPIO22 is header pin 15. 3.3&nbsp;V only.</small>
+            </label>
+            <label data-monitor-squelch="gpio">Pin polarity
+              <select name="monitor_gpio_polarity">
+                <option value="low">Active low (pulled to ground on a signal)</option>
+                <option value="high">Active high</option>
+              </select>
+            </label>
+            <label>Listening level
+              <span class="input-unit"><input type="number" step="1" min="-20" max="20" name="monitor_gain_db" required /><span>dB</span></span>
+            </label>
+            <label class="switch span-2">
+              <input type="checkbox" name="monitor_record" />
+              <span class="switch-track"></span>
+              <span>Record what it hears <small class="muted">&mdash; on the Activity page, kept as long as the repeater's recordings</small></span>
+            </label>
+          </div>
+          <div class="level-meter" title="Monitor level">
+            <div class="level-meter-fill" id="monitor-level-fill"></div>
+            <div class="level-meter-threshold" id="monitor-level-threshold" title="Squelch threshold"></div>
+          </div>
+          <div class="level-readout small">
+            <span>Level <strong id="monitor-level-text">&ndash;</strong></span>
+            <span id="monitor-squelch" class="tag">signal</span>
+            <span class="spacer"></span>
+            <span id="monitor-health" class="muted"></span>
+          </div>
+          <p id="monitor-error" class="form-error" hidden></p>
           <div class="form-actions">
             <span class="spacer"></span>
             <span class="dirty-note">Unsaved changes</span>

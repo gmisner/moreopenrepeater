@@ -1,5 +1,6 @@
 import { api } from "./api.js";
 import { currentView, router } from "./router.js";
+import { store } from "./store.js";
 import { escapeHtml, formatTimestamp, toast, toastError } from "./ui.js";
 
 const REFRESH_MS = 30_000;
@@ -16,10 +17,13 @@ const empty = document.getElementById("usage-empty");
 const recordingsTbody = document.getElementById("recordings-tbody");
 const recordingsEmpty = document.getElementById("recordings-empty");
 const searchForm = document.getElementById("recordings-search");
+const sourceGroup = document.getElementById("recordings-source");
+const sourceButtons = sourceGroup.querySelectorAll("button");
 const SEARCH_DELAY_MS = 300;
 
 let days = 7;
 let search = "";
+let source = "repeater";
 let searchTimer = null;
 
 function formatAirtime(seconds) {
@@ -133,7 +137,7 @@ export function transcriptHtml(transcript, callsigns) {
 
 function renderRecordings(recordings) {
   // Re-rendering would stop a recording that's playing, so only redraw on change.
-  const key = search + "|" + recordings.map((r) => `${r.id}:${r.transcript ?? ""}`).join(",");
+  const key = `${source}|${search}|` + recordings.map((r) => `${r.id}:${r.transcript ?? ""}`).join(",");
   if (key === shownRecordings) return;
   shownRecordings = key;
   recordingsTbody.innerHTML = "";
@@ -144,7 +148,7 @@ function renderRecordings(recordings) {
     row.innerHTML = `
       <td>${escapeHtml(formatTimestamp(r.started_at))}</td>
       <td>${formatAirtime(r.duration)}</td>
-      <td><audio controls preload="none" src="/api/recordings/${encodeURIComponent(r.id)}/audio"></audio></td>
+      <td><audio controls preload="none" src="/api/recordings/${encodeURIComponent(r.id)}/audio?source=${source}"></audio></td>
       <td class="row-actions"><button type="button" class="btn btn-danger btn-sm">Delete</button></td>
     `;
     row.querySelector("button").addEventListener("click", () => removeRecording(r));
@@ -161,7 +165,7 @@ function renderRecordings(recordings) {
 async function removeRecording(recording) {
   if (!confirm(`Delete the recording from ${formatTimestamp(recording.started_at)}?`)) return;
   try {
-    await api(`/api/recordings/${encodeURIComponent(recording.id)}`, { method: "DELETE" });
+    await api(`/api/recordings/${encodeURIComponent(recording.id)}?source=${source}`, { method: "DELETE" });
     toast("Recording deleted");
     await load();
   } catch (error) {
@@ -173,14 +177,27 @@ async function load() {
   const [summary, transmissions, recordings] = await Promise.all([
     api(`/api/activity/summary?days=${days}`),
     api("/api/activity/transmissions?limit=25"),
-    api(`/api/recordings?limit=50${search ? `&q=${encodeURIComponent(search)}` : ""}`),
+    api(`/api/recordings?limit=50&source=${source}${search ? `&q=${encodeURIComponent(search)}` : ""}`),
   ]);
   renderSummary(summary);
   renderTransmissions(transmissions);
   renderRecordings(recordings);
 }
 
+function renderSourceGroup(config) {
+  sourceGroup.hidden = !(config.monitor_enabled || config.monitor_record);
+  if (sourceGroup.hidden && source === "monitor") chooseSource("repeater");
+}
+
+function chooseSource(name) {
+  source = name;
+  for (const b of sourceButtons) b.classList.toggle("active", b.dataset.source === name);
+  load().catch(toastError);
+}
+
 export function initUsage() {
+  for (const button of sourceButtons) button.addEventListener("click", () => chooseSource(button.dataset.source));
+  store.addEventListener("config", ({ detail: config }) => renderSourceGroup(config));
   searchForm.addEventListener("submit", (event) => event.preventDefault());
   searchForm.elements.q.addEventListener("input", () => {
     clearTimeout(searchTimer);

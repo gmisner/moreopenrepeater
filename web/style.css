@@ -338,9 +338,10 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 .lockout-card p { margin: 0; }
 .test-results { list-style: none; padding: 0; margin: var(--space-3) 0 0; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
 [data-remove-secret] { align-self: flex-start; }
-.channel-list { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-4); }
-.channel { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); }
-.channel > summary {
+/* Folds: <details class="fold"> groups of fields inside a form. */
+.fold-list { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-4) 0; }
+.fold { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); }
+.fold > summary {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -349,8 +350,8 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
   list-style: none;
   border-radius: var(--radius);
 }
-.channel > summary::-webkit-details-marker { display: none; }
-.channel > summary::before {
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before {
   content: "";
   flex: none;
   width: 0.45rem;
@@ -361,13 +362,21 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
   transform: rotate(-45deg);
   transition: transform var(--speed);
 }
-.channel[open] > summary::before { transform: rotate(45deg); }
-.channel-name { font-weight: 600; }
-.channel-hint { min-width: 0; color: var(--muted); font-size: var(--text-sm); }
-[data-channel-status] { margin-left: auto; }
-.channel-body { padding: var(--space-4); border-top: 1px solid var(--border); }
-.channel-body > p:first-child { margin-top: 0; }
-@media (max-width: 600px) { .channel-hint { display: none; } }
+.fold[open] > summary::before { transform: rotate(45deg); }
+.fold-name { flex: none; font-weight: 600; }
+.fold-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.fold-status { flex: none; margin-left: auto; }
+.fold-body { padding: var(--space-4); border-top: 1px solid var(--border); }
+.fold-body > p:first-child { margin-top: 0; }
+.fold-body > .switch { margin-top: var(--space-4); }
 .state-transmitting_id, .state-announcing { color: var(--amber); }
 .state-patch { color: var(--green); }
 

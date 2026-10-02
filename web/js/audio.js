@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { refreshFolds } from "./folds.js";
 import { currentView, router } from "./router.js";
 import { store } from "./store.js";
 
@@ -104,6 +105,7 @@ async function loadDevices() {
     devices = [];
   }
   renderDeviceSelects();
+  refreshFolds();
 }
 
 async function poll() {

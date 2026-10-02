@@ -5,6 +5,7 @@ import { initAssets, loadAssets } from "./js/assets.js";
 import { initAudit } from "./js/audit.js";
 import { initAllStar } from "./js/allstar.js";
 import { initFavorites } from "./js/favorites.js";
+import { initFolds } from "./js/folds.js";
 import { initLinkSchedules } from "./js/link_schedules.js";
 import { initGpioSchedules } from "./js/gpio_schedules.js";
 import { initGpio } from "./js/gpio.js";
@@ -57,6 +58,8 @@ async function main() {
   initAudit();
   initUpdates();
   initAlerts();
+  // Last, so fold summaries describe values the other modules just filled in.
+  initFolds();
 
   try {
     // Assets first so the clip dropdowns have options before config

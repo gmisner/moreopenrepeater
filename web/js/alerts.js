@@ -114,7 +114,7 @@ function renderForm() {
   for (const panel of form.querySelectorAll("details[data-channel]")) {
     const ready = channels.includes(panel.dataset.channel);
     if (ready) panel.open = true;
-    panel.querySelector("[data-channel-status]").innerHTML = ready
+    panel.querySelector(".fold-status").innerHTML = ready
       ? tag(settings.enabled ? "tag-on" : "", "set up")
       : '<span class="muted small">not set up</span>';
   }
@@ -180,8 +180,6 @@ function renderTestResults(results) {
 export function initAlerts() {
   for (const input of secretInputs) input.dataset.placeholder = input.placeholder;
   form.addEventListener("input", () => form.classList.add("dirty"));
-  // A closed panel would hide the field the browser wants to point at.
-  form.addEventListener("invalid", (event) => event.target.closest("details")?.setAttribute("open", ""), true);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const button = form.querySelector("button[type=submit]");

@@ -170,6 +170,13 @@ Transitions use `--speed` (0.15s) and animate only color, opacity and transform.
   source, theme, time range). Active segment uses `aria-pressed="true"` or
   `.active`.
 - **Switch:** for settings that take effect when saved. Checkbox for list items.
+- **Fold:** a `<details class="fold">` group of related fields inside a form
+  (`--panel-2`, 1px `--border`, `--radius`), in a `.fold-list`. The closed row
+  shows a chevron, the group's name, a one-line `.fold-hint`, and optionally a
+  `.fold-status` tag on the right. With `data-summary`, `js/folds.js` writes a
+  summary of the current values into the hint, so the fold can stay closed. Use one
+  when a form mixes separate concerns (sound devices / carrier detect / PTT) or
+  alternatives (alert channels); keep the fields people change most outside folds.
 - **Toasts:** bottom right (full width on phones), green edge for success, red
   for errors.
 

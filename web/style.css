@@ -339,6 +339,9 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 .net-card { border-color: var(--accent); background: var(--accent-soft); }
 .net-card p { margin: 0; }
 .held-note { border-color: var(--amber); background: var(--amber-soft); color: var(--text); }
+.code-setup { display: flex; gap: var(--space-5); align-items: flex-start; flex-wrap: wrap; margin-top: var(--space-4); }
+.code-setup > div:last-child { flex: 1; min-width: 16rem; }
+.code-qr svg { display: block; border-radius: var(--radius-sm); }
 .test-results { list-style: none; padding: 0; margin: var(--space-3) 0 0; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
 [data-remove-secret] { align-self: flex-start; }
 /* Folds: <details class="fold"> groups of fields inside a form. */

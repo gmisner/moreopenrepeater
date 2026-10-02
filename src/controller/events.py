@@ -79,6 +79,7 @@ class RunAction:
 
     action: str
     argument: str = ""
+    pattern: str = ""  # the macro that ran it
 
 
 @dataclass(frozen=True)
@@ -93,4 +94,14 @@ class HangupPatch:
     """End the autopatch call in progress."""
 
 
-ControllerCommand = Union[AssertPTT, PlayAudio, SendLinkCommand, RunAction, DialPatch, HangupPatch]
+@dataclass(frozen=True)
+class CodedCommand:
+    """A macro that needs a one-time code, with the code keyed after it. The
+    service layer checks the code before carrying out `command`."""
+
+    command: Union[SendLinkCommand, RunAction]
+    pattern: str
+    code: str
+
+
+ControllerCommand = Union[AssertPTT, PlayAudio, SendLinkCommand, RunAction, DialPatch, HangupPatch, CodedCommand]

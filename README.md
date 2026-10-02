@@ -271,7 +271,14 @@ several phases (see the plan file for the full breakdown):
 - **DTMF local control**: macros can speak the time, read the weather alerts, play
   an announcement or any text, send the ID, start a parrot test, say which APRS
   stations are nearby, turn the transmitter off and on (with a PIN in the macro
-  code), or switch a CM108 GPIO output.
+  code or a one-time code), or switch a CM108 GPIO output.
+- **One-time DTMF codes**: a PIN keyed over the air can be overheard and replayed. A
+  macro can instead need a 6-digit code from an authenticator app (TOTP, RFC 6238),
+  keyed right after the pattern. Each code works once and only for about a minute.
+  Every dashboard user sets up their own on the Macros page by scanning a QR code,
+  so the audit log shows whose code ran a command. Five wrong codes lock codes out
+  for 10 minutes. The secrets live in `data/control-codes.json`, separate from the
+  settings and backups, so moving to a new controller means setting codes up again.
 - **CM108 GPIO pins**: the interface's spare pins (GPIO1, 2 and 4, plus 5-8 on CM119
   chips) can be outputs, switched from the dashboard or a DTMF macro (on, off,
   toggle, or on for a few seconds) or on a weekly schedule, or inputs whose state

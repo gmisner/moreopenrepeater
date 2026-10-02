@@ -22,6 +22,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
+import segno
 from starlette.background import BackgroundTask
 from starlette.requests import HTTPConnection
 
@@ -72,6 +73,10 @@ from .users import Role, UserError, UserStore
 from .logging_config import configure_logging
 from .models import (
     ActivitySummaryResponse,
+    ControlCodeConfirmRequest,
+    ControlCodeSetup,
+    ControlCodeStatus,
+    ControlCodeUser,
     AlertSettingsRequest,
     AlertSettingsResponse,
     AlertsResponse,
@@ -132,6 +137,7 @@ from .models import (
 )
 from .health import CHECK_SECONDS as HEALTH_CHECK_SECONDS
 from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
+from .control_codes import ControlCodes, provisioning_uri
 from .net import POLL_SECONDS as NET_POLL_SECONDS
 from .net import NetError, NetMode
 from .notify import SECRET_FIELDS, Notifier
@@ -173,6 +179,7 @@ DEFAULT_ALERTS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "alerts.j
 DEFAULT_RUN_MARKER_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "run-state.json"
 DEFAULT_NETS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "nets.json"
 DEFAULT_AUTO_UPDATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "auto-update.json"
+DEFAULT_CONTROL_CODES_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "control-codes.json"
 DEFAULT_BACKUP_DIR = Path(
     os.environ.get("MOREOPENREPEATER_BACKUP_DIR") or _resolve_data_root(os.environ, _REPO_DATA_DIR) / "backups"
 )
@@ -361,6 +368,7 @@ def create_app(
     watchdog: Optional[Watchdog] = None,
     net_store: Optional[StateStore] = None,
     auto_update_store: Optional[StateStore] = None,
+    control_codes: Optional[ControlCodes] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -420,6 +428,9 @@ def create_app(
     audit = audit or AuditLog()
     service.audit_hook = lambda actor, action, detail: audit.record(time.time(), actor, action, detail)
     nets.audit_hook = service.audit_hook
+    control_codes = control_codes or ControlCodes(None)
+    service.code_checker = control_codes.check
+    service.codes_locked = control_codes.locked
     aprs_stations = aprs_stations or StationStore()
     aprs_receiver = AprsReceiver(aprs_stations, lambda: service.config)
     service.add_config_listener(lambda _config: aprs_receiver.settings_changed())
@@ -1502,7 +1513,47 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"No user {username!r}") from None
         except UserError as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
+        control_codes.remove(username)
         return list_users()
+
+    def code_owner(request: Request) -> str:
+        return request.state.identity.username or "local"
+
+    @app.get("/api/me/control-code", response_model=ControlCodeStatus, dependencies=auth_dependencies)
+    def my_control_code(request: Request) -> ControlCodeStatus:
+        return ControlCodeStatus(**control_codes.status(code_owner(request)))
+
+    @app.post("/api/me/control-code", response_model=ControlCodeSetup, dependencies=auth_dependencies)
+    def begin_control_code(request: Request) -> ControlCodeSetup:
+        username = code_owner(request)
+        secret = control_codes.begin(username)
+        uri = provisioning_uri(secret, username, service.config.callsign or "MoreOpenRepeater")
+        qr_svg = segno.make(uri, error="m").svg_inline(scale=5, dark="#000", light="#fff")
+        return ControlCodeSetup(secret=secret, uri=uri, qr_svg=qr_svg)
+
+    @app.post("/api/me/control-code/confirm", response_model=ControlCodeStatus, dependencies=auth_dependencies)
+    def confirm_control_code(request: Request, body: ControlCodeConfirmRequest) -> ControlCodeStatus:
+        username = code_owner(request)
+        if not control_codes.confirm(username, body.code):
+            raise HTTPException(status_code=400, detail="That code doesn't match. Check the phone's clock and try the newest code.")
+        return ControlCodeStatus(**control_codes.status(username))
+
+    @app.delete("/api/me/control-code", response_model=ControlCodeStatus, dependencies=auth_dependencies)
+    def remove_my_control_code(request: Request) -> ControlCodeStatus:
+        username = code_owner(request)
+        control_codes.remove(username)
+        return ControlCodeStatus(**control_codes.status(username))
+
+    @app.get("/api/control-codes", response_model=list[ControlCodeUser], dependencies=admin_dependencies)
+    def list_control_codes() -> list[ControlCodeUser]:
+        return [ControlCodeUser(**user) for user in control_codes.enrolled()]
+
+    @app.delete("/api/control-codes/{username}", response_model=list[ControlCodeUser], dependencies=admin_dependencies)
+    def remove_control_code(username: str) -> list[ControlCodeUser]:
+        if username not in {user["username"] for user in control_codes.enrolled()}:
+            raise HTTPException(status_code=404, detail=f"{username!r} hasn't set up one-time codes")
+        control_codes.remove(username)
+        return list_control_codes()
 
     @app.get("/api/audit", response_model=list[AuditEntryResponse], dependencies=admin_dependencies)
     def get_audit(limit: int = Query(default=200, ge=1, le=2000)) -> list[AuditEntryResponse]:
@@ -1596,6 +1647,7 @@ app = create_app(
     run_marker=RunMarker(StateStore(DEFAULT_RUN_MARKER_PATH)),
     net_store=StateStore(DEFAULT_NETS_PATH),
     auto_update_store=StateStore(DEFAULT_AUTO_UPDATE_PATH),
+    control_codes=ControlCodes(StateStore(DEFAULT_CONTROL_CODES_PATH)),
 )
 
 

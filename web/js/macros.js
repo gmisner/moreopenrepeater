@@ -60,7 +60,7 @@ function render(macros) {
     const row = document.createElement("tr");
     row.classList.toggle("editing", macro.pattern === editingPattern);
     row.innerHTML = `
-      <td><code>${escapeHtml(macro.pattern)}</code></td>
+      <td><code>${escapeHtml(macro.pattern)}</code>${macro.needs_code ? ' <span class="tag" title="Keyed with a one-time code">+ code</span>' : ""}</td>
       <td>${escapeHtml(macro.description) || '<span class="muted">—</span>'}</td>
       <td>${escapeHtml(ACTION_LABELS[macro.action] ?? macro.action)}</td>
       <td>${details(macro)}</td>
@@ -110,6 +110,7 @@ function startEdit(macro) {
   editingPattern = macro.pattern;
   form.reset();
   for (const field of ["pattern", "description", "action", "node_id"]) form.elements[field].value = macro[field];
+  form.elements.needs_code.checked = macro.needs_code;
   if (macro.action === "link") form.elements.command.value = macro.command;
   if (macro.action === "say") form.elements.say_text.value = macro.command;
   if (macro.action === "announcement") form.elements.announcement_id.value = macro.command;
@@ -149,6 +150,7 @@ function collect() {
     action,
     command: command.trim(),
     node_id: action === "link" ? els.node_id.value.trim() : "",
+    needs_code: els.needs_code.checked,
   };
 }
 

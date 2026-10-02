@@ -740,7 +740,7 @@
           <h1>DTMF macros</h1>
           <p class="muted">Digit patterns users can key in over the air: repeater functions like a talking
             clock, or commands for the link layer (e.g. <code>*81</code> &rarr; <code>disconnect_all</code>). For
-            control-operator functions, put a secret code in the pattern (e.g. <code>*99</code> + your PIN).</p>
+            control-operator functions, require a one-time code (below) or put a PIN in the pattern (e.g. <code>*99</code> + your PIN).</p>
         </header>
         <div class="card">
           <div class="table-wrap">
@@ -804,12 +804,47 @@
             <label data-macro-arg="gpio" data-gpio-pulse>For
               <span class="input-unit"><input type="number" name="gpio_seconds" min="0.1" max="60" step="0.1" value="1" /><span>s</span></span>
             </label>
+            <label class="inline-check span-2"><input type="checkbox" name="needs_code" /> Needs a one-time code, keyed right after the pattern</label>
           </div>
           <div class="form-actions">
             <button type="button" class="btn btn-ghost" id="macro-cancel" hidden>Cancel edit</button>
             <button type="submit" class="btn btn-primary" id="macro-submit">Add macro</button>
           </div>
         </form>
+        <div class="card" id="codes-card" data-requires-write>
+          <h2>One-time codes</h2>
+          <p class="muted small">Anyone listening can repeat a DTMF code they overhear. For a macro that needs a
+            one-time code, key the pattern and then the 6-digit code from an authenticator app (Google Authenticator,
+            1Password, Authy and the like). A code works once, and only for about a minute.</p>
+          <p id="code-status" class="small"></p>
+          <div id="code-setup" class="code-setup" hidden>
+            <div id="code-qr" class="code-qr"></div>
+            <div>
+              <p class="small">Scan this with your authenticator app, or type in the key
+                <code id="code-secret"></code>. Then enter the code the app shows to finish.</p>
+              <form id="code-confirm-form" class="inline-form">
+                <label>Code from the app
+                  <input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456" required />
+                </label>
+                <button type="submit" class="btn btn-primary">Finish setup</button>
+              </form>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-danger" id="code-remove" hidden>Remove my codes</button>
+            <button type="button" class="btn btn-primary" id="code-begin">Set up codes</button>
+          </div>
+          <div data-admin-only>
+            <h3>Who can key codes</h3>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>User</th><th>Since</th><th></th></tr></thead>
+                <tbody id="codes-tbody"></tbody>
+              </table>
+            </div>
+            <p id="codes-empty" class="muted small">Nobody has set up one-time codes yet.</p>
+          </div>
+        </div>
       </section>
 
       <!-- Announcements -->

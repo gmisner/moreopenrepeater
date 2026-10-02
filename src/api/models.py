@@ -457,6 +457,7 @@ class MacroResponse(BaseModel):
     command: str
     node_id: str
     action: MacroAction
+    needs_code: bool
 
 
 class MacroCreateRequest(BaseModel):
@@ -465,6 +466,7 @@ class MacroCreateRequest(BaseModel):
     command: str = ""
     node_id: str = ""
     action: MacroAction = "link"
+    needs_code: bool = False
 
     @model_validator(mode="after")
     def _command_when_needed(self) -> "MacroCreateRequest":
@@ -1033,3 +1035,26 @@ class NetStartRequest(BaseModel):
 class NetCheckInRequest(BaseModel):
     callsign: str = Field(pattern=r"^[A-Za-z0-9/-]{1,15}$")
     notes: str = Field(default="", max_length=300)
+
+
+class ControlCodeStatus(BaseModel):
+    enrolled: bool
+    since: Optional[float] = None
+    pending: bool = False
+
+
+class ControlCodeSetup(BaseModel):
+    """Shown once: the secret for an authenticator app, as text and a QR code."""
+
+    secret: str
+    uri: str
+    qr_svg: str
+
+
+class ControlCodeConfirmRequest(BaseModel):
+    code: str = Field(pattern=r"^[0-9]{6}$")
+
+
+class ControlCodeUser(BaseModel):
+    username: str
+    since: float

@@ -36,6 +36,7 @@
     <symbol id="i-update" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9" /><path d="M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2" /></symbol>
     <symbol id="i-net" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1M8.5 10h.01M8.5 14h.01M8.5 18h.01M11.5 10H16M11.5 14H16M11.5 18H14" /></symbol>
     <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3" /><rect x="3.5" y="14" width="4" height="6.5" rx="1.5" /><rect x="16.5" y="14" width="4" height="6.5" rx="1.5" /></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="M4 7l8 6 8-6" /></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
     <symbol id="i-car" viewBox="0 0 24 24"><path d="M4 16v-4l2.2-4.4A2 2 0 0 1 8 6.5h8a2 2 0 0 1 1.8 1.1L20 12v4z" /><path d="M4 12h16" /><circle cx="7.5" cy="16.5" r="1.5" /><circle cx="16.5" cy="16.5" r="1.5" /></symbol>
     <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7" /><circle cx="7" cy="17.5" r="1.5" /><circle cx="17" cy="17.5" r="1.5" /></symbol>
@@ -88,6 +89,7 @@
         <span class="nav-group">Features</span>
         <a href="#/macros" data-nav="macros"><svg class="icon" aria-hidden="true"><use href="#i-macros" /></svg>DTMF macros</a>
         <a href="#/net" data-nav="net"><svg class="icon" aria-hidden="true"><use href="#i-net" /></svg>Net</a>
+        <a href="#/mailbox" data-nav="mailbox"><svg class="icon" aria-hidden="true"><use href="#i-mail" /></svg>Mailbox</a>
         <a href="#/announcements" data-nav="announcements"><svg class="icon" aria-hidden="true"><use href="#i-announce" /></svg>Announcements</a>
         <a href="#/weather" data-nav="weather"><svg class="icon" aria-hidden="true"><use href="#i-weather" /></svg>Weather alerts</a>
         <a href="#/autopatch" data-nav="autopatch"><svg class="icon" aria-hidden="true"><use href="#i-phone" /></svg>Autopatch</a>
@@ -302,6 +304,11 @@
               <button type="submit" class="btn btn-primary">Save</button>
             </div>
           </form>
+          <form id="recordings-search" class="inline-form" role="search">
+            <label class="grow">Search the transcripts
+              <input type="search" name="q" maxlength="100" placeholder="A word, or a callsign like W1AW" />
+            </label>
+          </form>
           <div class="table-wrap">
             <table>
               <thead><tr><th>When</th><th>Length</th><th>Listen</th><th></th></tr></thead>
@@ -310,6 +317,34 @@
           </div>
           <p id="recordings-empty" class="muted small">No recordings yet.</p>
         </div>
+        <form class="card config-form" data-config-form id="transcription-form">
+          <h2>Transcripts</h2>
+          <p class="muted small">Turn recordings and mailbox messages into text, with the callsigns heard picked
+            out, so they can be searched. Recordings need to be turned on above.</p>
+          <div class="form-grid">
+            <label class="span-2">Transcribe with
+              <select name="transcription_engine">
+                <option value="off">Off</option>
+                <option value="vosk">Vosk, on this controller</option>
+                <option value="openai">A Whisper server (OpenAI-compatible)</option>
+              </select>
+            </label>
+            <label class="span-2" data-transcription="openai">Server address
+              <input type="text" name="transcription_url" placeholder="http://whisper.local:8000/v1/audio/transcriptions" pattern="(https?://\S+)?" title="http:// or https:// and the address" />
+              <small>The full <code>/v1/audio/transcriptions</code> address: a whisper.cpp or faster-whisper server on
+                your network, or OpenAI (which sends the audio to them).</small>
+            </label>
+            <label data-transcription="openai">Model
+              <input type="text" name="transcription_model" maxlength="100" placeholder="whisper-1" />
+            </label>
+          </div>
+          <p class="muted small" id="transcription-status"></p>
+          <div class="form-actions">
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
       </section>
 
       <!-- Timing -->
@@ -974,6 +1009,90 @@
             <button type="submit" class="btn btn-primary">Save</button>
           </div>
         </form>
+      </section>
+
+      <!-- Mailbox -->
+      <section class="view" data-view="mailbox" data-title="Mailbox" hidden>
+        <header class="view-header">
+          <h1>Mailbox</h1>
+          <p class="muted">Leave a short voice message for another station, over the air. They hear a reminder that
+            messages are waiting, and play them back with their PIN.</p>
+        </header>
+        <form class="card config-form" data-config-form id="mailbox-form">
+          <div class="form-grid">
+            <label class="switch span-2">
+              <input type="checkbox" name="mailbox_enabled" />
+              <span class="switch-track"></span>
+              <span>Turn on the mailbox</span>
+            </label>
+            <label>Leave a message
+              <input type="text" name="mailbox_leave_code" required maxlength="8" pattern="[0-9A-D*]{1,8}" title="Digits, A&ndash;D and *" />
+              <small>Then the mailbox number and #. Key up again to record.</small>
+            </label>
+            <label>Play messages
+              <input type="text" name="mailbox_play_code" required maxlength="8" pattern="[0-9A-D*]{1,8}" title="Digits, A&ndash;D and *" />
+              <small>Then the mailbox number, *, the PIN and #.</small>
+            </label>
+            <label>Delete messages
+              <input type="text" name="mailbox_delete_code" required maxlength="8" pattern="[0-9A-D*]{1,8}" title="Digits, A&ndash;D and *" />
+              <small>Then the mailbox number, *, the PIN and #.</small>
+            </label>
+            <label>Longest message
+              <span class="input-unit"><input type="number" step="5" min="5" max="180" name="mailbox_max_seconds" required /><span>seconds</span></span>
+            </label>
+            <label>Keep messages for
+              <span class="input-unit"><input type="number" step="1" min="1" max="365" name="mailbox_retention_days" required /><span>days</span></span>
+            </label>
+            <label>Remind every
+              <span class="input-unit"><input type="number" step="5" min="0" max="1440" name="mailbox_reminder_minutes" required /><span>minutes</span></span>
+              <small>&ldquo;Messages waiting for mailbox 1 2.&rdquo; 0 turns reminders off. Skipped during a net.</small>
+            </label>
+          </div>
+          <p class="muted small">Messages need live audio. Anyone listening hears a PIN when it's keyed, so a mailbox
+            is for convenience, not secrets. Five wrong PINs lock a mailbox for ten minutes.</p>
+          <div class="form-actions">
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+        <div class="card" data-admin-only>
+          <h2>Mailboxes</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Number</th><th>Whose</th><th>Messages</th><th></th></tr></thead>
+              <tbody id="mailbox-boxes-tbody"></tbody>
+            </table>
+          </div>
+          <p id="mailbox-boxes-empty" class="muted small">No mailboxes yet.</p>
+          <h3>Add a mailbox</h3>
+          <form id="mailbox-box-form" class="form-grid">
+            <label>Number
+              <input type="text" name="box" required inputmode="numeric" maxlength="6" pattern="[0-9]{1,6}" placeholder="12" />
+            </label>
+            <label>Whose
+              <input type="text" name="name" maxlength="60" placeholder="W1AW" />
+            </label>
+            <label>PIN
+              <input type="text" name="pin" inputmode="numeric" maxlength="8" pattern="[0-9]{4,8}" autocomplete="off" placeholder="4 to 8 digits" />
+              <small id="mailbox-pin-note">4 to 8 digits.</small>
+            </label>
+            <div class="form-actions span-2">
+              <button type="button" class="btn btn-ghost" id="mailbox-box-cancel" hidden>Cancel edit</button>
+              <button type="submit" class="btn btn-primary" id="mailbox-box-submit">Add mailbox</button>
+            </div>
+          </form>
+        </div>
+        <div class="card" data-admin-only>
+          <h2>Messages</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Mailbox</th><th>Left</th><th>Length</th><th>Listen</th><th></th></tr></thead>
+              <tbody id="mailbox-messages-tbody"></tbody>
+            </table>
+          </div>
+          <p id="mailbox-messages-empty" class="muted small">No messages waiting.</p>
+        </div>
       </section>
 
       <!-- Announcements -->

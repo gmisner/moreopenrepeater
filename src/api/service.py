@@ -16,6 +16,8 @@ import time
 from datetime import datetime, timedelta
 from typing import Callable, Optional, Protocol, Union
 
+import numpy as np
+
 from controller.announcements import Announcement, AnnouncementScheduler, announcement_from_dict
 from controller.events import (
     AssertPTT,
@@ -28,6 +30,7 @@ from controller.events import (
     DTMFDigit,
     HangupPatch,
     LinkStateChanged,
+    MailboxCommand,
     PlayAudio,
     RemoteKeyed,
     RunAction,
@@ -52,10 +55,14 @@ WEATHER_SUMMARY_MAX = 3
 MAX_HELD_ANNOUNCEMENTS = 10
 
 
-def talking_clock_text(now: datetime) -> str:
+def spoken_time(now: datetime) -> str:
     hour = now.hour % 12 or 12
     minutes = "o'clock" if now.minute == 0 else f"{now.minute:02d}" if now.minute >= 10 else f"oh {now.minute}"
-    return f"The time is {hour} {minutes} {'A M' if now.hour < 12 else 'P M'}."
+    return f"{hour} {minutes} {'A M' if now.hour < 12 else 'P M'}"
+
+
+def talking_clock_text(now: datetime) -> str:
+    return f"The time is {spoken_time(now)}."
 
 _CONFIG_FIELDS = {f.name for f in dataclasses.fields(RepeaterConfig)}
 _MACRO_FIELDS = {f.name for f in dataclasses.fields(Macro)}
@@ -93,6 +100,7 @@ class AudioOutput(Protocol):
     def set_repeating(self, repeating: bool) -> None: ...
     def play(self, clip: str) -> None: ...
     def arm_parrot(self) -> bool: ...
+    def arm_capture(self, max_seconds: float, on_done: Callable[[np.ndarray, float], None]) -> bool: ...
     def set_patch(self, patch: Optional[PatchAudio]) -> None: ...
     def set_link(self, link: Optional[LinkAudio]) -> None: ...
 
@@ -150,6 +158,7 @@ class RepeaterService:
         self.code_checker: Optional[Callable[[str], Optional[str]]] = None  # one-time code -> whose it is (api.control_codes)
         self.codes_locked: Callable[[], bool] = lambda: False
         self.homeassistant_hook: Optional[Callable[[str, str, str], None]] = None  # (target, source, pattern)
+        self.mailbox_hook: Optional[Callable[[MailboxCommand], None]] = None  # api.mailbox
         self._action_source = "DTMF"
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
@@ -260,7 +269,7 @@ class RepeaterService:
 
     def _apply_commands(self, commands: list[ControllerCommand]) -> None:
         now = self._wall_clock().timestamp()
-        actions: list[Union[RunAction, CodedCommand, DialPatch, HangupPatch]] = []
+        actions: list[Union[RunAction, CodedCommand, DialPatch, HangupPatch, MailboxCommand]] = []
         for command in commands:
             if isinstance(command, AssertPTT):
                 if self.activity is not None and command.active != self.ptt_active:
@@ -279,7 +288,7 @@ class RepeaterService:
                     _logger.warning("link command %r ignored: linking is off in GMRS mode", command.command)
                 else:
                     self._link_command_sink(command)
-            elif isinstance(command, (RunAction, CodedCommand, DialPatch, HangupPatch)):
+            elif isinstance(command, (RunAction, CodedCommand, DialPatch, HangupPatch, MailboxCommand)):
                 actions.append(command)
         filtered = self.controller.kerchunks_filtered
         if filtered > self._kerchunks_filtered and self.activity is not None:
@@ -310,6 +319,11 @@ class RepeaterService:
                 self._run_action(action)
             elif isinstance(action, CodedCommand):
                 self._run_coded(action)
+            elif isinstance(action, MailboxCommand):
+                if self.mailbox_hook is None:
+                    self.speak(TTS_PREFIX + "The mailbox is not available.")
+                else:
+                    self.mailbox_hook(action)
             else:
                 self._run_patch_command(action)
 

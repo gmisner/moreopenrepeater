@@ -16,6 +16,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+transcribe = [
+    "vosk>=0.3.45",  # offline transcripts (api.transcripts); also needs a model in data/vosk-model
+]
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",

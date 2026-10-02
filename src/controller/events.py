@@ -95,6 +95,15 @@ class HangupPatch:
 
 
 @dataclass(frozen=True)
+class MailboxCommand:
+    """Leave, play or delete voice mailbox messages (controller.mailbox)."""
+
+    action: str  # "leave" | "play" | "delete"
+    box: str
+    pin: str = ""
+
+
+@dataclass(frozen=True)
 class CodedCommand:
     """A macro that needs a one-time code, with the code keyed after it. The
     service layer checks the code before carrying out `command`."""
@@ -104,4 +113,4 @@ class CodedCommand:
     code: str
 
 
-ControllerCommand = Union[AssertPTT, PlayAudio, SendLinkCommand, RunAction, DialPatch, HangupPatch, CodedCommand]
+ControllerCommand = Union[AssertPTT, PlayAudio, SendLinkCommand, RunAction, DialPatch, HangupPatch, CodedCommand, MailboxCommand]

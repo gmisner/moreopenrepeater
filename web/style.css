@@ -416,6 +416,8 @@ button.indicator:hover { border-color: var(--muted); }
 #gpio-tbody input { min-width: 3.5rem; }
 #gpio-tbody tr[data-pin]:has(+ .gpio-actions:not([hidden])) td { border-bottom: none; }
 .gpio-actions td { padding-top: 0; }
+tr:has(+ .transcript-row) td { border-bottom: none; }
+.transcript-row td { padding-top: 0; }
 #gpio-tbody .gpio-actions input[type="checkbox"] { min-width: 0; }
 .gpio-action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-2) var(--space-4); margin-top: var(--space-2); }
 .gpio-action-grid label { font-size: var(--text-sm); color: var(--muted); }

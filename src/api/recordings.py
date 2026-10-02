@@ -45,6 +45,12 @@ class RecordingStore:
             raise KeyError(recording_id)
         return self.directory / f"{recording_id}.wav"
 
+    def transcript_path(self, recording_id: str) -> Path:
+        return self.path_for(recording_id).with_suffix(".txt")
+
+    def recent_ids(self, limit: int) -> list[str]:
+        return [r.id for r in self.list(limit)]
+
     def save(self, samples: np.ndarray, started_at: float) -> Optional[RecordingInfo]:
         if self.directory is None:
             return None
@@ -81,6 +87,7 @@ class RecordingStore:
             self.path_for(recording_id).unlink()
         except (KeyError, FileNotFoundError):
             return False
+        self.transcript_path(recording_id).unlink(missing_ok=True)
         return True
 
     def prune(self, older_than: float) -> int:
@@ -90,6 +97,7 @@ class RecordingStore:
             for path in self.directory.glob("*.wav"):
                 if _ID.match(path.stem) and int(path.stem) < cutoff:
                     path.unlink(missing_ok=True)
+                    path.with_suffix(".txt").unlink(missing_ok=True)
                     removed += 1
         return removed
 

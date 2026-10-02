@@ -322,6 +322,21 @@ it runs the installer for that channel, reports progress in
 `/var/lib/moreopenrepeater-update/status.json`, and goes back to the previous
 commit if the service doesn't come up.
 
+### Automatic updates
+
+The **Automatic updates** card on the same page installs new versions by
+itself. Choose the hours (02:00 to 05:00 by default; a window that ends
+before it starts runs past midnight), the days, and how long the repeater must
+have been quiet first (15 minutes by default). Inside the window it checks the
+repeater's channel at most every half hour, and updates only when nobody has
+used the repeater, a linked station, a phone call or a net for that long. A
+version that doesn't start is rolled back as usual and isn't tried again; the
+next newer version is. Updates that fail before installing anything are
+retried the next night. The card shows the next window and the last result,
+the update alerts go out as for a manual update, and each automatic update is
+in the audit log. It's off until you turn it on. The settings are in
+`data/auto-update.json`.
+
 From a terminal, run the installer again (add `--channel beta` to switch):
 
 ```
@@ -423,6 +438,23 @@ compressed memory instead. Use a good card (an "endurance" or A1/A2 one),
 keep backups on a USB drive (see [Backups](#backups)), and the **Alerts &
 health** page shows how much has been written to the card since boot and
 over its life.
+
+## Watchdog
+
+The service tells systemd it's alive every 15 seconds, but only while the
+controller's timers are running and, when live audio is on, the audio engine
+is still processing sound. If either stalls for 10 seconds, it stops telling
+systemd, and after 30 seconds systemd restarts it. Before giving up, the
+controller unkeys the transmitter (a CM108 interface would otherwise hold its
+PTT pin wherever it was), and after the restart an alert says which part
+stopped. The service also unkeys the CM108 when it starts.
+
+That covers the controller hanging. For the whole Pi hanging, the installer
+turns on the Pi's hardware watchdog (`RuntimeWatchdogSec=15s` in
+`/etc/systemd/system.conf.d/60-moreopenrepeater-watchdog.conf`), so the Pi
+reboots if systemd itself stops responding. It leaves the setting alone if
+something else has already set it. The **Alerts & health** page shows whether
+both watchdogs are on.
 
 ## Stuck-carrier lockout
 

@@ -12,6 +12,8 @@ from controller.macros import ACTIONS_NEEDING_ARGUMENT, MacroAction
 from .gpio import parse_gpio_command
 
 CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
+NetLinks = Literal["leave", "disconnect", "connect"]
+CourtesyToneVariant = Literal["same", "beep", "high_low", "low_high", "triple", "chirp"]  # "same": the local one
 WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
 CosSource = Literal["vox", "ctcss", "cm108", "gpio"]
 Polarity = Literal["low", "high"]
@@ -34,6 +36,8 @@ class StatusResponse(BaseModel):
     timestamp: float
     transmitter_enabled: bool = True
     locked_out: bool = False
+    net_active: bool = False
+    gmrs_mode: bool = False
 
 
 # GPIO3 is the PTT pin.
@@ -94,6 +98,23 @@ class LinkSchedule(BaseModel):
         return weekdays(days)
 
 
+class NetSchedule(BaseModel):
+    days: list[int] = Field(min_length=1)
+    time: str
+    minutes: int = Field(default=60, ge=0, le=12 * 60)  # 0 = until ended (or net_max_minutes)
+    enabled: bool = True
+
+    @field_validator("time")
+    @classmethod
+    def _valid_time(cls, value: str) -> str:
+        return hh_mm(value)
+
+    @field_validator("days")
+    @classmethod
+    def _valid_days(cls, days: list[int]) -> list[int]:
+        return weekdays(days)
+
+
 class GpioSchedule(BaseModel):
     pin: Literal[1, 2, 4, 5, 6, 7, 8]
     days: list[int] = Field(min_length=1)
@@ -133,6 +154,10 @@ class ConfigResponse(BaseModel):
     id_asset_id: Optional[str]
     timeout_tone_asset_id: Optional[str]
     courtesy_tone_style: CourtesyToneStyle
+    courtesy_tone_link_style: CourtesyToneVariant = "same"
+    courtesy_tone_link_asset_id: Optional[str] = None
+    courtesy_tone_patch_style: CourtesyToneVariant = "same"
+    courtesy_tone_patch_asset_id: Optional[str] = None
     voice_id_text: str
     id_phonetic: bool
     tts_voice: str
@@ -195,6 +220,20 @@ class ConfigResponse(BaseModel):
     gpio_schedules: list[GpioSchedule] = []
     link_favorites: list[LinkFavorite] = []
     link_schedules: list[LinkSchedule] = []
+    gmrs_mode: bool = False
+    net_name: str = "Net"
+    net_tot_duration: float = 600.0
+    net_hang_time: float = 1.0
+    net_courtesy_tone_style: CourtesyToneVariant = "same"
+    net_courtesy_tone_asset_id: Optional[str] = None
+    net_hold_autopatch: bool = True
+    net_hold_announcements: bool = True
+    net_links: NetLinks = "leave"
+    net_link_node: str = ""
+    net_start_say: str = ""
+    net_end_say: str = ""
+    net_max_minutes: float = 120.0
+    net_schedules: list[NetSchedule] = []
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -222,6 +261,12 @@ class ConfigUpdateRequest(BaseModel):
     clear_id_asset_id: bool = False
     clear_timeout_tone_asset_id: bool = False
     courtesy_tone_style: Optional[CourtesyToneStyle] = None
+    courtesy_tone_link_style: Optional[CourtesyToneVariant] = None
+    courtesy_tone_link_asset_id: Optional[str] = None
+    clear_courtesy_tone_link_asset_id: bool = False
+    courtesy_tone_patch_style: Optional[CourtesyToneVariant] = None
+    courtesy_tone_patch_asset_id: Optional[str] = None
+    clear_courtesy_tone_patch_asset_id: bool = False
     voice_id_text: Optional[str] = None
     id_phonetic: Optional[bool] = None
     tts_voice: Optional[str] = None
@@ -296,6 +341,27 @@ class ConfigUpdateRequest(BaseModel):
     gpio_schedules: Optional[list[GpioSchedule]] = Field(default=None, max_length=50)
     link_favorites: Optional[list[LinkFavorite]] = Field(default=None, max_length=50)
     link_schedules: Optional[list[LinkSchedule]] = Field(default=None, max_length=50)
+    gmrs_mode: Optional[bool] = None
+    net_name: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    net_tot_duration: Optional[float] = Field(default=None, ge=30, le=3600)
+    net_hang_time: Optional[float] = Field(default=None, gt=0, le=30)
+    net_courtesy_tone_style: Optional[CourtesyToneVariant] = None
+    net_courtesy_tone_asset_id: Optional[str] = None
+    clear_net_courtesy_tone_asset_id: bool = False
+    net_hold_autopatch: Optional[bool] = None
+    net_hold_announcements: Optional[bool] = None
+    net_links: Optional[NetLinks] = None
+    net_link_node: Optional[str] = Field(default=None, pattern=r"^[0-9]{0,10}$")
+    net_start_say: Optional[str] = Field(default=None, max_length=500)
+    net_end_say: Optional[str] = Field(default=None, max_length=500)
+    net_max_minutes: Optional[float] = Field(default=None, ge=10, le=24 * 60)
+    net_schedules: Optional[list[NetSchedule]] = Field(default=None, max_length=20)
+
+    @model_validator(mode="after")
+    def _net_link_needs_a_node(self) -> "ConfigUpdateRequest":
+        if self.net_links == "connect" and self.net_link_node == "":
+            raise ValueError("choose the node to link for nets")
+        return self
 
 
 class AutopatchDialRequest(BaseModel):
@@ -494,6 +560,7 @@ class AudioPreviewRequest(BaseModel):
 
     clip: str = Field(min_length=1)
     config: dict[str, Any] = {}
+    net: bool = False  # as it would sound during a net
 
 
 class TTSInfoResponse(BaseModel):
@@ -519,11 +586,42 @@ class UpdateRunStatus(BaseModel):
     message: Optional[str] = None
 
 
+class AutoUpdateSettings(BaseModel):
+    enabled: bool
+    days: list[int] = Field(min_length=1)
+    start: str
+    end: str  # before start = the window runs past midnight
+    idle_minutes: int = Field(ge=1, le=240)
+
+    @field_validator("start", "end")
+    @classmethod
+    def _valid_time(cls, value: str) -> str:
+        return hh_mm(value)
+
+    @field_validator("days")
+    @classmethod
+    def _valid_days(cls, days: list[int]) -> list[int]:
+        return weekdays(days)
+
+    @model_validator(mode="after")
+    def _window_has_length(self) -> "AutoUpdateSettings":
+        if self.start == self.end:
+            raise ValueError("the window needs different start and end times")
+        return self
+
+
+class AutoUpdateStatus(AutoUpdateSettings):
+    last_check_at: Optional[float] = None
+    last_result: Optional[str] = None
+    next_window: Optional[datetime] = None
+
+
 class UpdatesResponse(BaseModel):
     available: bool  # installed with install-pi.sh, so the updater units exist
     channel: UpdateChannel
     version: Optional[CommitSummary]
     status: Optional[UpdateRunStatus]
+    auto: AutoUpdateStatus
 
 
 class UpdateCheckResponse(BaseModel):
@@ -892,3 +990,46 @@ class AssetResponse(BaseModel):
     kind: Literal["courtesy_tone", "id", "timeout_tone", "custom"]
     filename: str
     uploaded_at: str
+
+
+class NetCheckIn(BaseModel):
+    id: str
+    callsign: str
+    at: float  # unix time
+    notes: str
+
+
+class NetSummary(BaseModel):
+    id: str
+    name: str
+    started_at: float
+    ends_at: float  # when it ends by itself
+    started_by: str
+    scheduled_for: Optional[str]
+    linked_node: Optional[str]  # linked for the net; dropped at the end
+    link_error: Optional[str]
+    ended_at: Optional[float] = None
+    ended_by: Optional[str] = None
+
+
+class RunningNet(NetSummary):
+    checkins: list[NetCheckIn]
+
+
+class PastNet(NetSummary):
+    checkin_count: int
+
+
+class NetStatusResponse(BaseModel):
+    current: Optional[RunningNet]
+    past: list[PastNet]
+    next_scheduled: Optional[datetime]
+
+
+class NetStartRequest(BaseModel):
+    name: str = Field(default="", max_length=60)
+
+
+class NetCheckInRequest(BaseModel):
+    callsign: str = Field(pattern=r"^[A-Za-z0-9/-]{1,15}$")
+    notes: str = Field(default="", max_length=300)

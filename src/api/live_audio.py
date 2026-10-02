@@ -84,7 +84,7 @@ def cm108_from_env(env: dict, find: Callable[[], list[dict]] = find_interfaces) 
     if setting == "off":
         return None
     if setting != "auto":
-        return CM108Interface(LinuxHidrawDevice(setting))
+        return _unkeyed(CM108Interface(LinuxHidrawDevice(setting)))
     found = find()
     if not found:
         return None
@@ -95,7 +95,17 @@ def cm108_from_env(env: dict, find: Callable[[], list[dict]] = find_interfaces) 
         _logger.error("found a CM108 interface at %s but couldn't open it: %s", path, error)
         return None
     _logger.info("using the CM108 interface at %s (%s)", path, found[0]["name"])
-    return CM108Interface(device)
+    return _unkeyed(CM108Interface(device))
+
+
+def _unkeyed(interface: CM108Interface) -> CM108Interface:
+    """A CM108 keeps its outputs when the process holding it dies, so a
+    crash or watchdog restart mid-transmission can leave the radio keyed."""
+    try:
+        interface.set_ptt(False)
+    except OSError as error:
+        _logger.error("couldn't unkey the CM108's PTT: %s", error)
+    return interface
 
 
 class LiveAudio:
@@ -126,6 +136,7 @@ class LiveAudio:
         self._capture_started_at: Optional[float] = None
         self._patch: Optional[PatchAudio] = None
         self._link: Optional[LinkAudio] = None
+        self._ptt_output: Optional[Callable[[bool], None]] = None
         self.monitor = AudioMonitor()
 
     @property
@@ -147,6 +158,17 @@ class LiveAudio:
 
     def shutdown(self) -> None:
         self._stop_engine()
+
+    def progress(self) -> Optional[float]:
+        """When the engine last handled a block (time.monotonic()), or None while it isn't running."""
+        engine = self.engine
+        return engine.last_block_at if engine is not None and engine.running else None
+
+    def release_ptt(self) -> None:
+        """Unkey the transmitter directly, from any thread, without the
+        engine: for when the service is about to be killed."""
+        if self._ptt_output is not None:
+            self._ptt_output(False)
 
     def apply_config(self, config: RepeaterConfig) -> None:
         previous = self._applied
@@ -321,6 +343,7 @@ class LiveAudio:
             cos_input=cos_input,
             on_audio=self.monitor.feed,
         )
+        self._ptt_output = ptt_output
         try:
             engine.start()
         except Exception as error:  # PortAudio raises its own error types
@@ -330,6 +353,7 @@ class LiveAudio:
                 engine.stop()
             except Exception:
                 pass
+            self._ptt_output = None
             self._release_pins()
             return
         self.engine = engine
@@ -352,6 +376,7 @@ class LiveAudio:
         self._pins = []
 
     def _stop_engine(self) -> None:
+        self._ptt_output = None
         if self.engine is not None:
             processor = self.engine.processor
             self.engine.stop()

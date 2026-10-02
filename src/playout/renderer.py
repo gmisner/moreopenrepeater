@@ -3,6 +3,8 @@
 Clip names are the strings carried by `PlayAudio(clip=...)`:
   - "courtesy_tone", "timeout_tone", "id" -- the controller's built-ins,
     using an assigned uploaded asset when there is one;
+  - "courtesy_tone_link", "courtesy_tone_patch" -- the courtesy tone after
+    a linked station or a phone call, if set differently;
   - "asset:<id>" -- an uploaded clip, played as-is;
   - "tts:<text>" -- arbitrary text through the local TTS engine, with
     "{callsign}" spelled out (announcements and weather alerts use this);
@@ -33,7 +35,8 @@ from .wav import WavError, read_wav, resample
 ASSET_PREFIX = "asset:"
 TTS_PREFIX = "tts:"
 RECORDING_PREFIX = "recording:"
-BUILTIN_CLIPS = ("courtesy_tone", "id", "timeout_tone")
+COURTESY_CLIPS = {"courtesy_tone": "", "courtesy_tone_link": "link", "courtesy_tone_patch": "patch"}
+BUILTIN_CLIPS = (*COURTESY_CLIPS, "id", "timeout_tone")
 SPEECH_PEAK = 0.5
 _GAP_SECONDS = 0.4
 
@@ -42,6 +45,17 @@ _logger = logging.getLogger("moreopenrepeater.playout")
 
 class UnknownClipError(KeyError):
     pass
+
+
+def courtesy_sound(clip: str, config: RepeaterConfig) -> tuple[str, Optional[str]]:
+    """(built-in style, uploaded clip id or None) for one of COURTESY_CLIPS."""
+    source = COURTESY_CLIPS[clip]
+    if source:
+        style = getattr(config, f"courtesy_tone_{source}_style")
+        asset = getattr(config, f"courtesy_tone_{source}_asset_id")
+        if asset or style != "same":
+            return (config.courtesy_tone_style if style == "same" else style), asset
+    return config.courtesy_tone_style, config.courtesy_tone_asset_id
 
 
 class ClipRenderer:
@@ -113,9 +127,9 @@ class ClipRenderer:
         return path.stat().st_mtime if path.exists() else None
 
     def _cache_key(self, clip: str, config: RepeaterConfig) -> Hashable:
-        if clip == "courtesy_tone":
-            asset = config.courtesy_tone_asset_id
-            return (clip, config.courtesy_tone_style, config.courtesy_tone_duration, asset, self._asset_version(asset))
+        if clip in COURTESY_CLIPS:
+            style, asset = courtesy_sound(clip, config)
+            return ("courtesy_tone", style, config.courtesy_tone_duration, asset, self._asset_version(asset))
         if clip == "timeout_tone":
             asset = config.timeout_tone_asset_id
             return (clip, asset, self._asset_version(asset))
@@ -146,11 +160,12 @@ class ClipRenderer:
             return None
 
     def _render_uncached(self, clip: str, config: RepeaterConfig) -> np.ndarray:
-        if clip == "courtesy_tone":
-            asset = self._load_asset(config.courtesy_tone_asset_id)
+        if clip in COURTESY_CLIPS:
+            style, asset_id = courtesy_sound(clip, config)
+            asset = self._load_asset(asset_id)
             if asset is not None:
                 return asset
-            return courtesy_tone(config.courtesy_tone_style, config.courtesy_tone_duration, self.sample_rate)
+            return courtesy_tone(style, config.courtesy_tone_duration, self.sample_rate)
         if clip == "timeout_tone":
             asset = self._load_asset(config.timeout_tone_asset_id)
             return asset if asset is not None else timeout_tone(self.sample_rate)

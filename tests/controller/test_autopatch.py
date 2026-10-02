@@ -143,7 +143,7 @@ def test_patch_holds_the_transmitter_through_unkeys():
 def test_ending_the_patch_goes_through_courtesy_tone_to_idle():
     c = controller()
     c.start_patch(1.0)
-    assert c.end_patch(5.0) == [PlayAudio("courtesy_tone")]
+    assert c.end_patch(5.0) == [PlayAudio("courtesy_tone_patch")]
     assert c.state == COURTESY_TONE
     c.tick(5.3)
     c.tick(6.5)

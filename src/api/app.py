@@ -26,8 +26,9 @@ from starlette.background import BackgroundTask
 from starlette.requests import HTTPConnection
 
 from controller.announcements import Announcement
-from controller.events import SendLinkCommand
+from controller.events import LinkStateChanged, SendLinkCommand
 from controller.macros import Macro
+from controller.modes import effective_config
 from controller.state_machine import RepeaterConfig
 from link.aprs_client import APRSClient, format_frequency_comment, format_position_report, format_status_report
 from link.node_link import NodeLinkClient
@@ -101,6 +102,9 @@ from .models import (
     LoginRequest,
     MacroCreateRequest,
     MacroResponse,
+    NetCheckInRequest,
+    NetStartRequest,
+    NetStatusResponse,
     RecordingResponse,
     SavedBackupResponse,
     SessionResponse,
@@ -121,16 +125,21 @@ from .models import (
     UpdateChannel,
     UpdateCheckResponse,
     UpdateRequest,
+    AutoUpdateSettings,
     UpdatesResponse,
     WeatherAlertResponse,
     WeatherStatusResponse,
 )
 from .health import CHECK_SECONDS as HEALTH_CHECK_SECONDS
 from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
+from .net import POLL_SECONDS as NET_POLL_SECONDS
+from .net import NetError, NetMode
 from .notify import SECRET_FIELDS, Notifier
 from .persistence import StateStore
 from .service import RepeaterService, StatusSnapshot
+from .auto_update import POLL_SECONDS as AUTO_UPDATE_POLL_SECONDS, AutoUpdater
 from .updates import UpdateChecker, Updater, channel_from_env, installed_version, read_log, repo_from_checkout, updater_settings_from_env
+from .watchdog import Watchdog, ping_interval, sd_notify
 
 REPO_DIR = Path(__file__).resolve().parent.parent.parent
 WEB_DIR = REPO_DIR / "web"
@@ -162,6 +171,8 @@ DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
 DEFAULT_NODE_LIST_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "allstar-nodes.txt"
 DEFAULT_ALERTS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "alerts.json"
 DEFAULT_RUN_MARKER_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "run-state.json"
+DEFAULT_NETS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "nets.json"
+DEFAULT_AUTO_UPDATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "auto-update.json"
 DEFAULT_BACKUP_DIR = Path(
     os.environ.get("MOREOPENREPEATER_BACKUP_DIR") or _resolve_data_root(os.environ, _REPO_DATA_DIR) / "backups"
 )
@@ -226,7 +237,7 @@ def _status_response(snapshot: StatusSnapshot) -> StatusResponse:
 
 
 def _config_response(service: RepeaterService) -> ConfigResponse:
-    return ConfigResponse(**dataclasses.asdict(service.config))
+    return ConfigResponse(**dataclasses.asdict(service.saved_config))
 
 
 def _macro_response(macro: Macro) -> MacroResponse:
@@ -347,6 +358,9 @@ def create_app(
     notifier: Optional[Notifier] = None,
     run_marker: Optional[RunMarker] = None,
     system_probe: Optional[SystemProbe] = None,
+    watchdog: Optional[Watchdog] = None,
+    net_store: Optional[StateStore] = None,
+    auto_update_store: Optional[StateStore] = None,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -383,12 +397,29 @@ def create_app(
         service, node_directory, lambda: (link_settings.local_node_id if link_settings else "") or allstar_node.node or ""
     )
     link_scheduler = LinkScheduler(links, lambda: service.config.link_schedules)
+    nets = NetMode(service, links, net_store)
+    gmrs_mode = [service.saved_config.gmrs_mode]
+
+    async def drop_links(node: Optional[str] = None) -> None:
+        try:
+            await (links.disconnect(node) if node else links.disconnect_all())
+        except LinkError as error:
+            _link_logger.warning("couldn't drop links for GMRS mode: %s", error)
+
+    def gmrs_changed(_config: RepeaterConfig) -> None:
+        on = service.saved_config.gmrs_mode
+        if on and not gmrs_mode[0] and links.client is not None:
+            asyncio.get_running_loop().create_task(drop_links())
+        gmrs_mode[0] = on
+
+    service.add_config_listener(gmrs_changed)
     auth_settings = auth_settings if auth_settings is not None else auth_settings_from_env(os.environ)
     sessions = SessionStore()
     users = users if users is not None else UserStore()
     users.reserved_username = auth_settings.username if auth_settings else None
     audit = audit or AuditLog()
     service.audit_hook = lambda actor, action, detail: audit.record(time.time(), actor, action, detail)
+    nets.audit_hook = service.audit_hook
     aprs_stations = aprs_stations or StationStore()
     aprs_receiver = AprsReceiver(aprs_stations, lambda: service.config)
     service.add_config_listener(lambda _config: aprs_receiver.settings_changed())
@@ -401,6 +432,15 @@ def create_app(
     updater = updater or Updater(updater_settings_from_env(os.environ))
     update_checker = update_checker or UpdateChecker(repo_from_checkout(REPO_DIR))
     update_channel = update_channel or channel_from_env(os.environ)
+
+    def installed_sha() -> str:
+        version = installed_version(REPO_DIR)
+        return version["sha"] if version else ""
+
+    auto_updater = AutoUpdater(
+        auto_update_store, updater, update_checker, lambda: update_channel, installed_sha, service.idle_seconds
+    )
+    auto_updater.audit_hook = service.audit_hook
     notifier = notifier or Notifier()
     notifier.station = lambda: service.config.callsign
     notifier.audit_hook = lambda at, action, detail: audit.record(at, "alerts", action, detail)
@@ -414,6 +454,16 @@ def create_app(
         update_status=updater.status,
     )
     backup_sources = BackupSources(service, users, assets_store, recordings, activity_store, audit)
+    watchdog = watchdog or Watchdog()
+    last_tick: list[Optional[float]] = [None]
+    watchdog.watch("controller", lambda: last_tick[0])
+    watchdog.watch("audio engine", live_audio.progress)
+
+    def before_watchdog_restart(stalled: str) -> None:
+        live_audio.release_ptt()
+        health.marker.remember(watchdog=stalled)
+
+    watchdog.on_stall = before_watchdog_restart
 
     def auth_enabled() -> bool:
         """On once there's an env admin or any stored user -- so adding the
@@ -488,6 +538,8 @@ def create_app(
                 links.client = client
                 async for event in client.events():
                     service.handle_link_event(event)
+                    if isinstance(event, LinkStateChanged) and event.linked and service.held_reason("links"):
+                        asyncio.create_task(drop_links(event.node_id))  # a node linked to us from outside
             except (OSError, ConnectionError):
                 _link_logger.exception("app_rpt AMI connection lost; reconnecting in %ss", LINK_RECONNECT_DELAY_SECONDS)
             finally:
@@ -595,6 +647,23 @@ def create_app(
                 _weather_logger.exception("unexpected error checking NWS alerts")
             await asyncio.sleep(config.wx_poll_interval)
 
+    async def net_loop() -> None:
+        while True:
+            await asyncio.sleep(NET_POLL_SECONDS)
+            try:
+                await nets.tick()
+            except Exception:
+                logging.getLogger("moreopenrepeater.net").exception("unexpected error in net mode")
+
+    async def auto_update_loop() -> None:
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(AUTO_UPDATE_POLL_SECONDS)
+            try:
+                await loop.run_in_executor(None, auto_updater.tick)  # runs git and calls GitHub
+            except Exception:
+                logging.getLogger("moreopenrepeater.updates").exception("unexpected error in automatic updates")
+
     async def backup_loop() -> None:
         loop = asyncio.get_running_loop()
         while True:
@@ -623,9 +692,11 @@ def create_app(
         tasks: list[asyncio.Task] = []
         if start_background_tick:
             async def tick_loop() -> None:
+                last_tick[0] = time.monotonic()
                 while True:
                     await asyncio.sleep(TICK_INTERVAL_SECONDS)
                     service.tick()
+                    last_tick[0] = time.monotonic()
 
             tasks.append(asyncio.create_task(tick_loop()))
             tasks.append(asyncio.create_task(aprs_beacon_loop()))
@@ -639,6 +710,8 @@ def create_app(
             loop.run_in_executor(None, renderer.warm, service.config)
             service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
             tasks.append(asyncio.create_task(backup_loop()))
+            tasks.append(asyncio.create_task(net_loop()))
+            tasks.append(asyncio.create_task(auto_update_loop()))
             tasks.append(asyncio.create_task(health_loop()))
             tasks.append(asyncio.create_task(activity_flush_loop()))
             if link_settings is not None:
@@ -648,8 +721,15 @@ def create_app(
             live_audio.attach(loop)
             await autopatch.start()
             await allstar_node.start()
+            sd_notify("READY=1")
+            interval = ping_interval()
+            if interval is not None:
+                watchdog.start(interval)
         gpio.start()
         yield
+        if start_background_tick:
+            sd_notify("STOPPING=1")
+            watchdog.stop()
         for task in tasks:
             task.cancel()
         await gpio.stop()
@@ -741,7 +821,7 @@ def create_app(
         for clear_field in clear_fields:
             if getattr(update, clear_field):
                 overrides[clear_field.removeprefix("clear_")] = None
-        request.state.audit_detail = describe_config_change(dataclasses.asdict(service.config), overrides)
+        request.state.audit_detail = describe_config_change(dataclasses.asdict(service.saved_config), overrides)
         service.update_config(**overrides)
         return _config_response(service)
 
@@ -771,6 +851,84 @@ def create_app(
     async def simulate_remote_keyed(body: SimulateRemoteKeyedRequest) -> StatusResponse:
         service.simulate_remote_keyed(body.node_id, body.keyed)
         return _status_response(service.snapshot())
+
+    def actor_of(request: Request) -> str:
+        return request.state.identity.username or "local"
+
+    @app.get("/api/net", response_model=NetStatusResponse, dependencies=auth_dependencies)
+    def get_net() -> dict:
+        return nets.status()
+
+    @app.post("/api/net/start", response_model=NetStatusResponse, dependencies=auth_dependencies)
+    async def start_net(body: NetStartRequest, request: Request) -> dict:
+        try:
+            net = await nets.start(actor_of(request), body.name)
+        except NetError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from None
+        request.state.audit_detail = net["name"]
+        return nets.status()
+
+    @app.post("/api/net/end", response_model=NetStatusResponse, dependencies=auth_dependencies)
+    async def end_net(request: Request) -> dict:
+        try:
+            net = await nets.end(actor_of(request))
+        except NetError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from None
+        request.state.audit_detail = f"{net['name']}: {len(net['checkins'])} check-ins"
+        return nets.status()
+
+    @app.post("/api/net/checkins", response_model=NetStatusResponse, dependencies=auth_dependencies)
+    def add_checkin(body: NetCheckInRequest, request: Request) -> dict:
+        request.state.audit_detail = body.callsign.upper()
+        try:
+            nets.add_checkin(body.callsign, body.notes)
+        except NetError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from None
+        return nets.status()
+
+    @app.put("/api/net/checkins/{checkin_id}", response_model=NetStatusResponse, dependencies=auth_dependencies)
+    def update_checkin(checkin_id: str, body: NetCheckInRequest) -> dict:
+        try:
+            nets.update_checkin(checkin_id, body.callsign, body.notes)
+        except NetError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from None
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such check-in") from None
+        return nets.status()
+
+    @app.delete("/api/net/checkins/{checkin_id}", response_model=NetStatusResponse, dependencies=auth_dependencies)
+    def delete_checkin(checkin_id: str) -> dict:
+        try:
+            nets.delete_checkin(checkin_id)
+        except NetError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from None
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such check-in") from None
+        return nets.status()
+
+    @app.get("/api/nets/{net_id}/checkins.csv", dependencies=auth_dependencies)
+    def net_csv(net_id: str) -> Response:
+        try:
+            net = nets.find(net_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such net") from None
+        day = datetime.fromtimestamp(net["started_at"]).strftime("%Y-%m-%d")
+        slug = "".join(c if c.isalnum() else "-" for c in net["name"].lower()).strip("-") or "net"
+        return Response(
+            nets.csv(net_id),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{slug}-{day}.csv"'},
+        )
+
+    @app.delete("/api/nets/{net_id}", response_model=NetStatusResponse, dependencies=auth_dependencies)
+    def delete_net(net_id: str) -> dict:
+        try:
+            nets.delete(net_id)
+        except NetError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from None
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such net") from None
+        return nets.status()
 
     @app.get("/api/macros", response_model=list[MacroResponse], dependencies=auth_dependencies)
     def list_macros() -> list[MacroResponse]:
@@ -984,7 +1142,14 @@ def create_app(
             "channel": update_channel,
             "version": installed_version(REPO_DIR),
             "status": updater.status(),
+            "auto": auto_updater.status(),
         }
+
+    @app.put("/api/updates/auto", response_model=UpdatesResponse, dependencies=admin_dependencies)
+    def set_auto_update(body: AutoUpdateSettings, request: Request) -> dict:
+        request.state.audit_detail = f"{body.start}-{body.end}" if body.enabled else "off"
+        auto_updater.update_settings(**body.model_dump())
+        return get_updates()
 
     @app.get("/api/updates/check", response_model=UpdateCheckResponse, dependencies=admin_dependencies)
     def check_for_update(channel: UpdateChannel, refresh: bool = False) -> dict:
@@ -1049,7 +1214,7 @@ def create_app(
     def audio_preview(body: AudioPreviewRequest) -> Response:
         if len(body.clip) > MAX_PREVIEW_CLIP_LENGTH:
             raise HTTPException(status_code=400, detail="Text is too long to preview")
-        config = _apply_overrides(service.config, body.config)
+        config = effective_config(_apply_overrides(service.saved_config, body.config), net_active=body.net)
         try:
             samples = renderer.render(body.clip, config)
         except UnknownClipError:
@@ -1429,6 +1594,8 @@ app = create_app(
     node_directory=NodeDirectory(DEFAULT_NODE_LIST_PATH),
     notifier=Notifier(StateStore(DEFAULT_ALERTS_PATH)),
     run_marker=RunMarker(StateStore(DEFAULT_RUN_MARKER_PATH)),
+    net_store=StateStore(DEFAULT_NETS_PATH),
+    auto_update_store=StateStore(DEFAULT_AUTO_UPDATE_PATH),
 )
 
 

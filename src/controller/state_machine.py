@@ -75,6 +75,12 @@ class RepeaterConfig:
     id_asset_id: Optional[str] = None
     timeout_tone_asset_id: Optional[str] = None
     courtesy_tone_style: Literal["beep", "high_low", "low_high", "triple", "chirp"] = "beep"
+    # Different tones after a linked station (AllStarLink/EchoLink) and at the
+    # end of a phone call, so listeners can tell; "same" uses the one above.
+    courtesy_tone_link_style: Literal["same", "beep", "high_low", "low_high", "triple", "chirp"] = "same"
+    courtesy_tone_link_asset_id: Optional[str] = None
+    courtesy_tone_patch_style: Literal["same", "beep", "high_low", "low_high", "triple", "chirp"] = "same"
+    courtesy_tone_patch_asset_id: Optional[str] = None
     voice_id_text: str = "{callsign} repeater"
     id_phonetic: bool = False
     tts_voice: str = ""
@@ -143,6 +149,23 @@ class RepeaterConfig:
     # Nodes to connect to with one click: [{"node": str, "name": str, "monitor": bool}]
     link_favorites: list = field(default_factory=list)
     link_schedules: list = field(default_factory=list)  # [{node, name, days, time, minutes, monitor, enabled}]
+    # GMRS (47 CFR Part 95 Subpart E) instead of amateur rules: IDs at least
+    # every 15 minutes, and no phone patch, linking or APRS. See controller.modes.
+    gmrs_mode: bool = False
+    # Net mode: these apply while a net is running (see controller.modes).
+    net_name: str = "Net"
+    net_tot_duration: float = 600.0
+    net_hang_time: float = 1.0
+    net_courtesy_tone_style: Literal["same", "beep", "high_low", "low_high", "triple", "chirp"] = "same"
+    net_courtesy_tone_asset_id: Optional[str] = None
+    net_hold_autopatch: bool = True
+    net_hold_announcements: bool = True  # scheduled ones play after the net; weather alerts never wait
+    net_links: Literal["leave", "disconnect", "connect"] = "leave"
+    net_link_node: str = ""  # with net_links "connect": linked for the net, dropped after
+    net_start_say: str = ""  # said when the net starts / ends; "" = nothing
+    net_end_say: str = ""
+    net_max_minutes: float = 120.0  # a net left running ends by itself
+    net_schedules: list = field(default_factory=list)  # [{days, time, minutes, enabled}]
 
 
 class RepeaterController:
@@ -258,7 +281,7 @@ class RepeaterController:
             return self._enter_idle(now)
         if self.carrier_present:
             return self._enter_receiving(now)
-        return self._enter_courtesy_tone(now)
+        return self._enter_courtesy_tone(now, "courtesy_tone_patch")
 
     def update_config(self, config: RepeaterConfig, now: float) -> list[ControllerCommand]:
         """Apply new settings to derived state too, so an edit takes effect
@@ -319,6 +342,9 @@ class RepeaterController:
         elif self._quiet_since is None:
             self._quiet_since = now
         return commands
+
+    def quiet_for(self, now: float) -> float:
+        return 0.0 if self._quiet_since is None else now - self._quiet_since
 
     def tick(self, now: float) -> list[ControllerCommand]:
         commands: list[ControllerCommand] = []
@@ -393,7 +419,7 @@ class RepeaterController:
                 commands = self._enter_timeout(now)
                 # Already unkeyed, so there's nothing left to wait for.
                 return commands + (self._enter_idle(now) if self.state == TIMEOUT else [])
-            return self._enter_courtesy_tone(now)
+            return self._enter_courtesy_tone(now, "courtesy_tone_link" if remote else "courtesy_tone")
         if self.state == TIMEOUT:
             return self._enter_idle(now)
         return []
@@ -421,11 +447,13 @@ class RepeaterController:
         self._state_deadline = None
         return [AssertPTT(active=True)]
 
-    def _enter_courtesy_tone(self, now: float) -> list[ControllerCommand]:
+    def _enter_courtesy_tone(self, now: float, clip: str) -> list[ControllerCommand]:
+        """`clip` says who unkeyed last: "courtesy_tone" (a local user),
+        "courtesy_tone_link" or "courtesy_tone_patch"."""
         self._set_state(COURTESY_TONE)
         self._tot_deadline = None
         self._state_deadline = now + self.config.courtesy_tone_duration
-        return [PlayAudio(clip="courtesy_tone")]
+        return [PlayAudio(clip=clip)]
 
     def _enter_hang_time(self, now: float) -> list[ControllerCommand]:
         self._set_state(HANG_TIME)

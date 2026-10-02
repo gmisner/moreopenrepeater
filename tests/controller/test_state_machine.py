@@ -342,6 +342,18 @@ def test_remote_keyed_triggers_receiving_without_ctcss_gate():
     assert controller.state == COURTESY_TONE
 
 
+def test_the_courtesy_tone_says_who_unkeyed_last():
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=0.0)
+    assert controller.handle_event(RemoteKeyed(node_id="1998", keyed=False), now=1.0) == [PlayAudio("courtesy_tone_link")]
+
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=1.0)
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=False), now=2.0)
+    assert controller.handle_event(COSChanged(active=False), now=3.0) == [PlayAudio("courtesy_tone")]
+
+
 def test_doubling_waits_for_both_the_user_and_the_link_to_unkey():
     controller = RepeaterController(make_config(), now=0.0)
     controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=0.0)

@@ -8,6 +8,12 @@ const optionText = (select) => select.selectedOptions[0]?.textContent.trim() ?? 
 const signed = (value) => (Number(value) > 0 ? `+${Number(value)}` : `${Number(value)}`);
 const tone = (value) => `${Number(value).toFixed(1)} Hz`;
 
+function courtesyTone(f, prefix) {
+  const clip = f[`${prefix}_asset_id`];
+  if (clip.value) return `Clip: ${optionText(clip)}`;
+  return optionText(f[`${prefix}_style`]);
+}
+
 const SUMMARIES = {
   "audio-devices": (f) => `${optionText(f.audio_input_device)} in, ${optionText(f.audio_output_device)} out`,
   "audio-cos": (f) => {
@@ -21,6 +27,24 @@ const SUMMARIES = {
     f.ptt_output.value === "gpio" ? `GPIO${f.ptt_gpio_pin.value}, active ${f.ptt_polarity.value}` : "CM108 interface",
   "audio-tx": (f) =>
     `Gain ${signed(f.tx_gain_db.value)} dB, ${f.tx_ctcss_hz.value ? `CTCSS ${tone(f.tx_ctcss_hz.value)}` : "no CTCSS tone"}`,
+
+  "tone-link": (f) => courtesyTone(f, "courtesy_tone_link"),
+  "tone-patch": (f) => courtesyTone(f, "courtesy_tone_patch"),
+
+  "net-timing": (f) => `Timeout ${formatDuration(Number(f.net_tot_duration.value))}, hang time ${f.net_hang_time.value}s`,
+  "net-tone": (f) => courtesyTone(f, "net_courtesy_tone"),
+  "net-holds": (f) => {
+    const held = [f.net_hold_announcements.checked && "announcements", f.net_hold_autopatch.checked && "phone patch"].filter(Boolean);
+    return held.length ? `Holds ${held.join(" and ")}` : "Nothing waits";
+  },
+  "net-links": (f) => {
+    if (f.net_links.value === "connect") return `Links node ${f.net_link_node.value.trim() || "(none set)"}`;
+    return optionText(f.net_links);
+  },
+  "net-say": (f) => {
+    const start = f.net_start_say.value.trim();
+    return start ? `“${start}”` : "Nothing (DTMF: “Net mode on”)";
+  },
 
   "cw-id": (f) =>
     `${f.id_mode.value === "voice" ? "Not used with voice IDs · " : ""}${f.cw_wpm.value} WPM, ${f.cw_tone_hz.value} Hz`,
@@ -75,5 +99,6 @@ export function initFolds() {
     if (event.target.closest("[data-reset]")) setTimeout(refreshFolds);
   });
   store.addEventListener("config", refreshFolds);
+  store.addEventListener("assets", refreshFolds);
   refreshFolds();
 }

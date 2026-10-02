@@ -357,7 +357,7 @@ class Autopatch:
         """Start a call; returns why not, if it can't."""
         config = self._service.config
         if not config.autopatch_enabled:
-            error = "Autopatch is turned off."
+            error = self._service.held_reason("autopatch") or "Autopatch is turned off."
         elif self.settings is None or self._server is None:
             error = "Autopatch is not available."
         elif not config.transmitter_enabled:

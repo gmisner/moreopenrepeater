@@ -34,6 +34,7 @@
     <symbol id="i-audit" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1M9 13l2 2 4-4" /></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></symbol>
     <symbol id="i-update" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9" /><path d="M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2" /></symbol>
+    <symbol id="i-net" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1M8.5 10h.01M8.5 14h.01M8.5 18h.01M11.5 10H16M11.5 14H16M11.5 18H14" /></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
     <symbol id="i-car" viewBox="0 0 24 24"><path d="M4 16v-4l2.2-4.4A2 2 0 0 1 8 6.5h8a2 2 0 0 1 1.8 1.1L20 12v4z" /><path d="M4 12h16" /><circle cx="7.5" cy="16.5" r="1.5" /><circle cx="16.5" cy="16.5" r="1.5" /></symbol>
     <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7" /><circle cx="7" cy="17.5" r="1.5" /><circle cx="17" cy="17.5" r="1.5" /></symbol>
@@ -74,6 +75,7 @@
       <div class="station-chip">
         <span class="muted small">Station</span>
         <strong id="station-callsign">(no callsign)</strong>
+        <span class="tag" id="gmrs-tag" hidden>GMRS</span>
       </div>
       <nav class="nav" id="nav">
         <a href="#/dashboard" data-nav="dashboard"><svg class="icon" aria-hidden="true"><use href="#i-dashboard" /></svg>Dashboard</a>
@@ -84,6 +86,7 @@
         <a href="#/audio" data-nav="audio"><svg class="icon" aria-hidden="true"><use href="#i-audio" /></svg>Audio &amp; tones</a>
         <span class="nav-group">Features</span>
         <a href="#/macros" data-nav="macros"><svg class="icon" aria-hidden="true"><use href="#i-macros" /></svg>DTMF macros</a>
+        <a href="#/net" data-nav="net"><svg class="icon" aria-hidden="true"><use href="#i-net" /></svg>Net</a>
         <a href="#/announcements" data-nav="announcements"><svg class="icon" aria-hidden="true"><use href="#i-announce" /></svg>Announcements</a>
         <a href="#/weather" data-nav="weather"><svg class="icon" aria-hidden="true"><use href="#i-weather" /></svg>Weather alerts</a>
         <a href="#/autopatch" data-nav="autopatch"><svg class="icon" aria-hidden="true"><use href="#i-phone" /></svg>Autopatch</a>
@@ -155,6 +158,17 @@
           </div>
           <p class="muted small" id="lockout-detail">The receiver kept timing out, so the repeater has stopped repeating. IDs still go out.
             It clears by itself once the channel has been quiet for a while.</p>
+        </div>
+
+        <div class="card net-card" id="net-card" hidden>
+          <div class="card-header">
+            <h2 id="net-card-title">Net running</h2>
+            <span class="row-actions">
+              <a href="#/net" class="btn btn-ghost btn-sm">Check-ins</a>
+              <button type="button" class="btn btn-danger btn-sm" id="net-card-end" data-requires-write>End net</button>
+            </span>
+          </div>
+          <p class="muted small" id="net-card-detail"></p>
         </div>
 
         <div class="dash-columns">
@@ -362,6 +376,15 @@
           <p class="muted">Station ID timing and CW / voice ID settings.</p>
         </header>
         <form class="card config-form" data-config-form>
+          <label class="switch">
+            <input type="checkbox" name="gmrs_mode" />
+            <span class="switch-track"></span>
+            <span>GMRS repeater <small class="muted">&mdash; follows the GMRS rules (Part 95E) instead of the amateur ones</small></span>
+          </label>
+          <p class="muted small">GMRS mode IDs at least every 15 minutes (&sect;95.1751) and turns off the phone patch
+            (&sect;95.1749), AllStarLink and APRS (&sect;95.1733). Their settings are kept for when it's turned off. See the
+            <a href="https://github.com/gmisner/moreopenrepeater/blob/main/docs/gmrs.md" target="_blank" rel="noopener">GMRS guide</a>
+            for channels, power limits and radios.</p>
           <div class="form-grid">
             <label>Callsign
               <input type="text" name="callsign" placeholder="e.g. W1AW" autocapitalize="characters" />
@@ -375,7 +398,8 @@
             </label>
             <label>ID interval
               <span class="input-unit"><input type="number" step="1" min="1" name="id_interval" required /><span>s</span></span>
-              <small>FCC &sect;97.119 requires an ID at least every 10 minutes (600 s) while in use.</small>
+              <small>Amateur (&sect;97.119): at least every 10 minutes (600 s) while in use. GMRS (&sect;95.1751): every
+                15 minutes; GMRS mode caps it at 900 s.</small>
             </label>
             <label class="switch switch-inline span-2">
               <input type="checkbox" name="idle_id" />
@@ -462,6 +486,54 @@
             <label>Timeout tone
               <select name="timeout_tone_asset_id" data-asset-select="timeout_tone"><option value="">(built-in)</option></select>
             </label>
+          </div>
+          <p class="muted small">The courtesy tone above follows local users. A different one after a linked station or a
+            phone call tells listeners who just spoke.</p>
+          <div class="fold-list">
+            <details class="fold" data-summary="tone-link">
+              <summary><span class="fold-name">After a linked station</span><span class="fold-hint"></span></summary>
+              <div class="fold-body">
+                <div class="form-grid">
+                  <label>Built-in tone
+                    <select name="courtesy_tone_link_style">
+                      <option value="same">Same as local users</option>
+                      <option value="beep">Beep</option>
+                      <option value="high_low">High&ndash;low</option>
+                      <option value="low_high">Low&ndash;high</option>
+                      <option value="triple">Triple beep</option>
+                      <option value="chirp">Chirp</option>
+                    </select>
+                  </label>
+                  <label>Clip
+                    <select name="courtesy_tone_link_asset_id" data-asset-select="courtesy_tone" data-empty-label="(none)"><option value="">(none)</option></select>
+                    <small>Plays instead of the built-in tone.</small>
+                  </label>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" data-preview-clip="courtesy_tone_link">&#9654; Linked station tone</button>
+              </div>
+            </details>
+            <details class="fold" data-summary="tone-patch">
+              <summary><span class="fold-name">After a phone call</span><span class="fold-hint"></span></summary>
+              <div class="fold-body">
+                <div class="form-grid">
+                  <label>Built-in tone
+                    <select name="courtesy_tone_patch_style">
+                      <option value="same">Same as local users</option>
+                      <option value="beep">Beep</option>
+                      <option value="high_low">High&ndash;low</option>
+                      <option value="low_high">Low&ndash;high</option>
+                      <option value="triple">Triple beep</option>
+                      <option value="chirp">Chirp</option>
+                    </select>
+                  </label>
+                  <label>Clip
+                    <select name="courtesy_tone_patch_asset_id" data-asset-select="courtesy_tone" data-empty-label="(none)"><option value="">(none)</option></select>
+                    <small>Plays instead of the built-in tone.</small>
+                  </label>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" data-preview-clip="courtesy_tone_patch">&#9654; Phone call tone</button>
+              </div>
+            </details>
           </div>
           <div class="form-actions">
             <button type="button" class="btn btn-ghost" data-preview-clip="courtesy_tone">&#9654; Courtesy tone</button>
@@ -697,6 +769,8 @@
                 <option value="tx_disable">Transmitter off</option>
                 <option value="tx_enable">Transmitter on</option>
                 <option value="lockout_clear">Clear a stuck-carrier lockout</option>
+                <option value="net_start">Start net mode</option>
+                <option value="net_end">End net mode</option>
                 <option value="aprs">APRS stations nearby</option>
                 <option value="gpio">Switch a GPIO output</option>
               </select>
@@ -881,6 +955,7 @@
           <p class="muted">Let users place phone calls through the repeater. Calls go out through a SIP phone line
             in the Asterisk sidecar; see the <a href="https://github.com/gmisner/moreopenrepeater/blob/main/docs/autopatch.md" target="_blank" rel="noopener">setup guide</a>.</p>
         </header>
+        <p class="card held-note" data-held="autopatch" hidden></p>
         <div class="card">
           <div class="card-header"><h2>Call</h2></div>
           <p id="patch-status" class="muted">Loading&hellip;</p>
@@ -1077,6 +1152,7 @@
             AllStarLink (ASL3) install beside it: what it repeats goes out over the node's links, and linked stations are
             transmitted here. See the <a href="https://github.com/gmisner/moreopenrepeater/blob/main/docs/allstar.md" target="_blank" rel="noopener">setup guide</a>.</p>
         </header>
+        <p class="card held-note" data-held="links" hidden></p>
         <div class="card">
           <div class="card-header"><h2>Node</h2><span id="allstar-pill" class="pill pill-off" hidden></span></div>
           <p id="allstar-status" class="muted">Loading&hellip;</p>
@@ -1190,6 +1266,7 @@
           <h1>APRS</h1>
           <p class="muted">Periodically beacon the repeater's position or status to APRS-IS.</p>
         </header>
+        <p class="card held-note" data-held="aprs" hidden></p>
         <form class="card config-form" data-config-form>
           <label class="switch">
             <input type="checkbox" name="aprs_enabled" />
@@ -1651,6 +1728,37 @@
             <button type="button" class="btn btn-primary" id="updates-install" disabled>Update</button>
           </div>
         </div>
+        <form class="card" id="auto-update-form">
+          <div class="card-header">
+            <h2>Automatic updates</h2>
+            <label class="switch switch-sm">
+              <input type="checkbox" id="auto-update-enabled" />
+              <span class="switch-track"></span>
+              <span>Update by itself</span>
+            </label>
+          </div>
+          <p class="muted small">Installs new versions from this repeater's channel during the hours below, once nobody
+            has used the repeater (or a linked station, call or net) for a while. A version that doesn't start is rolled
+            back and not tried again.</p>
+          <div class="form-grid">
+            <label>From
+              <input type="time" id="auto-update-start" required />
+            </label>
+            <label>Until
+              <input type="time" id="auto-update-end" required />
+              <small>Earlier than From runs past midnight.</small>
+            </label>
+            <label>Only after it's been quiet for
+              <span class="input-unit"><input type="number" id="auto-update-idle" min="1" max="240" step="1" required /><span>minutes</span></span>
+            </label>
+            <div id="auto-update-days" class="span-2"></div>
+          </div>
+          <p class="muted small" id="auto-update-status"></p>
+          <div class="form-actions">
+            <span class="spacer"></span>
+            <button type="submit" class="btn btn-primary" id="auto-update-save">Save</button>
+          </div>
+        </form>
         <div class="card" id="updates-progress" hidden>
           <div class="card-header">
             <h2>Last update</h2>
@@ -1659,6 +1767,178 @@
           <p class="muted small" id="updates-message"></p>
           <pre class="logs-view" id="updates-log"></pre>
         </div>
+      </section>
+
+      <!-- Net -->
+      <section class="view" data-view="net" data-title="Net" hidden>
+        <header class="view-header">
+          <h1>Net</h1>
+          <p class="muted">Net mode gives net control longer transmissions and its own courtesy tone, holds
+            announcements and the phone patch until the net ends, and keeps a log of check-ins. Start it here, with a
+            DTMF macro, or on a schedule.</p>
+        </header>
+        <div class="card" id="net-control">
+          <div class="card-header">
+            <h2 id="net-title">No net running</h2>
+            <span id="net-state"></span>
+          </div>
+          <p class="muted small" id="net-detail"></p>
+          <form class="inline-form" id="net-start-form">
+            <label class="grow">Name
+              <input type="text" id="net-start-name" maxlength="60" placeholder="Net" />
+            </label>
+            <button type="submit" class="btn btn-primary" data-requires-write>Start net</button>
+          </form>
+          <div class="form-actions" id="net-end-actions" hidden>
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-danger" id="net-end" data-requires-write>End net</button>
+          </div>
+        </div>
+        <div class="card" id="net-checkins-card" hidden>
+          <div class="card-header"><h2>Check-ins</h2><span class="muted small" id="net-checkin-count"></span></div>
+          <form class="inline-form" id="net-checkin-form">
+            <label>Callsign
+              <input type="text" id="net-checkin-callsign" required pattern="[A-Za-z0-9\/\-]{1,15}" autocapitalize="characters" autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="grow">Notes
+              <input type="text" id="net-checkin-notes" maxlength="300" placeholder="Name, location, traffic&hellip;" />
+            </label>
+            <button type="submit" class="btn btn-primary" id="net-checkin-add" data-requires-write>Check in</button>
+          </form>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Time</th><th>Callsign</th><th>Notes</th><th></th></tr></thead>
+              <tbody id="net-checkins"></tbody>
+            </table>
+          </div>
+          <p id="net-checkins-empty" class="muted small">Nobody has checked in yet.</p>
+        </div>
+        <div class="card">
+          <h2>Past nets</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Net</th><th>Started</th><th>Length</th><th>Check-ins</th><th></th></tr></thead>
+              <tbody id="net-past"></tbody>
+            </table>
+          </div>
+          <p id="net-past-empty" class="muted small">No nets yet.</p>
+        </div>
+        <form class="card config-form" data-config-form>
+          <h2>Net settings</h2>
+          <div class="form-grid">
+            <label>Default name
+              <input type="text" name="net_name" maxlength="60" required />
+            </label>
+            <label>End by itself after
+              <span class="input-unit"><input type="number" step="1" min="10" max="1440" name="net_max_minutes" required /><span>minutes</span></span>
+              <small>In case nobody ends it.</small>
+            </label>
+          </div>
+          <div class="fold-list">
+            <details class="fold" data-summary="net-timing">
+              <summary><span class="fold-name">Timing</span><span class="fold-hint"></span></summary>
+              <div class="fold-body">
+                <div class="form-grid">
+                  <label>Timeout timer during a net
+                    <span class="input-unit"><input type="number" step="1" min="30" max="3600" name="net_tot_duration" required /><span>s</span></span>
+                    <small>Net control often talks longer than the usual timeout allows.</small>
+                  </label>
+                  <label>Hang time during a net
+                    <span class="input-unit"><input type="number" step="0.1" min="0.1" max="30" name="net_hang_time" required /><span>s</span></span>
+                  </label>
+                </div>
+              </div>
+            </details>
+            <details class="fold" data-summary="net-tone">
+              <summary><span class="fold-name">Courtesy tone</span><span class="fold-hint"></span></summary>
+              <div class="fold-body">
+                <p class="muted small">Replaces every courtesy tone while the net runs, so everyone can hear a net is on.</p>
+                <div class="form-grid">
+                  <label>Built-in tone
+                    <select name="net_courtesy_tone_style">
+                      <option value="same">Same as usual</option>
+                      <option value="beep">Beep</option>
+                      <option value="high_low">High&ndash;low</option>
+                      <option value="low_high">Low&ndash;high</option>
+                      <option value="triple">Triple beep</option>
+                      <option value="chirp">Chirp</option>
+                    </select>
+                  </label>
+                  <label>Clip
+                    <select name="net_courtesy_tone_asset_id" data-asset-select="courtesy_tone" data-empty-label="(none)"><option value="">(none)</option></select>
+                    <small>Plays instead of the built-in tone.</small>
+                  </label>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" data-preview-clip="courtesy_tone" data-preview-net>&#9654; Net courtesy tone</button>
+              </div>
+            </details>
+            <details class="fold" data-summary="net-holds">
+              <summary><span class="fold-name">What waits for the net to end</span><span class="fold-hint"></span></summary>
+              <div class="fold-body">
+                <label class="switch">
+                  <input type="checkbox" name="net_hold_announcements" />
+                  <span class="switch-track"></span>
+                  <span>Announcements <small class="muted">&mdash; ones that come due play after the net (weather alerts still go out)</small></span>
+                </label>
+                <label class="switch">
+                  <input type="checkbox" name="net_hold_autopatch" />
+                  <span class="switch-track"></span>
+                  <span>Phone patch <small class="muted">&mdash; a call in progress is hung up when the net starts</small></span>
+                </label>
+              </div>
+            </details>
+            <details class="fold" data-summary="net-links">
+              <summary><span class="fold-name">AllStarLink</span><span class="fold-hint"></span></summary>
+              <div class="fold-body">
+                <div class="form-grid">
+                  <label>When the net starts
+                    <select name="net_links">
+                      <option value="leave">Leave links as they are</option>
+                      <option value="disconnect">Disconnect all links</option>
+                      <option value="connect">Link a node for the net</option>
+                    </select>
+                  </label>
+                  <label>Node
+                    <input type="text" name="net_link_node" inputmode="numeric" pattern="[0-9]{0,10}" placeholder="2000" />
+                    <small>For &ldquo;Link a node&rdquo;: dropped again when the net ends.</small>
+                  </label>
+                </div>
+              </div>
+            </details>
+            <details class="fold" data-summary="net-say">
+              <summary><span class="fold-name">What the repeater says</span><span class="fold-hint"></span></summary>
+              <div class="fold-body">
+                <div class="form-grid">
+                  <label class="span-2">When the net starts
+                    <input type="text" name="net_start_say" maxlength="500" placeholder="Net mode on." />
+                  </label>
+                  <label class="span-2">When it ends
+                    <input type="text" name="net_end_say" maxlength="500" placeholder="Net mode off." />
+                    <small>Spoken however the net starts or ends; <code>{name}</code> is the net's name. Left blank,
+                      a net started or ended with DTMF says &ldquo;Net mode on&rdquo; or &ldquo;off&rdquo;.</small>
+                  </label>
+                </div>
+              </div>
+            </details>
+          </div>
+          <div class="form-actions">
+            <span class="dirty-note">Unsaved changes</span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+        <form class="card" id="net-schedules-form">
+          <h2>Scheduled nets</h2>
+          <p class="muted small">Start net mode at a set time each week and end it after the given number of minutes
+            (0 runs until someone ends it, or the limit above).</p>
+          <div id="net-schedules-list" class="schedule-list"></div>
+          <p id="net-schedules-empty" class="muted small">No scheduled nets.</p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="net-schedules-add">Add a schedule</button>
+            <span class="spacer"></span>
+            <button type="submit" class="btn btn-primary" id="net-schedules-save">Save schedules</button>
+          </div>
+        </form>
       </section>
 
       <!-- Logs -->

@@ -49,7 +49,13 @@ jobs:
           password=$(sudo sed -n 's/^MOREOPENREPEATER_AUTH_PASSWORD=//p' /etc/moreopenrepeater/env)
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/status)" = 401
           curl -fsS -u "admin:$password" http://127.0.0.1:8000/api/status
-          curl -fsS -u "admin:$password" http://127.0.0.1:8000/api/alerts | jq -e '.system.disk.total > 0'
+          curl -fsS -u "admin:$password" http://127.0.0.1:8000/api/alerts | jq -e '.system.disk.total > 0 and .system.watchdog'
+      - name: systemd's watchdog is on and being fed
+        run: |
+          test "$(systemctl show -p WatchdogUSec --value moreopenrepeater)" = 30s
+          sleep 40
+          systemctl is-active moreopenrepeater
+          test "$(systemctl show -p NRestarts --value moreopenrepeater)" = 0
       - name: The code belongs to root and only data/ to the service
         run: |
           test "$(stat -c %U /opt/moreopenrepeater/src/api/app.py)" = root

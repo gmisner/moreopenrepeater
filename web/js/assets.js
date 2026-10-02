@@ -3,7 +3,14 @@ import { store } from "./store.js";
 import { escapeHtml, formatTimestamp, toast, toastError, withBusy } from "./ui.js";
 
 const KIND_LABELS = { courtesy_tone: "Courtesy tone", id: "Voice ID", timeout_tone: "Timeout tone", custom: "Custom" };
-const ASSIGNMENT_FIELDS = ["courtesy_tone_asset_id", "id_asset_id", "timeout_tone_asset_id"];
+const ASSIGNMENT_FIELDS = [
+  "courtesy_tone_asset_id",
+  "courtesy_tone_link_asset_id",
+  "courtesy_tone_patch_asset_id",
+  "net_courtesy_tone_asset_id",
+  "id_asset_id",
+  "timeout_tone_asset_id",
+];
 
 const tbody = document.getElementById("assets-tbody");
 const empty = document.getElementById("assets-empty");

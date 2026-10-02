@@ -33,7 +33,8 @@ from controller.events import (
     SendLinkCommand,
 )
 from controller.macros import Macro
-from controller.state_machine import PATCH, RECEIVING, RepeaterConfig, RepeaterController
+from controller.modes import effective_config, held_reason
+from controller.state_machine import IDLE, PATCH, RECEIVING, RepeaterConfig, RepeaterController
 from audio_io.patch import LinkAudio, PatchAudio
 
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, ClipRenderer
@@ -47,6 +48,7 @@ _logger = logging.getLogger("moreopenrepeater.service")
 LINK_AUDIO_NODE = "allstar"  # RemoteKeyed's node_id for the AllStar node's own transmitter
 
 WEATHER_SUMMARY_MAX = 3
+MAX_HELD_ANNOUNCEMENTS = 10
 
 
 def talking_clock_text(now: datetime) -> str:
@@ -109,6 +111,8 @@ class StatusSnapshot:
     timestamp: float
     transmitter_enabled: bool = True
     locked_out: bool = False
+    net_active: bool = False
+    gmrs_mode: bool = False
 
 
 class RepeaterService:
@@ -138,6 +142,7 @@ class RepeaterService:
         self.aprs_summary: Optional[Callable[[], str]] = None
         self.gpio_command: Optional[Callable[[str], str]] = None  # runs a gpio macro, returns what to say
         self.lockout_hook: Optional[Callable[[bool], None]] = None  # the stuck-carrier lockout engaged/cleared
+        self.net_hook: Optional[Callable[[str, str], None]] = None  # ("net_start" | "net_end", who asked)
         self._action_source = "DTMF"
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
         saved = state_store.load() if state_store is not None else None
@@ -146,8 +151,11 @@ class RepeaterService:
             macros = macros_from_snapshot(saved)
             announcements = announcements_from_snapshot(saved)
             _logger.info("loaded saved state from %s", state_store.path)
+        self._saved_config = config or RepeaterConfig()
+        self.net_active = False
+        self._held_announcements: list[str] = []
         self.controller = RepeaterController(
-            config or RepeaterConfig(), macros=macros or [], now=clock(), clip_duration=self._clip_duration
+            effective_config(self._saved_config), macros=macros or [], now=clock(), clip_duration=self._clip_duration
         )
         self.scheduler = AnnouncementScheduler(announcements or [], wall_clock())
         self.weather_tracker = AlertTracker()
@@ -168,7 +176,31 @@ class RepeaterService:
 
     @property
     def config(self) -> RepeaterConfig:
+        """The settings in force: the saved ones with net mode and GMRS mode applied."""
         return self.controller.config
+
+    @property
+    def saved_config(self) -> RepeaterConfig:
+        """The settings as the user saved them, without any mode's changes."""
+        return self._saved_config
+
+    def held_reason(self, feature: str) -> str:
+        """Why `feature` ("autopatch", "links", "aprs") is off right now although it's switched on, else ""."""
+        return held_reason(self._saved_config, self.net_active, feature)
+
+    def set_net_active(self, active: bool) -> None:
+        if active == self.net_active:
+            return
+        _logger.info("net mode %s", "on" if active else "off")
+        self.net_active = active
+        self._apply_config(self._saved_config)
+
+    def idle_seconds(self) -> float:
+        """How long nobody, local or linked, has used the repeater; 0 while
+        it's transmitting, on a call, or running a net."""
+        if self.net_active or self.controller.state != IDLE:
+            return 0.0
+        return self.controller.quiet_for(self._clock())
 
     def wall_now(self) -> datetime:
         return self._wall_clock()
@@ -202,6 +234,8 @@ class RepeaterService:
             timestamp=self._clock(),
             transmitter_enabled=self.controller.config.transmitter_enabled,
             locked_out=self.controller.locked_out,
+            net_active=self.net_active,
+            gmrs_mode=self._saved_config.gmrs_mode,
         )
 
     def subscribe(self) -> "asyncio.Queue[StatusSnapshot]":
@@ -234,7 +268,10 @@ class RepeaterService:
                 if self.audio_output is not None:
                     self.audio_output.play(command.clip)
             elif isinstance(command, SendLinkCommand):
-                self._link_command_sink(command)
+                if self._saved_config.gmrs_mode:
+                    _logger.warning("link command %r ignored: linking is off in GMRS mode", command.command)
+                else:
+                    self._link_command_sink(command)
             elif isinstance(command, (RunAction, DialPatch, HangupPatch)):
                 actions.append(command)
         filtered = self.controller.kerchunks_filtered
@@ -337,6 +374,11 @@ class RepeaterService:
             if self.controller.locked_out:
                 self.clear_lockout()
                 self.speak(TTS_PREFIX + "Lockout cleared")
+        elif action.action in ("net_start", "net_end"):
+            if self.net_hook is None:
+                _logger.warning("net mode isn't available")
+            else:
+                self.net_hook(action.action, source)
         elif action.action == "parrot":
             if self.audio_output is None:
                 _logger.warning("parrot needs live audio, which isn't running")
@@ -430,13 +472,18 @@ class RepeaterService:
         self._apply_commands(self.controller.handle_event(event, self._clock()))
 
     def update_config(self, **overrides: object) -> RepeaterConfig:
+        """Change saved settings; returns the new saved settings."""
         _logger.info("update_config(%s)", overrides)
-        new_config = dataclasses.replace(self.controller.config, **overrides)
-        commands = self.controller.update_config(new_config, self._clock())
-        self._persist()
+        self._apply_config(dataclasses.replace(self._saved_config, **overrides), persist=True)
+        return self._saved_config
+
+    def _apply_config(self, saved: RepeaterConfig, persist: bool = False) -> None:
+        self._saved_config = saved
+        commands = self.controller.update_config(effective_config(saved, self.net_active), self._clock())
+        if persist:
+            self._persist()
         self._config_changed()
         self._apply_commands(commands)
-        return new_config
 
     def list_macros(self) -> list[Macro]:
         return self.controller.list_macros()
@@ -481,10 +528,17 @@ class RepeaterService:
         return TTS_PREFIX + announcement.message
 
     def due_announcement_clips(self) -> list[str]:
+        """Scheduled announcements to play now. During a net they wait
+        (if net_hold_announcements), and play once it's over."""
         due = self.scheduler.due(self._wall_clock())
         for announcement in due:
             _logger.info("announcement %r is due", announcement.name)
-        return [self.announcement_clip(a) for a in due]
+        clips = [self.announcement_clip(a) for a in due]
+        if self.net_active and self._saved_config.net_hold_announcements:
+            self._held_announcements = (self._held_announcements + clips)[-MAX_HELD_ANNOUNCEMENTS:]
+            return []
+        held, self._held_announcements = self._held_announcements, []
+        return held + clips
 
     def queue_announcement(self, clip: str) -> bool:
         """Callers should render `clip` first (off the event loop) so the
@@ -517,7 +571,7 @@ class RepeaterService:
 
     def export_snapshot(self) -> dict:
         return {
-            "config": dataclasses.asdict(self.controller.config),
+            "config": dataclasses.asdict(self._saved_config),
             "macros": [dataclasses.asdict(m) for m in self.controller.list_macros()],
             "announcements": [dataclasses.asdict(a) for a in self.scheduler.list()],
         }
@@ -526,7 +580,8 @@ class RepeaterService:
         """Replace everything wholesale. Fields missing from `data` (e.g. a
         backup taken before a setting existed) get their defaults."""
         _logger.info("import_snapshot()")
-        self.controller.update_config(config_from_snapshot(data), self._clock())
+        self._saved_config = config_from_snapshot(data)
+        self.controller.update_config(effective_config(self._saved_config, self.net_active), self._clock())
         self.controller.set_macros(macros_from_snapshot(data))
         self.scheduler.set_announcements(announcements_from_snapshot(data), self._wall_clock())
         self._persist()

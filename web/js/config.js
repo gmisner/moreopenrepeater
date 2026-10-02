@@ -10,6 +10,9 @@ import { escapeHtml, formatDuration, toast, toastError, withBusy } from "./ui.js
 const CLEARABLE_FIELDS = new Set([
   "require_ctcss_hz",
   "courtesy_tone_asset_id",
+  "courtesy_tone_link_asset_id",
+  "courtesy_tone_patch_asset_id",
+  "net_courtesy_tone_asset_id",
   "id_asset_id",
   "timeout_tone_asset_id",
   "aprs_lat",
@@ -104,7 +107,8 @@ function populateAll(config) {
 function renderAssetSelects(assets) {
   for (const select of document.querySelectorAll("[data-asset-select]")) {
     const current = store.state.config?.[select.name] ?? select.value;
-    select.innerHTML = '<option value="">(built-in)</option>';
+    select.innerHTML = "";
+    select.add(new Option(select.dataset.emptyLabel ?? "(built-in)", ""));
     for (const asset of assets.filter((a) => a.kind === select.dataset.assetSelect)) {
       const option = document.createElement("option");
       option.value = asset.id;
@@ -123,8 +127,34 @@ function badge(on, onText = "enabled", offText = "disabled") {
   return `<span class="tag ${on ? "tag-on" : ""}">${on ? onText : offText}</span>`;
 }
 
+const GMRS_HELD = {
+  autopatch: "The phone patch is off: GMRS doesn't allow connecting to the phone network (§95.1749).",
+  links: "Linking is off: GMRS doesn't allow transmitting messages that arrive over a wireline link (§95.1733).",
+  aprs: "APRS is off: it's an amateur service.",
+};
+
+// Mirrors controller.modes.held_reason.
+function renderHeld() {
+  const config = store.state.config;
+  if (!config) return;
+  const netActive = Boolean(store.state.status?.net_active);
+  for (const note of document.querySelectorAll("[data-held]")) {
+    const feature = note.dataset.held;
+    let text = "";
+    if (config.gmrs_mode) {
+      text = `${GMRS_HELD[feature]} The settings below are kept for when GMRS mode is turned off on the Identification page.`;
+    } else if (netActive && feature === "autopatch" && config.net_hold_autopatch) {
+      text = "The phone patch is off until the net ends.";
+    }
+    note.textContent = text;
+    note.hidden = !text;
+  }
+}
+
 function renderSummaries(config) {
   document.getElementById("station-callsign").textContent = config.callsign || "(no callsign)";
+  document.getElementById("gmrs-tag").hidden = !config.gmrs_mode;
+  renderHeld();
   document.getElementById("station-summary").innerHTML = kv([
     ["Callsign", escapeHtml(config.callsign || "not set")],
     ["ID mode", escapeHtml(config.id_mode.toUpperCase())],
@@ -187,7 +217,7 @@ function initPreviews() {
     button.addEventListener("click", () =>
       withBusy(button, async () => {
         try {
-          await playClip(button.dataset.previewClip, unsavedConfig());
+          await playClip(button.dataset.previewClip, unsavedConfig(), "previewNet" in button.dataset);
         } catch (error) {
           toastError(error);
         }
@@ -231,6 +261,7 @@ export function initConfig() {
     renderAssetSelects(detail);
     if (store.state.config) renderSummaries(store.state.config);
   });
+  store.addEventListener("status", renderHeld);
   for (const key of ["macros", "announcements"]) {
     store.addEventListener(key, () => {
       if (store.state.config) renderSummaries(store.state.config);

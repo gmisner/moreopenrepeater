@@ -18,6 +18,7 @@ import { initListen } from "./js/listen.js";
 import { initLogs } from "./js/logs.js";
 import { initMap } from "./js/map.js";
 import { initMacros, loadMacros } from "./js/macros.js";
+import { initNet } from "./js/net.js";
 import { initRouter } from "./js/router.js";
 import { initSession } from "./js/session.js";
 import { initSimulator } from "./js/simulator.js";
@@ -41,6 +42,7 @@ async function main() {
   initListen();
   initMacros();
   initAnnouncements();
+  initNet();
   initWeather();
   initAutopatch();
   initAllStar();

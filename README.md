@@ -193,6 +193,16 @@ several phases (see the plan file for the full breakdown):
   clock, so the repeater IDs every interval while it's in use and once after the
   last of it, then stays quiet until someone keys up (§97.119). A switch turns on
   idle IDs every interval around the clock, as a beacon.
+- **A courtesy tone for each source**: local users, linked stations and the end of
+  a phone call can each have their own built-in tone or uploaded clip, so listeners
+  can tell who just unkeyed.
+- **Net mode**: started from the dashboard, a DTMF macro or a weekly schedule. It
+  gives net control a longer timeout and its own courtesy tone, holds announcements
+  and the phone patch until the net ends, can link or unlink AllStarLink nodes, and
+  keeps a check-in log that downloads as CSV. It ends by itself after a set time.
+- **GMRS mode**: follows the Part 95 rules instead of the amateur ones. It IDs at
+  least every 15 minutes and turns off the autopatch, linking and APRS, keeping
+  their settings for later. See [docs/gmrs.md](docs/gmrs.md).
 - **Scheduled announcements**: interval ("every 30 minutes") or weekly ("Tuesdays at
   19:55") messages, spoken or from an uploaded clip. They queue for a clear channel
   and never interrupt a user.
@@ -268,10 +278,15 @@ several phases (see the plan file for the full breakdown):
   dev (`main`) first and are promoted to beta and then stable by a GitHub Actions
   workflow, only once their tests pass. The Updates page shows what's new on a
   channel and installs it; a version that doesn't start is rolled back
-  automatically. See [docs/raspberry-pi.md](docs/raspberry-pi.md#6-updates).
+  automatically. Automatic updates install new versions during a chosen quiet
+  window, once nobody has used the repeater for a while.
+  See [docs/raspberry-pi.md](docs/raspberry-pi.md#6-updates).
 - **Alerts**: a message by ntfy, Telegram, email or webhook when the repeater
   restarts after a crash or power cut, locks out, fails an update, overheats, sees
   under-voltage or loses its audio. See [docs/raspberry-pi.md](docs/raspberry-pi.md#alerts).
+- **Watchdog**: systemd restarts the controller if it or the audio stops
+  responding, after unkeying the transmitter, and the Pi's hardware watchdog
+  reboots a hung Pi. See [docs/raspberry-pi.md](docs/raspberry-pi.md#watchdog).
 - **Stuck-carrier lockout**: repeated timeouts stop the repeating (IDs still go out)
   until the channel is quiet, or it's cleared from the dashboard or by DTMF.
 - **SD card care**: few, batched writes, and an installer option that keeps the logs

@@ -57,6 +57,13 @@ function renderSystem() {
     ["Power supply", power],
     ["Throttling", throttling],
     ["Running since", system.boot_time ? escapeHtml(formatTimestamp(system.boot_time * 1000)) : "--"],
+    [
+      "Watchdog",
+      [
+        system.watchdog ? tag("tag-on", "service") : tag("", "service off"),
+        system.hardware_watchdog == null ? "" : system.hardware_watchdog ? tag("tag-on", "board") : tag("", "board off"),
+      ].join(" "),
+    ],
   ]);
 
   const disk = system.disk;
@@ -74,7 +81,11 @@ function renderSystem() {
   const note = el("alerts-unexpected-stop");
   note.hidden = !stop;
   if (stop) {
-    const cause = stop.power ? "lost power or restarted without shutting down" : "stopped unexpectedly";
+    const cause = stop.power
+      ? "lost power or restarted without shutting down"
+      : stop.watchdog
+        ? `been restarted by the watchdog (the ${stop.watchdog} stopped responding)`
+        : "stopped unexpectedly";
     note.textContent =
       `When it last started, the repeater had ${cause}. It was last known to be running at ` +
       `${formatTimestamp(stop.last_seen * 1000)} and came back at ${formatTimestamp(stop.restarted_at * 1000)}.`;

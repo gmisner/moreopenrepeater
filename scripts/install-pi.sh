@@ -43,6 +43,7 @@ PROTECT_SD=""
 ASTERISK_DIR=/etc/asterisk
 AMI_USER=moreopenrepeater
 JOURNALD_DROPIN=/etc/systemd/journald.conf.d/60-moreopenrepeater.conf
+WATCHDOG_DROPIN=/etc/systemd/system.conf.d/60-moreopenrepeater-watchdog.conf
 RAM_LOG=/run/moreopenrepeater/moreopenrepeater.log  # the service's RuntimeDirectory
 
 step() { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -161,6 +162,30 @@ unprotect_sd() {
   fi
 }
 
+# A Raspberry Pi's own watchdog reboots it if the kernel hangs, as long as
+# systemd keeps feeding it. Left alone if something else has set it up.
+enable_hardware_watchdog() {
+  grep -qas "Raspberry Pi" /proc/device-tree/model || return 0
+  [ -e /dev/watchdog0 ] || return 0
+  if [ ! -f "$WATCHDOG_DROPIN" ] && [ "$(systemctl show -p RuntimeWatchdogUSec --value)" != 0 ]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$WATCHDOG_DROPIN")"
+  cat >"$WATCHDOG_DROPIN.new" <<'EOF'
+# From moreopenrepeater's install-pi.sh: reboot the Pi if the kernel hangs.
+[Manager]
+RuntimeWatchdogSec=15s
+EOF
+  if cmp -s "$WATCHDOG_DROPIN.new" "$WATCHDOG_DROPIN"; then
+    rm -f "$WATCHDOG_DROPIN.new"
+    return 0
+  fi
+  step "Turning on the Raspberry Pi's hardware watchdog"
+  mv "$WATCHDOG_DROPIN.new" "$WATCHDOG_DROPIN"
+  chmod 644 "$WATCHDOG_DROPIN"
+  systemctl daemon-reexec
+}
+
 [ "$(id -u)" -eq 0 ] || fail "run this with sudo."
 if [ "$ALLSTAR" -eq 1 ]; then asl_repo_package >/dev/null; fi
 command -v apt-get >/dev/null || fail "this installer needs a Debian-based system (Raspberry Pi OS, Debian, Ubuntu)."
@@ -273,6 +298,7 @@ for unit in moreopenrepeater.service moreopenrepeater-update.service moreopenrep
   install -m 644 "$INSTALL_DIR/packaging/$unit" "/etc/systemd/system/$unit"
 done
 systemctl daemon-reload
+enable_hardware_watchdog
 systemctl enable -q moreopenrepeater
 systemctl enable -q --now moreopenrepeater-update.path
 systemctl restart moreopenrepeater

@@ -227,6 +227,27 @@ def test_cm108_is_found_automatically_unless_turned_off(tmp_path):
     assert cm108_from_env({"MOREOPENREPEATER_CM108_HIDRAW": "off"}, find=lambda: found) is None
 
 
+def test_cm108_is_unkeyed_when_found(tmp_path):
+    """A CM108 keeps PTT keyed after a crash; the next start unkeys it."""
+    node = tmp_path / "hidraw3"
+    node.touch()
+    cm108_from_env({"MOREOPENREPEATER_CM108_HIDRAW": str(node)}, find=lambda: [])
+    assert node.read_bytes() == bytes([0x00, 0x00, 0x00, 0x04, 0x00])  # GPIO3 an output, driven low
+
+
+def test_release_ptt_and_progress_for_the_watchdog():
+    cm108 = FakeCM108()
+    live, _service, _clock, _engines = make_live(cm108=cm108)
+    assert live.progress() is not None
+    live.release_ptt()
+    assert cm108.ptt == [False]
+
+    live.shutdown()
+    assert live.progress() is None
+    live.release_ptt()  # nothing to release once the engine is stopped
+    assert cm108.ptt == [False]
+
+
 def test_cm108_path_can_be_set_explicitly(tmp_path):
     node = tmp_path / "hidraw7"
     node.touch()

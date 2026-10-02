@@ -135,7 +135,15 @@ class SystemProbe:
             "boot_time": self.boot_time(),
             "disk": self.disk(),
             "sd_protection": self._env.get("MOREOPENREPEATER_PROTECT_SD") == "1",
+            "watchdog": self._env.get("WATCHDOG_USEC", "0") not in ("", "0"),
+            "hardware_watchdog": self.hardware_watchdog(),
         }
+
+    def hardware_watchdog(self) -> Optional[bool]:
+        """Whether systemd is feeding the board's watchdog, which reboots a
+        hung Pi; None without one."""
+        state = _read(self._root / "sys/class/watchdog/watchdog0/state")
+        return None if state is None else state == "active"
 
 
 class RunMarker:
@@ -169,6 +177,11 @@ class RunMarker:
 
     def remember(self, **values: object) -> None:
         self.state.update(values)
+        self._save()
+
+    def forget(self, *keys: str) -> None:
+        for key in keys:
+            self.state.pop(key, None)
         self._save()
 
 
@@ -221,22 +234,26 @@ class HealthMonitor:
             status = self._update_status()
             self.marker.remember(update_seen=(status or {}).get("started_at", 0))
             return alerts
+        stalled = previous.get("watchdog")
+        if stalled:
+            self.marker.forget("watchdog")
         if previous.get("clean", True):
             return alerts
         last_seen = previous.get("heartbeat", previous.get("started_at", now))
         boot = self.probe.boot_time()
         power = boot is not None and boot > last_seen
-        self.last_unexpected_stop = {"last_seen": last_seen, "restarted_at": now, "power": power}
+        self.last_unexpected_stop = {"last_seen": last_seen, "restarted_at": now, "power": power, "watchdog": stalled}
         alerted_at = previous.get("crash_alerted_at", 0)
         missed = previous.get("crashes_since_alert", 0)
         if now - alerted_at < CRASH_ALERT_REPEAT_SECONDS:
             self.marker.remember(crashes_since_alert=missed + 1)
             return alerts
-        cause = (
-            "The Pi lost power or restarted without shutting down"
-            if power
-            else "moreopenrepeater stopped unexpectedly (it crashed or was killed)"
-        )
+        if stalled and not power:
+            cause = f"The watchdog restarted moreopenrepeater because the {stalled} stopped responding"
+        elif power:
+            cause = "The Pi lost power or restarted without shutting down"
+        else:
+            cause = "moreopenrepeater stopped unexpectedly (it crashed or was killed)"
         message = (
             f"{cause}. It was last known to be running at {format_time(last_seen)} "
             f"and started again at {format_time(now)}, so it was off the air for up to {format_span(now - last_seen)}."
@@ -244,7 +261,8 @@ class HealthMonitor:
         if missed:
             message += f" It has also restarted unexpectedly {missed} more time{'' if missed == 1 else 's'} since the last alert."
         self.marker.remember(crash_alerted_at=now, crashes_since_alert=0)
-        alerts.append(Alert("restart", "Restarted after a power cut" if power else "Restarted after a crash", message, "critical"))
+        title = "Restarted after a power cut" if power else "Restarted by the watchdog" if stalled else "Restarted after a crash"
+        alerts.append(Alert("restart", title, message, "critical"))
         return alerts
 
     def stopping(self) -> None:

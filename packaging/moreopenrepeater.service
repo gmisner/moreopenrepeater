@@ -4,7 +4,12 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+# It tells systemd when it has started, then keeps pinging while the
+# controller and the audio engine are working (api/watchdog.py). If the pings
+# stop, systemd kills it and Restart= starts it again.
+Type=notify
+WatchdogSec=30
+TimeoutStartSec=120
 User=moreopenrepeater
 Group=moreopenrepeater
 WorkingDirectory=/opt/moreopenrepeater

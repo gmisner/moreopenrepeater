@@ -148,3 +148,15 @@ def test_cached_duration_never_renders():
     assert tts.calls == []
     renderer.warm(config(id_mode="voice"))
     assert renderer.cached_duration("id", config(id_mode="voice")) == 1.0
+
+
+def test_courtesy_tones_per_source_default_to_the_local_one():
+    renderer, _ = make_renderer(assets={"bell": np.full(400, 0.2, dtype=np.float32)})
+    local = config(courtesy_tone_style="triple")
+    assert np.array_equal(renderer.render("courtesy_tone_link", local), renderer.render("courtesy_tone", local))
+    assert np.array_equal(renderer.render("courtesy_tone_patch", local), renderer.render("courtesy_tone", local))
+
+    own = config(courtesy_tone_style="triple", courtesy_tone_link_style="chirp", courtesy_tone_patch_asset_id="bell")
+    assert not np.array_equal(renderer.render("courtesy_tone_link", own), renderer.render("courtesy_tone", own))
+    assert np.allclose(renderer.render("courtesy_tone_patch", own), 0.2, atol=1e-3)
+    assert renderer.cached_duration("courtesy_tone_patch", own) == 400 / RATE

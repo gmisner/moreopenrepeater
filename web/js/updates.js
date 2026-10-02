@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { dayPicker, pickedDays, shortTime } from "./link_schedules.js";
 import { currentView, router } from "./router.js";
 import { session } from "./session.js";
 import { escapeHtml, formatTimestamp, toast, toastError, withBusy } from "./ui.js";
@@ -92,6 +93,58 @@ function renderCheck() {
   installButton.disabled = !action || !info.available || busy(info.status);
 }
 
+let autoRenderedFor = null;
+
+function renderAuto() {
+  const auto = info.auto;
+  const key = JSON.stringify([auto.enabled, auto.days, auto.start, auto.end, auto.idle_minutes]);
+  if (key !== autoRenderedFor) {
+    autoRenderedFor = key;
+    el("auto-update-enabled").checked = auto.enabled;
+    el("auto-update-start").value = auto.start;
+    el("auto-update-end").value = auto.end;
+    el("auto-update-idle").value = auto.idle_minutes;
+    el("auto-update-days").innerHTML = dayPicker(auto.days);
+  }
+  const parts = [];
+  if (!info.available) parts.push("Needs an install made with install-pi.sh.");
+  else if (!auto.enabled) parts.push("Off. Updates only happen when you press Update.");
+  else if (auto.next_window) parts.push(`Next window: ${shortTime(auto.next_window)}.`);
+  if (auto.last_result) {
+    const when = auto.last_check_at ? ` (checked ${formatTimestamp(auto.last_check_at * 1000)})` : "";
+    parts.push(`Last: ${auto.last_result}${when}`);
+  }
+  el("auto-update-status").textContent = parts.join(" ");
+}
+
+async function saveAuto(event) {
+  event.preventDefault();
+  const days = pickedDays(el("auto-update-days"));
+  if (days.length === 0) {
+    toastError(new Error("Pick at least one day."));
+    return;
+  }
+  await withBusy(el("auto-update-save"), async () => {
+    try {
+      info = await api("/api/updates/auto", {
+        method: "PUT",
+        json: {
+          enabled: el("auto-update-enabled").checked,
+          days,
+          start: el("auto-update-start").value,
+          end: el("auto-update-end").value,
+          idle_minutes: Number(el("auto-update-idle").value),
+        },
+      });
+      autoRenderedFor = null;
+      renderAuto();
+      toast("Automatic updates saved");
+    } catch (error) {
+      toastError(error);
+    }
+  });
+}
+
 async function renderProgress() {
   const status = info.status;
   el("updates-progress").hidden = !status;
@@ -134,6 +187,7 @@ async function load() {
   selected ??= info.channel;
   renderInstalled();
   renderChannels();
+  renderAuto();
   await renderProgress();
   if (busy(info.status)) startPolling();
   await check();
@@ -166,6 +220,7 @@ function startPolling() {
 }
 
 export function initUpdates() {
+  el("auto-update-form").addEventListener("submit", saveAuto);
   for (const button of el("updates-channels").querySelectorAll("button")) {
     button.addEventListener("click", () => {
       selected = button.dataset.channel;

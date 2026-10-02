@@ -62,6 +62,7 @@ function recordChanges(prev, next) {
   if (prev.transmitter_enabled !== next.transmitter_enabled) {
     addActivity(next.transmitter_enabled ? "Transmitter turned on" : "Transmitter turned off", "ptt");
   }
+  if (prev.net_active !== next.net_active) addActivity(next.net_active ? "Net mode on" : "Net mode off", "net");
   if (prev.locked_out !== next.locked_out) {
     addActivity(next.locked_out ? "Stuck-carrier lockout engaged" : "Stuck-carrier lockout cleared", "lockout");
   }

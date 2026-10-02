@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import time
 from typing import Callable, Optional
 
 import numpy as np
@@ -62,6 +63,7 @@ class AudioEngine:
         self._threads: list[threading.Thread] = []
         self._stop = threading.Event()
         self.transmitting = False
+        self.last_block_at: Optional[float] = None  # time.monotonic(); the watchdog checks it
         self._configure_device(processor.settings.sample_rate, block_size)
 
     def _configure_device(self, device_rate: int, device_block_size: int) -> None:
@@ -99,6 +101,7 @@ class AudioEngine:
         silence = np.zeros((self._device_block_size, 1), dtype=np.float32)
         for _ in range(PRIME_BLOCKS):
             self._output.put_nowait(silence)
+        self.last_block_at = time.monotonic()
         self._threads = [threading.Thread(target=self._work, name="audio-worker", daemon=True)]
         if self._cos_input is not None:
             self._threads.append(threading.Thread(target=self._poll_cos, name="audio-cos", daemon=True))
@@ -157,6 +160,7 @@ class AudioEngine:
                 self.process_one(block)
             except Exception:
                 _logger.exception("audio processing failed for one block")
+            self.last_block_at = time.monotonic()
 
     def _poll_cos(self) -> None:
         assert self._cos_input is not None

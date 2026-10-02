@@ -105,6 +105,9 @@ class LinkControl:
             raise LinkError(f"couldn't read the links from app_rpt: {error}") from error
 
     async def connect(self, node: str, monitor: bool) -> None:
+        held = self._service.held_reason("links")
+        if held:
+            raise LinkError(held)
         client = self._require_client()
         await self._run(client.connect_node(node, monitor))
         _logger.info("connecting node %s (%s)", node, "monitor" if monitor else "transceive")

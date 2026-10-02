@@ -29,7 +29,7 @@ from .persistence import copy_database, load_database, open_database
 KERCHUNK_SECONDS = 1.5  # shorter than this and nobody said anything
 RETENTION_DAYS = 400
 FLUSH_SECONDS = 60.0
-_SILENT_CLIPS = {"courtesy_tone", "timeout_tone"}
+_SILENT_CLIPS = {"courtesy_tone", "courtesy_tone_link", "courtesy_tone_patch", "timeout_tone"}
 
 
 @dataclass(frozen=True)

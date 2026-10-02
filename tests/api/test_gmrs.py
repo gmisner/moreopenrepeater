@@ -31,6 +31,13 @@ def test_gmrs_rules_over_the_saved_settings():
     assert effective_config(HAM) is HAM
 
 
+def test_a_simplex_node_holds_the_phone_patch():
+    assert effective_config(RepeaterConfig(**{**HAM.__dict__, "node_mode": "simplex"})).autopatch_enabled is False
+    service, _sent = make_service(node_mode="simplex")
+    assert service.held_reason("autopatch") == "The phone patch is off on a simplex node."
+    assert service.held_reason("links") == ""
+
+
 def make_service(**overrides):
     sent = []
     service = RepeaterService(

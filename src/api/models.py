@@ -146,6 +146,8 @@ class ConfigResponse(BaseModel):
     id_interval: float
     idle_id: bool
     id_audio_duration: float
+    node_mode: Literal["repeater", "simplex"] = "repeater"
+    simplex_courtesy_tone: bool = True
     id_skip_short_seconds: float = 0.0
     long_id_mode: Literal["off", "voice", "both"] = "off"
     long_id_interval: float = 3600.0
@@ -300,6 +302,8 @@ class ConfigUpdateRequest(BaseModel):
     id_interval: Optional[float] = Field(default=None, gt=0)
     idle_id: Optional[bool] = None
     id_audio_duration: Optional[float] = Field(default=None, gt=0)
+    node_mode: Optional[Literal["repeater", "simplex"]] = None
+    simplex_courtesy_tone: Optional[bool] = None
     id_skip_short_seconds: Optional[float] = Field(default=None, ge=0, le=10)
     long_id_mode: Optional[Literal["off", "voice", "both"]] = None
     long_id_interval: Optional[float] = Field(default=None, ge=300, le=86400)

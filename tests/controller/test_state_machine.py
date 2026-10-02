@@ -472,6 +472,90 @@ def test_announcements_always_owe_an_id_even_when_short_transmissions_are_skippe
     assert PlayAudio(clip="id") in controller.tick(now=150.0)
 
 
+def simplex(**overrides):
+    return make_config(node_mode="simplex", **overrides)
+
+
+def ptt_commands(commands):
+    return [c.active for c in commands if isinstance(c, AssertPTT)]
+
+
+def test_simplex_node_doesnt_key_up_for_a_local_user():
+    controller = RepeaterController(simplex(), now=0.0)
+    commands = controller.handle_event(COSChanged(active=True), now=1.0)
+    assert controller.state == RECEIVING
+    assert ptt_commands(commands) == [False]
+    assert not controller.tick(now=2.0)
+
+
+def test_simplex_node_plays_the_courtesy_tone_then_goes_idle_without_hang_time():
+    controller = RepeaterController(simplex(courtesy_tone_duration=0.2, hang_time=5.0), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=1.0)
+    assert controller.handle_event(COSChanged(active=False), now=3.0) == [PlayAudio("courtesy_tone")]
+    assert controller.state == COURTESY_TONE
+    assert ptt_commands(controller.tick(now=3.2)) == [False]
+    assert controller.state == IDLE
+
+
+def test_simplex_courtesy_tone_after_a_local_user_can_be_turned_off():
+    controller = RepeaterController(simplex(simplex_courtesy_tone=False), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=1.0)
+    commands = controller.handle_event(COSChanged(active=False), now=3.0)
+    assert controller.state == IDLE
+    assert not any(isinstance(c, PlayAudio) for c in commands)
+    assert controller.tick(now=500.0) == []  # nothing was transmitted, so no ID is owed
+
+
+def test_simplex_node_transmits_a_linked_station_and_its_courtesy_tone():
+    controller = RepeaterController(simplex(simplex_courtesy_tone=False), now=0.0)
+    assert ptt_commands(controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=1.0)) == [True]
+    assert controller.handle_event(RemoteKeyed(node_id="1998", keyed=False), now=5.0) == [PlayAudio("courtesy_tone_link")]
+    assert ptt_commands(controller.tick(now=5.2)) == [False]
+    assert controller.state == IDLE
+    assert PlayAudio(clip="id") in controller.tick(now=101.0)  # it transmitted, so it IDs
+
+
+def test_simplex_link_audio_waits_for_the_local_user_to_unkey():
+    controller = RepeaterController(simplex(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=1.0)
+    assert ptt_commands(controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=2.0)) == []
+    assert ptt_commands(controller.handle_event(COSChanged(active=False), now=3.0)) == [True]
+    assert controller.state == RECEIVING
+
+
+def test_simplex_node_unkeys_when_someone_starts_talking_on_the_channel():
+    controller = RepeaterController(simplex(require_ctcss_hz=100.0), now=0.0)
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=1.0)
+    # No tone, so not a user of the node, but the channel is busy all the same.
+    assert ptt_commands(controller.handle_event(COSChanged(active=True), now=2.0)) == [False]
+    assert ptt_commands(controller.handle_event(COSChanged(active=False), now=3.0)) == [True]
+
+
+def test_simplex_local_user_keeps_the_floor_when_the_link_unkeys():
+    controller = RepeaterController(simplex(), now=0.0)
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=1.0)
+    controller.handle_event(COSChanged(active=True), now=2.0)
+    assert controller.handle_event(RemoteKeyed(node_id="1998", keyed=False), now=3.0) == []
+    assert controller.state == RECEIVING
+    assert controller.handle_event(COSChanged(active=False), now=4.0) == [PlayAudio("courtesy_tone")]
+
+
+def test_simplex_picks_up_a_station_that_keyed_during_the_courtesy_tone():
+    controller = RepeaterController(simplex(courtesy_tone_duration=0.2), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=1.0)
+    controller.handle_event(COSChanged(active=False), now=2.0)
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=2.1)
+    assert ptt_commands(controller.tick(now=2.2)) == [False, True]
+    assert controller.state == RECEIVING
+
+
+def test_switching_to_simplex_while_repeating_a_local_user_unkeys():
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=1.0)
+    assert ptt_commands(controller.update_config(simplex(), now=2.0)) == [False]
+    assert ptt_commands(controller.update_config(make_config(), now=3.0)) == [True]
+
+
 def test_enabling_required_ctcss_closes_carrier_access_immediately():
     controller = RepeaterController(make_config(), now=0.0)
 

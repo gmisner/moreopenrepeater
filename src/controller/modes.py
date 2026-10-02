@@ -32,6 +32,9 @@ def effective_config(saved: RepeaterConfig, net_active: bool = False) -> Repeate
             )
         if saved.net_hold_autopatch:
             changes.update(autopatch_enabled=False)
+    if saved.node_mode == "simplex":
+        # A call holds the transmitter up, and on one frequency the local user couldn't break in.
+        changes.update(autopatch_enabled=False)
     if saved.gmrs_mode:
         # 95.1749: no telephone connection. 95.1733(a)(8)-(9): nothing carried
         # over a wireline link, nor sent to amateur stations, which AllStarLink,
@@ -54,6 +57,8 @@ def held_reason(saved: RepeaterConfig, net_active: bool, feature: str) -> str:
             "links": "Linking is off in GMRS mode.",
             "aprs": "APRS is off in GMRS mode.",
         }[feature]
+    if saved.node_mode == "simplex" and feature == "autopatch":
+        return "The phone patch is off on a simplex node."
     if net_active and feature == "autopatch" and saved.net_hold_autopatch:
         return "The phone patch is off until the net ends."
     return ""

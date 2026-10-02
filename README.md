@@ -342,6 +342,14 @@ several phases (see the plan file for the full breakdown):
   transmits over the far end, and it has its own timeout and its own station ID. PTT
   and COS use Pi header pins or a second CM108, and DTMF macros connect or disconnect
   it. See [docs/raspberry-pi.md](docs/raspberry-pi.md#link-radio).
+- **Simplex node mode** (Timing page): one radio on one frequency becomes a node
+  for AllStar, EchoLink and the link radio. Local users go to the links but aren't
+  repeated. Linked stations go out over the air, but never over anyone on the channel:
+  if someone local is talking, the node waits for them to unkey. There's no hang time,
+  and the phone patch is off. A courtesy tone after local users is optional. IDs keep
+  the same schedule, counted from what the node transmits: linked stations, courtesy
+  tones and announcements. A local user it didn't answer with a tone doesn't make an
+  ID due.
 - **Public listening** (off until turned on): a `/listen` page showing whether the
   repeater is on the air and playing it live, open to anyone or only to signed-in
   accounts, with a cap on listeners. Listener accounts get that page and none of the

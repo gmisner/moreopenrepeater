@@ -53,6 +53,7 @@
     <symbol id="i-digi" viewBox="0 0 24 24"><path d="m17 2 3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4" /></symbol>
     <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z" /></symbol>
     <symbol id="i-warning" viewBox="0 0 24 24"><path d="M12 3 2 20h20zM12 10v4M12 17h.01" /></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></symbol>
     <symbol id="i-trail" viewBox="0 0 24 24"><path d="M3 17c3 0 3-10 6-10s3 10 6 10 3-10 6-10" /></symbol>
   </svg>
   <div class="app">
@@ -2520,7 +2521,7 @@
         <div class="grid grid-2">
           <div class="card" data-admin-only hidden>
             <h2>Full backup</h2>
-            <p class="muted small">A .zip file. It holds the dashboard users' password hashes, so keep it somewhere
+            <p class="muted small" data-keep>A .zip file. It holds the dashboard users' password hashes, so keep it somewhere
               private.</p>
             <label class="switch">
               <input type="checkbox" id="backup-download-recordings" />
@@ -2541,7 +2542,7 @@
           </div>
           <div class="card">
             <h2>Restore</h2>
-            <p class="muted small">A full backup (.zip) replaces everything it holds, except that recordings are added
+            <p class="muted small" data-keep>A full backup (.zip) replaces everything it holds, except that recordings are added
               to the ones already here. A settings file (.json) replaces the configuration, macros and
               announcements.</p>
             <label class="btn file-btn">Choose backup file&hellip;

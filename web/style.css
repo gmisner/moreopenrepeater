@@ -901,3 +901,39 @@ body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-ins
   .btn, .segmented button, .map-filter, .nav a, .mini-status, .day-picker label { min-height: 44px; }
   input:not([type="checkbox"], [type="radio"], [type="file"]), select, textarea { min-height: 44px; font-size: 16px; }
 }
+
+/* Description icons (js/hints.js) */
+.label-title { display: inline-flex; align-items: center; }
+.hint { display: inline-flex; vertical-align: middle; margin-left: 2px; }
+.hint-icon {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--muted);
+  cursor: help;
+}
+.hint-icon .icon { width: 15px; height: 15px; }
+.hint-icon:hover, .hint-icon[aria-expanded="true"] { color: var(--accent); }
+.hint-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hint-tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: var(--space-2) var(--space-3);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+}
+.hint-tip[hidden] { display: none; }
+.hint-more { display: block; margin-top: var(--space-2); }

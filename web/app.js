@@ -6,6 +6,7 @@ import { initAudit } from "./js/audit.js";
 import { initAllStar } from "./js/allstar.js";
 import { initFavorites } from "./js/favorites.js";
 import { initFolds } from "./js/folds.js";
+import { initHints } from "./js/hints.js";
 import { initLinkSchedules } from "./js/link_schedules.js";
 import { initGpioSchedules } from "./js/gpio_schedules.js";
 import { initGpio } from "./js/gpio.js";
@@ -42,6 +43,7 @@ async function main() {
   if (!(await initSession())) return;
 
   initRouter();
+  initHints();
   initStatus();
   initConfig();
   initAssets();

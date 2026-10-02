@@ -7,6 +7,7 @@ import { formatDuration } from "./ui.js";
 const optionText = (select) => select.selectedOptions[0]?.textContent.trim() ?? select.value;
 const signed = (value) => (Number(value) > 0 ? `+${Number(value)}` : `${Number(value)}`);
 const tone = (value) => `${Number(value).toFixed(1)} Hz`;
+const serialLine = (device, line) => `${line.value.toUpperCase()} on ${device.value.trim().split("/").pop() || "(no port)"}`;
 
 function courtesyTone(f, prefix) {
   const clip = f[`${prefix}_asset_id`];
@@ -21,12 +22,19 @@ const SUMMARIES = {
     const tail = Number(f.squelch_tail_ms.value) ? `, tail cut ${f.squelch_tail_ms.value} ms` : "";
     if (source === "vox") return `Audio level, opens at ${f.vox_threshold_db.value} dBFS${tail}`;
     if (source === "ctcss") return `CTCSS tone present${tail}`;
-    const input = source === "gpio" ? `GPIO${f.cos_gpio_pin.value}` : "CM108 COS input";
+    const input = {
+      gpio: `GPIO${f.cos_gpio_pin.value}`,
+      serial: serialLine(f.cos_serial_device, f.cos_serial_line),
+    }[source] ?? "CM108 COS input";
     return `${input}, active ${f.cos_polarity.value}${tail}`;
   },
   "audio-ptt": (f) => {
     const delay = Number(f.tx_delay_ms.value) ? `, ${f.tx_delay_ms.value} ms delay` : "";
-    const output = f.ptt_output.value === "gpio" ? `GPIO${f.ptt_gpio_pin.value}, active ${f.ptt_polarity.value}` : "CM108 interface";
+    const active = `, active ${f.ptt_polarity.value}`;
+    const output = {
+      gpio: `GPIO${f.ptt_gpio_pin.value}${active}`,
+      serial: `${serialLine(f.ptt_serial_device, f.ptt_serial_line)}${active}`,
+    }[f.ptt_output.value] ?? "CM108 interface";
     return output + delay;
   },
   "audio-tx": (f) =>

@@ -19,9 +19,12 @@ AMIXER_TIMEOUT_SECONDS = 5.0
 
 # Changing any of these by hand means the station no longer matches its preset.
 WIRING_FIELDS = frozenset({
-    "cos_source", "cos_polarity", "cos_gpio_pin", "ptt_output", "ptt_gpio_pin", "ptt_polarity",
+    "cos_source", "cos_polarity", "cos_gpio_pin", "cos_serial_device", "cos_serial_line",
+    "ptt_output", "ptt_gpio_pin", "ptt_serial_device", "ptt_serial_line", "ptt_polarity",
     "link_radio_cos", "link_radio_cos_polarity", "link_radio_cos_gpio_pin",
+    "link_radio_cos_serial_device", "link_radio_cos_serial_line",
     "link_radio_ptt", "link_radio_ptt_gpio_pin", "link_radio_ptt_polarity",
+    "link_radio_ptt_serial_device", "link_radio_ptt_serial_line",
 })
 
 # PortAudio's ALSA device names end in "(hw:<card>,<device>)".

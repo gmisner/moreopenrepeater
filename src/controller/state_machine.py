@@ -129,11 +129,16 @@ class RepeaterConfig:
     setup_wizard_done: bool = False  # the dashboard's first-run wizard was finished or skipped
     audio_input_device: str = ""  # PortAudio device name; "" = system default
     audio_output_device: str = ""
-    cos_source: Literal["vox", "ctcss", "cm108", "gpio"] = "vox"  # "gpio" = a Raspberry Pi header pin
-    cos_polarity: Literal["low", "high"] = "low"  # hardware COS (CM108 or Pi pin): the level meaning "carrier"
+    # "gpio" = a Raspberry Pi header pin; "serial" = a serial port's CTS, DSR or DCD
+    cos_source: Literal["vox", "ctcss", "cm108", "gpio", "serial"] = "vox"
+    cos_polarity: Literal["low", "high"] = "low"  # hardware COS: the level meaning "carrier" (serial: high = asserted)
     cos_gpio_pin: int = 27  # BCM numbers; GPIO27 is header pin 13
-    ptt_output: Literal["cm108", "gpio"] = "cm108"  # "cm108" keys a CM108 interface's PTT, if one is set up
+    cos_serial_device: str = ""  # /dev/ttyUSB0, /dev/serial/by-id/...
+    cos_serial_line: Literal["cts", "dsr", "dcd"] = "cts"
+    ptt_output: Literal["cm108", "gpio", "serial"] = "cm108"  # "cm108" keys a CM108 interface's PTT, if one is set up
     ptt_gpio_pin: int = 17  # header pin 11
+    ptt_serial_device: str = ""
+    ptt_serial_line: Literal["rts", "dtr"] = "rts"
     ptt_polarity: Literal["high", "low"] = "high"  # the level that keys the transmitter
     vox_threshold_db: float = -40.0
     squelch_tail_ms: float = 0.0  # cut from the end of each received transmission (the noise burst)
@@ -154,12 +159,16 @@ class RepeaterConfig:
     link_radio_name: str = ""  # "Link to W1XYZ"
     link_radio_input_device: str = ""
     link_radio_output_device: str = ""
-    link_radio_cos: Literal["vox", "ctcss", "cm108", "gpio"] = "vox"  # "cm108": a second CM108
+    link_radio_cos: Literal["vox", "ctcss", "cm108", "gpio", "serial"] = "vox"  # "cm108": a second CM108
     link_radio_cos_polarity: Literal["low", "high"] = "low"
     link_radio_cos_gpio_pin: int = 23  # header pin 16
+    link_radio_cos_serial_device: str = ""
+    link_radio_cos_serial_line: Literal["cts", "dsr", "dcd"] = "cts"
     link_radio_vox_threshold_db: float = -40.0
-    link_radio_ptt: Literal["cm108", "gpio", "none"] = "gpio"  # "none": the radio keys on audio (its own VOX)
+    link_radio_ptt: Literal["cm108", "gpio", "serial", "none"] = "gpio"  # "none": the radio keys on audio (its own VOX)
     link_radio_ptt_gpio_pin: int = 24  # header pin 18
+    link_radio_ptt_serial_device: str = ""
+    link_radio_ptt_serial_line: Literal["rts", "dtr"] = "rts"
     link_radio_ptt_polarity: Literal["high", "low"] = "high"
     link_radio_tx_gain_db: float = 0.0
     link_radio_tx_ctcss_hz: Optional[float] = None  # for a far repeater that needs a tone

@@ -11,7 +11,7 @@ const CTCSS_TONES = [
   183.5, 186.2, 189.9, 192.8, 196.6, 199.5, 203.5, 206.5, 210.7, 218.1, 225.7, 229.1, 233.6, 241.8, 250.3, 254.1,
 ];
 const METER_FLOOR_DB = -80;
-const PTT_LABELS = { cm108: " · CM108 PTT", gpio: " · GPIO PTT" };
+const PTT_LABELS = { cm108: " · CM108 PTT", gpio: " · GPIO PTT", serial: " · serial PTT" };
 
 const form = document.getElementById("audio-engine-form");
 const stateTag = document.getElementById("audio-engine-state");
@@ -89,13 +89,28 @@ function renderThreshold() {
 
 function renderHardwareFields() {
   const source = form.elements.cos_source.value;
-  const gpioPtt = form.elements.ptt_output.value === "gpio";
+  const ptt = form.elements.ptt_output.value;
   const show = (selector, visible) => {
     for (const label of form.querySelectorAll(selector)) label.hidden = !visible;
   };
-  show("[data-cos-hardware]", source === "cm108" || source === "gpio");
+  show("[data-cos-hardware]", ["cm108", "gpio", "serial"].includes(source));
   show("[data-cos-gpio]", source === "gpio");
-  show("[data-ptt-gpio]", gpioPtt);
+  show("[data-cos-serial]", source === "serial");
+  show("[data-ptt-gpio]", ptt === "gpio");
+  show("[data-ptt-serial]", ptt === "serial");
+  show("[data-ptt-hardware]", ptt === "gpio" || ptt === "serial");
+}
+
+async function loadSerialPorts() {
+  let ports = [];
+  try {
+    ports = await api("/api/serial/ports");
+  } catch {
+    // Typing a path still works.
+  }
+  document.getElementById("serial-ports").replaceChildren(
+    ...ports.map((port) => new Option(port.path === port.target ? "" : port.target, port.path)),
+  );
 }
 
 async function loadDevices() {
@@ -106,6 +121,7 @@ async function loadDevices() {
   }
   renderDeviceSelects();
   refreshFolds();
+  loadSerialPorts();
 }
 
 async function poll() {

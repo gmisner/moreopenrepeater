@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Callable, Optional
 
 from audio_io.cm108 import CM108Interface
@@ -26,6 +27,7 @@ from audio_io.engine import AudioEngine
 from audio_io.patch import LinkAudio
 from audio_io.pi_gpio import GpioLine, open_header_pin
 from audio_io.processor import AudioProcessor, ProcessorSettings
+from audio_io.serial_lines import open_serial_line
 from controller.events import COSChanged
 from controller.link_radio import LinkPlay, LinkPTT, LinkRadioController, LinkRadioSettings
 from controller.state_machine import RepeaterConfig
@@ -41,10 +43,16 @@ UPDATE_SECONDS = 0.05
 _RESTART_FIELDS = (
     "link_radio_enabled", "link_radio_input_device", "link_radio_output_device", "link_radio_cos",
     "link_radio_cos_polarity", "link_radio_cos_gpio_pin", "link_radio_ptt", "link_radio_ptt_gpio_pin",
-    "link_radio_ptt_polarity",
+    "link_radio_ptt_polarity", "link_radio_cos_serial_device", "link_radio_cos_serial_line",
+    "link_radio_ptt_serial_device", "link_radio_ptt_serial_line",
     "audio_enabled", "audio_input_device", "audio_output_device", "cos_source", "cos_gpio_pin", "ptt_output",
     "ptt_gpio_pin", "monitor_enabled", "monitor_input_device", "monitor_squelch", "monitor_gpio_pin",
+    "cos_serial_device", "cos_serial_line", "ptt_serial_device", "ptt_serial_line",
 )
+
+
+def _serial_key(device: str, line: str) -> tuple[str, str]:
+    return os.path.realpath(device), line
 
 
 def setup_problem(config: RepeaterConfig, cm108: Optional[CM108Interface]) -> Optional[str]:
@@ -74,6 +82,21 @@ def setup_problem(config: RepeaterConfig, cm108: Optional[CM108Interface]) -> Op
     for pin in pins:
         if pin in taken:
             return f"GPIO{pin} is already {taken[pin]}."
+    taken_lines = {}
+    if config.cos_source == "serial":
+        taken_lines[_serial_key(config.cos_serial_device, config.cos_serial_line)] = "the repeater's COS"
+    if config.ptt_output == "serial":
+        taken_lines[_serial_key(config.ptt_serial_device, config.ptt_serial_line)] = "the repeater's PTT"
+    for role, kind, device, line in (
+        ("COS", config.link_radio_cos, config.link_radio_cos_serial_device, config.link_radio_cos_serial_line),
+        ("PTT", config.link_radio_ptt, config.link_radio_ptt_serial_device, config.link_radio_ptt_serial_line),
+    ):
+        if kind != "serial":
+            continue
+        if not device:
+            return f"The link radio's {role} is set to a serial port, but no serial port is chosen."
+        if _serial_key(device, line) in taken_lines:
+            return f"{line.upper()} on {device} is already {taken_lines[_serial_key(device, line)]}."
     if cm108 is None and "cm108" in (config.link_radio_cos, config.link_radio_ptt):
         return "The link radio is set to use a CM108, but no second CM108 interface was found."
     return None
@@ -90,6 +113,7 @@ class LinkRadio:
         engine_factory: Callable[..., AudioEngine] = AudioEngine,
         open_pin: Callable[..., GpioLine] = open_header_pin,
         clock: Callable[[], float] = lambda: asyncio.get_running_loop().time(),
+        open_serial: Callable[..., GpioLine] = open_serial_line,
     ) -> None:
         """`sending()`: the repeater is repeating a local user right now.
         `attach_port` hands the repeater's half of the audio crossing to
@@ -103,6 +127,7 @@ class LinkRadio:
         self._cm108_looked = False
         self._engine_factory = engine_factory
         self._open_pin = open_pin
+        self._open_serial = open_serial
         self._clock = clock
         self._pins: list[GpioLine] = []
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -237,14 +262,19 @@ class LinkRadio:
         cos_input = cm108.read_cos if cm108 is not None and config.link_radio_cos == "cm108" else None
         if cm108 is not None:
             cm108.cos_active_low = config.link_radio_cos_polarity == "low"
+        ptt_low, cos_low = config.link_radio_ptt_polarity == "low", config.link_radio_cos_polarity == "low"
         try:
             if config.link_radio_ptt == "gpio":
-                ptt_output = self._claim_pin(
-                    config.link_radio_ptt_gpio_pin, "PTT", output=True, active_low=config.link_radio_ptt_polarity == "low"
+                ptt_output = self._claim_pin(config.link_radio_ptt_gpio_pin, "PTT", output=True, active_low=ptt_low).write
+            elif config.link_radio_ptt == "serial":
+                ptt_output = self._claim_serial(
+                    config.link_radio_ptt_serial_device, config.link_radio_ptt_serial_line, "PTT", output=True, active_low=ptt_low
                 ).write
             if config.link_radio_cos == "gpio":
-                cos_input = self._claim_pin(
-                    config.link_radio_cos_gpio_pin, "COS", output=False, active_low=config.link_radio_cos_polarity == "low"
+                cos_input = self._claim_pin(config.link_radio_cos_gpio_pin, "COS", output=False, active_low=cos_low).read
+            elif config.link_radio_cos == "serial":
+                cos_input = self._claim_serial(
+                    config.link_radio_cos_serial_device, config.link_radio_cos_serial_line, "COS", output=False, active_low=cos_low
                 ).read
         except OSError as error:
             self._release_pins()
@@ -255,7 +285,7 @@ class LinkRadio:
         processor = AudioProcessor(
             ProcessorSettings(
                 sample_rate=rate,
-                cos_source="external" if config.link_radio_cos in ("cm108", "gpio") else config.link_radio_cos,
+                cos_source="external" if config.link_radio_cos in ("cm108", "gpio", "serial") else config.link_radio_cos,
                 vox_threshold_db=config.link_radio_vox_threshold_db,
                 tx_gain_db=config.link_radio_tx_gain_db,
                 tx_ctcss_hz=config.link_radio_tx_ctcss_hz,
@@ -301,6 +331,16 @@ class LinkRadio:
             raise OSError(f"couldn't open GPIO{pin} for the link radio's {role}: {error.strerror or error}") from error
         self._pins.append(line)
         return line
+
+    def _claim_serial(self, device: str, line: str, role: str, *, output: bool, active_low: bool) -> GpioLine:
+        try:
+            opened = self._open_serial(device, line, output=output, active_low=active_low)
+        except OSError as error:
+            raise OSError(
+                f"couldn't open {device} ({line.upper()}) for the link radio's {role}: {error.strerror or error}"
+            ) from error
+        self._pins.append(opened)
+        return opened
 
     def _release_pins(self) -> None:
         for line in self._pins:

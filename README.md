@@ -268,7 +268,8 @@ several phases (see the plan file for the full breakdown):
   and day, and counts kerchunks and timeouts.
 - **Live audio on any sound device**, with software carrier detect (VOX or CTCSS)
   for interfaces with no COS wire, a live level meter, and hardware PTT/COS from a
-  CM108 interface or the Raspberry Pi's own header pins, with either COS polarity.
+  CM108 interface, the Raspberry Pi's own header pins or a serial port's RTS/DTR and
+  CTS/DSR/DCD lines, with either COS polarity.
   A first-run setup wizard and presets for common interface boards (DMK URI,
   USB-RIM Lite, AIOC, the SVXLink boards) set the wiring and mixer levels; see
   [docs/raspberry-pi.md](docs/raspberry-pi.md#setup-wizard-and-interface-boards).

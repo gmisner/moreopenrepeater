@@ -15,12 +15,16 @@ CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
 NetLinks = Literal["leave", "disconnect", "connect"]
 CourtesyToneVariant = Literal["same", "beep", "high_low", "low_high", "triple", "chirp"]  # "same": the local one
 WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
-CosSource = Literal["vox", "ctcss", "cm108", "gpio"]
+CosSource = Literal["vox", "ctcss", "cm108", "gpio", "serial"]
 Polarity = Literal["low", "high"]
-PttOutput = Literal["cm108", "gpio"]
-LinkRadioPtt = Literal["cm108", "gpio", "none"]
+PttOutput = Literal["cm108", "gpio", "serial"]
+LinkRadioPtt = Literal["cm108", "gpio", "serial", "none"]
+SerialInputLine = Literal["cts", "dsr", "dcd"]
+SerialOutputLine = Literal["rts", "dtr"]
 # BCM numbers on the 40-pin header; GPIO0/1 are reserved for HAT EEPROMs.
 PiGpioPin = Annotated[int, Field(ge=2, le=27)]
+# Only tty device nodes, so a setting can't make the service open some other file.
+SerialDevice = Annotated[str, Field(max_length=200, pattern=r"^(/dev/(tty[A-Za-z0-9]+|serial/[A-Za-z0-9._:/+-]+))?$")]
 Role = Literal["admin", "operator", "viewer", "listener"]
 PublicPageMode = Literal["off", "signed_in", "anyone"]
 MonitorSquelch = Literal["vox", "gpio", "open"]
@@ -206,8 +210,12 @@ class ConfigResponse(BaseModel):
     cos_source: CosSource
     cos_polarity: Polarity
     cos_gpio_pin: int
+    cos_serial_device: str = ""
+    cos_serial_line: SerialInputLine = "cts"
     ptt_output: PttOutput
     ptt_gpio_pin: int
+    ptt_serial_device: str = ""
+    ptt_serial_line: SerialOutputLine = "rts"
     ptt_polarity: Polarity
     vox_threshold_db: float
     squelch_tail_ms: float = 0.0
@@ -229,9 +237,13 @@ class ConfigResponse(BaseModel):
     link_radio_cos: CosSource = "vox"
     link_radio_cos_polarity: Polarity = "low"
     link_radio_cos_gpio_pin: int = 23
+    link_radio_cos_serial_device: str = ""
+    link_radio_cos_serial_line: SerialInputLine = "cts"
     link_radio_vox_threshold_db: float = -40.0
     link_radio_ptt: LinkRadioPtt = "gpio"
     link_radio_ptt_gpio_pin: int = 24
+    link_radio_ptt_serial_device: str = ""
+    link_radio_ptt_serial_line: SerialOutputLine = "rts"
     link_radio_ptt_polarity: Polarity = "high"
     link_radio_tx_gain_db: float = 0.0
     link_radio_tx_ctcss_hz: Optional[float] = None
@@ -379,8 +391,12 @@ class ConfigUpdateRequest(BaseModel):
     cos_source: Optional[CosSource] = None
     cos_polarity: Optional[Polarity] = None
     cos_gpio_pin: Optional[PiGpioPin] = None
+    cos_serial_device: Optional[SerialDevice] = None
+    cos_serial_line: Optional[SerialInputLine] = None
     ptt_output: Optional[PttOutput] = None
     ptt_gpio_pin: Optional[PiGpioPin] = None
+    ptt_serial_device: Optional[SerialDevice] = None
+    ptt_serial_line: Optional[SerialOutputLine] = None
     ptt_polarity: Optional[Polarity] = None
     vox_threshold_db: Optional[float] = Field(default=None, ge=-90, le=0)
     squelch_tail_ms: Optional[float] = Field(default=None, ge=0, le=300)
@@ -402,9 +418,13 @@ class ConfigUpdateRequest(BaseModel):
     link_radio_cos: Optional[CosSource] = None
     link_radio_cos_polarity: Optional[Polarity] = None
     link_radio_cos_gpio_pin: Optional[PiGpioPin] = None
+    link_radio_cos_serial_device: Optional[SerialDevice] = None
+    link_radio_cos_serial_line: Optional[SerialInputLine] = None
     link_radio_vox_threshold_db: Optional[float] = Field(default=None, ge=-90, le=0)
     link_radio_ptt: Optional[LinkRadioPtt] = None
     link_radio_ptt_gpio_pin: Optional[PiGpioPin] = None
+    link_radio_ptt_serial_device: Optional[SerialDevice] = None
+    link_radio_ptt_serial_line: Optional[SerialOutputLine] = None
     link_radio_ptt_polarity: Optional[Polarity] = None
     link_radio_tx_gain_db: Optional[float] = Field(default=None, ge=-40, le=20)
     link_radio_tx_ctcss_hz: Optional[float] = Field(default=None, ge=60, le=260)
@@ -886,6 +906,11 @@ class AudioDeviceResponse(BaseModel):
     default_samplerate: float
 
 
+class SerialPortResponse(BaseModel):
+    path: str
+    target: str  # the device a /dev/serial/by-id name points at
+
+
 class BoardResponse(BaseModel):
     id: str
     name: str
@@ -1064,7 +1089,7 @@ class AudioEngineResponse(BaseModel):
     transmitting: bool
     dropped_input_blocks: int
     starved_output_blocks: int
-    hardware_ptt: Optional[str]  # "cm108" or "gpio"
+    hardware_ptt: Optional[str]  # "cm108", "gpio" or "serial"
     listeners: int = 0
 
 

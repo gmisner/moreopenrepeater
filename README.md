@@ -390,6 +390,9 @@ several phases (see the plan file for the full breakdown):
 - **Users and roles**: admin, operator, read-only viewer and listener accounts, plus an audit
   log of every change and DTMF command with who made it. Revocable API tokens let scripts
   and agents act as an account without its password.
+- **AI agent access (MCP)**: an MCP server at `/mcp` lets Claude, Cursor and other agents read
+  status, audio levels, settings and logs, and change settings with an operator's token.
+  Transmitting stays off for agents until an admin allows it.
 - **Full backups**: one `.zip` with the settings, macros, announcements, audio clips,
   users, activity history and audit log (recordings optional), downloadable or saved
   on a schedule to a folder such as a USB drive. See

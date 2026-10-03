@@ -1229,6 +1229,15 @@ class TokenResponse(BaseModel):
     last_used_at: Optional[datetime] = None
 
 
+class AgentAccessResponse(BaseModel):
+    transmit: bool  # API tokens may use endpoints that key the transmitter
+    mcp_available: bool
+
+
+class AgentAccessRequest(BaseModel):
+    transmit: bool
+
+
 class TokenCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     username: str = Field(min_length=1, max_length=64)

@@ -502,6 +502,38 @@ straight away. Tokens can't manage users or other tokens, even an admin's,
 and the audit log records changes as made by "user (token name)". Tokens
 aren't included in backups, so make new ones after restoring onto a new Pi.
 
+**AI agents (MCP).** The controller runs an MCP server at
+`http://moreopenrepeater.local:8000/mcp` (streamable HTTP) for agents such as
+Claude, Cursor or ChatGPT. Give the agent an API token. In Cursor or Claude
+Desktop that's an entry like this in the MCP settings, and **Tools → Users →
+Agent access** shows the same thing with this controller's address filled in:
+
+```json
+{
+  "mcpServers": {
+    "repeater": {
+      "url": "http://moreopenrepeater.local:8000/mcp",
+      "headers": { "Authorization": "Bearer mor_..." }
+    }
+  }
+}
+```
+
+The agent can read the live status, the audio engine (receive level, carrier
+detect, CTCSS), settings, activity, macros and the log. With an operator's
+token it can also change settings. Each tool calls the same HTTP API the
+dashboard uses, with the agent's token, so the role checks and the audit log
+are the same as for curl.
+
+Nothing a token does can make the repeater transmit until an admin turns on
+**Let API tokens make the repeater transmit** under Agent access. That covers
+sending the ID, dialing DTMF (which runs macros), playing announcements and
+weather alerts, linking, starting or ending a net, phone calls and the
+simulator, whether through MCP or the HTTP API. You're still the control
+operator for anything that goes out. The switch is kept in
+`data/agent-access.json`, apart from the settings, so a settings change,
+snapshot or backup restore can't turn it on, and tokens can't change it.
+
 **Audit log.** Every change made through the dashboard or API is recorded
 with who made it (failed sign-ins included), along with DTMF commands
 dialed over the air, under **Tools → Audit log**. Settings changes show the

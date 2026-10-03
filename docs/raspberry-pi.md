@@ -299,6 +299,37 @@ Three settings shape the audio around each transmission:
 The link radio has its own transmit delay and squelch-tail removal, and
 follows the DTMF muting setting.
 
+Audio taken from a radio's discriminator, or fed to a flat (unemphasized)
+transmitter input, skips the radio's own FM emphasis. The two switches under
+**Sound devices** put it back: 6 dB per octave between 300 and 3000 Hz, with
+1 kHz left at 0 dB.
+
+- **De-emphasize receive audio** for discriminator audio, which otherwise
+  sounds thin and hissy when repeated. CTCSS decoding works either way.
+- **Pre-emphasize transmit audio** for a flat transmitter input. The highs
+  come out about 7 dB louder, so turn the transmit gain down if voice peaks
+  clip.
+
+### Access
+
+The **Timing** page sets how a local user brings the repeater up.
+
+- **Carrier**: any carrier, or with a required CTCSS tone, carrier plus the
+  tone on every transmission.
+- **CTCSS tone opens it, then carrier**: the first transmission needs the
+  required tone. After that, a user without it gets through until the hang
+  time runs out and the transmitter unkeys. This suits a repeater that wants
+  a tone to keep interference out but has visitors whose radios can't send one.
+- **1750 Hz tone burst**: the European way to open a repeater. The burst has
+  to last at least the set length (300 ms by default) and can come just before
+  keying up or at the start of the transmission. Carrier alone then works
+  until the repeater drops. The burst is muted, like DTMF, so it isn't
+  repeated.
+
+A CTCSS tone that's decoded after the squelch has already opened, since
+decoding takes about a second, now brings the repeater up during that same
+transmission. Before, the user was ignored until they keyed up again.
+
 ### Monitor receiver
 
 A second receiver can be plugged into a second USB sound card and set up under

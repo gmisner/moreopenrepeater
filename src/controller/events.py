@@ -25,6 +25,11 @@ class CTCSSChanged:
 
 
 @dataclass(frozen=True)
+class ToneBurst:
+    """A 1750 Hz access burst at least the configured length was heard."""
+
+
+@dataclass(frozen=True)
 class DTMFDigit:
     """A single DTMF digit was decoded from the receive audio."""
 
@@ -47,7 +52,7 @@ class LinkStateChanged:
     linked: bool
 
 
-ControllerEvent = Union[COSChanged, CTCSSChanged, DTMFDigit, RemoteKeyed, LinkStateChanged]
+ControllerEvent = Union[COSChanged, CTCSSChanged, ToneBurst, DTMFDigit, RemoteKeyed, LinkStateChanged]
 
 
 @dataclass(frozen=True)

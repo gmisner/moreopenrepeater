@@ -158,6 +158,13 @@ function renderHeld() {
   }
 }
 
+function accessSummary(config) {
+  const tone = config.require_ctcss_hz ? `CTCSS ${config.require_ctcss_hz} Hz` : null;
+  if (config.access_mode === "tone_burst") return "1750 Hz burst, then carrier";
+  if (config.access_mode === "ctcss_open" && tone) return `${tone} opens, then carrier`;
+  return tone ?? badge(false, "", "carrier");
+}
+
 function renderSummaries(config) {
   document.getElementById("station-callsign").textContent = config.callsign || "(no callsign)";
   document.getElementById("gmrs-tag").hidden = !config.gmrs_mode;
@@ -173,7 +180,7 @@ function renderSummaries(config) {
   ]);
   const { macros, assets } = store.state;
   document.getElementById("feature-summary").innerHTML = kv([
-    ["CTCSS access", config.require_ctcss_hz ? `${config.require_ctcss_hz} Hz` : badge(false, "", "carrier")],
+    ["Access", accessSummary(config)],
     ["APRS", badge(config.aprs_enabled)],
     ["Weather alerts", badge(config.wx_alerts_enabled)],
     ["DTMF macros", String(macros.length)],

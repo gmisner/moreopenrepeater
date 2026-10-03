@@ -282,6 +282,11 @@ several phases (see the plan file for the full breakdown):
   of the real-time budget on a Mac, 20% on a Raspberry Pi 3B+).
 - **Kerchunk filter**: a key-up must last a set time before the repeater comes up.
   Filtered kerchunks are counted on the Activity page.
+- **Access modes**: carrier, CTCSS on every transmission, CTCSS to open and then
+  carrier until the repeater drops, or a 1750 Hz tone burst (muted from what's
+  repeated) to open it.
+- **FM emphasis**: optional receive de-emphasis and transmit pre-emphasis for
+  flat (discriminator) audio, 6 dB per octave from 300 to 3000 Hz.
 - **CTCSS encode**: an optional sub-audible tone on everything transmitted, with
   received audio high-passed so an incoming tone isn't repeated alongside it.
 - **DTMF local control**: macros can speak the time, read the weather alerts, play

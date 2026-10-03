@@ -171,6 +171,10 @@ class ConfigResponse(BaseModel):
     long_id_text: str = ""
     long_id_asset_id: Optional[str] = None
     require_ctcss_hz: Optional[float]
+    access_mode: Literal["carrier", "ctcss_open", "tone_burst"] = "carrier"
+    tone_burst_ms: float = 300.0
+    rx_deemphasis: bool = False
+    tx_preemphasis: bool = False
     kerchunk_delay: float
     lockout_timeouts: int
     lockout_window: float
@@ -356,6 +360,10 @@ class ConfigUpdateRequest(BaseModel):
     clear_long_id_asset_id: bool = False
     require_ctcss_hz: Optional[float] = None
     clear_require_ctcss_hz: bool = False
+    access_mode: Optional[Literal["carrier", "ctcss_open", "tone_burst"]] = None
+    tone_burst_ms: Optional[float] = Field(default=None, ge=100, le=2000)
+    rx_deemphasis: Optional[bool] = None
+    tx_preemphasis: Optional[bool] = None
     kerchunk_delay: Optional[float] = Field(default=None, ge=0, le=3)
     lockout_timeouts: Optional[int] = Field(default=None, ge=0, le=20)
     lockout_window: Optional[float] = Field(default=None, ge=60, le=86400)

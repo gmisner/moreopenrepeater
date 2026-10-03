@@ -1,11 +1,13 @@
 """Built-in courtesy and timeout tones, used when no uploaded clip is assigned.
 
 Most styles fill the configured courtesy tone length. The CW letters play at
-the station's CW ID speed and pitch, and a custom tone (up to four "hz:ms"
-segments; 0 Hz is a gap) is as long as its segments, so those two set their
-own length.
+the station's CW ID speed and pitch, the Nextel chirp keeps its own cadence,
+and a custom tone (up to four "hz:ms" segments; 0 Hz is a gap) is as long as
+its segments, so those set their own length.
 """
 from __future__ import annotations
+
+from typing import Iterable
 
 import numpy as np
 
@@ -13,7 +15,9 @@ from dsp.morse import MORSE_CODE
 
 SCALED_STYLES = ("beep", "high_low", "low_high", "triple", "chirp", "bumblebee", "up_run", "down_run", "bonk", "bee_boo")
 CW_STYLES = {"cw_k": "K", "cw_r": "R", "cw_t": "T"}
-COURTESY_TONE_STYLES = (*SCALED_STYLES, *CW_STYLES, "custom")
+COURTESY_TONE_STYLES = (*SCALED_STYLES, "nextel", *CW_STYLES, "custom")
+# Nextel's Direct Connect talk-permit chirp: 1800 Hz, 30 ms on, 20 off, 30 on, 20 off, 50 on.
+_NEXTEL = ((1800, 30), (0, 20), (1800, 30), (0, 20), (1800, 50))
 AMPLITUDE = 0.3
 _RAMP_SECONDS = 0.005  # fade in/out so tones start and stop without a click
 
@@ -89,12 +93,16 @@ def _cw(letter: str, wpm: float, tone_hz: float, sample_rate: int) -> np.ndarray
     return np.concatenate(parts)
 
 
+def _segments(segments: Iterable[tuple[int, int]], sample_rate: int) -> np.ndarray:
+    return np.concatenate([_tone(hz, ms / 1000, sample_rate) if hz else _silence(ms / 1000, sample_rate) for hz, ms in segments])
+
+
 def _custom(text: str, sample_rate: int) -> np.ndarray:
     try:
         segments = parse_custom_tone(text)
     except ValueError:
         segments = parse_custom_tone(DEFAULT_CUSTOM_TONE)
-    return np.concatenate([_tone(hz, ms / 1000, sample_rate) if hz else _silence(ms / 1000, sample_rate) for hz, ms in segments])
+    return _segments(segments, sample_rate)
 
 
 def courtesy_tone(
@@ -106,7 +114,9 @@ def courtesy_tone(
     cw_tone_hz: float = 800.0,
     custom: str = DEFAULT_CUSTOM_TONE,
 ) -> np.ndarray:
-    """SCALED_STYLES are `duration` long; CW letters and custom tones set their own length."""
+    """SCALED_STYLES are `duration` long; the rest set their own length."""
+    if style == "nextel":
+        return _segments(_NEXTEL, sample_rate)
     if style in CW_STYLES:
         return _cw(CW_STYLES[style], cw_wpm, cw_tone_hz, sample_rate)
     if style == "custom":

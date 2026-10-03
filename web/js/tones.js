@@ -15,6 +15,7 @@ export const TONE_STYLES = [
   ["up_run", "Three tones up"],
   ["down_run", "Three tones down"],
   ["bonk", "Bonk"],
+  ["nextel", "Nextel chirp"],
   ["cw_k", "CW “K”"],
   ["cw_r", "CW “R”"],
   ["cw_t", "CW “T”"],

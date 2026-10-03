@@ -48,7 +48,7 @@ _logger = logging.getLogger("moreopenrepeater.controller")
 # Built-in courtesy tones (playout.tones); "same" uses the local one.
 CourtesyStyle = Literal[
     "beep", "high_low", "low_high", "triple", "chirp", "bumblebee", "up_run", "down_run", "bonk", "bee_boo",
-    "cw_k", "cw_r", "cw_t", "custom",
+    "nextel", "cw_k", "cw_r", "cw_t", "custom",
 ]
 CourtesyVariant = Literal["same", CourtesyStyle]
 

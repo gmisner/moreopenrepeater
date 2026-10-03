@@ -31,6 +31,14 @@ def test_cw_letters_play_at_the_cw_speed():
     assert len(courtesy_tone("cw_r", 0.2, 8000, cw_wpm=10)) > len(courtesy_tone("cw_r", 0.2, 8000, cw_wpm=20))
 
 
+def test_the_nextel_chirp_keeps_its_cadence():
+    samples = courtesy_tone("nextel", 0.5, 8000)
+    assert len(samples) == 1200  # 30 + 20 + 30 + 20 + 50 ms
+    assert np.all(samples[240:400] == 0) and np.all(samples[640:800] == 0)
+    peak_bin = np.argmax(np.abs(np.fft.rfft(samples[800:])))
+    assert abs(peak_bin * 8000 / 400 - 1800) <= 20
+
+
 def test_a_custom_tone_is_as_long_as_its_parts():
     samples = courtesy_tone("custom", 0.2, 8000, custom="1000:100 0:50 1500:150")
     assert len(samples) == 2400

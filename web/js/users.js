@@ -107,11 +107,30 @@ async function revoke(token) {
   }
 }
 
+const agentTransmit = document.getElementById("agent-transmit");
+
+function renderAgentAccess(access) {
+  const url = `${location.origin}/mcp`;
+  document.getElementById("agent-mcp-url").textContent = url;
+  document.getElementById("agent-mcp-config").textContent = JSON.stringify(
+    { mcpServers: { repeater: { url, headers: { Authorization: "Bearer <your API token>" } } } },
+    null,
+    2,
+  );
+  document.getElementById("agent-mcp-missing").hidden = access.mcp_available;
+  agentTransmit.checked = access.transmit;
+}
+
 async function load() {
   authOffNote.hidden = session?.auth_required !== false;
   render(await api("/api/users"));
-  if (session?.auth_required !== false) renderTokens(await api("/api/tokens"));
-  document.getElementById("tokens-card").hidden = session?.auth_required === false;
+  const signIn = session?.auth_required !== false;
+  document.getElementById("tokens-card").hidden = !signIn;
+  document.getElementById("agent-access-card").hidden = !signIn;
+  if (signIn) {
+    renderTokens(await api("/api/tokens"));
+    renderAgentAccess(await api("/api/agent-access"));
+  }
 }
 
 export function initUsers() {
@@ -145,6 +164,20 @@ export function initUsers() {
         toastError(error);
       }
     });
+  });
+  agentTransmit.addEventListener("change", async () => {
+    const transmit = agentTransmit.checked;
+    if (transmit && !confirm("Let API tokens make the repeater transmit? You're responsible for what goes out on the air.")) {
+      agentTransmit.checked = false;
+      return;
+    }
+    try {
+      renderAgentAccess(await api("/api/agent-access", { method: "PUT", json: { transmit } }));
+      toast(transmit ? "Agents may now transmit" : "Agents can no longer transmit");
+    } catch (error) {
+      agentTransmit.checked = !transmit;
+      toastError(error);
+    }
   });
   document.getElementById("token-copy").addEventListener("click", async () => {
     try {

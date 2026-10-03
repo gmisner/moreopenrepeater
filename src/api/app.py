@@ -25,6 +25,7 @@ from pydantic import ValidationError
 import segno
 from starlette.background import BackgroundTask
 from starlette.requests import HTTPConnection
+from starlette.routing import Route
 
 from audio_io.serial_lines import find_serial_ports
 from controller.announcements import Announcement
@@ -75,6 +76,7 @@ from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env, list_aud
 from .monitor import AudioMonitor
 from .monitor_receiver import MonitorReceiverService
 from .recordings import RecordingInfo, RecordingStore
+from .agents import MCP_PATH, AgentAccess, AgentEndpoint, build_server
 from .tokens import TokenStore
 from .users import Role, UserError, UserStore
 from .logging_config import configure_logging
@@ -138,6 +140,8 @@ from .models import (
     RecordingResponse,
     SavedBackupResponse,
     SessionResponse,
+    AgentAccessRequest,
+    AgentAccessResponse,
     TokenCreatedResponse,
     TokenCreateRequest,
     TokenResponse,
@@ -214,6 +218,7 @@ TRANSCRIBE_POLL_SECONDS = 15.0
 RECORDING_SEARCH_LIMIT = 500
 DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.json"
 DEFAULT_TOKENS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "tokens.json"
+DEFAULT_AGENT_ACCESS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "agent-access.json"
 DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
 DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
 DEFAULT_NODE_LIST_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "allstar-nodes.txt"
@@ -403,6 +408,7 @@ def create_app(
     recordings: Optional[RecordingStore] = None,
     users: Optional[UserStore] = None,
     tokens: Optional[TokenStore] = None,
+    agent_access: Optional[AgentAccess] = None,
     audit: Optional[AuditLog] = None,
     aprs_stations: Optional[StationStore] = None,
     autopatch: Optional[Autopatch] = None,
@@ -507,6 +513,7 @@ def create_app(
     users = users if users is not None else UserStore()
     users.reserved_username = auth_settings.username if auth_settings else None
     tokens = tokens if tokens is not None else TokenStore()
+    agent_access = agent_access if agent_access is not None else AgentAccess()
     audit = audit or AuditLog()
     service.audit_hook = lambda actor, action, detail: audit.record(time.time(), actor, action, detail)
     nets.audit_hook = service.audit_hook
@@ -633,9 +640,17 @@ def create_app(
         if request.state.identity.token:
             raise HTTPException(status_code=403, detail="API tokens can't manage users or tokens")
 
+    def require_transmit_allowed(request: Request) -> None:
+        if request.state.identity.token and not agent_access.transmit:
+            raise HTTPException(
+                status_code=403,
+                detail="API tokens can't make the repeater transmit until an admin allows it (Users → Agent access)",
+            )
+
     auth_dependencies = [Depends(require_auth)]
     admin_dependencies = [Depends(require_auth), Depends(require_admin)]
     account_dependencies = [*admin_dependencies, Depends(require_person)]
+    transmit_dependencies = [Depends(require_auth), Depends(require_transmit_allowed)]
 
     async def node_link_loop() -> None:
         assert link_settings is not None
@@ -888,7 +903,8 @@ def create_app(
                 watchdog.start(interval)
         gpio.start()
         remote_base.attach(asyncio.get_running_loop())
-        yield
+        async with agent_endpoint.running():
+            yield
         if start_background_tick:
             sd_notify("STOPPING=1")
             watchdog.stop()
@@ -907,6 +923,8 @@ def create_app(
 
     app = FastAPI(title="moreopenrepeater API", lifespan=lifespan)
     app.state.service = service
+    agent_endpoint = AgentEndpoint(build_server(lambda: app), identify)
+    app.router.routes.append(Route(MCP_PATH, agent_endpoint))
 
     @app.middleware("http")
     async def revalidate_static_files(request: Request, call_next):
@@ -1034,7 +1052,7 @@ def create_app(
             mixer = [dataclasses.asdict(result) for result in results]
         return BoardApplyResponse(config=_config_response(service), mixer=mixer, mixer_skipped=skipped)
 
-    @app.post("/api/audio/test-id", response_model=StatusResponse, dependencies=auth_dependencies)
+    @app.post("/api/audio/test-id", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def test_id() -> StatusResponse:
         if not service.saved_config.audio_enabled:
             raise HTTPException(status_code=409, detail="Turn on live audio first")
@@ -1051,7 +1069,7 @@ def create_app(
         service.clear_lockout()
         return _status_response(service.snapshot())
 
-    @app.post("/api/simulate/cos", response_model=StatusResponse, dependencies=auth_dependencies)
+    @app.post("/api/simulate/cos", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def simulate_cos(body: SimulateCOSRequest) -> StatusResponse:
         service.simulate_cos(body.active)
         return _status_response(service.snapshot())
@@ -1061,12 +1079,12 @@ def create_app(
         service.simulate_ctcss(body.tone_hz)
         return _status_response(service.snapshot())
 
-    @app.post("/api/simulate/dtmf", response_model=StatusResponse, dependencies=auth_dependencies)
+    @app.post("/api/simulate/dtmf", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def simulate_dtmf(body: SimulateDTMFRequest) -> StatusResponse:
         service.simulate_dtmf(body.digit)
         return _status_response(service.snapshot())
 
-    @app.post("/api/simulate/remote-keyed", response_model=StatusResponse, dependencies=auth_dependencies)
+    @app.post("/api/simulate/remote-keyed", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def simulate_remote_keyed(body: SimulateRemoteKeyedRequest) -> StatusResponse:
         service.simulate_remote_keyed(body.node_id, body.keyed)
         return _status_response(service.snapshot())
@@ -1078,7 +1096,7 @@ def create_app(
     def get_net() -> dict:
         return nets.status()
 
-    @app.post("/api/net/start", response_model=NetStatusResponse, dependencies=auth_dependencies)
+    @app.post("/api/net/start", response_model=NetStatusResponse, dependencies=transmit_dependencies)
     async def start_net(body: NetStartRequest, request: Request) -> dict:
         try:
             net = await nets.start(actor_of(request), body.name)
@@ -1087,7 +1105,7 @@ def create_app(
         request.state.audit_detail = net["name"]
         return nets.status()
 
-    @app.post("/api/net/end", response_model=NetStatusResponse, dependencies=auth_dependencies)
+    @app.post("/api/net/end", response_model=NetStatusResponse, dependencies=transmit_dependencies)
     async def end_net(request: Request) -> dict:
         try:
             net = await nets.end(actor_of(request))
@@ -1195,7 +1213,7 @@ def create_app(
         service.delete_announcement(announcement_id)
         return {"deleted": announcement_id}
 
-    @app.post("/api/announcements/{announcement_id}/play", response_model=StatusResponse, dependencies=auth_dependencies)
+    @app.post("/api/announcements/{announcement_id}/play", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def play_announcement(announcement_id: str) -> StatusResponse:
         clip = service.announcement_clip(find_announcement(announcement_id))
         try:
@@ -1219,7 +1237,7 @@ def create_app(
         await check_weather(announce=service.config.wx_alerts_enabled)
         return _weather_response(service)
 
-    @app.post("/api/weather/alerts/{alert_id}/play", response_model=StatusResponse, dependencies=auth_dependencies)
+    @app.post("/api/weather/alerts/{alert_id}/play", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def play_weather_alert(alert_id: str) -> StatusResponse:
         alert = next((a for a in service.weather_alerts if a.id == alert_id), None)
         if alert is None:
@@ -1510,7 +1528,7 @@ def create_app(
     async def get_links() -> dict:
         return await links_status()
 
-    @app.post("/api/links", response_model=LinksResponse, dependencies=auth_dependencies)
+    @app.post("/api/links", response_model=LinksResponse, dependencies=transmit_dependencies)
     async def post_link(body: LinkConnectRequest, request: Request) -> dict:
         request.state.audit_detail = f"node {body.node}" + (" (monitor)" if body.monitor else "")
         return await change_links(links.connect(body.node, body.monitor))
@@ -1519,7 +1537,7 @@ def create_app(
     async def delete_links() -> dict:
         return await change_links(links.disconnect_all())
 
-    @app.delete("/api/links/{node}", response_model=LinksResponse, dependencies=auth_dependencies)
+    @app.delete("/api/links/{node}", response_model=LinksResponse, dependencies=transmit_dependencies)
     async def delete_link(node: str = UrlPath(pattern=r"^[0-9]{1,10}$")) -> dict:
         return await change_links(links.disconnect(node))
 
@@ -1547,7 +1565,7 @@ def create_app(
     def get_autopatch() -> dict:
         return autopatch.status()
 
-    @app.post("/api/autopatch/dial", response_model=AutopatchStatusResponse, dependencies=auth_dependencies)
+    @app.post("/api/autopatch/dial", response_model=AutopatchStatusResponse, dependencies=transmit_dependencies)
     async def autopatch_dial(body: AutopatchDialRequest, request: Request) -> dict:
         request.state.audit_detail = body.number
         error = autopatch.dial(body.number, request.state.identity.username or "local")
@@ -1828,6 +1846,16 @@ def create_app(
         control_codes.remove(username)
         tokens.remove_user(username)
         return list_users()
+
+    @app.get("/api/agent-access", response_model=AgentAccessResponse, dependencies=account_dependencies)
+    def get_agent_access() -> AgentAccessResponse:
+        return AgentAccessResponse(transmit=agent_access.transmit, mcp_available=agent_endpoint.available)
+
+    @app.put("/api/agent-access", response_model=AgentAccessResponse, dependencies=account_dependencies)
+    def put_agent_access(body: AgentAccessRequest, request: Request) -> AgentAccessResponse:
+        request.state.audit_detail = "agents may transmit" if body.transmit else "agents may not transmit"
+        agent_access.set_transmit(body.transmit)
+        return get_agent_access()
 
     def token_list() -> list[TokenResponse]:
         return [
@@ -2122,6 +2150,7 @@ app = create_app(
     mailbox_store=MailboxStore(DEFAULT_MAILBOX_DIR, StateStore(DEFAULT_MAILBOX_DIR / "boxes.json")),
     users=UserStore(StateStore(DEFAULT_USERS_PATH)),
     tokens=TokenStore(StateStore(DEFAULT_TOKENS_PATH)),
+    agent_access=AgentAccess(StateStore(DEFAULT_AGENT_ACCESS_PATH)),
     audit=AuditLog(DEFAULT_AUDIT_PATH),
     aprs_stations=StationStore(DEFAULT_APRS_PATH),
     backups=BackupFolder(DEFAULT_BACKUP_DIR),

@@ -38,6 +38,7 @@ from controller.events import (
 )
 from controller.macros import Macro
 from controller.modes import effective_config, held_reason
+from controller.spoken_help import help_text
 from controller.state_machine import IDLE, PATCH, RECEIVING, RepeaterConfig, RepeaterController
 from audio_io.patch import LinkAudio, PatchAudio
 
@@ -425,6 +426,9 @@ class RepeaterService:
                 self.speak(TTS_PREFIX + "Home Assistant is not set up.")
             else:
                 self.homeassistant_hook(action.argument, source, action.pattern)
+        elif action.action == "help":
+            text = help_text(self.controller.list_macros(), self.controller.config, action.argument, self.held_reason)
+            self.speak(TTS_PREFIX + text)
         elif action.action == "parrot":
             if self.audio_output is None:
                 _logger.warning("parrot needs live audio, which isn't running")

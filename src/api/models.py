@@ -626,6 +626,7 @@ class MacroResponse(BaseModel):
     node_id: str
     action: MacroAction
     needs_code: bool
+    help_hidden: Optional[bool] = None  # left out of spoken help; /api/macros resolves None to the default
 
 
 class MacroCreateRequest(BaseModel):
@@ -635,11 +636,14 @@ class MacroCreateRequest(BaseModel):
     node_id: str = ""
     action: MacroAction = "link"
     needs_code: bool = False
+    help_hidden: Optional[bool] = None  # None: hidden if it's a sensitive action or needs a code
 
     @model_validator(mode="after")
     def _command_when_needed(self) -> "MacroCreateRequest":
         if self.action in ACTIONS_NEEDING_ARGUMENT and not self.command.strip():
             raise ValueError(f"a {self.action!r} macro needs a command")
+        if self.action == "help" and not re.fullmatch(r"[0-9]{0,2}", self.command.strip()):
+            raise ValueError("a help macro's command is an optional page number")
         if self.action == "gpio":
             parse_gpio_command(self.command)
         if self.action == "homeassistant" and not re.fullmatch(HOMEASSISTANT_TARGET, self.command.strip()):

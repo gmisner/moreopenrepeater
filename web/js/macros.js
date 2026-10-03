@@ -28,11 +28,14 @@ const ACTION_LABELS = {
   aprs: "APRS stations nearby",
   gpio: "GPIO output",
   homeassistant: "Home Assistant",
+  help: "Spoken help",
 };
+const HIDDEN_FROM_HELP = new Set(["tx_disable", "tx_enable", "link_radio_on", "link_radio_off"]);
 
 const GPIO_VERBS = { on: "on", off: "off", toggle: "toggle", pulse: "on for" };
 
 let editingPattern = null;
+let helpHiddenTouched = false;
 
 function details(macro) {
   const muted = '<span class="muted">—</span>';
@@ -46,6 +49,7 @@ function details(macro) {
   }
   if (macro.action === "say") return `&ldquo;${escapeHtml(macro.command)}&rdquo;`;
   if (macro.action === "homeassistant") return `<code>${escapeHtml(macro.command)}</code>`;
+  if (macro.action === "help") return `Page ${escapeHtml(macro.command || "1")}`;
   if (macro.action === "gpio") {
     const [pin, verb, seconds] = macro.command.split(/\s+/);
     const settings = store.state.config?.gpio_pins?.[pin];
@@ -64,7 +68,7 @@ function render(macros) {
     const row = document.createElement("tr");
     row.classList.toggle("editing", macro.pattern === editingPattern);
     row.innerHTML = `
-      <td><code>${escapeHtml(macro.pattern)}</code>${macro.needs_code ? ' <span class="tag" title="Keyed with a one-time code">+ code</span>' : ""}</td>
+      <td><code>${escapeHtml(macro.pattern)}</code>${macro.needs_code ? ' <span class="tag" title="Keyed with a one-time code">+ code</span>' : ""}${macro.help_hidden && macro.action !== "help" ? ' <span class="tag" title="Not read out by spoken help">unlisted</span>' : ""}</td>
       <td>${escapeHtml(macro.description) || '<span class="muted">—</span>'}</td>
       <td>${escapeHtml(ACTION_LABELS[macro.action] ?? macro.action)}</td>
       <td>${details(macro)}</td>
@@ -106,6 +110,7 @@ function showArgumentFields() {
   form.elements.say_text.required = action === "say";
   form.elements.announcement_id.required = action === "announcement";
   form.elements.ha_target.required = action === "homeassistant";
+  if (!helpHiddenTouched) form.elements.help_hidden.checked = HIDDEN_FROM_HELP.has(action) || form.elements.needs_code.checked;
   const pulse = form.querySelector("[data-gpio-pulse]");
   pulse.hidden = action !== "gpio" || form.elements.gpio_verb.value !== "pulse";
   form.elements.gpio_seconds.disabled = pulse.hidden;
@@ -116,10 +121,13 @@ function startEdit(macro) {
   form.reset();
   for (const field of ["pattern", "description", "action", "node_id"]) form.elements[field].value = macro[field];
   form.elements.needs_code.checked = macro.needs_code;
+  form.elements.help_hidden.checked = macro.help_hidden;
+  helpHiddenTouched = true;
   if (macro.action === "link") form.elements.command.value = macro.command;
   if (macro.action === "say") form.elements.say_text.value = macro.command;
   if (macro.action === "announcement") form.elements.announcement_id.value = macro.command;
   if (macro.action === "homeassistant") form.elements.ha_target.value = macro.command;
+  if (macro.action === "help") form.elements.help_page.value = macro.command;
   if (macro.action === "gpio") {
     const [pin, verb, seconds] = macro.command.split(/\s+/);
     form.elements.gpio_pin.value = pin;
@@ -137,6 +145,7 @@ function startEdit(macro) {
 
 function stopEdit() {
   editingPattern = null;
+  helpHiddenTouched = false;
   form.reset();
   showArgumentFields();
   title.textContent = "Add macro";
@@ -150,7 +159,14 @@ function collect() {
   const action = els.action.value;
   const gpio = `${els.gpio_pin.value} ${els.gpio_verb.value}${els.gpio_verb.value === "pulse" ? ` ${els.gpio_seconds.value}` : ""}`;
   const command =
-    { link: els.command.value, say: els.say_text.value, announcement: els.announcement_id.value, gpio, homeassistant: els.ha_target.value }[action] ?? "";
+    {
+      link: els.command.value,
+      say: els.say_text.value,
+      announcement: els.announcement_id.value,
+      gpio,
+      homeassistant: els.ha_target.value,
+      help: els.help_page.value,
+    }[action] ?? "";
   return {
     pattern: els.pattern.value.trim().toUpperCase(),
     description: els.description.value.trim(),
@@ -158,6 +174,7 @@ function collect() {
     command: command.trim(),
     node_id: action === "link" ? els.node_id.value.trim() : "",
     needs_code: els.needs_code.checked,
+    help_hidden: els.help_hidden.checked,
   };
 }
 
@@ -208,6 +225,10 @@ export function initMacros() {
   renderGpioOptions();
   form.elements.action.addEventListener("change", showArgumentFields);
   form.elements.gpio_verb.addEventListener("change", showArgumentFields);
+  form.elements.needs_code.addEventListener("change", showArgumentFields);
+  form.elements.help_hidden.addEventListener("change", () => {
+    helpHiddenTouched = true;
+  });
   showArgumentFields();
   cancelButton.addEventListener("click", stopEdit);
   form.addEventListener("submit", (event) => {

@@ -1163,10 +1163,16 @@
                 <option value="aprs">APRS stations nearby</option>
                 <option value="gpio">Switch a GPIO output</option>
                 <option value="homeassistant">Home Assistant</option>
+                <option value="help">Spoken help (read out the commands)</option>
               </select>
             </label>
             <label>Description
               <input type="text" name="description" placeholder="Disconnect all links" />
+              <small>Spoken help reads this after the digits.</small>
+            </label>
+            <label data-macro-arg="help">Page
+              <input type="number" name="help_page" min="1" max="99" step="1" placeholder="1" />
+              <small>Long lists are split into pages of 8 when there's a help macro for the next page, like 0# for page 1 and 02# for page 2.</small>
             </label>
             <label data-macro-arg="link">Command
               <input type="text" name="command" placeholder="disconnect_all" />
@@ -1200,6 +1206,7 @@
                 event type to fire (needs the access token).</small>
             </label>
             <label class="inline-check span-2"><input type="checkbox" name="needs_code" /> Needs a one-time code, keyed right after the pattern</label>
+            <label class="inline-check span-2"><input type="checkbox" name="help_hidden" /> Hide from spoken help (on by default for the transmitter and link radio switches, and for macros that need a code)</label>
           </div>
           <div class="form-actions">
             <button type="button" class="btn btn-ghost" id="macro-cancel" hidden>Cancel edit</button>

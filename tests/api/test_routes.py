@@ -161,7 +161,7 @@ def test_add_macro_returns_it_in_the_list():
 
     assert response.status_code == 200
     assert response.json() == [
-        {"pattern": "*81", "description": "disconnect all", "command": "disconnect_all", "node_id": "*", "action": "link", "needs_code": False}
+        {"pattern": "*81", "description": "disconnect all", "command": "disconnect_all", "node_id": "*", "action": "link", "needs_code": False, "help_hidden": False}
     ]
 
 
@@ -201,7 +201,7 @@ def test_snapshot_round_trips_through_the_http_api():
     exported = client.get("/api/snapshot").json()
     assert exported["config"]["hang_time"] == 42.0
     assert exported["macros"] == [
-        {"pattern": "*81", "description": "x", "command": "disconnect_all", "node_id": "", "action": "link", "needs_code": False}
+        {"pattern": "*81", "description": "x", "command": "disconnect_all", "node_id": "", "action": "link", "needs_code": False, "help_hidden": None}
     ]
 
     # A fresh service/client should pick up the imported snapshot.

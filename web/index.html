@@ -2310,6 +2310,25 @@
             <button type="submit" class="btn btn-primary">Create token</button>
           </form>
         </div>
+        <div class="card" id="agent-access-card">
+          <h2>Agent access (MCP)</h2>
+          <p class="muted small">AI agents such as Claude, Cursor or ChatGPT can connect to the repeater's MCP server with
+            an API token. They can read status, audio levels, settings, activity and logs, and an operator's token can
+            change settings. Every change is in the audit log under the token's name.</p>
+          <p id="agent-mcp-missing" class="small" hidden>MCP support isn't installed on this controller. Update to the
+            latest version to get it.</p>
+          <div class="agent-connect">
+            <p class="small">Server URL: <code id="agent-mcp-url"></code></p>
+            <pre class="agent-config"><code id="agent-mcp-config"></code></pre>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="agent-transmit" />
+            <span class="switch-track"></span>
+            <span>Let API tokens make the repeater transmit <small class="muted">&mdash; sending the ID, dialing DTMF
+              macros, playing announcements, linking, starting nets and phone calls. Off, a token can still change settings
+              but can't key up. You're still the control operator for whatever goes out.</small></span>
+          </label>
+        </div>
       </section>
 
       <!-- Audit log (admins only) -->

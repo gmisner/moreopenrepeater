@@ -13,6 +13,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "segno>=1.6",  # QR codes for setting up one-time codes
     "python-multipart>=0.0.9",
+    "mcp>=2.3,<3",  # the /mcp endpoint for AI agents (api.agents)
 ]
 
 [project.optional-dependencies]

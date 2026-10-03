@@ -12,7 +12,9 @@ remote key-up. Its transmitter:
     after a short hang;
   - identifies (47 CFR 97.119) within `id_interval` of the first
     transmission and every `id_interval` while it keeps transmitting --
-    keying up by itself if it's idle, but never over the far end.
+    keying up by itself if it's idle, but never over the far end;
+  - as a remote base, says when it's gone `idle_off` seconds without
+    anyone using it, so it can be turned off.
 
 No clocks or audio here: `update(now, sending, receiving)` returns what to do.
 """
@@ -22,6 +24,7 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 HANG_SECONDS = 0.5
+IDLE_ID_SECONDS = 20.0  # time for an owed ID to play before idling off
 
 
 @dataclass(frozen=True)
@@ -34,7 +37,12 @@ class LinkPlay:
     clip: str
 
 
-LinkCommand = Union[LinkPTT, LinkPlay]
+@dataclass(frozen=True)
+class LinkIdle:
+    """Nobody has used it for `idle_off` seconds (sent once)."""
+
+
+LinkCommand = Union[LinkPTT, LinkPlay, LinkIdle]
 
 
 @dataclass
@@ -42,6 +50,7 @@ class LinkRadioSettings:
     timeout: float = 180.0
     courtesy_tone: bool = True
     id_interval: float = 600.0
+    idle_off: float = 0.0  # 0: never idle
 
 
 class LinkRadioController:
@@ -52,6 +61,7 @@ class LinkRadioController:
         self._started_at = 0.0
         self._hang_until: Optional[float] = None
         self._id_due_at: Optional[float] = None  # None: no ID owed
+        self._last_used: Optional[float] = None
 
     @property
     def id_owed(self) -> bool:
@@ -90,6 +100,16 @@ class LinkRadioController:
             # A clip keys the transmitter by itself until it finishes.
             commands.append(LinkPlay("id"))
             self._id_due_at = now + self.settings.id_interval if self.ptt else None
+        if self._last_used is None or sending or receiving or self.ptt:
+            self._last_used = now
+        elif self.settings.idle_off and now - self._last_used >= self.settings.idle_off:
+            if self._id_due_at is not None:
+                commands.append(LinkPlay("id"))
+                self._id_due_at = None
+                self._last_used = now - self.settings.idle_off + IDLE_ID_SECONDS
+            else:
+                commands.append(LinkIdle())
+                self._last_used = float("inf")
         return commands
 
     def reset(self) -> None:
@@ -98,3 +118,4 @@ class LinkRadioController:
         self.timed_out = False
         self._hang_until = None
         self._id_due_at = None
+        self._last_used = None

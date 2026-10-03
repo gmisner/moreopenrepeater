@@ -29,9 +29,9 @@ from audio_io.pi_gpio import GpioLine, open_header_pin
 from audio_io.processor import AudioProcessor, ProcessorSettings
 from audio_io.serial_lines import open_serial_line
 from controller.events import COSChanged
-from controller.link_radio import LinkPlay, LinkPTT, LinkRadioController, LinkRadioSettings
+from controller.link_radio import LinkIdle, LinkPlay, LinkPTT, LinkRadioController, LinkRadioSettings
 from controller.state_machine import RepeaterConfig
-from playout.renderer import ClipRenderer, UnknownClipError
+from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
 from .service import RepeaterService
@@ -154,6 +154,7 @@ class LinkRadio:
             timeout=config.link_radio_timeout,
             courtesy_tone=config.link_radio_courtesy_tone,
             id_interval=config.id_interval,
+            idle_off=config.remote_base_idle_minutes * 60 if config.link_radio_mode == "remote_base" else 0.0,
         )
         if previous is None or any(getattr(previous, f) != getattr(config, f) for f in _RESTART_FIELDS):
             self._stop()
@@ -176,6 +177,7 @@ class LinkRadio:
             "running": engine is not None and engine.running,
             "error": self.error,
             "name": config.link_radio_name,
+            "mode": config.link_radio_mode,
             "rx_level_db": engine.processor.rx_level_db if engine else -120.0,
             "receiving": self.receiving,
             "transmitting": engine.transmitting if engine else False,
@@ -210,11 +212,18 @@ class LinkRadio:
         engine = self.engine
         if engine is None:
             return
+        idle = False
         for command in self.controller.update(now, self._sending(), self.receiving):
             if isinstance(command, LinkPTT):
                 engine.processor.set_ptt(command.active)
             elif isinstance(command, LinkPlay):
                 self._play(engine, command.clip)
+            elif isinstance(command, LinkIdle):
+                idle = True
+        if idle:
+            _logger.info("remote base idle; turning it off")
+            self._service.update_config(link_radio_enabled=False)
+            self._service.speak(TTS_PREFIX + "Remote base off.")
 
     # -- internals ------------------------------------------------------------
 

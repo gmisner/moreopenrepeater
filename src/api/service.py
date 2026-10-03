@@ -38,6 +38,7 @@ from controller.events import (
 )
 from controller.macros import Macro
 from controller.modes import effective_config, held_reason
+from controller.remote_base import summary as remote_base_summary
 from controller.spoken_help import help_text
 from controller.state_machine import IDLE, PATCH, RECEIVING, RepeaterConfig, RepeaterController
 from audio_io.patch import LinkAudio, PatchAudio
@@ -156,6 +157,7 @@ class RepeaterService:
         self.codes_locked: Callable[[], bool] = lambda: False
         self.homeassistant_hook: Optional[Callable[[str, str, str], None]] = None  # (target, source, pattern)
         self.metar_hook: Optional[Callable[[str], None]] = None  # airport code, or "" for all (api.airport_weather)
+        self.remote_base_hook: Optional[Callable[[str, str], None]] = None  # (remote_* action, keyed argument)
         self.mailbox_hook: Optional[Callable[[MailboxCommand], None]] = None  # api.mailbox
         self._action_source = "DTMF"
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
@@ -392,7 +394,15 @@ class RepeaterService:
         elif action.action in ("link_radio_on", "link_radio_off"):
             on = action.action == "link_radio_on"
             self.update_config(link_radio_enabled=on)
-            self.speak(TTS_PREFIX + ("Link radio on" if on else "Link radio off"))
+            if self.config.link_radio_mode == "remote_base":
+                self.speak(TTS_PREFIX + (f"Remote base on, {remote_base_summary(self.config.remote_base_mhz, self.config.remote_base_shift, self.config.remote_base_tone_hz)}." if on else "Remote base off."))
+            else:
+                self.speak(TTS_PREFIX + ("Link radio on" if on else "Link radio off"))
+        elif action.action.startswith("remote_"):
+            if self.remote_base_hook is None:
+                self.speak(TTS_PREFIX + "The remote base is not set up.")
+            else:
+                self.remote_base_hook(action.action, action.argument)
         elif action.action == "time":
             self.speak(TTS_PREFIX + talking_clock_text(self._wall_clock()))
         elif action.action == "weather":

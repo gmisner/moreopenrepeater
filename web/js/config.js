@@ -22,6 +22,8 @@ const CLEARABLE_FIELDS = new Set([
   "wx_lon",
   "tx_ctcss_hz",
   "link_radio_tx_ctcss_hz",
+  "remote_base_offset_mhz",
+  "remote_base_tone_hz",
   "aprs_frequency_mhz",
   "aprs_offset_mhz",
   "aprs_tone_hz",

@@ -7,7 +7,8 @@ from typing import Annotated, Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from controller.macros import ACTIONS_NEEDING_ARGUMENT, MacroAction
+from controller.macros import ACTIONS_NEEDING_ARGUMENT, KEYED_ENTRY_ACTIONS, MacroAction
+from controller.remote_base import CTCSS_TONES, parse_ranges
 from controller.state_machine import CourtesyStyle as CourtesyToneStyle
 from controller.state_machine import CourtesyVariant as CourtesyToneVariant
 from playout.tones import parse_custom_tone
@@ -263,6 +264,15 @@ class ConfigResponse(BaseModel):
     link_radio_tx_ctcss_hz: Optional[float] = None
     link_radio_timeout: float = 180.0
     link_radio_courtesy_tone: bool = True
+    link_radio_mode: Literal["link", "remote_base"] = "link"
+    remote_base_rigctld: str = "localhost:4532"
+    remote_base_rig_mode: Literal["FM", "AM", "USB", "LSB"] = "FM"
+    remote_base_mhz: float = 146.52
+    remote_base_shift: Literal["simplex", "plus", "minus"] = "simplex"
+    remote_base_offset_mhz: Optional[float] = None
+    remote_base_tone_hz: Optional[float] = None
+    remote_base_ranges: str = "144-148, 222-225, 420-450"
+    remote_base_idle_minutes: float = 10.0
     link_radio_squelch_tail_ms: float = 0.0
     link_radio_tx_delay_ms: float = 0.0
     vox_hold: float
@@ -453,6 +463,31 @@ class ConfigUpdateRequest(BaseModel):
     clear_link_radio_tx_ctcss_hz: bool = False
     link_radio_timeout: Optional[float] = Field(default=None, ge=30, le=1800)
     link_radio_courtesy_tone: Optional[bool] = None
+    link_radio_mode: Optional[Literal["link", "remote_base"]] = None
+    remote_base_rigctld: Optional[str] = Field(default=None, max_length=100, pattern=r"^$|^[A-Za-z0-9.\-]+(:[0-9]{1,5})?$|^\[[0-9A-Fa-f:]+\](:[0-9]{1,5})?$")
+    remote_base_rig_mode: Optional[Literal["FM", "AM", "USB", "LSB"]] = None
+    remote_base_mhz: Optional[float] = Field(default=None, ge=1, le=10000)
+    remote_base_shift: Optional[Literal["simplex", "plus", "minus"]] = None
+    remote_base_offset_mhz: Optional[float] = Field(default=None, gt=0, le=100)
+    clear_remote_base_offset_mhz: bool = False
+    remote_base_tone_hz: Optional[float] = None
+    clear_remote_base_tone_hz: bool = False
+    remote_base_ranges: Optional[str] = Field(default=None, max_length=300)
+    remote_base_idle_minutes: Optional[float] = Field(default=None, ge=0, le=24 * 60)
+
+    @field_validator("remote_base_ranges")
+    @classmethod
+    def _ranges(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            parse_ranges(value)
+        return value
+
+    @field_validator("remote_base_tone_hz")
+    @classmethod
+    def _standard_tone(cls, value: Optional[float]) -> Optional[float]:
+        if value is not None and not any(abs(value - tone) < 0.05 for tone in CTCSS_TONES):
+            raise ValueError("not a standard CTCSS tone")
+        return value
     link_radio_squelch_tail_ms: Optional[float] = Field(default=None, ge=0, le=300)
     link_radio_tx_delay_ms: Optional[float] = Field(default=None, ge=0, le=500)
     vox_hold: Optional[float] = Field(default=None, ge=0, le=5)
@@ -664,6 +699,10 @@ class MacroCreateRequest(BaseModel):
             self.command = self.command.strip().upper()
             if not re.fullmatch(r"[A-Z0-9]{4}|", self.command):
                 raise ValueError("an airport weather macro needs a 4-letter ICAO code, or none for every listed airport")
+        if self.action == "remote_shift" and self.command.strip() not in ("plus", "minus", "simplex"):
+            raise ValueError("a remote base shift macro's command is plus, minus or simplex")
+        if self.action in KEYED_ENTRY_ACTIONS and self.needs_code:
+            raise ValueError("a macro that takes keyed digits can't also need a one-time code")
         return self
 
 
@@ -1412,6 +1451,9 @@ class LinkRadioStatus(BaseModel):
     device_sample_rate: Optional[int]
     dropped_input_blocks: int
     starved_output_blocks: int
+    mode: Literal["link", "remote_base"] = "link"
+    rig_error: Optional[str] = None  # remote base CAT control
+    tuned: bool = False  # the radio was set to the saved frequency, shift and tone
 
 
 class MonitorReceiverStatus(BaseModel):

@@ -70,6 +70,7 @@ from .aprs_map import AprsReceiver, StationStore, bearing_degrees, distance_km, 
 from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
 from .audit import AuditEntry, AuditLog, describe_config_change
 from .link_radio import LinkRadio
+from .remote_base import RemoteBase
 from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env, list_audio_devices
 from .monitor import AudioMonitor
 from .monitor_receiver import MonitorReceiverService
@@ -419,6 +420,7 @@ def create_app(
     monitor_recordings: Optional[RecordingStore] = None,
     monitor_receiver: Optional[MonitorReceiverService] = None,
     link_radio: Optional[LinkRadio] = None,
+    remote_base: Optional[RemoteBase] = None,
     run_mixer: Callable[[list[str]], object] = run_amixer,
     serial_ports: Callable[[], list[dict]] = find_serial_ports,
 ) -> FastAPI:
@@ -453,6 +455,7 @@ def create_app(
         attach_port=live_audio.set_port,
         find_cm108=lambda: link_cm108_from_env(os.environ, cm108),
     )
+    remote_base = remote_base or RemoteBase(service)
     gpio = gpio or GpioControl(service, cm108)
     service.gpio_command = gpio.run_command
     autopatch = autopatch or Autopatch(service, patch_settings_from_env(os.environ))
@@ -852,6 +855,7 @@ def create_app(
             if interval is not None:
                 watchdog.start(interval)
         gpio.start()
+        remote_base.attach(asyncio.get_running_loop())
         yield
         if start_background_tick:
             sd_notify("STOPPING=1")
@@ -1659,7 +1663,13 @@ def create_app(
 
     @app.get("/api/link-radio", response_model=LinkRadioStatus, dependencies=auth_dependencies)
     def get_link_radio() -> LinkRadioStatus:
-        return LinkRadioStatus(**link_radio.status())
+        return LinkRadioStatus(**link_radio.status(), **remote_base.status())
+
+    @app.post("/api/link-radio/tune", response_model=LinkRadioStatus, dependencies=auth_dependencies)
+    async def retune_remote_base() -> LinkRadioStatus:
+        remote_base.retune()
+        await asyncio.sleep(0)
+        return LinkRadioStatus(**link_radio.status(), **remote_base.status())
 
     def mailbox_response() -> MailboxResponse:
         messages = mailbox_store.messages()

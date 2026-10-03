@@ -365,6 +365,10 @@ several phases (see the plan file for the full breakdown):
   transmits over the far end, and it has its own timeout and its own station ID. PTT
   and COS use Pi header pins or a second CM108, and DTMF macros connect or disconnect
   it. See [docs/raspberry-pi.md](docs/raspberry-pi.md#link-radio).
+- **Remote base**: the link radio can instead be a remote base on another band. Users
+  turn it on, tune the frequency, shift and tone by DTMF, and it turns itself off when
+  unused. It's tuned over CAT through Hamlib's `rigctld`, only within the bands you
+  allow. See [docs/raspberry-pi.md](docs/raspberry-pi.md#remote-base).
 - **Simplex node mode** (Timing page): one radio on one frequency becomes a node
   for AllStar, EchoLink and the link radio. Local users go to the links but aren't
   repeated. Linked stations go out over the air, but never over anyone on the channel:

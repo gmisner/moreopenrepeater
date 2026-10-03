@@ -375,8 +375,47 @@ To connect and disconnect the link over the air, add DTMF macros with the
 "Link radio on" and "Link radio off" actions (put a secret code in the
 pattern). They save the setting and say what they did.
 
-The link radio carries audio only. Remote base mode, which tunes the radio
-over a CAT cable, isn't supported yet.
+### Remote base
+
+Set **Use it as** to **A remote base** to put the link radio on another band
+for users to tune by DTMF. It works like the link above (its own timeout,
+courtesy tone and ID, and it never transmits over the far end), with these
+differences:
+
+- **It's off until someone turns it on** with a "Link radio on" macro, which
+  answers "Remote base on, 146.52, simplex, no tone." "Link radio off" turns
+  it off.
+- **It turns itself off** after **Turn off after** minutes (10 by default)
+  with nobody using it, saying "Remote base off". If it still owes an ID, it
+  sends that first.
+- **It's tuned over a CAT cable** through Hamlib's `rigctld`, which supports
+  most transceivers. Install it and start it for the radio, for example:
+
+  ```
+  sudo apt install libhamlib-utils
+  rigctl -l | less                      # find the radio's model number
+  rigctld -m <model> -r /dev/ttyUSB1 -s 9600
+  ```
+
+  Leave **Radio control** at `localhost:4532` (rigctld's default) or point it
+  at another host. Run rigctld as a systemd service so it starts at boot. Use
+  a different serial port from the PTT and COS lines.
+
+DTMF macros tune it. Each one answers with the new frequency, or says the
+radio didn't respond:
+
+| Action | Keyed | Does |
+| --- | --- | --- |
+| Remote base frequency | the pattern, the frequency, `#` | MHz with `*` as the decimal point (`146*94#`), or digits with the first three as MHz (`146940#`). Tunes simplex. |
+| Remote base shift | the pattern | Plus, minus or simplex, chosen on the macro. The offset is the band's usual one (600 kHz on 2 m, 1.6 MHz on 1.25 m, 5 MHz on 70 cm) unless **Offset** is set. |
+| Remote base tone | the pattern, the tone, `#` | A standard CTCSS tone (`100*0#` or `1000#`); `0#` turns it off. |
+| Remote base status | the pattern | Says whether it's on, and the frequency, shift and tone. |
+
+**Allowed bands** (MHz ranges, `144-148, 222-225, 420-450` by default) limit
+what it can be tuned to, on both the receive and transmit side of a shift.
+Keep them within your license privileges. The frequency, shift, tone and mode
+can also be set on the dashboard. **Send to the radio** sends them again if the
+radio was tuned by hand.
 
 ## 4. Configuration (systemd EnvironmentFile)
 

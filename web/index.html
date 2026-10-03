@@ -1046,6 +1046,59 @@
             <button type="submit" class="btn btn-primary" id="gpio-schedules-save">Save schedules</button>
           </div>
         </form>
+        <form class="card config-form" data-config-form id="fan-form">
+          <div class="card-header">
+            <h2>Transmitter fan</h2>
+            <span id="fan-state" class="tag">off</span>
+          </div>
+          <p class="muted small">Runs a cooling fan while the repeater transmits and for a while after it stops. Switch the
+            fan through a relay or a transistor; a pin can't power it directly.</p>
+          <div class="form-grid">
+            <label>Fan output
+              <select name="fan_output">
+                <option value="none">No fan</option>
+                <option value="cm108">A spare CM108 GPIO pin</option>
+                <option value="gpio">Raspberry Pi GPIO pin</option>
+              </select>
+            </label>
+            <label data-fan="cm108">CM108 pin
+              <select name="fan_cm108_pin">
+                <option value="1">GPIO1</option>
+                <option value="2">GPIO2</option>
+                <option value="4">GPIO4</option>
+                <option value="5">GPIO5</option>
+                <option value="6">GPIO6</option>
+                <option value="7">GPIO7</option>
+                <option value="8">GPIO8</option>
+              </select>
+              <small>One that isn't set up in the CM108 GPIO pins card.</small>
+            </label>
+            <label data-fan="gpio">Fan pin
+              <span class="input-unit"><input type="number" step="1" min="2" max="27" name="fan_gpio_pin" required /><span>GPIO</span></span>
+              <small>BCM number; GPIO26 is header pin 37. 3.3&nbsp;V only.</small>
+            </label>
+            <label data-fan="cm108 gpio">Polarity
+              <select name="fan_polarity">
+                <option value="high">Active high (high runs the fan)</option>
+                <option value="low">Active low</option>
+              </select>
+            </label>
+            <label data-fan="cm108 gpio">Run on
+              <span class="input-unit"><input type="number" step="0.5" min="0" max="60" name="fan_run_on_minutes" required /><span>min</span></span>
+              <small>How long the fan keeps running after the transmitter unkeys.</small>
+            </label>
+            <label data-fan="cm108 gpio">Also run above
+              <span class="input-unit"><input type="number" step="1" min="40" max="90" name="fan_temp_c" placeholder="off" /><span>&deg;C</span></span>
+              <small>Also run while the Pi's CPU is at least this hot, until it has cooled 5&nbsp;&deg;C. Leave empty to run only for transmitting.</small>
+            </label>
+          </div>
+          <p id="fan-error" class="form-error" hidden></p>
+          <div class="form-actions">
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-ghost" data-reset>Discard</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
 
         <div class="card">
           <h2>Library</h2>

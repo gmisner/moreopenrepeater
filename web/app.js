@@ -9,6 +9,7 @@ import { initFolds } from "./js/folds.js";
 import { initHints } from "./js/hints.js";
 import { initLinkSchedules } from "./js/link_schedules.js";
 import { initGpioSchedules } from "./js/gpio_schedules.js";
+import { initFan } from "./js/fan.js";
 import { initGpio } from "./js/gpio.js";
 import { initLinks } from "./js/links.js";
 import { initAutopatch } from "./js/autopatch.js";
@@ -63,6 +64,7 @@ async function main() {
   initAutopatch();
   initAllStar();
   initGpio();
+  initFan();
   initLinks();
   initFavorites();
   initLinkSchedules();

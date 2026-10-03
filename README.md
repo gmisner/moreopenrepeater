@@ -305,6 +305,9 @@ several phases (see the plan file for the full breakdown):
   shows on the dashboard. An input can say something or run a macro when it turns
   on or off (a door alarm, a power failure).
   See [docs/raspberry-pi.md](docs/raspberry-pi.md#gpio-pins).
+- **Transmitter fan**: a CM108 or Raspberry Pi pin that runs a cooling fan while
+  transmitting and for a set run-on time after, and optionally while the CPU is hot.
+  See [docs/raspberry-pi.md](docs/raspberry-pi.md#transmitter-fan).
 - **Autopatch**: users dial phone calls over the air (`*6` + number, `#` to hang up)
   through a SIP provider (VoIP.ms, Telnyx, Twilio, ...) on the local Asterisk, with
   allowed/blocked number patterns and a time limit. Calls to the line's number can

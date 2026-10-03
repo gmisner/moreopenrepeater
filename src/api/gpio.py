@@ -14,6 +14,9 @@ Outputs can also be switched on for a weekly window (`gpio_schedules`, see
 `api.weekly`) and off at its end. Switching one off by hand keeps it off for
 the rest of that window; after a restart, an output inside its window comes
 back on.
+
+A pin given to the transmitter fan (`api.tx_fan`) is the fan's; it's only
+reported here.
 """
 from __future__ import annotations
 
@@ -28,6 +31,7 @@ from audio_io.cm108 import CM108Interface
 from controller.state_machine import RepeaterConfig
 from playout.renderer import TTS_PREFIX
 
+from .tx_fan import fan_cm108_pin
 from .weekly import last_start, next_start, window_end
 
 if TYPE_CHECKING:
@@ -112,9 +116,16 @@ class GpioControl:
         self._task = self._schedule_task = None
 
     def status(self) -> dict:
-        pins = _pins(self._service.config)
+        config = self._service.config
+        pins = _pins(config)
+        fan_pin = fan_cm108_pin(config)
         rows = []
         for pin in SPARE_PINS:
+            if pin == fan_pin:
+                level = self._cm108.output_level(pin) if self._cm108 is not None else None
+                on = None if level is None else level != (config.fan_polarity == "low")
+                rows.append({"pin": pin, "name": "Transmitter fan", "mode": "fan", "on": on, "until": None})
+                continue
             settings = pins.get(pin, {})
             mode = settings.get("mode")
             if mode == "output" and self._cm108 is not None:
@@ -204,10 +215,13 @@ class GpioControl:
         if self._cm108 is None:
             return
         pins = _pins(config)
+        fan_pin = fan_cm108_pin(config)
         for pin in SPARE_PINS:
             mode = pins.get(pin, {}).get("mode")
             try:
-                if mode == "output":
+                if pin == fan_pin:
+                    self._cancel_pulse(pin)
+                elif mode == "output":
                     if self._cm108.output_level(pin) is None:
                         self._cm108.set_gpio(pin, False)
                 else:

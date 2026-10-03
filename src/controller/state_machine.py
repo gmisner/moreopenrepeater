@@ -215,6 +215,13 @@ class RepeaterConfig:
     # Inputs can also have "invert" and "on_say"/"off_say"/"on_macro"/"off_macro".
     gpio_pins: dict = field(default_factory=dict)
     gpio_schedules: list = field(default_factory=list)  # [{pin, days, time, minutes, enabled}], outputs on for a weekly window
+    # A cooling fan that runs while transmitting and for a while after (api.tx_fan).
+    fan_output: Literal["none", "cm108", "gpio"] = "none"
+    fan_cm108_pin: int = 1  # a spare pin not set up on the GPIO card
+    fan_gpio_pin: int = 26  # header pin 37
+    fan_polarity: Literal["high", "low"] = "high"  # the level that runs the fan
+    fan_run_on_minutes: float = 3.0
+    fan_temp_c: Optional[float] = None  # also run while the CPU is at least this hot
     # Nodes to connect to with one click: [{"node": str, "name": str, "monitor": bool}]
     link_favorites: list = field(default_factory=list)
     link_schedules: list = field(default_factory=list)  # [{node, name, days, time, minutes, monitor, enabled}]

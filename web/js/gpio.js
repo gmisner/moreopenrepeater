@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { fanText } from "./fan.js";
 import { currentView, router } from "./router.js";
 import { shortTime } from "./link_schedules.js";
 import { store } from "./store.js";
@@ -58,12 +59,26 @@ function actionsRow(pin, settings) {
   </tr>`;
 }
 
+function fanPin(config) {
+  if (config?.fan_output !== "cm108" || String(config.fan_cm108_pin) in (config.gpio_pins ?? {})) return null;
+  return config.fan_cm108_pin;
+}
+
 function renderRows() {
-  const pins = store.state.config?.gpio_pins ?? {};
-  const key = JSON.stringify([pins, (store.state.macros ?? []).map((m) => [m.pattern, m.description, m.action])]);
+  const config = store.state.config;
+  const pins = config?.gpio_pins ?? {};
+  const fan = fanPin(config);
+  const key = JSON.stringify([pins, fan, (store.state.macros ?? []).map((m) => [m.pattern, m.description, m.action])]);
   if (key === rowsFor) return;
   rowsFor = key;
   tbody.innerHTML = SPARE_PINS.map((pin) => {
+    if (pin === fan) {
+      return `<tr data-pin="${pin}">
+        <td><code>GPIO${pin}</code></td>
+        <td colspan="2" class="muted">Transmitter fan (set up below)</td>
+        <td data-state></td>
+      </tr>`;
+    }
     const settings = pins[pin] ?? {};
     const mode = settings.mode ?? "";
     return `<tr data-pin="${pin}">
@@ -101,12 +116,23 @@ function renderState() {
   renderDashboard();
 }
 
+function fanIndicator(fan) {
+  if (!fan || fan.output === "none") return "";
+  return `<div class="indicator${fan.on ? " on" : ""}">
+    <span class="indicator-dot"></span>
+    <span class="indicator-name">Transmitter fan</span>
+    <span class="indicator-value">${escapeHtml(fan.error ? "error" : fanText(fan))}</span>
+  </div>`;
+}
+
 function renderDashboard() {
-  const used = latest.pins.filter((row) => row.mode);
-  dashCard.hidden = used.length === 0;
-  dashNote.hidden = latest.available && !latest.error;
+  const used = latest.pins.filter((row) => row.mode && row.mode !== "fan");
+  const fan = fanIndicator(latest.fan);
+  dashCard.hidden = used.length === 0 && !fan;
+  const cm108Used = used.length > 0 || latest.fan?.output === "cm108";
+  dashNote.hidden = !cm108Used || (latest.available && !latest.error);
   dashNote.textContent = latest.error ?? "No CM108 interface is connected, so the pins can't be read or switched.";
-  const html = used
+  const html = fan + used
     .map((row) => {
       const canSwitch = row.mode === "output" && latest.available && document.body.dataset.role !== "viewer";
       const tag = canSwitch ? "button" : "div";
@@ -143,7 +169,7 @@ async function save(event) {
   event.preventDefault();
   const gpio_pins = {};
   for (const pin of SPARE_PINS) {
-    const mode = form.elements[`mode-${pin}`].value;
+    const mode = form.elements[`mode-${pin}`]?.value;
     if (!mode) continue;
     gpio_pins[pin] = { mode, name: form.elements[`name-${pin}`].value.trim() };
     if (mode === "input") {

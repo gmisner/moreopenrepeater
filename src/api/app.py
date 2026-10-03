@@ -65,6 +65,7 @@ from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_
 from .boards import WIRING_FIELDS, alsa_card, apply_mixer, load_boards, preset_changes, run_amixer
 from .sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
 from .sip_trunk import AsteriskSetupError, SipTrunk, TrunkSettings
+from .tx_fan import TxFan
 from .aprs_map import AprsReceiver, StationStore, bearing_degrees, distance_km, map_center, spoken_summary
 from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
 from .audit import AuditEntry, AuditLog, describe_config_change
@@ -395,6 +396,7 @@ def create_app(
     backups: Optional[BackupFolder] = None,
     allstar_node: Optional[AllStarNode] = None,
     gpio: Optional[GpioControl] = None,
+    tx_fan: Optional[TxFan] = None,
     node_directory: Optional[NodeDirectory] = None,
     links: Optional[LinkControl] = None,
     updater: Optional[Updater] = None,
@@ -536,6 +538,7 @@ def create_app(
         cm108_path=lambda: getattr(getattr(cm108, "device", None), "path", None),
         update_status=updater.status,
     )
+    tx_fan = tx_fan or TxFan(service, cm108, temperature=health.probe.temperature_c)
     backup_sources = BackupSources(service, users, assets_store, recordings, activity_store, audit)
     watchdog = watchdog or Watchdog()
     last_tick: list[Optional[float]] = [None]
@@ -801,6 +804,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         tasks: list[asyncio.Task] = []
+        # Before the audio engines, so a pin taken from the fan is released before they claim it.
+        tx_fan.start()
         if start_background_tick:
             async def tick_loop() -> None:
                 last_tick[0] = time.monotonic()
@@ -851,6 +856,7 @@ def create_app(
         for task in tasks:
             task.cancel()
         await gpio.stop()
+        await tx_fan.stop()
         await allstar_node.stop()
         await autopatch.stop()
         live_audio.shutdown()
@@ -1478,9 +1484,12 @@ def create_app(
     async def delete_link(node: str = UrlPath(pattern=r"^[0-9]{1,10}$")) -> dict:
         return await change_links(links.disconnect(node))
 
+    def gpio_status() -> dict:
+        return {**gpio.status(), "fan": tx_fan.status()}
+
     @app.get("/api/gpio", response_model=GpioStatusResponse, dependencies=auth_dependencies)
     def get_gpio() -> dict:
-        return gpio.status()
+        return gpio_status()
 
     @app.put("/api/gpio/{pin}", response_model=GpioStatusResponse, dependencies=auth_dependencies)
     def put_gpio(pin: int, body: GpioOutputRequest, request: Request) -> dict:
@@ -1489,7 +1498,7 @@ def create_app(
             gpio.set_output(pin, body.on)
         except GpioError as error:
             raise HTTPException(status_code=409, detail=str(error))
-        return gpio.status()
+        return gpio_status()
 
     @app.get("/api/audio/engine", response_model=AudioEngineResponse, dependencies=auth_dependencies)
     def get_audio_engine() -> dict:

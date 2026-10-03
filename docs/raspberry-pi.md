@@ -157,6 +157,26 @@ interface brings out to its connector.
 The pins come straight from the chip and can't power a relay coil: drive
 one through a transistor.
 
+### Transmitter fan
+
+**Audio & tones → Transmitter fan** runs a cooling fan while the repeater
+transmits, and keeps it running for a while after the transmitter unkeys
+(**Run on**, 3 minutes to start with). The fan goes on a spare CM108 pin or
+a Raspberry Pi header pin (BCM number; GPIO26 is header pin 37). A CM108
+pin used for the fan can't also be set up in the CM108 GPIO pins card, and
+a Pi pin can't be one the repeater, monitor receiver or link radio already
+uses.
+
+Fill in **Also run above** to also run the fan while the Pi's CPU is at
+least that hot (read every 10 seconds); it stops once the CPU has cooled
+5 °C. The dashboard's GPIO card shows the fan, and how much run-on time is
+left.
+
+A pin can't power a fan: switch it with a relay, or a logic-level MOSFET
+with a diode across the fan. Pick **Active low** for a relay board that
+switches on when its input is pulled low. The fan starts off when the
+repeater starts, and goes off when the service stops.
+
 ### PTT and COS on the Pi's own pins
 
 Without a CM108 (a sound card with no GPIO, or a HAT), PTT and COS can use

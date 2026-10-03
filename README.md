@@ -388,7 +388,8 @@ several phases (see the plan file for the full breakdown):
   dashboard. The controller can also feed Broadcastify or another Icecast
   server through ffmpeg. See [docs/public-listening.md](docs/public-listening.md).
 - **Users and roles**: admin, operator, read-only viewer and listener accounts, plus an audit
-  log of every change and DTMF command with who made it.
+  log of every change and DTMF command with who made it. Revocable API tokens let scripts
+  and agents act as an account without its password.
 - **Full backups**: one `.zip` with the settings, macros, announcements, audio clips,
   users, activity history and audit log (recordings optional), downloadable or saved
   on a schedule to a folder such as a USB drive. See
@@ -465,7 +466,9 @@ really revoked by `POST /api/logout`, cleared on restart). Browsers *do*
 send cookies on a `new WebSocket(...)` handshake -- unlike a custom
 `Authorization` header -- so `/ws/status` authenticates the same way as
 every REST route, plus an `Origin` check since WebSocket handshakes aren't
-covered by CORS. HTTP Basic still works for scripts (`curl -u`), but 401s
+covered by CORS. Scripts and agents use named API tokens (`Authorization:
+Bearer`, `api/tokens.py`) that act with their user's role, or HTTP Basic
+(`curl -u`). 401s
 no longer send `WWW-Authenticate: Basic`, which would pop the browser's
 native dialog over the login page. Failed logins are logged and delayed
 by 1s. Admins can add more accounts (admin / operator / viewer) on the Users

@@ -75,6 +75,7 @@ from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env, list_aud
 from .monitor import AudioMonitor
 from .monitor_receiver import MonitorReceiverService
 from .recordings import RecordingInfo, RecordingStore
+from .tokens import TokenStore
 from .users import Role, UserError, UserStore
 from .logging_config import configure_logging
 from .models import (
@@ -137,6 +138,9 @@ from .models import (
     RecordingResponse,
     SavedBackupResponse,
     SessionResponse,
+    TokenCreatedResponse,
+    TokenCreateRequest,
+    TokenResponse,
     UserCreateRequest,
     UserResponse,
     UserUpdateRequest,
@@ -209,6 +213,7 @@ DEFAULT_VOSK_MODEL_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "vosk-
 TRANSCRIBE_POLL_SECONDS = 15.0
 RECORDING_SEARCH_LIMIT = 500
 DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.json"
+DEFAULT_TOKENS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "tokens.json"
 DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
 DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
 DEFAULT_NODE_LIST_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "allstar-nodes.txt"
@@ -248,6 +253,12 @@ _auth_logger = logging.getLogger("moreopenrepeater.auth")
 class Identity(NamedTuple):
     username: Optional[str]  # None when auth is off
     role: Role
+    token: Optional[str] = None  # the API token's name, when signed in with one
+
+    @property
+    def actor(self) -> Optional[str]:
+        """Who the audit log says did it."""
+        return f"{self.username} (token {self.token})" if self.token and self.username else self.username
 
 
 _LOCAL = Identity(None, "admin")
@@ -391,6 +402,7 @@ def create_app(
     audio_devices: Callable[[], list[dict]] = list_audio_devices,
     recordings: Optional[RecordingStore] = None,
     users: Optional[UserStore] = None,
+    tokens: Optional[TokenStore] = None,
     audit: Optional[AuditLog] = None,
     aprs_stations: Optional[StationStore] = None,
     autopatch: Optional[Autopatch] = None,
@@ -494,6 +506,7 @@ def create_app(
     sessions = SessionStore()
     users = users if users is not None else UserStore()
     users.reserved_username = auth_settings.username if auth_settings else None
+    tokens = tokens if tokens is not None else TokenStore()
     audit = audit or AuditLog()
     service.audit_hook = lambda actor, action, detail: audit.record(time.time(), actor, action, detail)
     nets.audit_hook = service.audit_hook
@@ -568,13 +581,26 @@ def create_app(
         user = users.authenticate(username, password)
         return Identity(user.username, user.role) if user else None
 
+    def role_of(username: str) -> Optional[Role]:
+        if auth_settings is not None and username == auth_settings.username:
+            return "admin"
+        user = users.get(username)
+        return user.role if user else None
+
     def identify(conn: HTTPConnection) -> Optional[Identity]:
-        """Accepts either the dashboard's session cookie or a Basic
-        `Authorization` header (for curl/scripts). Roles are looked up on
-        every request, so a role change or deletion applies immediately."""
+        """Accepts the dashboard's session cookie, an API token
+        (`Authorization: Bearer ...`), or HTTP Basic (for curl/scripts).
+        Roles are looked up on every request, so a role change or deletion
+        applies immediately."""
         if not auth_enabled():
             return _LOCAL
-        credentials = parse_basic_auth_header(conn.headers.get("Authorization"))
+        header = conn.headers.get("Authorization") or ""
+        scheme, _, value = header.partition(" ")
+        if scheme.lower() == "bearer":
+            record = tokens.verify(value.strip())
+            role = role_of(record.username) if record else None
+            return Identity(record.username, role, record.name) if record and role else None
+        credentials = parse_basic_auth_header(header or None)
         if credentials:
             return check_login(*credentials)
         username = sessions.username_for(conn.cookies.get(SESSION_COOKIE_NAME))
@@ -602,8 +628,14 @@ def create_app(
         if request.state.identity.role != "admin":
             raise HTTPException(status_code=403, detail="Only admins can do that")
 
+    def require_person(request: Request) -> None:
+        # A leaked token shouldn't be able to make itself more tokens or accounts.
+        if request.state.identity.token:
+            raise HTTPException(status_code=403, detail="API tokens can't manage users or tokens")
+
     auth_dependencies = [Depends(require_auth)]
     admin_dependencies = [Depends(require_auth), Depends(require_admin)]
+    account_dependencies = [*admin_dependencies, Depends(require_person)]
 
     async def node_link_loop() -> None:
         assert link_settings is not None
@@ -888,7 +920,7 @@ def create_app(
         elif request.method not in SAFE_METHODS and path not in _UNAUDITED_PATHS:
             state = request.state
             identity = getattr(state, "identity", None)
-            actor = getattr(state, "audit_actor", None) or (identity and identity.username)
+            actor = getattr(state, "audit_actor", None) or (identity and identity.actor)
             audit.record(
                 time.time(),
                 actor or ("local" if not auth_enabled() else "anonymous"),
@@ -1251,7 +1283,7 @@ def create_app(
             path.unlink(missing_ok=True)
             raise
         # A GET, so the middleware skips it -- but it hands out password hashes.
-        audit.record(now, request.state.identity.username or "local", "download backup", "with recordings" if recordings else "")
+        audit.record(now, request.state.identity.actor or "local", "download backup", "with recordings" if recordings else "")
         return FileResponse(
             path,
             media_type="application/zip",
@@ -1308,7 +1340,7 @@ def create_app(
     @app.get("/api/backups/{name}", dependencies=admin_dependencies)
     def download_saved_backup(name: str, request: Request) -> FileResponse:
         path = saved_backup_path(name)
-        audit.record(time.time(), request.state.identity.username or "local", "download backup", name)
+        audit.record(time.time(), request.state.identity.actor or "local", "download backup", name)
         return FileResponse(path, media_type="application/zip", filename=name)
 
     @app.delete("/api/backups/{name}", response_model=BackupFolderResponse, dependencies=admin_dependencies)
@@ -1759,12 +1791,12 @@ def create_app(
             stations=stations,
         )
 
-    @app.get("/api/users", response_model=list[UserResponse], dependencies=admin_dependencies)
+    @app.get("/api/users", response_model=list[UserResponse], dependencies=account_dependencies)
     def list_users() -> list[UserResponse]:
         builtin = [UserResponse(username=auth_settings.username, role="admin", builtin=True)] if auth_settings else []
         return builtin + [UserResponse(username=u.username, role=u.role, builtin=False) for u in users.list()]
 
-    @app.post("/api/users", response_model=list[UserResponse], dependencies=admin_dependencies)
+    @app.post("/api/users", response_model=list[UserResponse], dependencies=account_dependencies)
     async def create_user(body: UserCreateRequest, request: Request) -> list[UserResponse]:
         request.state.audit_detail = f"{body.username} ({body.role})"
         try:
@@ -1773,7 +1805,7 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(error)) from None
         return list_users()
 
-    @app.put("/api/users/{username}", response_model=list[UserResponse], dependencies=admin_dependencies)
+    @app.put("/api/users/{username}", response_model=list[UserResponse], dependencies=account_dependencies)
     async def update_user(username: str, body: UserUpdateRequest, request: Request) -> list[UserResponse]:
         changes = ([f"role → {body.role}"] if body.role else []) + (["password reset"] if body.password else [])
         request.state.audit_detail = f"{username}: {', '.join(changes)}"
@@ -1785,7 +1817,7 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(error)) from None
         return list_users()
 
-    @app.delete("/api/users/{username}", response_model=list[UserResponse], dependencies=admin_dependencies)
+    @app.delete("/api/users/{username}", response_model=list[UserResponse], dependencies=account_dependencies)
     def delete_user(username: str) -> list[UserResponse]:
         try:
             users.delete(username)
@@ -1794,7 +1826,44 @@ def create_app(
         except UserError as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
         control_codes.remove(username)
+        tokens.remove_user(username)
         return list_users()
+
+    def token_list() -> list[TokenResponse]:
+        return [
+            TokenResponse(
+                id=t.id,
+                name=t.name,
+                username=t.username,
+                role=role_of(t.username),
+                created_at=datetime.fromtimestamp(t.created_at),
+                last_used_at=datetime.fromtimestamp(t.last_used_at) if t.last_used_at else None,
+            )
+            for t in tokens.list()
+        ]
+
+    @app.get("/api/tokens", response_model=list[TokenResponse], dependencies=account_dependencies)
+    def list_tokens() -> list[TokenResponse]:
+        return token_list()
+
+    @app.post("/api/tokens", response_model=TokenCreatedResponse, dependencies=account_dependencies)
+    def create_token(body: TokenCreateRequest, request: Request) -> TokenCreatedResponse:
+        request.state.audit_detail = f"{body.name} for {body.username}"
+        if role_of(body.username) is None:
+            raise HTTPException(status_code=400, detail=f"No user {body.username!r}")
+        if role_of(body.username) == "listener":
+            raise HTTPException(status_code=400, detail="Listener accounts can't have API tokens")
+        record, secret = tokens.create(body.name, body.username)
+        return TokenCreatedResponse(id=record.id, token=secret, tokens=token_list())
+
+    @app.delete("/api/tokens/{token_id}", response_model=list[TokenResponse], dependencies=account_dependencies)
+    def revoke_token(token_id: str, request: Request) -> list[TokenResponse]:
+        try:
+            record = tokens.revoke(token_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such token") from None
+        request.state.audit_detail = f"{record.name} ({record.username})"
+        return token_list()
 
     def code_owner(request: Request) -> str:
         return request.state.identity.username or "local"
@@ -2052,6 +2121,7 @@ app = create_app(
     monitor_recordings=RecordingStore(DEFAULT_MONITOR_RECORDINGS_DIR),
     mailbox_store=MailboxStore(DEFAULT_MAILBOX_DIR, StateStore(DEFAULT_MAILBOX_DIR / "boxes.json")),
     users=UserStore(StateStore(DEFAULT_USERS_PATH)),
+    tokens=TokenStore(StateStore(DEFAULT_TOKENS_PATH)),
     audit=AuditLog(DEFAULT_AUDIT_PATH),
     aprs_stations=StationStore(DEFAULT_APRS_PATH),
     backups=BackupFolder(DEFAULT_BACKUP_DIR),

@@ -487,6 +487,21 @@ and deletions apply to signed-in sessions immediately. Adding a user also
 turns sign-in on if the env account isn't set; the first one must then be
 an admin.
 
+**API tokens.** For scripts and AI agents, an admin can create a named token
+for any account (except listeners) at the bottom of **Tools → Users**. A
+token acts with its user's role, so make a viewer account for anything that
+only needs to look. The token is shown once. Only a hash is kept, in
+`data/tokens.json`. Send it as a bearer token:
+
+```
+curl -H "Authorization: Bearer mor_..." http://moreopenrepeater.local:8000/api/status
+```
+
+Revoking a token, deleting its user or changing the user's role applies
+straight away. Tokens can't manage users or other tokens, even an admin's,
+and the audit log records changes as made by "user (token name)". Tokens
+aren't included in backups, so make new ones after restoring onto a new Pi.
+
 **Audit log.** Every change made through the dashboard or API is recorded
 with who made it (failed sign-ins included), along with DTMF commands
 dialed over the air, under **Tools → Audit log**. Settings changes show the

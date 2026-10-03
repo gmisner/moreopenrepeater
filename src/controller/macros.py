@@ -16,6 +16,7 @@ from .events import CodedCommand, ControllerCommand, RunAction, SendLinkCommand
 
 CODE_DIGITS = 6
 CODE_TIMEOUT = 15.0  # seconds to key the code after the macro, as it's read off a phone
+ENTRY_MAX_DIGITS = 10
 
 # "link" sends `command` to the network link layer; the rest run locally,
 # with `command` as their argument where one is needed:
@@ -31,13 +32,18 @@ CODE_TIMEOUT = 15.0  # seconds to key the code after the macro, as it's read off
 #   homeassistant call a Home Assistant webhook `<id>`, or fire `event:<type>` (api.homeassistant)
 #   help          read out the macros (controller.spoken_help); `<page>` is optional
 #   metar         speak an airport's weather `<ICAO>`, or every listed airport when blank (api.airport_weather)
+#   remote_tune / remote_tone   tune the remote base: the frequency or tone is keyed after the
+#                 pattern, then # (controller.remote_base)
+#   remote_shift  set the remote base's repeater shift: `plus`, `minus` or `simplex`
+#   remote_status speak the remote base's frequency, shift and tone
 MacroAction = Literal[
     "link", "time", "weather", "id", "announcement", "say", "parrot", "tx_disable", "tx_enable", "aprs", "gpio",
     "lockout_clear", "net_start", "net_end", "homeassistant", "link_radio_on", "link_radio_off", "help",
-    "metar",
+    "metar", "remote_tune", "remote_tone", "remote_shift", "remote_status",
 ]
 MACRO_ACTIONS: tuple[str, ...] = get_args(MacroAction)
-ACTIONS_NEEDING_ARGUMENT = frozenset({"link", "announcement", "say", "gpio", "homeassistant"})
+ACTIONS_NEEDING_ARGUMENT = frozenset({"link", "announcement", "say", "gpio", "homeassistant", "remote_shift"})
+KEYED_ENTRY_ACTIONS = frozenset({"remote_tune", "remote_tone"})  # digits and * keyed after the pattern, then #
 # Left out of spoken help unless a macro says otherwise: switches a passer-by shouldn't learn.
 HIDDEN_FROM_HELP_ACTIONS = frozenset({"tx_disable", "tx_enable", "link_radio_on", "link_radio_off"})
 
@@ -71,6 +77,7 @@ class DTMFCommandDecoder:
         self._buffer = ""
         self._last_digit_at: Optional[float] = None
         self._awaiting_code: Optional[Macro] = None
+        self._awaiting_entry: Optional[Macro] = None
 
     def list_macros(self) -> list[Macro]:
         return list(self._macros)
@@ -78,16 +85,31 @@ class DTMFCommandDecoder:
     def set_macros(self, macros: list[Macro]) -> None:
         self._macros = list(macros)
 
+    def _reset(self) -> None:
+        self._buffer = ""
+        self._awaiting_code = None
+        self._awaiting_entry = None
+
     def _timed_out(self, now: float) -> bool:
-        timeout = CODE_TIMEOUT if self._awaiting_code else self._interdigit_timeout
+        timeout = CODE_TIMEOUT if self._awaiting_code or self._awaiting_entry else self._interdigit_timeout
         return self._last_digit_at is not None and now - self._last_digit_at > timeout
 
     def handle_digit(self, digit: str, now: float) -> Optional[ControllerCommand]:
         if self._timed_out(now):
-            self._buffer = ""
-            self._awaiting_code = None
+            self._reset()
         self._last_digit_at = now
         self._buffer += digit
+
+        if self._awaiting_entry is not None:
+            macro = self._awaiting_entry
+            if digit == "#":
+                entry = self._buffer[:-1]
+                self._reset()
+                self._last_digit_at = None
+                return RunAction(action=macro.action, argument=entry, pattern=macro.pattern)
+            if digit not in "0123456789*" or len(self._buffer) > ENTRY_MAX_DIGITS:
+                self._reset()
+            return None
 
         if self._awaiting_code is not None:
             if not self._buffer.isdigit():
@@ -107,6 +129,9 @@ class DTMFCommandDecoder:
                 if macro.needs_code:
                     self._awaiting_code = macro
                     return None
+                if macro.action in KEYED_ENTRY_ACTIONS:
+                    self._awaiting_entry = macro
+                    return None
                 self._last_digit_at = None
                 return macro.build_command()
 
@@ -116,6 +141,5 @@ class DTMFCommandDecoder:
 
     def tick(self, now: float) -> None:
         if self._timed_out(now):
-            self._buffer = ""
-            self._awaiting_code = None
+            self._reset()
             self._last_digit_at = None

@@ -30,6 +30,10 @@ const ACTION_LABELS = {
   homeassistant: "Home Assistant",
   help: "Spoken help",
   metar: "Airport weather",
+  remote_tune: "Remote base frequency",
+  remote_shift: "Remote base shift",
+  remote_tone: "Remote base tone",
+  remote_status: "Remote base status",
 };
 const HIDDEN_FROM_HELP = new Set(["tx_disable", "tx_enable", "link_radio_on", "link_radio_off"]);
 
@@ -56,6 +60,8 @@ function details(macro) {
     const airport = store.state.config?.metar_airports?.find((a) => a.icao === macro.command);
     return `<code>${escapeHtml(macro.command)}</code>${airport?.name ? ` ${escapeHtml(airport.name)}` : ""}`;
   }
+  if (macro.action === "remote_shift") return escapeHtml(macro.command);
+  if (macro.action === "remote_tune" || macro.action === "remote_tone") return '<span class="muted">keyed, then #</span>';
   if (macro.action === "gpio") {
     const [pin, verb, seconds] = macro.command.split(/\s+/);
     const settings = store.state.config?.gpio_pins?.[pin];
@@ -145,6 +151,7 @@ function startEdit(macro) {
   if (macro.action === "homeassistant") form.elements.ha_target.value = macro.command;
   if (macro.action === "help") form.elements.help_page.value = macro.command;
   if (macro.action === "metar") renderAirportOptions(macro.command);
+  if (macro.action === "remote_shift") form.elements.remote_shift.value = macro.command;
   if (macro.action === "gpio") {
     const [pin, verb, seconds] = macro.command.split(/\s+/);
     form.elements.gpio_pin.value = pin;
@@ -184,6 +191,7 @@ function collect() {
       homeassistant: els.ha_target.value,
       help: els.help_page.value,
       metar: els.metar_icao.value,
+      remote_shift: els.remote_shift.value,
     }[action] ?? "";
   return {
     pattern: els.pattern.value.trim().toUpperCase(),

@@ -892,9 +892,18 @@
           <label class="switch">
             <input type="checkbox" name="link_radio_enabled" />
             <span class="switch-track"></span>
-            <span>Connect the link radio</span>
+            <span data-link-mode="link">Connect the link radio</span>
+            <span data-link-mode="remote_base">Turn the remote base on</span>
           </label>
           <div class="form-grid">
+            <label>Use it as
+              <select name="link_radio_mode">
+                <option value="link">A link to a far station</option>
+                <option value="remote_base">A remote base (tuned by DTMF)</option>
+              </select>
+              <small>A remote base is off until a user turns it on with a "Link radio on" macro, is tuned with the
+                remote base macros, and turns itself off when nobody uses it.</small>
+            </label>
             <label>Name
               <input type="text" name="link_radio_name" maxlength="40" placeholder="Link to W1XYZ" />
             </label>
@@ -986,6 +995,54 @@
               <span class="switch-track"></span>
               <span>Courtesy tone on the link when a local user unkeys</span>
             </label>
+          </div>
+          <div data-link-mode="remote_base">
+          <h3>Remote base</h3>
+          <div class="form-grid">
+            <label>Radio control (rigctld)
+              <input type="text" name="remote_base_rigctld" placeholder="localhost:4532" spellcheck="false" autocomplete="off" />
+              <small>Hamlib's <code>rigctld</code> for the radio, e.g. <code>rigctld -m &lt;model&gt; -r /dev/ttyUSB1 -s 9600</code>.
+                Blank: no CAT control, so DTMF tuning is off.</small>
+            </label>
+            <label>Frequency
+              <span class="input-unit"><input type="number" step="0.0001" min="1" max="10000" name="remote_base_mhz" required /><span>MHz</span></span>
+            </label>
+            <label>Shift
+              <select name="remote_base_shift">
+                <option value="simplex">Simplex</option>
+                <option value="minus">Minus</option>
+                <option value="plus">Plus</option>
+              </select>
+            </label>
+            <label>Offset
+              <span class="input-unit"><input type="number" step="0.001" min="0.001" max="100" name="remote_base_offset_mhz" placeholder="band's usual" /><span>MHz</span></span>
+              <small>Blank uses the band's usual offset: 600&nbsp;kHz on 2&nbsp;m, 1.6&nbsp;MHz on 1.25&nbsp;m, 5&nbsp;MHz on 70&nbsp;cm.</small>
+            </label>
+            <label>Transmit CTCSS tone
+              <span class="input-unit"><input type="number" step="0.1" min="67" max="254.1" name="remote_base_tone_hz" placeholder="off" list="ctcss-tones" /><span>Hz</span></span>
+            </label>
+            <label>Mode
+              <select name="remote_base_rig_mode">
+                <option value="FM">FM</option>
+                <option value="AM">AM</option>
+                <option value="USB">USB</option>
+                <option value="LSB">LSB</option>
+              </select>
+            </label>
+            <label>Allowed bands
+              <input type="text" name="remote_base_ranges" placeholder="144-148, 222-225, 420-450" spellcheck="false" />
+              <small>MHz ranges it may be tuned to, checked on both receive and transmit. Keep them inside your license privileges.</small>
+            </label>
+            <label>Turn off after
+              <span class="input-unit"><input type="number" step="1" min="0" max="1440" name="remote_base_idle_minutes" required /><span>min</span></span>
+              <small>Unused this long, it says "Remote base off" and turns off (after any ID it owes). 0 = stays on.</small>
+            </label>
+            <div class="form-actions span-2">
+              <span id="remote-base-rig" class="muted small"></span>
+              <span class="spacer"></span>
+              <button type="button" class="btn btn-ghost" id="remote-base-tune">Send to the radio</button>
+            </div>
+          </div>
           </div>
           <div class="level-meter" title="Link receive level">
             <div class="level-meter-fill" id="link-radio-level-fill"></div>
@@ -1158,6 +1215,10 @@
                 <option value="lockout_clear">Clear a stuck-carrier lockout</option>
                 <option value="link_radio_on">Link radio on</option>
                 <option value="link_radio_off">Link radio off</option>
+                <option value="remote_tune">Remote base frequency (keyed after, then #)</option>
+                <option value="remote_shift">Remote base shift</option>
+                <option value="remote_tone">Remote base tone (keyed after, then #)</option>
+                <option value="remote_status">Remote base status</option>
                 <option value="net_start">Start net mode</option>
                 <option value="net_end">End net mode</option>
                 <option value="aprs">APRS stations nearby</option>
@@ -1210,6 +1271,18 @@
               <select name="metar_icao"></select>
               <small>Airports are listed on the Weather page.</small>
             </label>
+            <label data-macro-arg="remote_shift">Shift
+              <select name="remote_shift">
+                <option value="minus">Minus</option>
+                <option value="plus">Plus</option>
+                <option value="simplex">Simplex</option>
+              </select>
+            </label>
+            <p class="muted small span-2" data-macro-arg="remote_tune">After the pattern, key the frequency in MHz with * as the
+              decimal point, then #: <code>146*94#</code>. Six digits work too (<code>146940#</code>). It's tuned simplex;
+              add a shift macro for a repeater.</p>
+            <p class="muted small span-2" data-macro-arg="remote_tone">After the pattern, key the tone with * as the decimal
+              point, then #: <code>100*0#</code> or <code>1000#</code>. <code>0#</code> turns the tone off.</p>
             <label class="inline-check span-2"><input type="checkbox" name="needs_code" /> Needs a one-time code, keyed right after the pattern</label>
             <label class="inline-check span-2"><input type="checkbox" name="help_hidden" /> Hide from spoken help (on by default for the transmitter and link radio switches, and for macros that need a code)</label>
           </div>

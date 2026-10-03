@@ -383,6 +383,18 @@
               <span class="input-unit"><input type="number" step="0.1" min="0" name="require_ctcss_hz" placeholder="disabled" list="ctcss-tones" /><span>Hz</span></span>
               <small>Leave blank for carrier access (no tone required).</small>
             </label>
+            <label>Access
+              <select name="access_mode">
+                <option value="carrier">Every transmission</option>
+                <option value="ctcss_open">CTCSS opens, then carrier</option>
+                <option value="tone_burst">1750 Hz burst, then carrier</option>
+              </select>
+              <small>Every transmission: carrier, plus the required CTCSS tone if one is set. The other two open the repeater with the CTCSS tone or a 1750&nbsp;Hz burst, then let carrier alone through until the hang time runs out and it drops.</small>
+            </label>
+            <label>Tone burst length
+              <span class="input-unit"><input type="number" step="50" min="100" max="2000" name="tone_burst_ms" required /><span>ms</span></span>
+              <small>The shortest 1750 Hz burst that opens the repeater. The burst itself isn't repeated.</small>
+            </label>
             <label>Kerchunk filter
               <span class="input-unit"><input type="number" step="0.05" min="0" max="3" name="kerchunk_delay" required /><span>s</span></span>
               <small>A key-up must last this long before the repeater comes up. 0 turns the filter off.</small>
@@ -667,6 +679,16 @@
                   </label>
                   <label>Output (transmitter)
                     <select name="audio_output_device" data-audio-devices="outputs"><option value="">System default</option></select>
+                  </label>
+                  <label class="switch span-2">
+                    <input type="checkbox" name="rx_deemphasis" />
+                    <span class="switch-track"></span>
+                    <span>De-emphasize receive audio <small class="muted">&mdash; for flat audio taken from the discriminator, which sounds tinny without it (6&nbsp;dB per octave, 300&ndash;3000&nbsp;Hz)</small></span>
+                  </label>
+                  <label class="switch span-2">
+                    <input type="checkbox" name="tx_preemphasis" />
+                    <span class="switch-track"></span>
+                    <span>Pre-emphasize transmit audio <small class="muted">&mdash; for a flat transmitter input that skips the radio's own pre-emphasis; turn transmit gain down if the highs clip</small></span>
                   </label>
                 </div>
               </div>

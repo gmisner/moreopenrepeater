@@ -1,7 +1,8 @@
+import pytest
 import numpy as np
 
 from audio_io.processor import SILENCE_DB, AudioProcessor, ProcessorSettings, level_db
-from controller.events import COSChanged, CTCSSChanged, DTMFDigit
+from controller.events import COSChanged, CTCSSChanged, DTMFDigit, ToneBurst
 from dsp.goertzel import ctcss_tone, dtmf_tone
 
 RATE = 16000
@@ -293,3 +294,33 @@ def test_transmit_delay_only_at_key_up():
     outs = [p.process(b).out for b in blocks(tone(400, 0.2))]
 
     assert [bool(o.any()) for o in outs] == [False, False] + [True] * 8
+
+
+def test_a_tone_burst_is_reported_and_not_repeated():
+    p = repeating_processor(tone_burst_ms=300)
+    results = [p.process(b) for b in blocks(np.concatenate([tone(1750, 0.5), silence(0.2), tone(400, 0.3)]))]
+    out = np.concatenate([r.out for r in results])
+
+    assert [e for r in results for e in r.events if isinstance(e, ToneBurst)] == [ToneBurst()]
+    assert magnitude_at(out, 1750) < 0.01
+    assert magnitude_at(out[-int(0.2 * RATE) :], 400) > 0.2  # the voice after it is
+
+
+def test_tone_bursts_pass_through_when_not_used_for_access():
+    p = repeating_processor()
+    results = [p.process(b) for b in blocks(tone(1750, 0.5))]
+
+    assert not [e for r in results for e in r.events if isinstance(e, ToneBurst)]
+    assert magnitude_at(np.concatenate([r.out for r in results]), 1750) > 0.2
+
+
+def test_receive_de_emphasis_and_transmit_pre_emphasis():
+    def level(freq, **settings):
+        out = transmitted(repeating_processor(**settings), tone(freq, 0.5, amplitude=0.1))
+        return 20 * np.log10(magnitude_at(out[-int(0.2 * RATE) :], freq) / 0.1)
+
+    assert level(3000) == pytest.approx(0, abs=0.5)
+    assert level(1000, rx_deemphasis=True) == pytest.approx(0, abs=0.5)
+    assert level(3000, rx_deemphasis=True) == pytest.approx(-6.7, abs=0.5)
+    assert level(3000, tx_preemphasis=True) == pytest.approx(6.7, abs=0.5)
+    assert level(3000, rx_deemphasis=True, tx_preemphasis=True) == pytest.approx(0, abs=0.5)

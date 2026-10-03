@@ -25,6 +25,7 @@ from .events import (
     LinkStateChanged,
     PlayAudio,
     RemoteKeyed,
+    ToneBurst,
 )
 from .autopatch import AutopatchDialer
 from .mailbox import MailboxDialer
@@ -41,6 +42,7 @@ PATCH = "patch"  # autopatch call: transmitter held up carrying the phone audio
 LOCKOUT = "lockout"  # stuck carrier: nothing is repeated until the channel goes quiet
 
 MAX_QUEUED_ANNOUNCEMENTS = 10
+TONE_BURST_GRACE = 5.0  # seconds a 1750 Hz burst heard without a carrier still opens the repeater
 ANNOUNCEMENT_FALLBACK_DURATION = 10.0
 
 _logger = logging.getLogger("moreopenrepeater.controller")
@@ -77,6 +79,14 @@ class RepeaterConfig:
     long_id_asset_id: Optional[str] = None
     id_audio_duration: float = 3.0
     require_ctcss_hz: Optional[float] = None
+    # How a local user brings the repeater up. "carrier": carrier, plus the
+    # CTCSS tone on every transmission if require_ctcss_hz is set. "ctcss_open":
+    # the tone opens it, then carrier alone works until it drops to idle.
+    # "tone_burst": a 1750 Hz burst opens it, then carrier until it drops.
+    access_mode: Literal["carrier", "ctcss_open", "tone_burst"] = "carrier"
+    tone_burst_ms: float = 300.0  # shortest 1750 Hz burst that counts
+    rx_deemphasis: bool = False  # flat (discriminator) receive audio: de-emphasize it
+    tx_preemphasis: bool = False  # flat transmit input: pre-emphasize what's sent
     kerchunk_delay: float = 0.0  # carrier must last this long before keying up from idle; 0 = off
     # Stuck-carrier lockout: this many timeouts within lockout_window (a
     # carrier that never drops times out again every tot_duration) stops all
@@ -293,6 +303,8 @@ class RepeaterController:
         self._local_carrier = False
         self._ctcss_present = config.require_ctcss_hz is None
         self._last_ctcss_hz: Optional[float] = None
+        self._up = False  # brought up by a local user or a link, and not yet back to idle
+        self._burst_until: Optional[float] = None  # a 1750 Hz burst grants access until then
         self._tot_deadline: Optional[float] = None
         self._state_deadline: Optional[float] = None
         self._id_due_at = now + config.id_interval
@@ -334,8 +346,19 @@ class RepeaterController:
 
     @property
     def carrier_present(self) -> bool:
-        """A local user is transmitting (carrier with the right CTCSS tone)."""
-        return self._local_carrier and self._ctcss_present
+        """A local user is transmitting, with whatever access the mode needs."""
+        return self._local_carrier and self._access_ok
+
+    @property
+    def _access_ok(self) -> bool:
+        mode = self.config.access_mode
+        if mode == "carrier":
+            return self._ctcss_present
+        if self._up:
+            return True
+        if mode == "ctcss_open":
+            return self._ctcss_present
+        return self._burst_until is not None
 
     @property
     def locked_out(self) -> bool:
@@ -404,6 +427,8 @@ class RepeaterController:
         if config.require_ctcss_hz != previous.require_ctcss_hz:
             self._ctcss_present = config.require_ctcss_hz is None or self._last_ctcss_hz == config.require_ctcss_hz
         commands: list[ControllerCommand] = self._sync_receiving_ptt(now)
+        if config.access_mode != previous.access_mode:
+            self._burst_until = None
         if config.lockout_timeouts <= 0:
             commands += self.clear_lockout(now)
         if previous.transmitter_enabled and not config.transmitter_enabled:
@@ -431,10 +456,17 @@ class RepeaterController:
                 if mailbox_command is not None:
                     commands.append(mailbox_command)
         elif isinstance(event, CTCSSChanged):
+            had_access = self._access_ok
             self._last_ctcss_hz = event.tone_hz
             self._ctcss_present = (
                 self.config.require_ctcss_hz is None or event.tone_hz == self.config.require_ctcss_hz
             )
+            commands += self._access_gained(had_access, now)
+        elif isinstance(event, ToneBurst):
+            if self.config.access_mode == "tone_burst":
+                had_access = self._access_ok
+                self._burst_until = now + TONE_BURST_GRACE
+                commands += self._access_gained(had_access, now)
         elif isinstance(event, DTMFDigit):
             command = self._dtmf.handle_digit(event.digit, now)
             if command is not None:
@@ -459,7 +491,7 @@ class RepeaterController:
                     commands += self._on_cos_changed(False, now, remote=True)
         elif isinstance(event, LinkStateChanged):
             pass  # tracked by the link layer; no local repeater-state effect yet
-        if isinstance(event, (COSChanged, RemoteKeyed)):
+        if isinstance(event, (COSChanged, RemoteKeyed, CTCSSChanged, ToneBurst)):
             commands += self._sync_receiving_ptt(now)
 
         if self.carrier_present or self._remote_keyed:
@@ -468,15 +500,24 @@ class RepeaterController:
             self._quiet_since = now
         return commands
 
+    def _access_gained(self, had_access: bool, now: float) -> list[ControllerCommand]:
+        """The tone (or burst) arrived after the carrier, as it does when
+        detecting it takes longer than the squelch opening: open now."""
+        if self._local_carrier and self._access_ok and not had_access:
+            return self._on_cos_changed(True, now)
+        return []
+
     def quiet_for(self, now: float) -> float:
         return 0.0 if self._quiet_since is None else now - self._quiet_since
 
     def tick(self, now: float) -> list[ControllerCommand]:
         commands: list[ControllerCommand] = []
 
+        if self._burst_until is not None and now > self._burst_until and not self._up:
+            self._burst_until = None
         if self._keyup_at is not None and now >= self._keyup_at:
             self._keyup_at = None
-            if self.state == IDLE and self._ctcss_present:
+            if self.state == IDLE and self._access_ok:
                 commands += self._enter_receiving(now)
 
         if self._pending_tx_since is not None:
@@ -531,8 +572,8 @@ class RepeaterController:
         if active:
             if not self.config.transmitter_enabled:
                 return []
-            if not remote and not self._ctcss_present:
-                return []  # squelch open but wrong/no CTCSS -- ignore
+            if not remote and not self._access_ok:
+                return []  # squelch open without the CTCSS tone or burst the access mode needs -- ignore
             if self.state == IDLE and not remote and self.config.kerchunk_delay > 0:
                 self._keyup_at = now + self.config.kerchunk_delay
                 return []
@@ -545,7 +586,7 @@ class RepeaterController:
             self.kerchunks_filtered += 1
             _logger.info("kerchunk ignored (carrier shorter than %.2fs)", self.config.kerchunk_delay)
             return []
-        if (self._local_carrier and self._ctcss_present) if remote else self._remote_keyed:
+        if self.carrier_present if remote else self._remote_keyed:
             return []  # the other side is still talking
         if self.state == RECEIVING:
             if self._pending_tx_since is not None:
@@ -606,6 +647,8 @@ class RepeaterController:
         else:
             self._note_transmission(now)
         self._set_state(RECEIVING)
+        self._up = True
+        self._burst_until = None
         self._tot_deadline = now + self.config.tot_duration
         self._state_deadline = None
         return [AssertPTT(active=self._receiving_ptt)]
@@ -637,6 +680,7 @@ class RepeaterController:
 
     def _enter_idle(self, now: float) -> list[ControllerCommand]:
         self._set_state(LOCKOUT if self._locked_out else IDLE)
+        self._up = False
         self._state_deadline = None
         self._tot_deadline = None
         return [AssertPTT(active=False)]
@@ -658,6 +702,7 @@ class RepeaterController:
         self._locked_out = True
         self._timeouts = []
         self.lockouts += 1
+        self._up = False
         _logger.warning(
             "stuck-carrier lockout: %d timeouts in %.0f s; repeating stops until the channel is quiet for %.0f s",
             limit, self.config.lockout_window, self.config.lockout_clear_after,

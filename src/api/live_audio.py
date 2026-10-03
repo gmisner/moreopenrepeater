@@ -69,8 +69,12 @@ HARDWARE_COS = ("cm108", "gpio", "serial")
 # Same names on RepeaterConfig and ProcessorSettings; applied without a restart.
 _LIVE_FIELDS = (
     "vox_threshold_db", "vox_hold", "tx_gain_db", "tx_ctcss_hz", "tx_ctcss_level_db", "squelch_tail_ms", "tx_delay_ms",
-    "dtmf_mute",
+    "dtmf_mute", "rx_deemphasis", "tx_preemphasis",
 )
+
+
+def _tone_burst_ms(config) -> Optional[float]:
+    return config.tone_burst_ms if config.access_mode == "tone_burst" else None
 
 
 def list_audio_devices() -> list[dict]:
@@ -223,6 +227,7 @@ class LiveAudio:
             for field in _LIVE_FIELDS:
                 setattr(settings, field, getattr(config, field))
             settings.local_repeat = config.node_mode == "repeater"
+            settings.tone_burst_ms = _tone_burst_ms(config)
 
     def status(self) -> dict:
         config = self._service.config
@@ -411,6 +416,7 @@ class LiveAudio:
                 sample_rate=rate,
                 cos_source="external" if cos_source in HARDWARE_COS else cos_source,
                 local_repeat=config.node_mode == "repeater",
+                tone_burst_ms=_tone_burst_ms(config),
                 **{field: getattr(config, field) for field in _LIVE_FIELDS},
             )
         )

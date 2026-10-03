@@ -17,7 +17,10 @@ function courtesyTone(f, prefix) {
 }
 
 const SUMMARIES = {
-  "audio-devices": (f) => `${optionText(f.audio_input_device)} in, ${optionText(f.audio_output_device)} out`,
+  "audio-devices": (f) => {
+    const emphasis = [f.rx_deemphasis.checked && "receive de-emphasis", f.tx_preemphasis.checked && "transmit pre-emphasis"].filter(Boolean);
+    return `${optionText(f.audio_input_device)} in, ${optionText(f.audio_output_device)} out` + (emphasis.length ? `, ${emphasis.join(" and ")}` : "");
+  },
   "audio-cos": (f) => {
     const source = f.cos_source.value;
     const tail = Number(f.squelch_tail_ms.value) ? `, tail cut ${f.squelch_tail_ms.value} ms` : "";

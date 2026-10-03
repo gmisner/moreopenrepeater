@@ -246,6 +246,45 @@ class DTMFDetector:
         return None
 
 
+TONE_BURST_HZ = 1750.0
+
+
+@dataclass
+class ToneBurstDetector:
+    """Detects a 1750 Hz access burst held for at least `min_seconds`.
+
+    Voice has energy near 1750 Hz too, so a block only counts when that bin
+    holds most of the block's energy (`purity`: 1.0 for a pure tone, whose
+    normalized magnitude is its amplitude, sqrt(2) x its RMS). A 20 ms block
+    puts 1750 Hz exactly on a bin at 8, 16, 44.1 or 48 kHz.
+    """
+
+    sample_rate: int
+    min_seconds: float = 0.3
+    magnitude_threshold: float = 0.02
+    purity: float = 0.5
+
+    present: bool = field(default=False, init=False)
+    _held: float = field(default=0.0, init=False, repr=False)
+    _reported: bool = field(default=False, init=False, repr=False)
+
+    def process(self, block: np.ndarray) -> bool:
+        """True once per burst, on the block where it reaches `min_seconds`."""
+        n = len(block)
+        magnitude = _goertzel_magnitudes(block, self.sample_rate, (TONE_BURST_HZ,))[0] if n else 0.0
+        rms = float(np.sqrt(np.mean(np.square(block, dtype=np.float64)))) if n else 0.0
+        self.present = magnitude >= self.magnitude_threshold and magnitude >= self.purity * math.sqrt(2) * rms
+        if not self.present:
+            self._held = 0.0
+            self._reported = False
+            return False
+        self._held += n / self.sample_rate
+        if self._reported or self._held < self.min_seconds - 1e-9:
+            return False
+        self._reported = True
+        return True
+
+
 def ctcss_tone(freq_hz: float, sample_rate: int, num_samples: int, amplitude: float = 0.1) -> np.ndarray:
     """Generate a sub-audible CTCSS tone to overlay on outgoing transmit audio."""
     t = np.arange(num_samples) / sample_rate

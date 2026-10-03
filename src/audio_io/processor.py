@@ -26,8 +26,9 @@ from typing import Literal, Optional
 
 import numpy as np
 
-from controller.events import COSChanged, ControllerEvent, CTCSSChanged, DTMFDigit
-from dsp.goertzel import CTCSSDetector, DTMFDetector
+from controller.events import COSChanged, ControllerEvent, CTCSSChanged, DTMFDigit, ToneBurst
+from dsp.emphasis import emphasis_kernel
+from dsp.goertzel import CTCSSDetector, DTMFDetector, ToneBurstDetector
 from playout.wav import lowpass_kernel
 
 from .patch import LinkAudio, PatchAudio
@@ -63,6 +64,9 @@ class ProcessorSettings:
     dtmf_mute: bool = True  # never pass DTMF tones on (transmitter, links, recordings)
     squelch_tail_ms: float = 0.0  # cut this much received audio from the end of each transmission
     tx_delay_ms: float = 0.0  # silence after keying up, before any audio
+    tone_burst_ms: Optional[float] = None  # detect (and mute) 1750 Hz access bursts this long; None = off
+    rx_deemphasis: bool = False
+    tx_preemphasis: bool = False
 
 
 class _DelayLine:
@@ -129,6 +133,10 @@ class AudioProcessor:
         self._ctcss = CTCSSDetector(settings.sample_rate, magnitude_threshold=settings.ctcss_threshold)
         self._ctcss_blocks = 0
         self._dtmf = DTMFDetector(settings.sample_rate, magnitude_threshold=settings.dtmf_threshold)
+        self._burst = ToneBurstDetector(settings.sample_rate)
+        self._burst_hang = 0
+        self._deemphasis = StreamFIR(emphasis_kernel(settings.sample_rate, pre=False))
+        self._preemphasis = StreamFIR(emphasis_kernel(settings.sample_rate, pre=True))
         self._capture: Optional[list[np.ndarray]] = None
         self._capture_limit = 0
         self._subaudible_filter = StreamFIR(_highpass_kernel(_SUBAUDIBLE_CUTOFF_HZ / settings.sample_rate))
@@ -194,6 +202,8 @@ class AudioProcessor:
 
     def process(self, block: np.ndarray) -> ProcessResult:
         block = np.asarray(block, dtype=np.float32).reshape(-1)
+        if self.settings.rx_deemphasis:
+            block = self._deemphasis.process(block).astype(np.float32)
         events: list[ControllerEvent] = []
         self.rx_level_db = level_db(block)
 
@@ -214,6 +224,8 @@ class AudioProcessor:
         if digit is not None:
             events.append(DTMFDigit(digit=digit))
         self._mute_dtmf(digit)
+        if self._detect_burst(block):
+            events.append(ToneBurst())
         block = self._delay.release(self._delay_blocks(len(block)))
         capture = self._capture
         if capture is not None and len(capture) * len(block) < self._capture_limit:
@@ -259,6 +271,8 @@ class AudioProcessor:
         clip = self._next_clip_samples(len(block))
         if clip is not None:
             out[: len(clip)] += clip
+        if self.settings.tx_preemphasis:
+            out = self._preemphasis.process(out).astype(np.float32)
         if not transmitting:
             out.fill(0)
         elif encode_hz:
@@ -270,7 +284,24 @@ class AudioProcessor:
         return math.ceil(self.settings.squelch_tail_ms / 1000 * self.settings.sample_rate / n - 1e-9)
 
     def _delay_blocks(self, n: int) -> int:
-        return max(_DTMF_MUTE_BLOCKS if self.settings.dtmf_mute else 0, self._tail_blocks(n))
+        mute = self.settings.dtmf_mute or self.settings.tone_burst_ms is not None
+        return max(_DTMF_MUTE_BLOCKS if mute else 0, self._tail_blocks(n))
+
+    def _detect_burst(self, block: np.ndarray) -> bool:
+        """The burst opens the repeater; it isn't repeated (muted like DTMF)."""
+        minimum = self.settings.tone_burst_ms
+        if minimum is None:
+            self._burst_hang = 0
+            return False
+        self._burst.min_seconds = minimum / 1000
+        heard = self._burst.process(block)
+        if self._burst.present:
+            self._delay.mute_last(_DTMF_MUTE_BLOCKS)
+            self._burst_hang = _DTMF_MUTE_HANG_BLOCKS
+        elif self._burst_hang > 0:
+            self._delay.mute_last(1)
+            self._burst_hang -= 1
+        return heard
 
     def _mute_dtmf(self, digit: Optional[str]) -> None:
         if not self.settings.dtmf_mute:

@@ -67,7 +67,10 @@ def test_last_used_is_recorded_without_saving_on_every_request(tmp_path):
     _, secret = store.create("agent", "op")
     now["t"] = 1010.0
     assert store.verify(secret).last_used_at == 1010.0
-    assert json.loads((tmp_path / "tokens.json").read_text())["tokens"][0]["last_used_at"] is None
+    assert json.loads((tmp_path / "tokens.json").read_text())["tokens"][0]["last_used_at"] == 1010.0  # first use
+    now["t"] = 1020.0
+    store.verify(secret)
+    assert json.loads((tmp_path / "tokens.json").read_text())["tokens"][0]["last_used_at"] == 1010.0
     now["t"] = 2000.0
     store.verify(secret)
     assert json.loads((tmp_path / "tokens.json").read_text())["tokens"][0]["last_used_at"] == 2000.0

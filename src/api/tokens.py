@@ -79,9 +79,10 @@ class TokenStore:
         now = self._clock()
         with self._lock:
             if token_id in self._tokens:
+                first_use = self._tokens[token_id].last_used_at is None
                 record = replace(self._tokens[token_id], last_used_at=now)
                 self._tokens[token_id] = record
-                if now - self._saved_at >= _LAST_USED_SAVE_SECONDS:
+                if first_use or now - self._saved_at >= _LAST_USED_SAVE_SECONDS:
                     self._save()
         return record
 

@@ -8,12 +8,13 @@ from typing import Annotated, Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from controller.macros import ACTIONS_NEEDING_ARGUMENT, MacroAction
+from controller.state_machine import CourtesyStyle as CourtesyToneStyle
+from controller.state_machine import CourtesyVariant as CourtesyToneVariant
+from playout.tones import parse_custom_tone
 
 from .gpio import parse_gpio_command
 
-CourtesyToneStyle = Literal["beep", "high_low", "low_high", "triple", "chirp"]
 NetLinks = Literal["leave", "disconnect", "connect"]
-CourtesyToneVariant = Literal["same", "beep", "high_low", "low_high", "triple", "chirp"]  # "same": the local one
 WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
 CosSource = Literal["vox", "ctcss", "cm108", "gpio", "serial"]
 Polarity = Literal["low", "high"]
@@ -177,6 +178,7 @@ class ConfigResponse(BaseModel):
     courtesy_tone_link_asset_id: Optional[str] = None
     courtesy_tone_patch_style: CourtesyToneVariant = "same"
     courtesy_tone_patch_asset_id: Optional[str] = None
+    courtesy_tone_custom: str = "880:100 0:40 1320:100"
     voice_id_text: str
     id_phonetic: bool
     tts_voice: str
@@ -356,6 +358,7 @@ class ConfigUpdateRequest(BaseModel):
     courtesy_tone_patch_style: Optional[CourtesyToneVariant] = None
     courtesy_tone_patch_asset_id: Optional[str] = None
     clear_courtesy_tone_patch_asset_id: bool = False
+    courtesy_tone_custom: Optional[str] = Field(default=None, max_length=60)
     voice_id_text: Optional[str] = None
     id_phonetic: Optional[bool] = None
     tts_voice: Optional[str] = None
@@ -513,6 +516,13 @@ class ConfigUpdateRequest(BaseModel):
         if self.net_links == "connect" and self.net_link_node == "":
             raise ValueError("choose the node to link for nets")
         return self
+
+    @field_validator("courtesy_tone_custom")
+    @classmethod
+    def _valid_custom_tone(cls, text: Optional[str]) -> Optional[str]:
+        if text is None:
+            return None
+        return " ".join(f"{hz}:{ms}" for hz, ms in parse_custom_tone(text))
 
     @field_validator("fan_cm108_pin")
     @classmethod

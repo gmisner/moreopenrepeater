@@ -568,12 +568,7 @@
           <h2>Sounds</h2>
           <div class="form-grid">
             <label>Built-in courtesy tone
-              <select name="courtesy_tone_style">
-                <option value="beep">Beep</option>
-                <option value="high_low">High&ndash;low</option>
-                <option value="low_high">Low&ndash;high</option>
-                <option value="triple">Triple beep</option>
-                <option value="chirp">Chirp</option>
+              <select name="courtesy_tone_style" data-tone-styles>
               </select>
             </label>
             <label>Courtesy tone clip
@@ -594,13 +589,8 @@
               <div class="fold-body">
                 <div class="form-grid">
                   <label>Built-in tone
-                    <select name="courtesy_tone_link_style">
+                    <select name="courtesy_tone_link_style" data-tone-styles>
                       <option value="same">Same as local users</option>
-                      <option value="beep">Beep</option>
-                      <option value="high_low">High&ndash;low</option>
-                      <option value="low_high">Low&ndash;high</option>
-                      <option value="triple">Triple beep</option>
-                      <option value="chirp">Chirp</option>
                     </select>
                   </label>
                   <label>Clip
@@ -616,13 +606,8 @@
               <div class="fold-body">
                 <div class="form-grid">
                   <label>Built-in tone
-                    <select name="courtesy_tone_patch_style">
+                    <select name="courtesy_tone_patch_style" data-tone-styles>
                       <option value="same">Same as local users</option>
-                      <option value="beep">Beep</option>
-                      <option value="high_low">High&ndash;low</option>
-                      <option value="low_high">Low&ndash;high</option>
-                      <option value="triple">Triple beep</option>
-                      <option value="chirp">Chirp</option>
                     </select>
                   </label>
                   <label>Clip
@@ -631,6 +616,16 @@
                   </label>
                 </div>
                 <button type="button" class="btn btn-ghost btn-sm" data-preview-clip="courtesy_tone_patch">&#9654; Phone call tone</button>
+              </div>
+            </details>
+            <details class="fold" data-summary="tone-custom">
+              <summary><span class="fold-name">Custom tone</span><span class="fold-hint"></span></summary>
+              <div class="fold-body">
+                <p class="muted">Up to four parts, played in order. Pick "Custom" in any tone list above (or for nets) to
+                  use it. A pitch of 0 is a pause, and a part left empty is skipped.</p>
+                <input type="hidden" name="courtesy_tone_custom" />
+                <div class="tone-segments" id="tone-segments"></div>
+                <button type="button" class="btn btn-ghost btn-sm" id="tone-custom-preview">&#9654; Custom tone</button>
               </div>
             </details>
           </div>
@@ -2497,13 +2492,8 @@
                 <p class="muted small">Replaces every courtesy tone while the net runs, so everyone can hear a net is on.</p>
                 <div class="form-grid">
                   <label>Built-in tone
-                    <select name="net_courtesy_tone_style">
+                    <select name="net_courtesy_tone_style" data-tone-styles>
                       <option value="same">Same as usual</option>
-                      <option value="beep">Beep</option>
-                      <option value="high_low">High&ndash;low</option>
-                      <option value="low_high">Low&ndash;high</option>
-                      <option value="triple">Triple beep</option>
-                      <option value="chirp">Chirp</option>
                     </select>
                   </label>
                   <label>Clip

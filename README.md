@@ -237,7 +237,9 @@ several phases (see the plan file for the full breakdown):
   The repeater still keyed up for those, so check your rules before using it.
 - **A courtesy tone for each source**: local users, linked stations and the end of
   a phone call can each have their own built-in tone or uploaded clip, so listeners
-  can tell who just unkeyed.
+  can tell who just unkeyed. There are 13 built-in tones (bumblebee, three-tone runs,
+  a Motorola-style bonk, CW "K", "R" or "T" at the ID's speed and pitch, and more),
+  plus a custom tone of up to four parts built on the Audio page.
 - **Net mode**: started from the dashboard, a DTMF macro or a weekly schedule. It
   gives net control a longer timeout and its own courtesy tone, holds announcements
   and the phone patch until the net ends, can link or unlink AllStarLink nodes, and

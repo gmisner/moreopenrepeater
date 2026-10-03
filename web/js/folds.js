@@ -1,4 +1,5 @@
 import { store } from "./store.js";
+import { customToneSummary } from "./tones.js";
 import { formatDuration } from "./ui.js";
 
 // Folds are <details class="fold"> groups of fields. One with data-summary
@@ -43,6 +44,7 @@ const SUMMARIES = {
 
   "tone-link": (f) => courtesyTone(f, "courtesy_tone_link"),
   "tone-patch": (f) => courtesyTone(f, "courtesy_tone_patch"),
+  "tone-custom": (f) => customToneSummary(f.courtesy_tone_custom.value),
 
   "net-timing": (f) => `Timeout ${formatDuration(Number(f.net_tot_duration.value))}, hang time ${f.net_hang_time.value}s`,
   "net-tone": (f) => courtesyTone(f, "net_courtesy_tone"),

@@ -163,7 +163,10 @@ class ClipRenderer:
     def _cache_key(self, clip: str, config: RepeaterConfig) -> Hashable:
         if clip in COURTESY_CLIPS:
             style, asset = courtesy_sound(clip, config)
-            return ("courtesy_tone", style, config.courtesy_tone_duration, asset, self._asset_version(asset))
+            return (
+                "courtesy_tone", style, config.courtesy_tone_duration, config.cw_wpm, config.cw_tone_hz,
+                config.courtesy_tone_custom, asset, self._asset_version(asset),
+            )
         if clip == "timeout_tone":
             asset = config.timeout_tone_asset_id
             return (clip, asset, self._asset_version(asset))
@@ -194,7 +197,10 @@ class ClipRenderer:
             asset = self._load_asset(asset_id)
             if asset is not None:
                 return asset
-            return courtesy_tone(style, config.courtesy_tone_duration, self.sample_rate)
+            return courtesy_tone(
+                style, config.courtesy_tone_duration, self.sample_rate,
+                cw_wpm=config.cw_wpm, cw_tone_hz=config.cw_tone_hz, custom=config.courtesy_tone_custom,
+            )
         if clip == "timeout_tone":
             asset = self._load_asset(config.timeout_tone_asset_id)
             return asset if asset is not None else timeout_tone(self.sample_rate)

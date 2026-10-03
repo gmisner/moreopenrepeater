@@ -15,7 +15,8 @@
 A CM108 USB interface, found at startup (Linux), keys the radio's PTT and
 can supply COS. Its
 spare pins are `api.gpio`'s. On a Raspberry Pi, PTT and COS can use header
-pins instead, held only while the engine runs.
+pins instead, and anywhere a serial port's modem lines; both are held only
+while the engine runs.
 """
 from __future__ import annotations
 
@@ -32,6 +33,7 @@ from audio_io.engine import AudioEngine
 from audio_io.patch import LinkAudio, PatchAudio
 from audio_io.pi_gpio import GpioLine, open_header_pin
 from audio_io.processor import AudioProcessor, ProcessorSettings
+from audio_io.serial_lines import open_serial_line
 from controller.events import COSChanged, CTCSSChanged
 from controller.state_machine import RepeaterConfig
 from playout.renderer import RECORDING_PREFIX, ClipRenderer, UnknownClipError
@@ -55,10 +57,15 @@ _RESTART_FIELDS = (
     "cos_source",
     "cos_polarity",
     "cos_gpio_pin",
+    "cos_serial_device",
+    "cos_serial_line",
     "ptt_output",
     "ptt_gpio_pin",
+    "ptt_serial_device",
+    "ptt_serial_line",
     "ptt_polarity",
 )
+HARDWARE_COS = ("cm108", "gpio", "serial")
 # Same names on RepeaterConfig and ProcessorSettings; applied without a restart.
 _LIVE_FIELDS = (
     "vox_threshold_db", "vox_hold", "tx_gain_db", "tx_ctcss_hz", "tx_ctcss_level_db", "squelch_tail_ms", "tx_delay_ms",
@@ -145,12 +152,14 @@ class LiveAudio:
         recordings: Optional[RecordingStore] = None,
         clock: Callable[[], float] = time.time,
         open_pin: Callable[..., GpioLine] = open_header_pin,
+        open_serial: Callable[..., GpioLine] = open_serial_line,
     ) -> None:
         self._service = service
         self._renderer = renderer
         self._cm108 = cm108
         self._engine_factory = engine_factory
         self._open_pin = open_pin
+        self._open_serial = open_serial
         self._pins: list[GpioLine] = []
         self._recordings = recordings
         self._clock = clock
@@ -176,9 +185,9 @@ class LiveAudio:
 
     @property
     def hardware_ptt(self) -> Optional[str]:
-        """What keys the transmitter: "cm108", "gpio", or None (nothing)."""
-        if self._service.config.ptt_output == "gpio":
-            return "gpio"
+        """What keys the transmitter: "cm108", "gpio", "serial", or None (nothing)."""
+        if self._service.config.ptt_output in ("gpio", "serial"):
+            return self._service.config.ptt_output
         return "cm108" if self._cm108 is not None else None
 
     def attach(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -363,19 +372,34 @@ class LiveAudio:
         if cos_source == "cm108" and self._cm108 is None:
             self.error = "COS source is CM108, but no CM108 interface was found when the service started"
             return
-        gpio_ptt = config.ptt_output == "gpio"
-        if gpio_ptt and cos_source == "gpio" and config.ptt_gpio_pin == config.cos_gpio_pin:
+        ptt_kind = config.ptt_output
+        if ptt_kind == "gpio" and cos_source == "gpio" and config.ptt_gpio_pin == config.cos_gpio_pin:
             self.error = f"PTT and COS can't both use GPIO{config.ptt_gpio_pin}"
             return
-        ptt_output = self._cm108.set_ptt if self._cm108 and not gpio_ptt else None
+        if ptt_kind == "serial" and not config.ptt_serial_device:
+            self.error = "PTT is set to a serial port, but no serial port is chosen"
+            return
+        if cos_source == "serial" and not config.cos_serial_device:
+            self.error = "COS is set to a serial port, but no serial port is chosen"
+            return
+        ptt_output = self._cm108.set_ptt if self._cm108 and ptt_kind == "cm108" else None
         cos_input = self._cm108.read_cos if self._cm108 and cos_source == "cm108" else None
         if self._cm108 is not None:
             self._cm108.cos_active_low = config.cos_polarity == "low"
+        ptt_low, cos_low = config.ptt_polarity == "low", config.cos_polarity == "low"
         try:
-            if gpio_ptt:
-                ptt_output = self._claim_pin(config.ptt_gpio_pin, "PTT", output=True, active_low=config.ptt_polarity == "low").write
+            if ptt_kind == "gpio":
+                ptt_output = self._claim_pin(config.ptt_gpio_pin, "PTT", output=True, active_low=ptt_low).write
+            elif ptt_kind == "serial":
+                ptt_output = self._claim_serial(
+                    config.ptt_serial_device, config.ptt_serial_line, "PTT", output=True, active_low=ptt_low
+                ).write
             if cos_source == "gpio":
-                cos_input = self._claim_pin(config.cos_gpio_pin, "COS", output=False, active_low=config.cos_polarity == "low").read
+                cos_input = self._claim_pin(config.cos_gpio_pin, "COS", output=False, active_low=cos_low).read
+            elif cos_source == "serial":
+                cos_input = self._claim_serial(
+                    config.cos_serial_device, config.cos_serial_line, "COS", output=False, active_low=cos_low
+                ).read
         except OSError as error:
             self._release_pins()
             self.error = str(error)
@@ -385,7 +409,7 @@ class LiveAudio:
         processor = AudioProcessor(
             ProcessorSettings(
                 sample_rate=rate,
-                cos_source="external" if cos_source in ("cm108", "gpio") else cos_source,
+                cos_source="external" if cos_source in HARDWARE_COS else cos_source,
                 local_repeat=config.node_mode == "repeater",
                 **{field: getattr(config, field) for field in _LIVE_FIELDS},
             )
@@ -428,6 +452,14 @@ class LiveAudio:
             raise OSError(f"couldn't open GPIO{pin} for {role}: {error.strerror or error}") from error
         self._pins.append(line)
         return line
+
+    def _claim_serial(self, device: str, line: str, role: str, *, output: bool, active_low: bool) -> GpioLine:
+        try:
+            opened = self._open_serial(device, line, output=output, active_low=active_low)
+        except OSError as error:
+            raise OSError(f"couldn't open {device} ({line.upper()}) for {role}: {error.strerror or error}") from error
+        self._pins.append(opened)
+        return opened
 
     def _release_pins(self) -> None:
         for line in self._pins:

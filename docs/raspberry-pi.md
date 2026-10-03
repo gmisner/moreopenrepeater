@@ -188,6 +188,38 @@ carrier must go through a transistor, as in
 low"). "Active high" turns on the pull-down instead, for a 3.3 V signal that
 goes high on carrier.
 
+### PTT and COS on a serial port
+
+Interfaces that key with a serial port's RTS or DTR line (USB-serial
+adapters, RigBlaster-style boxes, an AIOC's COM port) and report carrier on
+CTS, DSR or DCD work too, on the repeater and the link radio. Set **PTT**
+and/or **Carrier detect** to "Serial port" and pick the port. The list shows
+`/dev/serial/by-id/...` names first: unlike `/dev/ttyUSB0`, they don't change
+when adapters are plugged in a different order. PTT and COS can share one
+port (say RTS and DCD), and the link radio can use other lines of the same
+port. The service user needs the `dialout` group, which the installer adds.
+
+"Active high" means the line is on (asserted): positive voltage on a real
+RS-232 port, but usually *low* on a 3.3 V or 5 V TTL adapter, which inverts.
+If the radio keys when it should be idle, or the repeater sees a carrier
+that isn't there, switch the polarity.
+
+Use active-high PTT where you can. Opening a serial port turns RTS and DTR
+on, so the repeater turns the PTT line off straight away; with active-high
+PTT the kernel also turns it off if the service stops or crashes. With
+active-low PTT the line is left on when the service stops, which keeps the
+radio unkeyed, but there's nothing holding it while the Pi boots.
+
+An RS-232 RTS/DTR line swings to about -6 V when off, so key the radio
+through a transistor or an opto-isolator, not straight into the PTT input:
+
+```
+RTS ──[ 4.7k ]──┬── base
+                │     2N3904   collector ── radio PTT
+     1N4148 ────┘     emitter ──── ground (DB9 pin 5)
+     (anode to ground, so -V doesn't reach the base)
+```
+
 ### Setup wizard and interface boards
 
 The first time an admin opens the dashboard, a setup wizard asks for the
@@ -308,11 +340,12 @@ far station ──> link radio RX ──> repeater TX (link courtesy tone)
 
 Detect the far end with **Audio level (VOX)** (for a radio whose squelch
 mutes its audio), **CTCSS tone present**, a **Raspberry Pi GPIO pin** (GPIO23,
-header pin 16, by default) or a **second CM108's COS input**. Key it with a
-**Raspberry Pi GPIO pin** (GPIO24, header pin 18, by default; through a
-transistor as above), a **second CM108's PTT**, or **nothing** for a radio
-that keys itself on audio with its own VOX. Pins can't be shared with the
-repeater's PTT and COS or the monitor's squelch. The second CM108 is found
+header pin 16, by default), a **second CM108's COS input** or a **serial
+port** line. Key it with a **Raspberry Pi GPIO pin** (GPIO24, header pin 18,
+by default; through a transistor as above), a **second CM108's PTT**, a
+**serial port** line, or **nothing** for a radio that keys itself on audio
+with its own VOX. Pins and serial lines can't be shared with the repeater's
+PTT and COS or the monitor's squelch. The second CM108 is found
 by itself at startup (the first one the repeater isn't using). Pick one with
 `MOREOPENREPEATER_LINK_CM108_HIDRAW=/dev/hidrawN` in the env file, or set
 it to `off`. **Transmit CTCSS tone** adds a tone under the link transmitter for

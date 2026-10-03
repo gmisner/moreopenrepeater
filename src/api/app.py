@@ -26,6 +26,7 @@ import segno
 from starlette.background import BackgroundTask
 from starlette.requests import HTTPConnection
 
+from audio_io.serial_lines import find_serial_ports
 from controller.announcements import Announcement
 from controller.events import LinkStateChanged, SendLinkCommand
 from controller.macros import Macro
@@ -110,6 +111,7 @@ from .models import (
     BoardApplyRequest,
     BoardApplyResponse,
     BoardResponse,
+    SerialPortResponse,
     EchoLinkRequest,
     EchoLinkStatusResponse,
     GpioOutputRequest,
@@ -414,6 +416,7 @@ def create_app(
     monitor_receiver: Optional[MonitorReceiverService] = None,
     link_radio: Optional[LinkRadio] = None,
     run_mixer: Callable[[list[str]], object] = run_amixer,
+    serial_ports: Callable[[], list[dict]] = find_serial_ports,
 ) -> FastAPI:
     """`state_store`, `activity_store` and `recordings` default to in-memory
     (or off) so tests never touch the real files under `data/`; the
@@ -1393,6 +1396,10 @@ def create_app(
         except TTSError as error:
             raise HTTPException(status_code=503, detail=str(error))
         return Response(encode_wav(samples, renderer.sample_rate), media_type="audio/wav")
+
+    @app.get("/api/serial/ports", response_model=list[SerialPortResponse], dependencies=auth_dependencies)
+    def get_serial_ports() -> list[dict]:
+        return serial_ports()
 
     @app.get("/api/audio/devices", response_model=list[AudioDeviceResponse], dependencies=auth_dependencies)
     def get_audio_devices() -> list[dict]:

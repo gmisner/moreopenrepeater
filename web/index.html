@@ -686,6 +686,7 @@
                       <option value="ctcss">CTCSS tone present</option>
                       <option value="cm108">CM108 COS input</option>
                       <option value="gpio">Raspberry Pi GPIO pin</option>
+                      <option value="serial">Serial port (CTS, DSR or DCD)</option>
                     </select>
                   </label>
                   <label data-cos-hardware>COS polarity
@@ -693,10 +694,22 @@
                       <option value="low">Active low (pulled to ground on carrier)</option>
                       <option value="high">Active high</option>
                     </select>
+                    <small>On a serial port, active high means the line is on (asserted) during a carrier.</small>
                   </label>
                   <label data-cos-gpio>COS pin
                     <span class="input-unit"><input type="number" step="1" min="2" max="27" name="cos_gpio_pin" required /><span>GPIO</span></span>
                     <small>BCM number; GPIO27 is header pin 13. 3.3&nbsp;V only.</small>
+                  </label>
+                  <label data-cos-serial>COS serial port
+                    <input type="text" name="cos_serial_device" list="serial-ports" placeholder="/dev/ttyUSB0" spellcheck="false" autocomplete="off" pattern="/dev/(tty[A-Za-z0-9]+|serial/[A-Za-z0-9._:\/+\-]+)" />
+                    <small>A /dev/serial/by-id name stays the same when adapters are plugged in a different order.</small>
+                  </label>
+                  <label data-cos-serial>COS line
+                    <select name="cos_serial_line">
+                      <option value="cts">CTS</option>
+                      <option value="dsr">DSR</option>
+                      <option value="dcd">DCD</option>
+                    </select>
                   </label>
                   <label>VOX threshold
                     <span class="input-unit"><input type="number" step="1" min="-90" max="0" name="vox_threshold_db" required /><span>dBFS</span></span>
@@ -720,17 +733,28 @@
                     <select name="ptt_output">
                       <option value="cm108">CM108 interface (if set up)</option>
                       <option value="gpio">Raspberry Pi GPIO pin</option>
+                      <option value="serial">Serial port (RTS or DTR)</option>
                     </select>
                   </label>
                   <label data-ptt-gpio>PTT pin
                     <span class="input-unit"><input type="number" step="1" min="2" max="27" name="ptt_gpio_pin" required /><span>GPIO</span></span>
                     <small>BCM number; GPIO17 is header pin 11. Drive the radio through a transistor.</small>
                   </label>
-                  <label data-ptt-gpio>PTT polarity
+                  <label data-ptt-serial>PTT serial port
+                    <input type="text" name="ptt_serial_device" list="serial-ports" placeholder="/dev/ttyUSB0" spellcheck="false" autocomplete="off" pattern="/dev/(tty[A-Za-z0-9]+|serial/[A-Za-z0-9._:\/+\-]+)" />
+                  </label>
+                  <label data-ptt-serial>PTT line
+                    <select name="ptt_serial_line">
+                      <option value="rts">RTS</option>
+                      <option value="dtr">DTR</option>
+                    </select>
+                  </label>
+                  <label data-ptt-hardware>PTT polarity
                     <select name="ptt_polarity">
                       <option value="high">Active high (pin goes high to transmit)</option>
                       <option value="low">Active low</option>
                     </select>
+                    <small>On a serial port, active high turns the line on (asserts it) to transmit.</small>
                   </label>
                   <label>Transmit delay
                     <span class="input-unit"><input type="number" step="10" min="0" max="500" name="tx_delay_ms" required /><span>ms</span></span>
@@ -765,6 +789,7 @@
             </details>
           </div>
           <datalist id="ctcss-tones"></datalist>
+          <datalist id="serial-ports"></datalist>
           <div class="level-meter" title="Receive level">
             <div class="level-meter-fill" id="audio-level-fill"></div>
             <div class="level-meter-threshold" id="audio-level-threshold" title="VOX threshold"></div>
@@ -891,6 +916,7 @@
                 <option value="ctcss">CTCSS tone present</option>
                 <option value="cm108">A second CM108's COS input</option>
                 <option value="gpio">Raspberry Pi GPIO pin</option>
+                <option value="serial">Serial port (CTS, DSR or DCD)</option>
               </select>
             </label>
             <label data-link-cos="vox">VOX threshold
@@ -900,7 +926,17 @@
               <span class="input-unit"><input type="number" step="1" min="2" max="27" name="link_radio_cos_gpio_pin" required /><span>GPIO</span></span>
               <small>BCM number; GPIO23 is header pin 16. 3.3&nbsp;V only.</small>
             </label>
-            <label data-link-cos="gpio cm108">COS polarity
+            <label data-link-cos="serial">COS serial port
+              <input type="text" name="link_radio_cos_serial_device" list="serial-ports" placeholder="/dev/ttyUSB1" spellcheck="false" autocomplete="off" pattern="/dev/(tty[A-Za-z0-9]+|serial/[A-Za-z0-9._:\/+\-]+)" />
+            </label>
+            <label data-link-cos="serial">COS line
+              <select name="link_radio_cos_serial_line">
+                <option value="cts">CTS</option>
+                <option value="dsr">DSR</option>
+                <option value="dcd">DCD</option>
+              </select>
+            </label>
+            <label data-link-cos="gpio cm108 serial">COS polarity
               <select name="link_radio_cos_polarity">
                 <option value="low">Active low (pulled to ground on carrier)</option>
                 <option value="high">Active high</option>
@@ -910,6 +946,7 @@
               <select name="link_radio_ptt">
                 <option value="gpio">Raspberry Pi GPIO pin</option>
                 <option value="cm108">A second CM108's PTT</option>
+                <option value="serial">Serial port (RTS or DTR)</option>
                 <option value="none">Nothing (the radio's own VOX keys it)</option>
               </select>
             </label>
@@ -917,7 +954,16 @@
               <span class="input-unit"><input type="number" step="1" min="2" max="27" name="link_radio_ptt_gpio_pin" required /><span>GPIO</span></span>
               <small>BCM number; GPIO24 is header pin 18. Drive the radio through a transistor.</small>
             </label>
-            <label data-link-ptt="gpio">PTT polarity
+            <label data-link-ptt="serial">PTT serial port
+              <input type="text" name="link_radio_ptt_serial_device" list="serial-ports" placeholder="/dev/ttyUSB1" spellcheck="false" autocomplete="off" pattern="/dev/(tty[A-Za-z0-9]+|serial/[A-Za-z0-9._:\/+\-]+)" />
+            </label>
+            <label data-link-ptt="serial">PTT line
+              <select name="link_radio_ptt_serial_line">
+                <option value="rts">RTS</option>
+                <option value="dtr">DTR</option>
+              </select>
+            </label>
+            <label data-link-ptt="gpio serial">PTT polarity
               <select name="link_radio_ptt_polarity">
                 <option value="high">Active high (pin goes high to transmit)</option>
                 <option value="low">Active low</option>

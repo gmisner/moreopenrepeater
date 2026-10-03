@@ -23,7 +23,7 @@ function renderFields() {
   const cos = form.elements.link_radio_cos.value;
   const ptt = form.elements.link_radio_ptt.value;
   for (const label of form.querySelectorAll("[data-link-cos]")) label.hidden = !label.dataset.linkCos.split(" ").includes(cos);
-  for (const label of form.querySelectorAll("[data-link-ptt]")) label.hidden = label.dataset.linkPtt !== ptt;
+  for (const label of form.querySelectorAll("[data-link-ptt]")) label.hidden = !label.dataset.linkPtt.split(" ").includes(ptt);
   const threshold = Number(form.elements.link_radio_vox_threshold_db.value);
   levelThreshold.hidden = cos !== "vox" || Number.isNaN(threshold);
   levelThreshold.style.left = `${meterPercent(threshold)}%`;

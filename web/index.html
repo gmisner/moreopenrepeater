@@ -2282,6 +2282,34 @@
             <button type="submit" class="btn btn-primary">Add user</button>
           </div>
         </form>
+        <div class="card" id="tokens-card">
+          <h2>API tokens</h2>
+          <p class="muted small">For scripts and AI agents. A token acts as its user, with that user's role, and stops
+            working when it's revoked or the user is deleted. Send it as <code>Authorization: Bearer &lt;token&gt;</code>.
+            Tokens can't manage users or other tokens.</p>
+          <div class="table-wrap" id="tokens-table" hidden>
+            <table>
+              <thead><tr><th>Name</th><th>User</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+              <tbody id="tokens-tbody"></tbody>
+            </table>
+          </div>
+          <div id="token-created" class="token-created" hidden>
+            <p class="small">Copy this token now. It isn't stored, so it can't be shown again.</p>
+            <div class="token-secret">
+              <code id="token-value"></code>
+              <button type="button" class="btn btn-ghost btn-sm" id="token-copy">Copy</button>
+            </div>
+          </div>
+          <form id="token-form" class="inline-form">
+            <label>Name
+              <input name="name" required maxlength="60" placeholder="Claude on my laptop" autocomplete="off" />
+            </label>
+            <label>Acts as
+              <select name="username" id="token-user"></select>
+            </label>
+            <button type="submit" class="btn btn-primary">Create token</button>
+          </form>
+        </div>
       </section>
 
       <!-- Audit log (admins only) -->

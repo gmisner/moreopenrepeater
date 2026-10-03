@@ -1220,6 +1220,26 @@ class UserResponse(BaseModel):
     builtin: bool  # the env-configured admin; can't be edited here
 
 
+class TokenResponse(BaseModel):
+    id: str
+    name: str
+    username: str
+    role: Optional[Role]  # None if the user is gone (the token no longer works)
+    created_at: datetime
+    last_used_at: Optional[datetime] = None
+
+
+class TokenCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    username: str = Field(min_length=1, max_length=64)
+
+
+class TokenCreatedResponse(BaseModel):
+    id: str
+    token: str  # shown once; only a digest is kept
+    tokens: list[TokenResponse]
+
+
 class UserCreateRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._@-]+$")
     password: str = Field(min_length=8, max_length=200)

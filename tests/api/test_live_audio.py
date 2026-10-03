@@ -9,7 +9,7 @@ from api.assets import AudioAssetStore
 from api.live_audio import LiveAudio, cm108_from_env
 from api.service import RepeaterService
 from audio_io.engine import AudioEngine
-from controller.state_machine import COURTESY_TONE, IDLE, RECEIVING, RepeaterConfig
+from controller.state_machine import COURTESY_TONE, RECEIVING, RepeaterConfig
 from playout.renderer import ClipRenderer
 
 RATE = 16000

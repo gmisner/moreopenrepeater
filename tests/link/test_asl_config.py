@@ -91,7 +91,7 @@ def test_controlling_again_replaces_our_settings_instead_of_stacking():
 
 def test_a_node_without_its_own_settings():
     edited = control_node(RPT, "1998", OURS)
-    assert edited.endswith(f"[1998](node-main)\n" + "".join(f"{k} = {v}  {MARK}\n" for k, v in OURS.items()))
+    assert edited.endswith("[1998](node-main)\n" + "".join(f"{k} = {v}  {MARK}\n" for k, v in OURS.items()))
     assert release_node(edited, "1998") == RPT
 
 

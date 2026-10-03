@@ -104,3 +104,19 @@ def test_id_state_lasts_as_long_as_the_rendered_voice_id():
     clock["now"] = 12.0
     service.tick()
     assert service.controller.state == "idle"
+
+
+def test_new_courtesy_styles_and_the_custom_tone_are_settings():
+    client, service, *_ = make_client()
+    for field in ("courtesy_tone_style", "courtesy_tone_link_style", "courtesy_tone_patch_style", "net_courtesy_tone_style"):
+        assert client.put("/api/config", json={field: "bumblebee"}).json()[field] == "bumblebee"
+    config = client.put("/api/config", json={"courtesy_tone_style": "custom", "courtesy_tone_custom": " 1000:120  0:30 1500:120 "}).json()
+    assert config["courtesy_tone_custom"] == "1000:120 0:30 1500:120"
+    for bad in ("", "1000", "1000:5", "0:100", "1:1 2:2 3:3 4:4 5:5"):
+        assert client.put("/api/config", json={"courtesy_tone_custom": bad}).status_code == 422
+    assert client.put("/api/config", json={"courtesy_tone_style": "siren"}).status_code == 422
+
+    response = client.post("/api/audio/preview", json={"clip": "courtesy_tone", "config": {"courtesy_tone_custom": "1000:500"}})
+    samples, _ = decode_wav(response.content)
+    assert len(samples) == RATE // 2
+    assert service.saved_config.courtesy_tone_custom == "1000:120 0:30 1500:120"

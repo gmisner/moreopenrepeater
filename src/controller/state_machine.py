@@ -45,6 +45,13 @@ ANNOUNCEMENT_FALLBACK_DURATION = 10.0
 
 _logger = logging.getLogger("moreopenrepeater.controller")
 
+# Built-in courtesy tones (playout.tones); "same" uses the local one.
+CourtesyStyle = Literal[
+    "beep", "high_low", "low_high", "triple", "chirp", "bumblebee", "up_run", "down_run", "bonk", "bee_boo",
+    "nextel", "cw_k", "cw_r", "cw_t", "custom",
+]
+CourtesyVariant = Literal["same", CourtesyStyle]
+
 
 @dataclass(frozen=True)
 class RepeaterConfig:
@@ -89,13 +96,14 @@ class RepeaterConfig:
     courtesy_tone_asset_id: Optional[str] = None
     id_asset_id: Optional[str] = None
     timeout_tone_asset_id: Optional[str] = None
-    courtesy_tone_style: Literal["beep", "high_low", "low_high", "triple", "chirp"] = "beep"
+    courtesy_tone_style: CourtesyStyle = "beep"
     # Different tones after a linked station (AllStarLink/EchoLink) and at the
     # end of a phone call, so listeners can tell; "same" uses the one above.
-    courtesy_tone_link_style: Literal["same", "beep", "high_low", "low_high", "triple", "chirp"] = "same"
+    courtesy_tone_link_style: CourtesyVariant = "same"
     courtesy_tone_link_asset_id: Optional[str] = None
-    courtesy_tone_patch_style: Literal["same", "beep", "high_low", "low_high", "triple", "chirp"] = "same"
+    courtesy_tone_patch_style: CourtesyVariant = "same"
     courtesy_tone_patch_asset_id: Optional[str] = None
+    courtesy_tone_custom: str = "880:100 0:40 1320:100"  # the "custom" style: up to 4 hz:ms segments, 0 Hz = gap
     voice_id_text: str = "{callsign} repeater"
     id_phonetic: bool = False
     tts_voice: str = ""
@@ -232,7 +240,7 @@ class RepeaterConfig:
     net_name: str = "Net"
     net_tot_duration: float = 600.0
     net_hang_time: float = 1.0
-    net_courtesy_tone_style: Literal["same", "beep", "high_low", "low_high", "triple", "chirp"] = "same"
+    net_courtesy_tone_style: CourtesyVariant = "same"
     net_courtesy_tone_asset_id: Optional[str] = None
     net_hold_autopatch: bool = True
     net_hold_announcements: bool = True  # scheduled ones play after the net; weather alerts never wait
@@ -606,7 +614,7 @@ class RepeaterController:
             self._note_transmission(now)  # the tone keys the transmitter itself
         self._set_state(COURTESY_TONE)
         self._tot_deadline = None
-        self._state_deadline = now + self.config.courtesy_tone_duration
+        self._state_deadline = now + (self._clip_duration(clip) or self.config.courtesy_tone_duration)
         return [PlayAudio(clip=clip)]
 
     def _enter_hang_time(self, now: float) -> list[ControllerCommand]:

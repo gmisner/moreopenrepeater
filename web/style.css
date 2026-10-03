@@ -444,6 +444,9 @@ tr:has(+ .transcript-row) td { border-bottom: none; }
 .link-row .indicator-dot { flex: none; }
 .link-row.keyed .indicator-dot { background: var(--green); box-shadow: 0 0 10px var(--green); }
 .link-row .link-name { flex: 1; min-width: 10rem; }
+.tone-segments { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--space-3); margin: var(--space-3) 0; }
+.tone-segment { display: grid; grid-template-columns: auto 1fr 1fr; align-items: center; gap: var(--space-2); }
+.tone-segment input { min-width: 0; }
 .schedule-list { display: grid; gap: var(--space-3); margin-bottom: var(--space-3); }
 .schedule-item { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); }
 .schedule-item .form-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }

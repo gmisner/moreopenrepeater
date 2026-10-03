@@ -45,6 +45,17 @@ def test_builtin_courtesy_tone_uses_style_and_duration():
     assert abs(len(samples) - 2000) <= 2
 
 
+def test_cw_and_custom_courtesy_tones_follow_their_settings():
+    renderer, _ = make_renderer()
+    slow = renderer.render("courtesy_tone", config(courtesy_tone_style="cw_k", cw_wpm=10))
+    fast = renderer.render("courtesy_tone", config(courtesy_tone_style="cw_k", cw_wpm=20))
+    assert len(slow) > len(fast)
+    custom = config(courtesy_tone_style="custom", courtesy_tone_custom="1000:250")
+    assert len(renderer.render("courtesy_tone", custom)) == 2000
+    assert renderer.cached_duration("courtesy_tone", custom) == 0.25
+    assert len(renderer.render("courtesy_tone", dataclasses.replace(custom, courtesy_tone_custom="1000:100"))) == 800
+
+
 def test_assigned_courtesy_asset_replaces_the_builtin():
     clip = np.full(123, 0.2, dtype=np.float32)
     renderer, _ = make_renderer(assets={"abc": clip})

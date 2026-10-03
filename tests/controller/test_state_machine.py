@@ -586,6 +586,23 @@ def test_id_state_uses_the_reported_clip_duration_when_known():
     assert controller.state == IDLE
 
 
+def test_courtesy_tone_state_lasts_as_long_as_the_tone_when_known():
+    durations = {"courtesy_tone": 0.6}
+    controller = RepeaterController(make_config(), now=0.0, clip_duration=durations.get)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    controller.handle_event(COSChanged(active=False), now=1.0)
+    controller.tick(now=1.5)
+    assert controller.state == COURTESY_TONE
+    controller.tick(now=1.6)
+    assert controller.state == HANG_TIME
+
+    durations.clear()  # not rendered yet: the configured length
+    controller.handle_event(COSChanged(active=True), now=2.0)
+    controller.handle_event(COSChanged(active=False), now=3.0)
+    controller.tick(now=3.2)
+    assert controller.state == HANG_TIME
+
+
 def test_announcement_plays_when_idle_for_its_clip_duration():
     controller = RepeaterController(make_config(), now=0.0, clip_duration=lambda clip: 2.0)
     controller.queue_announcement("tts:net tonight")

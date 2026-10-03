@@ -16,6 +16,7 @@ import { initAutopatch } from "./js/autopatch.js";
 import { initAudio } from "./js/audio.js";
 import { initBackup } from "./js/backup.js";
 import { initConfig, loadConfig } from "./js/config.js";
+import { initTones } from "./js/tones.js";
 import { initListen } from "./js/listen.js";
 import { initLogs } from "./js/logs.js";
 import { initMap } from "./js/map.js";
@@ -48,6 +49,7 @@ async function main() {
   initHints();
   initStatus();
   initConfig();
+  initTones();
   initAssets();
   initAudio();
   initMonitorReceiver();

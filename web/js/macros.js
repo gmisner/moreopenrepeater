@@ -29,6 +29,7 @@ const ACTION_LABELS = {
   gpio: "GPIO output",
   homeassistant: "Home Assistant",
   help: "Spoken help",
+  metar: "Airport weather",
 };
 const HIDDEN_FROM_HELP = new Set(["tx_disable", "tx_enable", "link_radio_on", "link_radio_off"]);
 
@@ -50,6 +51,11 @@ function details(macro) {
   if (macro.action === "say") return `&ldquo;${escapeHtml(macro.command)}&rdquo;`;
   if (macro.action === "homeassistant") return `<code>${escapeHtml(macro.command)}</code>`;
   if (macro.action === "help") return `Page ${escapeHtml(macro.command || "1")}`;
+  if (macro.action === "metar") {
+    if (!macro.command) return "Every listed airport";
+    const airport = store.state.config?.metar_airports?.find((a) => a.icao === macro.command);
+    return `<code>${escapeHtml(macro.command)}</code>${airport?.name ? ` ${escapeHtml(airport.name)}` : ""}`;
+  }
   if (macro.action === "gpio") {
     const [pin, verb, seconds] = macro.command.split(/\s+/);
     const settings = store.state.config?.gpio_pins?.[pin];
@@ -90,6 +96,16 @@ function renderAnnouncementOptions() {
   if (current) select.value = current;
 }
 
+function renderAirportOptions(extra = "") {
+  const select = form.elements.metar_icao;
+  const current = extra || select.value;
+  const airports = store.state.config?.metar_airports ?? [];
+  const options = [new Option("Every listed airport", ""), ...airports.map((a) => new Option(a.name ? `${a.icao} ${a.name}` : a.icao, a.icao))];
+  if (current && !airports.some((a) => a.icao === current)) options.push(new Option(current, current));
+  select.replaceChildren(...options);
+  select.value = current;
+}
+
 function renderGpioOptions() {
   const select = form.elements.gpio_pin;
   const current = select.value;
@@ -128,6 +144,7 @@ function startEdit(macro) {
   if (macro.action === "announcement") form.elements.announcement_id.value = macro.command;
   if (macro.action === "homeassistant") form.elements.ha_target.value = macro.command;
   if (macro.action === "help") form.elements.help_page.value = macro.command;
+  if (macro.action === "metar") renderAirportOptions(macro.command);
   if (macro.action === "gpio") {
     const [pin, verb, seconds] = macro.command.split(/\s+/);
     form.elements.gpio_pin.value = pin;
@@ -166,6 +183,7 @@ function collect() {
       gpio,
       homeassistant: els.ha_target.value,
       help: els.help_page.value,
+      metar: els.metar_icao.value,
     }[action] ?? "";
   return {
     pattern: els.pattern.value.trim().toUpperCase(),
@@ -220,9 +238,11 @@ export function initMacros() {
   });
   store.addEventListener("config", () => {
     renderGpioOptions();
+    renderAirportOptions();
     if (store.state.macros) render(store.state.macros);
   });
   renderGpioOptions();
+  renderAirportOptions();
   form.elements.action.addEventListener("change", showArgumentFields);
   form.elements.gpio_verb.addEventListener("change", showArgumentFields);
   form.elements.needs_code.addEventListener("change", showArgumentFields);

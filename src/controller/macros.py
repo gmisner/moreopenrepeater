@@ -30,9 +30,11 @@ CODE_TIMEOUT = 15.0  # seconds to key the code after the macro, as it's read off
 #   link_radio_on / link_radio_off   connect or disconnect the link radio (api.link_radio)
 #   homeassistant call a Home Assistant webhook `<id>`, or fire `event:<type>` (api.homeassistant)
 #   help          read out the macros (controller.spoken_help); `<page>` is optional
+#   metar         speak an airport's weather `<ICAO>`, or every listed airport when blank (api.airport_weather)
 MacroAction = Literal[
     "link", "time", "weather", "id", "announcement", "say", "parrot", "tx_disable", "tx_enable", "aprs", "gpio",
     "lockout_clear", "net_start", "net_end", "homeassistant", "link_radio_on", "link_radio_off", "help",
+    "metar",
 ]
 MACRO_ACTIONS: tuple[str, ...] = get_args(MacroAction)
 ACTIONS_NEEDING_ARGUMENT = frozenset({"link", "announcement", "say", "gpio", "homeassistant"})

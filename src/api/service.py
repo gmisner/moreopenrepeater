@@ -155,6 +155,7 @@ class RepeaterService:
         self.code_checker: Optional[Callable[[str], Optional[str]]] = None  # one-time code -> whose it is (api.control_codes)
         self.codes_locked: Callable[[], bool] = lambda: False
         self.homeassistant_hook: Optional[Callable[[str, str, str], None]] = None  # (target, source, pattern)
+        self.metar_hook: Optional[Callable[[str], None]] = None  # airport code, or "" for all (api.airport_weather)
         self.mailbox_hook: Optional[Callable[[MailboxCommand], None]] = None  # api.mailbox
         self._action_source = "DTMF"
         self._config_listeners: list[Callable[[RepeaterConfig], None]] = []
@@ -429,6 +430,11 @@ class RepeaterService:
         elif action.action == "help":
             text = help_text(self.controller.list_macros(), self.controller.config, action.argument, self.held_reason)
             self.speak(TTS_PREFIX + text)
+        elif action.action == "metar":
+            if self.metar_hook is None:
+                self.speak(TTS_PREFIX + "Airport weather is not set up.")
+            else:
+                self.metar_hook(action.argument)
         elif action.action == "parrot":
             if self.audio_output is None:
                 _logger.warning("parrot needs live audio, which isn't running")

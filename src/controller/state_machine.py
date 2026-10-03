@@ -132,6 +132,8 @@ class RepeaterConfig:
     wx_min_severity: Literal["Minor", "Moderate", "Severe", "Extreme"] = "Severe"
     wx_poll_interval: float = 120.0
     wx_repeat_minutes: float = 0.0  # 0 = announce each alert once
+    # Airports for the "metar" macro: [{"icao": "KAMA", "name": "Amarillo"}]
+    metar_airports: list = field(default_factory=list)
     audio_enabled: bool = False
     board_preset: str = ""  # the api.boards preset last applied; "" = set up by hand
     setup_wizard_done: bool = False  # the dashboard's first-run wizard was finished or skipped

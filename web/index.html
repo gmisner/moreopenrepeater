@@ -93,7 +93,7 @@
         <a href="#/net" data-nav="net"><svg class="icon" aria-hidden="true"><use href="#i-net" /></svg>Net</a>
         <a href="#/mailbox" data-nav="mailbox"><svg class="icon" aria-hidden="true"><use href="#i-mail" /></svg>Mailbox</a>
         <a href="#/announcements" data-nav="announcements"><svg class="icon" aria-hidden="true"><use href="#i-announce" /></svg>Announcements</a>
-        <a href="#/weather" data-nav="weather"><svg class="icon" aria-hidden="true"><use href="#i-weather" /></svg>Weather alerts</a>
+        <a href="#/weather" data-nav="weather"><svg class="icon" aria-hidden="true"><use href="#i-weather" /></svg>Weather</a>
         <a href="#/autopatch" data-nav="autopatch"><svg class="icon" aria-hidden="true"><use href="#i-phone" /></svg>Autopatch</a>
         <a href="#/allstar" data-nav="allstar"><svg class="icon" aria-hidden="true"><use href="#i-links" /></svg>AllStarLink</a>
         <a href="#/aprs" data-nav="aprs"><svg class="icon" aria-hidden="true"><use href="#i-radio" /></svg>APRS</a>
@@ -1164,6 +1164,7 @@
                 <option value="gpio">Switch a GPIO output</option>
                 <option value="homeassistant">Home Assistant</option>
                 <option value="help">Spoken help (read out the commands)</option>
+                <option value="metar">Airport weather</option>
               </select>
             </label>
             <label>Description
@@ -1204,6 +1205,10 @@
               <input type="text" name="ha_target" placeholder="porch_light or event:repeater_porch" pattern="(event:)?[A-Za-z0-9_.\-]{1,100}" title="A webhook ID, or event: and an event type (letters, digits, _ . -)" />
               <small>A webhook ID from a Home Assistant automation's webhook trigger, or <code>event:</code> and an
                 event type to fire (needs the access token).</small>
+            </label>
+            <label data-macro-arg="metar">Airport
+              <select name="metar_icao"></select>
+              <small>Airports are listed on the Weather page.</small>
             </label>
             <label class="inline-check span-2"><input type="checkbox" name="needs_code" /> Needs a one-time code, keyed right after the pattern</label>
             <label class="inline-check span-2"><input type="checkbox" name="help_hidden" /> Hide from spoken help (on by default for the transmitter and link radio switches, and for macros that need a code)</label>
@@ -1523,12 +1528,13 @@
       </section>
 
       <!-- Weather alerts -->
-      <section class="view" data-view="weather" data-title="Weather alerts" hidden>
+      <section class="view" data-view="weather" data-title="Weather" hidden>
         <header class="view-header">
-          <h1>Weather alerts</h1>
+          <h1>Weather</h1>
           <p class="muted">Announce National Weather Service watches and warnings for the repeater's location
             (US only, from <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">api.weather.gov</a>).
-            Each alert is spoken once when it's issued, as soon as the channel is clear.</p>
+            Each alert is spoken once when it's issued, as soon as the channel is clear. Airport weather, below, can be
+            read out by a DTMF macro.</p>
         </header>
         <form class="card config-form" data-config-form>
           <label class="switch">
@@ -1588,6 +1594,26 @@
           </div>
           <p id="wx-empty" class="muted small">No active alerts at or above the chosen severity.</p>
         </div>
+        <form class="card" id="airports-form">
+          <h2>Airport weather</h2>
+          <p class="muted small">Current conditions (METAR) from
+            <a href="https://aviationweather.gov/data/api/" target="_blank" rel="noopener">aviationweather.gov</a>, for an
+            "Airport weather" DTMF macro. Reports are fetched when asked for and kept 10 minutes. Visibility, temperature and
+            pressure follow the APRS page's distance units (miles or kilometers); wind is in knots and cloud heights in feet.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ICAO code</th><th>Spoken name</th><th></th></tr></thead>
+              <tbody id="airports-tbody"></tbody>
+            </table>
+          </div>
+          <p id="airports-empty" class="muted small">No airports yet.</p>
+          <p id="airports-preview" class="muted" hidden></p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="airports-add">Add an airport</button>
+            <span class="spacer"></span>
+            <button type="submit" class="btn btn-primary" id="airports-save">Save airports</button>
+          </div>
+        </form>
       </section>
 
       <!-- Autopatch -->

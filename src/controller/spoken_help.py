@@ -40,6 +40,7 @@ ACTION_WORDS = {
     "link_radio_on": "link radio on",
     "link_radio_off": "link radio off",
     "help": "this help",
+    "metar": "airport weather",
 }
 
 

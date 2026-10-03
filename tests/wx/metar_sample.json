@@ -1,0 +1,94 @@
+[
+ {
+  "icaoId": "KAMA",
+  "obsTime": 1791036180,
+  "temp": 13.9,
+  "dewp": 13.3,
+  "wdir": 180,
+  "wspd": 5,
+  "visib": 0.25,
+  "altim": 1024.5,
+  "wxString": "FG",
+  "vertVis": 2,
+  "rawOb": "SPECI KAMA 031403Z 18005KT 1/4SM R04/2000V2400FT FG VV002 14/13 A3025 RMK AO2 T01390133",
+  "name": "Amarillo Intl Arpt, TX, US",
+  "cover": "OVX",
+  "clouds": [
+   {
+    "cover": "OVX",
+    "base": 200
+   }
+  ],
+  "fltCat": "LIFR"
+ },
+ {
+  "icaoId": "KGVW",
+  "obsTime": 1791036000,
+  "temp": 27,
+  "dewp": 25,
+  "wdir": 50,
+  "wspd": 15,
+  "wgst": 21,
+  "visib": 9,
+  "altim": 1013.3,
+  "rawOb": "METAR KGVW 031400Z AUTO 05015G21KT 9SM FEW015 FEW029 SCT060 27/25 A2992 RMK A01",
+  "name": "Galveston 209B, TX, US",
+  "cover": "SCT",
+  "clouds": [
+   {
+    "cover": "FEW",
+    "base": 1500
+   },
+   {
+    "cover": "FEW",
+    "base": 2900
+   },
+   {
+    "cover": "SCT",
+    "base": 6000
+   }
+  ],
+  "fltCat": "VFR"
+ },
+ {
+  "icaoId": "KAHN",
+  "obsTime": 1791036240,
+  "temp": 23.9,
+  "dewp": 22.2,
+  "wdir": "VRB",
+  "wspd": 3,
+  "visib": "10+",
+  "altim": 1020.4,
+  "rawOb": "SPECI KAHN 031404Z VRB03KT 10SM OVC005 24/22 A3013 RMK AO2 T02390222",
+  "name": "Athens/Epps Arpt, GA, US",
+  "cover": "OVC",
+  "clouds": [
+   {
+    "cover": "OVC",
+    "base": 500
+   }
+  ],
+  "fltCat": "IFR"
+ },
+ {
+  "icaoId": "KACT",
+  "obsTime": 1791036060,
+  "temp": 21.1,
+  "dewp": 20.6,
+  "wdir": 350,
+  "wspd": 8,
+  "visib": 2.5,
+  "altim": 1017.7,
+  "wxString": "RA BR",
+  "rawOb": "SPECI KACT 031401Z 35008KT 2 1/2SM RA BR OVC005 21/21 A3005 RMK AO2 P0004 T02110206",
+  "name": "Waco Rgnl, TX, US",
+  "cover": "OVC",
+  "clouds": [
+   {
+    "cover": "OVC",
+    "base": 500
+   }
+  ],
+  "fltCat": "IFR"
+ }
+]

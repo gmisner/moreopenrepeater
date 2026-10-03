@@ -294,6 +294,14 @@ several phases (see the plan file for the full breakdown):
   switches and anything needing a code are left out unless a macro's "Hide from
   spoken help" box is cleared. A long list is read in pages of 8 when there's a help
   macro for the next page (for example `*0` with no page and `*02` for page 2).
+- **Airport weather (METAR)**: list airports on the Weather page, and an "Airport
+  weather" macro reads one airport's current conditions (or every listed airport) in
+  plain words: wind, visibility, weather, clouds, temperature, dew point and
+  altimeter. Reports come from aviationweather.gov's decoded data and are kept for 10
+  minutes. Visibility, temperature and pressure follow the distance units (miles,
+  Fahrenheit and inches, or kilometers, Celsius and hectopascals). When the internet
+  is down it reads a report up to 3 hours old, with its age, or says the weather
+  isn't available.
 - **Squelch-tail removal and transmit delay**: cut the receiver's noise burst from
   the end of each transmission, and key up a moment before any audio for a slow
   transmitter.

@@ -4,6 +4,7 @@ import { initAnnouncements, loadAnnouncements } from "./js/announcements.js";
 import { initAssets, loadAssets } from "./js/assets.js";
 import { initAudit } from "./js/audit.js";
 import { initAllStar } from "./js/allstar.js";
+import { initAirports } from "./js/airports.js";
 import { initFavorites } from "./js/favorites.js";
 import { initFolds } from "./js/folds.js";
 import { initHints } from "./js/hints.js";
@@ -69,6 +70,7 @@ async function main() {
   initFan();
   initLinks();
   initFavorites();
+  initAirports();
   initLinkSchedules();
   initGpioSchedules();
   initMap();

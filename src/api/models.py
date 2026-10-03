@@ -71,6 +71,16 @@ class GpioPinConfig(BaseModel):
 NodeNumber = Annotated[str, Field(pattern=r"^[0-9]{1,10}$")]
 
 
+class MetarAirport(BaseModel):
+    icao: str = Field(pattern=r"^[A-Z0-9]{4}$")
+    name: str = Field(default="", max_length=40)  # how it's spoken; blank spells the code
+
+    @field_validator("icao", mode="before")
+    @classmethod
+    def _upper(cls, value: Any) -> Any:
+        return value.strip().upper() if isinstance(value, str) else value
+
+
 class LinkFavorite(BaseModel):
     node: NodeNumber
     name: str = Field(default="", max_length=40)
@@ -205,6 +215,7 @@ class ConfigResponse(BaseModel):
     wx_min_severity: WeatherSeverity
     wx_poll_interval: float
     wx_repeat_minutes: float
+    metar_airports: list[MetarAirport] = []
     audio_enabled: bool
     board_preset: str = ""
     setup_wizard_done: bool = False
@@ -394,6 +405,7 @@ class ConfigUpdateRequest(BaseModel):
     wx_min_severity: Optional[WeatherSeverity] = None
     wx_poll_interval: Optional[float] = Field(default=None, ge=30)
     wx_repeat_minutes: Optional[float] = Field(default=None, ge=0)
+    metar_airports: Optional[list[MetarAirport]] = Field(default=None, max_length=20)
     audio_enabled: Optional[bool] = None
     setup_wizard_done: Optional[bool] = None
     audio_input_device: Optional[str] = None
@@ -648,6 +660,10 @@ class MacroCreateRequest(BaseModel):
             parse_gpio_command(self.command)
         if self.action == "homeassistant" and not re.fullmatch(HOMEASSISTANT_TARGET, self.command.strip()):
             raise ValueError("a Home Assistant macro needs a webhook ID or event:<type> (letters, digits, _ . -)")
+        if self.action == "metar":
+            self.command = self.command.strip().upper()
+            if not re.fullmatch(r"[A-Z0-9]{4}|", self.command):
+                raise ValueError("an airport weather macro needs a 4-letter ICAO code, or none for every listed airport")
         return self
 
 

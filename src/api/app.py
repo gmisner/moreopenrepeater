@@ -161,6 +161,7 @@ from .models import (
 from .health import CHECK_SECONDS as HEALTH_CHECK_SECONDS
 from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
 from .control_codes import ControlCodes, provisioning_uri
+from .airport_weather import AirportWeather
 from .homeassistant import TOKEN_ENV as HOMEASSISTANT_TOKEN_ENV
 from .homeassistant import HomeAssistant, HomeAssistantError
 from .mailbox import Mailbox, MailboxStore, is_mailbox_clip
@@ -410,6 +411,7 @@ def create_app(
     auto_update_store: Optional[StateStore] = None,
     control_codes: Optional[ControlCodes] = None,
     homeassistant: Optional[HomeAssistant] = None,
+    airport_weather: Optional[AirportWeather] = None,
     stream_store: Optional[StateStore] = None,
     streamer: Optional[Streamer] = None,
     mailbox_store: Optional[MailboxStore] = None,
@@ -496,6 +498,7 @@ def create_app(
     service.code_checker = control_codes.check
     service.codes_locked = control_codes.locked
     homeassistant = homeassistant or HomeAssistant(service, os.environ.get(HOMEASSISTANT_TOKEN_ENV))
+    airport_weather = airport_weather or AirportWeather(service)
     streamer = streamer or Streamer(live_audio.monitor, stream_store, lambda: renderer.sample_rate)
     mailbox = Mailbox(service, mailbox_store, renderer, net_active=lambda: nets.current is not None)
     mailbox.audit_hook = service.audit_hook
@@ -1823,6 +1826,11 @@ def create_app(
         except HomeAssistantError as error:
             raise HTTPException(status_code=502, detail=str(error)) from None
         return {"ok": True}
+
+    @app.get("/api/metar/{icao}", dependencies=auth_dependencies)
+    async def metar_preview(icao: str = UrlPath(pattern=r"^[A-Za-z0-9]{4}$")) -> dict:
+        text = await asyncio.get_running_loop().run_in_executor(None, airport_weather.text, icao.upper())
+        return {"text": text}
 
     def stream_response() -> StreamResponse:
         return StreamResponse(**streamer.public_settings(), status=streamer.status)

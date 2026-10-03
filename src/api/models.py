@@ -52,6 +52,7 @@ class StatusResponse(BaseModel):
 
 # GPIO3 is the PTT pin.
 GpioPinNumber = Literal["1", "2", "4", "5", "6", "7", "8"]
+FanOutput = Literal["none", "cm108", "gpio"]
 
 
 class GpioPinConfig(BaseModel):
@@ -275,6 +276,12 @@ class ConfigResponse(BaseModel):
     backup_include_recordings: bool
     gpio_pins: dict[GpioPinNumber, GpioPinConfig] = {}
     gpio_schedules: list[GpioSchedule] = []
+    fan_output: FanOutput = "none"
+    fan_cm108_pin: int = 1
+    fan_gpio_pin: int = 26
+    fan_polarity: Polarity = "high"
+    fan_run_on_minutes: float = 3.0
+    fan_temp_c: Optional[float] = None
     link_favorites: list[LinkFavorite] = []
     link_schedules: list[LinkSchedule] = []
     gmrs_mode: bool = False
@@ -460,6 +467,13 @@ class ConfigUpdateRequest(BaseModel):
     backup_include_recordings: Optional[bool] = None
     gpio_pins: Optional[dict[GpioPinNumber, GpioPinConfig]] = None
     gpio_schedules: Optional[list[GpioSchedule]] = Field(default=None, max_length=50)
+    fan_output: Optional[FanOutput] = None
+    fan_cm108_pin: Optional[int] = Field(default=None, ge=1, le=8)
+    fan_gpio_pin: Optional[PiGpioPin] = None
+    fan_polarity: Optional[Polarity] = None
+    fan_run_on_minutes: Optional[float] = Field(default=None, ge=0, le=60)
+    fan_temp_c: Optional[float] = Field(default=None, ge=40, le=90)
+    clear_fan_temp_c: bool = False
     link_favorites: Optional[list[LinkFavorite]] = Field(default=None, max_length=50)
     link_schedules: Optional[list[LinkSchedule]] = Field(default=None, max_length=50)
     gmrs_mode: Optional[bool] = None
@@ -499,6 +513,13 @@ class ConfigUpdateRequest(BaseModel):
         if self.net_links == "connect" and self.net_link_node == "":
             raise ValueError("choose the node to link for nets")
         return self
+
+    @field_validator("fan_cm108_pin")
+    @classmethod
+    def _fan_pin_not_ptt(cls, pin: Optional[int]) -> Optional[int]:
+        if pin == 3:
+            raise ValueError("GPIO3 is the CM108's PTT pin")
+        return pin
 
 
 class AutopatchDialRequest(BaseModel):
@@ -974,7 +995,7 @@ class AllStarStatusResponse(BaseModel):
 class GpioPinStatus(BaseModel):
     pin: int
     name: str
-    mode: Optional[Literal["output", "input"]]
+    mode: Optional[Literal["output", "input", "fan"]]
     on: Optional[bool]
     until: Optional[datetime] = None  # a scheduled output's switch-off, local time
 
@@ -985,11 +1006,22 @@ class GpioScheduleStatus(BaseModel):
     until: Optional[datetime]
 
 
+class FanStatus(BaseModel):
+    output: FanOutput
+    pin: Optional[int]
+    on: Optional[bool]
+    reason: Optional[Literal["transmitting", "run-on", "hot"]]
+    run_on_left: Optional[float]  # seconds
+    temperature_c: Optional[float]
+    error: Optional[str]
+
+
 class GpioStatusResponse(BaseModel):
     available: bool
     error: Optional[str]
     pins: list[GpioPinStatus]
     schedules: list[GpioScheduleStatus] = []
+    fan: Optional[FanStatus] = None
 
 
 class GpioOutputRequest(BaseModel):

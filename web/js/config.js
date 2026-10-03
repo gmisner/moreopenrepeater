@@ -25,6 +25,7 @@ const CLEARABLE_FIELDS = new Set([
   "aprs_frequency_mhz",
   "aprs_offset_mhz",
   "aprs_tone_hz",
+  "fan_temp_c",
 ]);
 
 const configForms = [...document.querySelectorAll("[data-config-form]")];

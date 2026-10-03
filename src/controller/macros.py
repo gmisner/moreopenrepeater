@@ -29,12 +29,15 @@ CODE_TIMEOUT = 15.0  # seconds to key the code after the macro, as it's read off
 #   net_start / net_end      start or end net mode (api.net)
 #   link_radio_on / link_radio_off   connect or disconnect the link radio (api.link_radio)
 #   homeassistant call a Home Assistant webhook `<id>`, or fire `event:<type>` (api.homeassistant)
+#   help          read out the macros (controller.spoken_help); `<page>` is optional
 MacroAction = Literal[
     "link", "time", "weather", "id", "announcement", "say", "parrot", "tx_disable", "tx_enable", "aprs", "gpio",
-    "lockout_clear", "net_start", "net_end", "homeassistant", "link_radio_on", "link_radio_off",
+    "lockout_clear", "net_start", "net_end", "homeassistant", "link_radio_on", "link_radio_off", "help",
 ]
 MACRO_ACTIONS: tuple[str, ...] = get_args(MacroAction)
 ACTIONS_NEEDING_ARGUMENT = frozenset({"link", "announcement", "say", "gpio", "homeassistant"})
+# Left out of spoken help unless a macro says otherwise: switches a passer-by shouldn't learn.
+HIDDEN_FROM_HELP_ACTIONS = frozenset({"tx_disable", "tx_enable", "link_radio_on", "link_radio_off"})
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,13 @@ class Macro:
     node_id: str = ""
     action: MacroAction = "link"
     needs_code: bool = False  # followed by a one-time code from an authenticator app (api.control_codes)
+    help_hidden: Optional[bool] = None  # None: hidden if it's a sensitive action or needs a code
+
+    @property
+    def hidden_from_help(self) -> bool:
+        if self.help_hidden is not None:
+            return self.help_hidden
+        return self.needs_code or self.action in HIDDEN_FROM_HELP_ACTIONS
 
     def build_command(self) -> ControllerCommand:
         if self.action == "link":

@@ -286,7 +286,7 @@ def _config_response(service: RepeaterService) -> ConfigResponse:
 
 
 def _macro_response(macro: Macro) -> MacroResponse:
-    return MacroResponse(**dataclasses.asdict(macro))
+    return MacroResponse(**{**dataclasses.asdict(macro), "help_hidden": macro.hidden_from_help})
 
 
 def _asset_response(asset) -> AssetResponse:

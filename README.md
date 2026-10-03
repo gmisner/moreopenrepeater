@@ -289,6 +289,11 @@ several phases (see the plan file for the full breakdown):
   stations are nearby, turn the transmitter off and on (with a PIN in the macro
   code or a one-time code), or switch a CM108 GPIO output. The tones are muted from
   everything that goes out (on by default), so a code can't be copied off the air.
+- **Spoken help**: a help macro reads out each macro's digits and description, plus
+  the phone patch and mailbox codes when they're on. The transmitter and link radio
+  switches and anything needing a code are left out unless a macro's "Hide from
+  spoken help" box is cleared. A long list is read in pages of 8 when there's a help
+  macro for the next page (for example `*0` with no page and `*02` for page 2).
 - **Squelch-tail removal and transmit delay**: cut the receiver's noise burst from
   the end of each transmission, and key up a moment before any audio for a slow
   transmitter.

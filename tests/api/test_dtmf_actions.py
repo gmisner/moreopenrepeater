@@ -81,6 +81,26 @@ def test_say_id_and_announcement_macros():
     assert service.controller.queued_announcements == ["tts:Club meeting Thursday", "id", "tts:Net tonight"]
 
 
+def test_help_macro_reads_the_commands():
+    service, _ = make_service(
+        [Macro("*0", "", action="help"), Macro("*1", "time", action="time"), Macro("*99", "off", action="tx_disable")]
+    )
+    dial(service, "*0")
+    assert service.controller.queued_announcements == ["tts:Repeater commands. star one, time."]
+
+
+def test_help_hidden_round_trips_through_the_api():
+    service, _ = make_service([])
+    tmp = Path(tempfile.mkdtemp())
+    client = TestClient(create_app(service=service, start_background_tick=False, log_path=tmp / "t.log"))
+    macros = client.post("/api/macros", json={"pattern": "*99", "action": "tx_disable", "command": ""}).json()
+    assert macros[0]["help_hidden"] is True
+    macros = client.post("/api/macros", json={"pattern": "*99", "action": "tx_disable", "command": "", "help_hidden": False}).json()
+    assert macros[0]["help_hidden"] is False
+    assert client.post("/api/macros", json={"pattern": "*0", "action": "help", "command": "two"}).status_code == 422
+    assert client.post("/api/macros", json={"pattern": "*02", "action": "help", "command": "2"}).status_code == 200
+
+
 def test_transmitter_disable_stops_repeating_and_enable_restores_it():
     service, clock = make_service(
         [Macro("*99123", "off", action="tx_disable"), Macro("*99456", "on", action="tx_enable")]

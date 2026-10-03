@@ -342,6 +342,11 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 .code-setup { display: flex; gap: var(--space-5); align-items: flex-start; flex-wrap: wrap; margin-top: var(--space-4); }
 .code-setup > div:last-child { flex: 1; min-width: 16rem; }
 .code-qr svg { display: block; border-radius: var(--radius-sm); }
+.token-created { margin: var(--space-4) 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--amber); border-radius: var(--radius-sm); background: var(--amber-soft); }
+.token-created p { margin: 0 0 var(--space-2); }
+.token-secret { display: flex; gap: var(--space-2); align-items: center; }
+.token-secret code { flex: 1; min-width: 0; overflow-wrap: anywhere; user-select: all; }
+#tokens-card .inline-form { margin-top: var(--space-4); }
 .public-state { margin: var(--space-5) 0 var(--space-3); }
 .public-card #public-audio { margin-top: var(--space-5); }
 .public-user { margin-top: var(--space-5); display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }

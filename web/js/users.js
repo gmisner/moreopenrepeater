@@ -1,7 +1,7 @@
 import { api } from "./api.js";
 import { currentView, router } from "./router.js";
 import { session } from "./session.js";
-import { escapeHtml, toast, toastError, withBusy } from "./ui.js";
+import { escapeHtml, formatTimestamp, toast, toastError, withBusy } from "./ui.js";
 
 const ROLES = ["admin", "operator", "viewer", "listener"];
 const ROLE_LABELS = { admin: "Admin", operator: "Operator", viewer: "Viewer", listener: "Listener" };
@@ -9,6 +9,12 @@ const ROLE_LABELS = { admin: "Admin", operator: "Operator", viewer: "Viewer", li
 const tbody = document.getElementById("users-tbody");
 const form = document.getElementById("user-form");
 const authOffNote = document.getElementById("users-auth-off");
+const tokensTable = document.getElementById("tokens-table");
+const tokensBody = document.getElementById("tokens-tbody");
+const tokenForm = document.getElementById("token-form");
+const tokenUser = document.getElementById("token-user");
+const tokenCreated = document.getElementById("token-created");
+const tokenValue = document.getElementById("token-value");
 
 function roleSelect(user) {
   const options = ROLES.map(
@@ -18,6 +24,12 @@ function roleSelect(user) {
 }
 
 function render(users) {
+  const selected = tokenUser.value || session?.username;
+  tokenUser.innerHTML = users
+    .filter((u) => u.role !== "listener")
+    .map((u) => `<option value="${escapeHtml(u.username)}">${escapeHtml(u.username)} (${ROLE_LABELS[u.role]})</option>`)
+    .join("");
+  if ([...tokenUser.options].some((o) => o.value === selected)) tokenUser.value = selected;
   tbody.innerHTML = "";
   for (const user of users) {
     const row = document.createElement("tr");
@@ -68,9 +80,38 @@ async function remove(user) {
   }
 }
 
+function renderTokens(tokens) {
+  tokensTable.hidden = tokens.length === 0;
+  tokensBody.innerHTML = "";
+  for (const token of tokens) {
+    const row = document.createElement("tr");
+    const role = token.role ? ROLE_LABELS[token.role] : "user deleted";
+    row.innerHTML = `
+      <td>${escapeHtml(token.name)}</td>
+      <td>${escapeHtml(token.username)} <small class="muted">${role}</small></td>
+      <td>${formatTimestamp(token.created_at)}</td>
+      <td>${token.last_used_at ? formatTimestamp(token.last_used_at) : '<span class="muted">never</span>'}</td>
+      <td class="row-actions"><button type="button" class="btn btn-danger btn-sm" data-revoke>Revoke</button></td>`;
+    row.querySelector("[data-revoke]").addEventListener("click", () => revoke(token));
+    tokensBody.appendChild(row);
+  }
+}
+
+async function revoke(token) {
+  if (!confirm(`Revoke "${token.name}"? Anything using it stops working immediately.`)) return;
+  try {
+    renderTokens(await api(`/api/tokens/${encodeURIComponent(token.id)}`, { method: "DELETE" }));
+    toast(`Revoked ${token.name}`);
+  } catch (error) {
+    toastError(error);
+  }
+}
+
 async function load() {
   authOffNote.hidden = session?.auth_required !== false;
   render(await api("/api/users"));
+  if (session?.auth_required !== false) renderTokens(await api("/api/tokens"));
+  document.getElementById("tokens-card").hidden = session?.auth_required === false;
 }
 
 export function initUsers() {
@@ -89,7 +130,35 @@ export function initUsers() {
       }
     });
   });
+  tokenForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(tokenForm));
+    withBusy(tokenForm.querySelector("button[type=submit]"), async () => {
+      try {
+        const result = await api("/api/tokens", { method: "POST", json: data });
+        renderTokens(result.tokens);
+        tokenValue.textContent = result.token;
+        tokenCreated.hidden = false;
+        tokenForm.reset();
+        tokenUser.value = data.username;
+      } catch (error) {
+        toastError(error);
+      }
+    });
+  });
+  document.getElementById("token-copy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(tokenValue.textContent);
+      toast("Token copied");
+    } catch {
+      getSelection().selectAllChildren(tokenValue);
+    }
+  });
   router.addEventListener("change", ({ detail }) => {
+    if (detail !== "users") {
+      tokenCreated.hidden = true;
+      tokenValue.textContent = "";
+    }
     if (detail === "users") load().catch(toastError);
   });
   if (currentView === "users") load().catch(toastError);

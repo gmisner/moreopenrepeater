@@ -2,6 +2,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
 from api.app import create_app
@@ -385,3 +386,27 @@ def test_simplex_node_hears_a_local_user_without_transmitting():
     assert len(engines) == 1
     assert engine.processor.settings.local_repeat is True
     assert service.ptt_active is True
+
+
+def test_each_receiver_opening_is_logged_and_listed_newest_first(caplog):
+    live, service, clock, _engines = make_live()
+    clock["now"] = 1000.0
+    live._clock = lambda: clock["now"]
+
+    with caplog.at_level("INFO", logger="moreopenrepeater.receiver"):
+        feed(live.engine, tone(blocks=25, hz=1000.0))
+        feed(live.engine, tone(level=0.0, blocks=10))
+        feed(live.engine, tone(blocks=5, hz=700.0))
+        feed(live.engine, tone(level=0.0, blocks=10))
+
+    assert len(live.openings) == 2
+    first = live.openings[0]
+    assert first["strongest_hz"] == pytest.approx(1000, abs=10) and first["tone_share"] > 0.9
+    assert first["started_at"] == pytest.approx(1000.0 - first["duration"])
+    logged = [r.getMessage() for r in caplog.records if r.name == "moreopenrepeater.receiver"]
+    assert "strongest 1000 Hz" in logged[0] and "while the repeater was transmitting" in logged[1]
+
+    tmp = Path(tempfile.mkdtemp())
+    client = TestClient(create_app(service=service, live_audio=live, start_background_tick=False, log_path=tmp / "t.log"))
+    listed = client.get("/api/audio/openings").json()
+    assert [round(o["strongest_hz"], -1) for o in listed] == [700, 1000]

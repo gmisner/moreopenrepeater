@@ -194,6 +194,49 @@ async function saveCurrentLevels(button) {
   loadLevels();
 }
 
+const openingsBody = document.getElementById("openings-tbody");
+const openingsEmpty = document.getElementById("openings-empty");
+const OPENINGS_POLL_MS = 3000;
+
+function openingNotes(opening) {
+  const notes = [];
+  if (opening.dtmf_digits) notes.push(`DTMF ${opening.dtmf_digits}`);
+  if (opening.after_tx === 0) notes.push("while transmitting");
+  else if (opening.after_tx != null) notes.push(`${opening.after_tx.toFixed(1)} s after unkey`);
+  return notes.join(" · ");
+}
+
+function renderOpenings(openings) {
+  openingsEmpty.hidden = openings.length > 0;
+  openingsBody.innerHTML = openings
+    .map((o, i) => {
+      const older = openings[i + 1];
+      const gap = older ? `${(o.started_at - older.started_at).toFixed(1)} s` : "";
+      const strongest = o.strongest_hz == null ? "–" : `${o.strongest_hz.toFixed(0)} Hz · ${Math.round(o.tone_share * 100)}%`;
+      return `<tr>
+        <td>${new Date(o.started_at * 1000).toLocaleTimeString()}</td>
+        <td>${o.duration.toFixed(1)} s</td>
+        <td>${gap}</td>
+        <td>${o.open_db.toFixed(0)} / ${o.peak_db.toFixed(0)} dBFS</td>
+        <td>${strongest}</td>
+        <td>${o.ctcss_hz == null ? "–" : `${o.ctcss_hz} Hz`}</td>
+        <td>${escapeHtml(openingNotes(o))}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
+async function pollOpenings() {
+  if (currentView === "audio" && !document.hidden) {
+    try {
+      renderOpenings(await api("/api/audio/openings"));
+    } catch {
+      // The next poll will retry.
+    }
+  }
+  setTimeout(pollOpenings, OPENINGS_POLL_MS);
+}
+
 async function poll() {
   if (currentView === "audio" && !document.hidden) {
     try {
@@ -238,4 +281,5 @@ export function initAudio() {
     loadLevels();
   }
   poll();
+  pollOpenings();
 }

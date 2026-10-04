@@ -22,7 +22,7 @@ from __future__ import annotations
 import collections
 import math
 from dataclasses import dataclass, field
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional
 
 import numpy as np
 
@@ -31,6 +31,7 @@ from dsp.emphasis import emphasis_kernel
 from dsp.goertzel import CTCSSDetector, DTMFDetector, ToneBurstDetector
 from playout.wav import lowpass_kernel
 
+from .openings import OpeningTracker, ReceiverOpening
 from .patch import LinkAudio, PatchAudio
 from .resample import StreamFIR
 
@@ -45,6 +46,7 @@ _CTCSS_ANALYZE_EVERY_BLOCKS = 5  # CTCSS needs a 1 s window anyway; ~100 ms deci
 # hold its first few milliseconds: three blocks of delay mute it all.
 _DTMF_MUTE_BLOCKS = 3
 _DTMF_MUTE_HANG_BLOCKS = 2  # the tones' tail, and the gap before a next digit
+_AFTER_TX_LIMIT_SECONDS = 60.0
 
 
 @dataclass
@@ -151,6 +153,10 @@ class AudioProcessor:
         self._quiet_after_digit = False
         self._was_keyed = False
         self._lead_blocks = 0
+        self._samples_since_tx: Optional[int] = None
+        self._opening = OpeningTracker(settings.sample_rate)
+        # Called on the audio thread when the carrier drops.
+        self.on_opening: Optional[Callable[[ReceiverOpening], None]] = None
 
     @property
     def repeating_voice(self) -> bool:
@@ -220,8 +226,12 @@ class AudioProcessor:
         if cos != self.cos_open:
             self.cos_open = cos
             events.append(COSChanged(active=cos))
-            if not cos:
+            if cos:
+                self._opening.start(self.rx_level_db, self._after_tx())
+            else:
                 self._delay.mute_last(self._tail_blocks(len(block)))
+                if self.on_opening is not None:
+                    self.on_opening(self._opening.finish())
 
         digit = self._dtmf.process(block) if self.cos_open else None
         if digit is not None:
@@ -230,6 +240,8 @@ class AudioProcessor:
             self._blocks_since_digit = 0
         else:
             self._blocks_since_digit += 1
+        if self.cos_open:
+            self._opening.feed(block, self.rx_level_db, self.ctcss_hz, digit)
         self._mute_dtmf(digit)
         if self._detect_burst(block):
             events.append(ToneBurst())
@@ -267,6 +279,10 @@ class AudioProcessor:
         # A clip keeps the transmitter keyed until it finishes, even if the
         # controller already dropped PTT (e.g. the timeout tone).
         transmitting = self._ptt or self.playing
+        if transmitting:
+            self._samples_since_tx = 0
+        elif self._samples_since_tx is not None:
+            self._samples_since_tx += len(block)
         if transmitting and not self._was_keyed:
             self._lead_blocks = math.ceil(self.settings.tx_delay_ms / 1000 * self.settings.sample_rate / len(block) - 1e-9)
         self._was_keyed = transmitting
@@ -286,6 +302,14 @@ class AudioProcessor:
             out += self._ctcss_tone(encode_hz, len(block))
         np.clip(out, -1.0, 1.0, out=out)
         return ProcessResult(out=out, transmitting=transmitting, events=events)
+
+    def _after_tx(self) -> Optional[float]:
+        if self._was_keyed:
+            return 0.0
+        if self._samples_since_tx is None:
+            return None
+        seconds = self._samples_since_tx / self.settings.sample_rate
+        return seconds if seconds < _AFTER_TX_LIMIT_SECONDS else None
 
     def _tail_blocks(self, n: int) -> int:
         return math.ceil(self.settings.squelch_tail_ms / 1000 * self.settings.sample_rate / n - 1e-9)

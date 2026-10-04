@@ -21,6 +21,8 @@ while the engine runs.
 from __future__ import annotations
 
 import asyncio
+import collections
+import dataclasses
 import logging
 import subprocess
 import time
@@ -31,6 +33,7 @@ import numpy as np
 from audio_io.audio_stream import sd
 from audio_io.cm108 import CM108Interface, LinuxHidrawDevice, find_interfaces
 from audio_io.engine import AudioEngine
+from audio_io.openings import ReceiverOpening
 from audio_io.patch import LinkAudio, PatchAudio
 from audio_io.pi_gpio import GpioLine, open_header_pin
 from audio_io.processor import AudioProcessor, ProcessorSettings
@@ -47,6 +50,8 @@ from .recordings import RecordingStore
 from .service import RepeaterService
 
 _logger = logging.getLogger("moreopenrepeater.audio")
+_receiver_logger = logging.getLogger("moreopenrepeater.receiver")
+OPENINGS_KEPT = 200
 
 BLOCK_SECONDS = 0.02
 MIN_RECORDING_SECONDS = 1.0  # shorter captures are kerchunks, not worth keeping
@@ -74,6 +79,20 @@ _LIVE_FIELDS = (
     "vox_threshold_db", "vox_hold", "vox_dtmf_hold", "tx_gain_db", "tx_ctcss_hz", "tx_ctcss_level_db", "squelch_tail_ms", "tx_delay_ms",
     "dtmf_mute", "rx_deemphasis", "tx_preemphasis",
 )
+
+
+def describe_opening(opening: ReceiverOpening) -> str:
+    parts = [f"{opening.duration:.1f} s", f"opened at {opening.open_db:.0f} dBFS", f"peak {opening.peak_db:.0f} dBFS"]
+    if opening.strongest_hz is not None:
+        parts.append(f"strongest {opening.strongest_hz:.0f} Hz ({opening.tone_share:.0%} of the audio)")
+    parts.append(f"CTCSS {opening.ctcss_hz:g} Hz" if opening.ctcss_hz is not None else "no CTCSS")
+    if opening.dtmf_digits:
+        parts.append(f"DTMF {opening.dtmf_digits}")
+    if opening.after_tx == 0.0:
+        parts.append("while the repeater was transmitting")
+    elif opening.after_tx is not None:
+        parts.append(f"{opening.after_tx:.1f} s after the repeater unkeyed")
+    return ", ".join(parts)
 
 
 def _tone_burst_ms(config) -> Optional[float]:
@@ -187,6 +206,8 @@ class LiveAudio:
         self._port: Optional[LinkAudio] = None
         self._ptt_output: Optional[Callable[[bool], None]] = None
         self.monitor = AudioMonitor()
+        # Each time the receiver opened, newest last (describe_opening).
+        self.openings: collections.deque[dict] = collections.deque(maxlen=OPENINGS_KEPT)
 
     @property
     def cm108(self) -> Optional[CM108Interface]:
@@ -377,6 +398,15 @@ class LiveAudio:
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self._service.handle_audio_events, events)
 
+    def _on_opening(self, opening: ReceiverOpening) -> None:
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._record_opening, opening)
+
+    def _record_opening(self, opening: ReceiverOpening) -> None:
+        entry = {**dataclasses.asdict(opening), "started_at": self._clock() - opening.duration}
+        self.openings.append(entry)
+        _receiver_logger.info("receiver opened: %s", describe_opening(opening))
+
     def _start_engine(self, config: RepeaterConfig) -> None:
         cos_source = config.cos_source
         if cos_source == "cm108" and self._cm108 is None:
@@ -430,6 +460,7 @@ class LiveAudio:
         processor.set_patch(self._patch)
         processor.set_link(self._link)
         processor.set_port(self._port)
+        processor.on_opening = self._on_opening
         engine = self._engine_factory(
             processor,
             int(rate * BLOCK_SECONDS),

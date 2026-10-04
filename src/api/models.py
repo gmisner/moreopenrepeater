@@ -1211,6 +1211,18 @@ class EchoLinkStatusResponse(BaseModel):
     settings: Optional[EchoLinkStationInfo]
 
 
+class ReceiverOpeningResponse(BaseModel):
+    started_at: float
+    duration: float
+    open_db: float
+    peak_db: float
+    strongest_hz: Optional[float]
+    tone_share: float
+    ctcss_hz: Optional[float]
+    dtmf_digits: str
+    after_tx: Optional[float]  # 0 = while the repeater was transmitting; None = not in the last minute
+
+
 class AudioEngineResponse(BaseModel):
     enabled: bool
     running: bool

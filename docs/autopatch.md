@@ -107,8 +107,9 @@ sections in the file are left alone, but Asterisk removes the file's
 comments when it saves it -- on ASL3, that's all of the stock file, which is
 only commented-out samples. The SIP password is stored there and never shown
 on the dashboard. ASL3 leaves the file readable by every user on the
-machine; if others can log in, `sudo chmod 640 /etc/asterisk/pjsip.conf`
-(Asterisk keeps that when it saves). Only admins can change the phone line,
+machine; `install-pi.sh --allstar` closes that, and on an Asterisk set up
+otherwise, `sudo chmod 640 /etc/asterisk/pjsip.conf` does (Asterisk keeps
+that when it saves). Only admins can change the phone line,
 and not during a call.
 
 ### 4. Turn autopatch on

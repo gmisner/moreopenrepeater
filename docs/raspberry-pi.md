@@ -22,7 +22,10 @@ after `-s --`, following `bash`:
 - `--allstar` also installs AllStarLink (ASL3) from its apt repository, for
   linking and autopatch. It gives the controller an AMI login of its own
   (usable only from the Pi) and lets it edit the node's settings; see
-  [allstar.md](allstar.md). Then set up the node with `sudo asl-menu` and
+  [allstar.md](allstar.md). On a new ASL3 it also turns off ASL3's USB radio
+  drivers (`chan_simpleusb`, `chan_usbradio`), which would otherwise open the
+  controller's sound card, and it keeps `manager.conf` and `pjsip.conf`
+  (AMI logins, the phone line's SIP password) from other users. Then set up the node with `sudo asl-menu` and
   choose it on the dashboard's **AllStarLink** page. EchoLink is turned on
   from the same page.
 - `--protect-sd` keeps the logs in memory to spare the SD card, and

@@ -86,6 +86,21 @@ def test_slow_digits_time_out():
     assert dial(dialer, "11#", now=10.1) == []
 
 
+def test_a_pause_after_the_number_dials_it():
+    dialer = AutopatchDialer(interdigit_timeout=5.0)
+    dial(dialer, "*64809008111")
+    assert dialer.tick(5.0, "*6") is None
+    assert dialer.tick(6.2, "*6") == DialPatch("4809008111")
+    assert dialer.carrier_dropped("*6") is None  # already dialed
+
+
+def test_a_pause_after_just_the_access_code_does_nothing():
+    dialer = AutopatchDialer(interdigit_timeout=5.0)
+    dial(dialer, "*6")
+    assert dialer.tick(6.0, "*6") is None
+    assert dialer.carrier_dropped("*6") is None
+
+
 def test_hangup_code_only_works_during_a_call():
     dialer = AutopatchDialer()
     assert dial(dialer, "#") == []
@@ -126,6 +141,16 @@ def test_controller_dials_on_unkey():
     commands = c.handle_event(COSChanged(False), 2.0)
     assert PlayAudio("courtesy_tone") in commands
     assert DialPatch("911") in commands
+
+
+def test_controller_dials_when_the_user_stays_keyed_after_the_number():
+    c = controller()
+    c.handle_event(COSChanged(True), 1.0)
+    for d in "*6911":
+        c.handle_event(DTMFDigit(d), 1.5)
+    assert DialPatch("911") not in c.tick(6.0)
+    assert DialPatch("911") in c.tick(6.6)
+    assert DialPatch("911") not in c.handle_event(COSChanged(False), 15.0)
 
 
 def test_patch_holds_the_transmitter_through_unkeys():

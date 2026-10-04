@@ -1,7 +1,8 @@
 # Autopatch
 
 Autopatch lets repeater users place phone calls over the air. A user keys
-up, sends the access code and the number, and unkeys (or ends with `#`):
+up, sends the access code and the number, and unkeys (or ends with `#`, or
+waits 5 seconds):
 
     *6 8605551234 #
 

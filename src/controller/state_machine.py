@@ -552,7 +552,9 @@ class RepeaterController:
                 commands += self._finish_announcement(now)
 
         self._dtmf.tick(now)
-        self._patch_dialer.tick(now)
+        patch_command = self._patch_dialer.tick(now, self.config.autopatch_access_code)
+        if patch_command is not None and self.config.autopatch_enabled:
+            commands.append(patch_command)
         self._mailbox_dialer.tick(now)
 
         if not self.config.transmitter_enabled:

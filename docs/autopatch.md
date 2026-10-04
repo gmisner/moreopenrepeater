@@ -53,7 +53,7 @@ needs. A login of your own needs at least:
 [moreopenrepeater]
 secret = a-long-random-secret
 read = call,config,system
-write = call,config,system,originate
+write = call,config,system,originate,command
 ```
 
 ### 2. Turn on SIP
@@ -87,7 +87,10 @@ For another provider, choose **Other** and use its Asterisk (PJSIP) guide.
 911 and other short codes always go out as dialed.
 
 **Save phone line** writes it to Asterisk and points autopatch at it (the
-dial string becomes `PJSIP/{number}@mor-trunk`). The card then shows
+dial string becomes `PJSIP/{number}@mor-trunk`). The first save (and the
+first over a protocol without a transport yet) also restarts Asterisk, which drops AllStar
+links for a few seconds: Asterisk's SIP only looks up servers over the
+transports it had when it started. The card then shows
 whether the provider accepted the registration:
 
 - **Registered**: ready for calls.

@@ -8,7 +8,8 @@ without file access to /etc/asterisk (or with Asterisk on another host):
     modules.conf with UpdateConfig so they load at startup too. ASL3 ships
     with `autoload = no` and PJSIP and RTP not loaded.
   * The trunk is a set of `mor-trunk*` sections in pjsip.conf, written with
-    UpdateConfig and applied with a res_pjsip reload. Other sections are
+    UpdateConfig and applied with a res_pjsip reload, or an Asterisk restart
+    when it needs a transport of its own. Other sections are
     left alone. AMI has no way to add an `#include`, so the sections can't
     live in a file of their own, and Asterisk drops comments that aren't
     attached to a section when it saves -- which is all of ASL3's stock
@@ -44,6 +45,7 @@ _REGISTRATION = "mor-trunk-reg"
 _IDENTIFY = "mor-trunk-identify"
 TRUNK_SECTIONS = (ENDPOINT, _AUTH, _AOR, _REGISTRATION, _IDENTIFY)
 DIALPLAN_FILES = ("custom/extensions.conf", "extensions.conf")
+RESTART_TIMEOUT = 90.0  # seconds; a Pi 3 takes about 20
 
 # Where providers send calls from, when that isn't the server's own address
 # (www.twilio.com/docs/sip-trunking/ip-addresses, "Regional signaling").
@@ -302,39 +304,49 @@ class SipTrunk:
                 )
 
     async def save(self, trunk: TrunkSettings) -> None:
-        async with self._lock, self._ami() as ami:
-            if set(SIP_MODULES) & set(await self._missing_modules(ami)):
-                raise AsteriskSetupError("Turn on SIP in Asterisk first.")
-            sections = await self._read(ami, "pjsip.conf", create=True)
-            existing = {name: lines for name, lines in sections if name in TRUNK_SECTIONS}
-            password = trunk.password or _get(existing.get(_AUTH, []), "password")
-            if not password:
-                raise AsteriskSetupError("Enter the SIP password.")
-            edits = _Edits()
-            for name in existing:
-                edits.add("DelCat", name)
-            transport = next(
-                (
-                    name
-                    for name, lines in sections
-                    if _get(lines, "type") == "transport" and _get(lines, "protocol", "udp") == trunk.transport
-                ),
-                None,
-            )
-            if transport is None:
-                # A new transport starts on reload, but changing one needs an
-                # Asterisk restart, so it's never rewritten once it exists.
-                transport = f"mor-transport-{trunk.transport}"
-                edits.section(transport, [("type", "transport"), ("protocol", trunk.transport), ("bind", "0.0.0.0")])
-            for name, options in trunk_sections(trunk, transport, password):
-                edits.section(name, options)
-            await self._update(ami, "pjsip.conf", edits)
-            await self._reload_pjsip(ami)
-            if trunk.registers:
-                # A rejected registration stops retrying, and a reload that
-                # leaves its section unchanged doesn't restart it.
-                await self._require(ami, {"Action": "PJSIPRegister", "Registration": _REGISTRATION})
-            await self._write_dialplan(ami)
+        async with self._lock:
+            async with self._ami() as ami:
+                if set(SIP_MODULES) & set(await self._missing_modules(ami)):
+                    raise AsteriskSetupError("Turn on SIP in Asterisk first.")
+                sections = await self._read(ami, "pjsip.conf", create=True)
+                existing = {name: lines for name, lines in sections if name in TRUNK_SECTIONS}
+                password = trunk.password or _get(existing.get(_AUTH, []), "password")
+                if not password:
+                    raise AsteriskSetupError("Enter the SIP password.")
+                edits = _Edits()
+                for name in existing:
+                    edits.add("DelCat", name)
+                transport = next(
+                    (
+                        name
+                        for name, lines in sections
+                        if _get(lines, "type") == "transport" and _get(lines, "protocol", "udp") == trunk.transport
+                    ),
+                    None,
+                )
+                new_transport = transport is None
+                if new_transport:
+                    # Changing a transport needs an Asterisk restart, so it's
+                    # never rewritten once it exists.
+                    transport = f"mor-transport-{trunk.transport}"
+                    edits.section(transport, [("type", "transport"), ("protocol", trunk.transport), ("bind", "0.0.0.0")])
+                for name, options in trunk_sections(trunk, transport, password):
+                    edits.section(name, options)
+                await self._update(ami, "pjsip.conf", edits)
+                await self._write_dialplan(ami)
+                if not new_transport:
+                    await self._reload_pjsip(ami)
+                    if trunk.registers:
+                        # A rejected registration stops retrying, and a reload that
+                        # leaves its section unchanged doesn't restart it.
+                        await self._require(ami, {"Action": "PJSIPRegister", "Registration": _REGISTRATION})
+                    return
+                # PJSIP's resolver only uses the transports res_pjsip found
+                # when it loaded: on a reload, the trunk couldn't look up its
+                # server until Asterisk restarted.
+                started = await self._startup_time(ami)
+                await self._restart(ami)
+            await self._wait_for_restart(started)
 
     async def remove(self) -> None:
         async with self._lock, self._ami() as ami:
@@ -473,6 +485,36 @@ class SipTrunk:
 
     async def _reload_pjsip(self, ami: AMIClient) -> None:
         await self._require(ami, {"Action": "ModuleLoad", "LoadType": "reload", "Module": "res_pjsip.so"})
+
+    async def _startup_time(self, ami: AMIClient) -> str:
+        response = await self._require(ami, {"Action": "CoreStatus"})
+        return f"{response.get('CoreStartupDate')} {response.get('CoreStartupTime')}"
+
+    async def _restart(self, ami: AMIClient) -> None:
+        """`core restart now`. Asterisk closes AMI without answering once it's going down."""
+        try:
+            response = await self._send(ami, {"Action": "Command", "Command": "core restart now"})
+        except (ConnectionError, OSError):
+            return
+        if response.get("Response") not in ("Success", "Follows"):
+            raise AsteriskSetupError(
+                f"Saved, but Asterisk refused to restart ({response.get('Message')}): restart Asterisk to finish. "
+                "The AMI login needs command permission to do it from here."
+            )
+
+    async def _wait_for_restart(self, started: str) -> None:
+        deadline = asyncio.get_running_loop().time() + RESTART_TIMEOUT
+        while True:
+            try:
+                async with self._ami() as ami:
+                    pjsip = await self._send(ami, {"Action": "ModuleCheck", "Module": "res_pjsip.so"})
+                    if await self._startup_time(ami) != started and pjsip.get("Response") == "Success":
+                        return
+            except AsteriskSetupError:
+                pass
+            if asyncio.get_running_loop().time() >= deadline:
+                raise AsteriskSetupError("Saved, but Asterisk hasn't come back from restarting. Check that it's running.")
+            await asyncio.sleep(1)
 
     async def _list(self, ami: AMIClient, fields: AMIMessage) -> Optional[list[AMIMessage]]:
         return await ami_list(ami, fields)

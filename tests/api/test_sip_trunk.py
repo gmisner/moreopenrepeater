@@ -43,6 +43,8 @@ class FakeAsterisk:
         self.contact = contact
         self.actions = []
         self.reloads = 0
+        self.restarts = 0
+        self.can_restart = True
 
     def client(self, *args):
         return FakeAMI(self)
@@ -113,6 +115,13 @@ class FakeAMI:
             return ok
         if action == "PJSIPRegister":
             return ok
+        if action == "CoreStatus":
+            return {**ok, "CoreStartupDate": "2026-10-04", "CoreStartupTime": f"10:00:{a.restarts:02d}"}
+        if action == "Command" and fields["Command"] == "core restart now":
+            if not a.can_restart:
+                return {"Response": "Error", "Message": "Permission denied"}
+            a.restarts += 1
+            raise ConnectionResetError("Asterisk closed the connection")
         if action == "PJSIPShowRegistrationsOutbound":
             regs = [n for n, lines in a.files["pjsip.conf"] if ("type", "registration") in lines]
             for name in regs:
@@ -223,8 +232,6 @@ def test_save_writes_the_trunk_and_keeps_other_sections():
     assert section(asterisk, "mor-trunk-aor")["contact"] == "sip:chicago.voip.ms:5080"
     assert section(asterisk, "mor-trunk-reg")["client_uri"] == "sip:123456_rpt@chicago.voip.ms:5080"
     assert section(asterisk, "mor-trunk")["transport"] == "mor-transport-udp"
-    assert asterisk.reloads == 1
-    assert any(a["Action"] == "PJSIPRegister" for a in asterisk.actions)
     updates = [a for a in asterisk.actions if a["Action"] == "UpdateConfig"]
     assert len(updates) > 1  # split under Asterisk's header limit
 
@@ -259,6 +266,33 @@ def test_resaving_replaces_the_trunk_keeps_the_password_and_reuses_the_transport
     status = run(trunk.status())
     assert status["trunk"]["registers"] is False and status["registration"] is None
     assert (status["trunk"]["username"], status["trunk"]["auth_username"]) == ("bob-auth", "")
+    assert (asterisk.reloads, asterisk.restarts) == (2, 0)
+    assert any(a["Action"] == "PJSIPRegister" for a in asterisk.actions)
+
+
+def test_a_new_transport_restarts_asterisk():
+    """PJSIP's resolver only uses the transports res_pjsip found when it
+    loaded, so a trunk on a new one couldn't look up its server until a restart."""
+    asterisk = FakeAsterisk(loaded=MODULES)
+    trunk = SipTrunk(SETTINGS, asterisk.client)
+
+    run(trunk.save(TrunkSettings("moreopenrepeater.pstn.twilio.com", "user", "pw", registers=False)))
+
+    assert (asterisk.restarts, asterisk.reloads) == (1, 0)
+    commands = [a["Action"] for a in asterisk.actions]
+    assert commands.index("Command") > max(i for i, c in enumerate(commands) if c == "UpdateConfig")
+    assert commands.count("CoreStatus") >= 2  # waited for it to come back
+    assert run(trunk.status())["trunk"]["server"] == "moreopenrepeater.pstn.twilio.com"
+
+
+def test_a_login_that_cant_restart_asterisk_says_so():
+    asterisk = FakeAsterisk(loaded=MODULES)
+    asterisk.can_restart = False
+
+    with pytest.raises(AsteriskSetupError, match="restart Asterisk"):
+        run(SipTrunk(SETTINGS, asterisk.client).save(TrunkSettings("sip.telnyx.com", "alice", "pw")))
+
+    assert "mor-trunk" in [name for name, _ in asterisk.files["pjsip.conf"]]
 
 
 def test_tcp_goes_into_the_uris():

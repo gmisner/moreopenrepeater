@@ -76,15 +76,28 @@ def test_dtmf_digits_are_reported_while_carrier_is_up():
     assert [e.digit for e in events if isinstance(e, DTMFDigit)] == ["5", "#"]
 
 
-def test_quiet_dtmf_from_a_handheld_is_reported():
-    """Levels measured from a handheld's speaker jack into a CM108: VOX at
-    -55 dB, a star at 941 Hz 0.052 and 1209 Hz 0.032."""
+@pytest.mark.parametrize(
+    "digit, row_hz, row_amplitude, col_amplitude",
+    [("*", 941, 0.052, 0.032), ("*", 941, 0.011, 0.006), ("1", 697, 0.013, 0.004)],
+)
+def test_quiet_dtmf_from_a_handheld_is_reported(digit, row_hz, row_amplitude, col_amplitude):
+    """Levels measured from a handheld's speaker jack into a CM108 with VOX at -55 dB."""
     p = AudioProcessor(ProcessorSettings(RATE, vox_threshold_db=-55))
-    star = tone(941, 1.0, amplitude=0.052) + tone(1209, 1.0, amplitude=0.032)
+    pair = tone(row_hz, 1.0, amplitude=row_amplitude) + tone(1209, 1.0, amplitude=col_amplitude)
 
-    _, events = run(p, star)
+    _, events = run(p, pair)
 
-    assert [e.digit for e in events if isinstance(e, DTMFDigit)] == ["*"]
+    assert [e.digit for e in events if isinstance(e, DTMFDigit)] == [digit]
+
+
+def test_receiver_noise_that_opens_vox_is_not_dtmf():
+    p = AudioProcessor(ProcessorSettings(RATE, vox_threshold_db=-55))
+    noise = (np.random.default_rng(5).standard_normal(RATE * 5) * 0.003).astype(np.float32)
+
+    _, events = run(p, noise)
+
+    assert COSChanged(active=True) in events
+    assert not [e for e in events if isinstance(e, DTMFDigit)]
 
 
 def test_receive_audio_is_repeated_only_while_keyed_and_repeating():

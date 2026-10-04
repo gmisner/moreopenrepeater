@@ -194,7 +194,8 @@ class DTMFDetector:
 
     sample_rate: int
     magnitude_threshold: float = 0.3
-    twist_ratio_db: float = 8.0
+    twist_ratio_db: float = 8.0  # how much louder the column (high) tone may be
+    reverse_twist_db: float = 12.0  # how much louder the row tone may be: FM handhelds roll off the high tones
     press_blocks: int = 2
     purity: float = 0.6
     release_blocks: int = 3  # a held key's tones can dip over the air; that isn't a new press
@@ -226,7 +227,7 @@ class DTMFDetector:
             and math.hypot(row_magnitudes[best_row], col_magnitudes[best_col]) >= self.purity * math.sqrt(2) * rms
         ):
             twist_db = 20 * math.log10(col_magnitudes[best_col] / row_magnitudes[best_row])
-            if abs(twist_db) <= self.twist_ratio_db:
+            if -self.reverse_twist_db <= twist_db <= self.twist_ratio_db:
                 row_freq = DTMF_ROW_FREQUENCIES_HZ[best_row]
                 col_freq = DTMF_COL_FREQUENCIES_HZ[best_col]
                 for candidate, freqs in DTMF_FREQUENCIES_BY_DIGIT.items():

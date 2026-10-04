@@ -126,6 +126,26 @@ def test_dtmf_detector_reports_digits_with_a_short_gap():
     assert [r for r in results if r] == ["*", "1"]
 
 
+def test_dtmf_detector_hears_a_one_with_the_high_tone_9_db_down():
+    """A 1 from a handheld over FM, as measured on a Pi: 697 Hz at 0.044, 1209 Hz at 0.015."""
+    signal = _tone_pair(697, 1209, 0.044, 0.015, 16000)
+
+    detector = DTMFDetector(sample_rate=16000, magnitude_threshold=0.01)
+    results = [detector.process(block) for block in _blocks(signal, 320)]
+
+    assert results.count("1") == 1
+
+
+@pytest.mark.parametrize("row_amplitude, col_amplitude", [(0.1, 0.02), (0.02, 0.06)])
+def test_dtmf_detector_rejects_a_pair_too_far_out_of_balance(row_amplitude, col_amplitude):
+    signal = _tone_pair(697, 1209, row_amplitude, col_amplitude, 16000)
+
+    detector = DTMFDetector(sample_rate=16000, magnitude_threshold=0.01)
+    results = [detector.process(block) for block in _blocks(signal, 320)]
+
+    assert all(r is None for r in results)
+
+
 def test_dtmf_detector_ignores_noise_as_loud_as_a_digit():
     rng = np.random.default_rng(seed=3)
     noise = rng.normal(scale=0.05, size=16000 * 5)

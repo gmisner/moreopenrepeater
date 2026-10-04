@@ -1,7 +1,7 @@
 """Autopatch dialing: DTMF digits in, "dial this number" / "hang up" out.
 
-A user sends the access code and the phone number, then `#` or simply
-unkeys:  *6 5551234567 #  dials 5551234567. While a call is up (ringing or
+A user sends the access code and the phone number, then `#`, unkeys, or
+pauses:  *6 5551234567 #  dials 5551234567. While a call is up (ringing or
 connected), the hangup code on its own ends it.
 
 Which numbers may be dialed is a list of patterns in Asterisk's dialplan
@@ -64,7 +64,8 @@ class AutopatchDialer:
         self.call_active = False  # set by whoever places calls; enables the hangup code
 
     def handle_digit(self, digit: str, now: float, access_code: str, hangup_code: str) -> Optional[ControllerCommand]:
-        self.tick(now)
+        if self._expired(now):
+            self.reset()
         self._last_digit_at = now
         self._digits += digit
         if self.call_active:
@@ -85,9 +86,13 @@ class AutopatchDialer:
             return None
         return self._dial(access_code, self._digits)
 
-    def tick(self, now: float) -> None:
-        if self._last_digit_at is not None and now - self._last_digit_at > self._interdigit_timeout:
-            self.reset()
+    def tick(self, now: float, access_code: str) -> Optional[ControllerCommand]:
+        """A pause after the number dials it too: with VOX, a user who stays
+        keyed waiting for the call would otherwise lose the number."""
+        return self.carrier_dropped(access_code) if self._expired(now) else None
+
+    def _expired(self, now: float) -> bool:
+        return self._last_digit_at is not None and now - self._last_digit_at > self._interdigit_timeout
 
     def reset(self) -> None:
         self._digits = ""

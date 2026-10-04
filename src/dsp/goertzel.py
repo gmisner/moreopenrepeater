@@ -197,10 +197,12 @@ class DTMFDetector:
     twist_ratio_db: float = 8.0
     press_blocks: int = 2
     purity: float = 0.6
+    release_blocks: int = 3  # a held key's tones can dip over the air; that isn't a new press
 
     _candidate_digit: Optional[str] = field(default=None, init=False, repr=False)
     _candidate_count: int = field(default=0, init=False, repr=False)
     _last_reported_digit: Optional[str] = field(default=None, init=False, repr=False)
+    _missed_blocks: int = field(default=0, init=False, repr=False)
 
     @property
     def holding(self) -> Optional[str]:
@@ -208,6 +210,8 @@ class DTMFDetector:
         return self._last_reported_digit
 
     def process(self, block: np.ndarray) -> Optional[str]:
+        if np.count_nonzero(block) < 0.75 * len(block):
+            return None  # a sound card filling late input with silence, not a released key
         row_magnitudes = _goertzel_magnitudes(block, self.sample_rate, DTMF_ROW_FREQUENCIES_HZ)
         col_magnitudes = _goertzel_magnitudes(block, self.sample_rate, DTMF_COL_FREQUENCIES_HZ)
 
@@ -230,14 +234,21 @@ class DTMFDetector:
                         digit = candidate
                         break
 
+        if digit is not None and digit == self._last_reported_digit:
+            self._missed_blocks = 0
+            return None  # still holding the same key -- already reported
+
+        if self._last_reported_digit is not None:
+            self._missed_blocks += 1
+            if self._missed_blocks < self.release_blocks:
+                return None
+            self._last_reported_digit = None
+            self._missed_blocks = 0
+
         if digit is None:
             self._candidate_digit = None
             self._candidate_count = 0
-            self._last_reported_digit = None
             return None
-
-        if digit == self._last_reported_digit:
-            return None  # still holding the same key -- already reported
 
         if digit == self._candidate_digit:
             self._candidate_count += 1

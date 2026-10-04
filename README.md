@@ -276,6 +276,8 @@ several phases (see the plan file for the full breakdown):
   A first-run setup wizard and presets for common interface boards (DMK URI,
   USB-RIM Lite, AIOC, the SVXLink boards) set the wiring and mixer levels; see
   [docs/raspberry-pi.md](docs/raspberry-pi.md#setup-wizard-and-interface-boards).
+  The interface's mixer levels are set from the dashboard and kept across
+  reboots and replugs ([sound card levels](docs/raspberry-pi.md#sound-card-levels)).
   [docs/cm108-wiring.md](docs/cm108-wiring.md) turns a plain USB sound dongle into
   an interface. Devices open at whatever rate they support; audio is resampled to
   16 kHz internally. `scripts/benchmark_audio.py` times the per-block work (about 1%

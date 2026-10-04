@@ -2,6 +2,7 @@ import { api } from "./api.js";
 import { refreshFolds } from "./folds.js";
 import { currentView, router } from "./router.js";
 import { store } from "./store.js";
+import { escapeHtml, toast, toastError, withBusy } from "./ui.js";
 
 const POLL_MS = 250;
 // Mirrors dsp/tones.py CTCSS_TONES_HZ.
@@ -124,6 +125,75 @@ async function loadDevices() {
   loadSerialPorts();
 }
 
+const levelsList = document.getElementById("sound-levels-list");
+const levelsNotes = document.getElementById("sound-levels-notes");
+const levelsActions = document.getElementById("sound-levels-actions");
+const SIDE_LABELS = { input: "Receive", output: "Transmit" };
+let levels = [];
+let levelsDevices = "";
+
+function soundLevelText(level) {
+  if (level.db == null) return `${Math.round((100 * (level.value - level.min)) / (level.max - level.min || 1))}%`;
+  return `${level.db > 0 ? "+" : ""}${level.db.toFixed(1)} dB`;
+}
+
+function renderLevels(body) {
+  levels = body.levels;
+  const viewer = document.body.dataset.role === "viewer";
+  levelsList.replaceChildren(
+    ...levels.map((level, index) => {
+      const row = document.createElement("div");
+      row.className = "sound-level";
+      const id = `sound-level-${index}`;
+      row.innerHTML = `
+        <label for="${id}">${SIDE_LABELS[level.side]} <span class="muted small">${escapeHtml(level.control)}, card ${level.card}</span>
+          ${level.saved ? "" : '<span class="tag tag-warn">not saved</span>'}</label>
+        <input type="range" id="${id}" step="1" />
+        <span class="sound-level-value small">${soundLevelText(level)}</span>`;
+      const slider = row.querySelector("input");
+      Object.assign(slider, { min: level.min, max: level.max, value: level.value, disabled: viewer });
+      slider.addEventListener("change", () => setLevel(level, Number(slider.value)));
+      return row;
+    }),
+  );
+  levelsNotes.hidden = !body.notes.length;
+  levelsNotes.textContent = body.notes.join(" ");
+  levelsActions.hidden = viewer || levels.every((level) => level.saved);
+}
+
+async function setLevel(level, value) {
+  try {
+    renderLevels(await api("/api/audio/levels", { method: "PUT", json: { side: level.side, control: level.control, value } }));
+  } catch (error) {
+    toastError(error);
+    loadLevels();
+  }
+}
+
+async function loadLevels() {
+  const config = store.state.config;
+  levelsDevices = `${config?.audio_input_device}\n${config?.audio_output_device}`;
+  try {
+    renderLevels(await api("/api/audio/levels"));
+  } catch (error) {
+    renderLevels({ levels: [], notes: [error.message] });
+  }
+}
+
+async function saveCurrentLevels(button) {
+  await withBusy(button, async () => {
+    try {
+      for (const level of levels.filter((l) => !l.saved)) {
+        await api("/api/audio/levels", { method: "PUT", json: { side: level.side, control: level.control, value: level.value } });
+      }
+      toast("Levels saved");
+    } catch (error) {
+      toastError(error);
+    }
+  });
+  loadLevels();
+}
+
 async function poll() {
   if (currentView === "audio" && !document.hidden) {
     try {
@@ -141,7 +211,12 @@ export function initAudio() {
     renderDeviceSelects();
     renderThreshold();
     renderHardwareFields();
+    const config = store.state.config;
+    if (currentView === "audio" && `${config?.audio_input_device}\n${config?.audio_output_device}` !== levelsDevices) {
+      loadLevels();
+    }
   });
+  document.getElementById("sound-levels-save").addEventListener("click", (event) => saveCurrentLevels(event.currentTarget));
   form.addEventListener("input", () => {
     renderThreshold();
     renderHardwareFields();
@@ -153,8 +228,14 @@ export function initAudio() {
     }),
   );
   router.addEventListener("change", ({ detail }) => {
-    if (detail === "audio") loadDevices();
+    if (detail === "audio") {
+      loadDevices();
+      loadLevels();
+    }
   });
-  if (currentView === "audio") loadDevices();
+  if (currentView === "audio") {
+    loadDevices();
+    loadLevels();
+  }
   poll();
 }

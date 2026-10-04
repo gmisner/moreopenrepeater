@@ -762,6 +762,10 @@ td audio { height: 2rem; width: 14rem; max-width: 100%; }
 .wizard-mixer-results { margin: var(--space-4) 0 0; padding-left: var(--space-5); font-size: var(--text-sm); color: var(--muted); }
 .wizard-error { margin: var(--space-4) 0 0; color: var(--red); font-size: var(--text-md); }
 .wizard-actions { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-6); }
+.sound-levels { display: grid; gap: var(--space-3); margin-bottom: var(--space-3); }
+.sound-level { display: grid; grid-template-columns: minmax(9rem, 12rem) 1fr 6rem; align-items: center; gap: var(--space-3); }
+.sound-level input[type="range"] { width: 100%; accent-color: var(--accent); }
+.sound-level-value { text-align: right; font-variant-numeric: tabular-nums; }
 .board-line { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-4); }
 
 /* ---------- login ---------- */
@@ -871,6 +875,8 @@ body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-ins
   :root { --tabbar-height: calc(3.5rem + env(safe-area-inset-bottom)); }
   html { scroll-padding-top: 4.5rem; scroll-padding-bottom: calc(var(--tabbar-height) + var(--space-4)); }
   .app { grid-template-columns: 1fr; }
+  .sound-level { grid-template-columns: 1fr auto; }
+  .sound-level input[type="range"] { grid-column: 1 / -1; grid-row: 2; }
   .sidebar { position: sticky; z-index: 20; height: auto; gap: 0; padding: var(--space-2) var(--space-4); border-right: none; border-bottom: 1px solid var(--border); }
   .sidebar .station-chip, .sidebar .nav, .sidebar .sidebar-footer { display: none; }
   /* "More" turns the header into a full-screen menu above the tab bar. */

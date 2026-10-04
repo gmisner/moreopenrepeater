@@ -54,6 +54,7 @@ class ProcessorSettings:
     vox_threshold_db: float = -40.0
     vox_attack: float = 0.06  # seconds above threshold before COS opens
     vox_hold: float = 0.4  # seconds below threshold before COS closes
+    vox_dtmf_hold: float = 3.0  # the hold when the quiet follows a DTMF digit: time to press the next key
     tx_gain_db: float = 0.0
     tx_ctcss_hz: Optional[float] = None
     tx_ctcss_level_db: float = -20.0
@@ -146,6 +147,8 @@ class AudioProcessor:
         self._port: Optional[LinkAudio] = None
         self._delay = _DelayLine()
         self._dtmf_hang = 0
+        self._blocks_since_digit = math.inf
+        self._quiet_after_digit = False
         self._was_keyed = False
         self._lead_blocks = 0
 
@@ -223,6 +226,10 @@ class AudioProcessor:
         digit = self._dtmf.process(block) if self.cos_open else None
         if digit is not None:
             events.append(DTMFDigit(digit=digit))
+        if digit is not None or (self.cos_open and self._dtmf.holding is not None):
+            self._blocks_since_digit = 0
+        else:
+            self._blocks_since_digit += 1
         self._mute_dtmf(digit)
         if self._detect_burst(block):
             events.append(ToneBurst())
@@ -343,11 +350,16 @@ class AudioProcessor:
             self._above += block_seconds
             self._below = 0.0
         else:
+            if self._below == 0.0:
+                self._quiet_after_digit = self._blocks_since_digit <= 1
             self._below += block_seconds
             self._above = 0.0
         if not self.cos_open:
             return self._above >= self.settings.vox_attack - 1e-9
-        return self._below < self.settings.vox_hold - 1e-9
+        hold = self.settings.vox_hold
+        if self._quiet_after_digit:
+            hold = max(hold, self.settings.vox_dtmf_hold)
+        return self._below < hold - 1e-9
 
     def _next_clip_samples(self, n: int) -> Optional[np.ndarray]:
         if self._current is None:

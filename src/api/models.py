@@ -282,6 +282,7 @@ class ConfigResponse(BaseModel):
     link_radio_squelch_tail_ms: float = 0.0
     link_radio_tx_delay_ms: float = 0.0
     vox_hold: float
+    vox_dtmf_hold: float
     tx_gain_db: float
     tx_ctcss_hz: Optional[float]
     tx_ctcss_level_db: float
@@ -501,6 +502,7 @@ class ConfigUpdateRequest(BaseModel):
     link_radio_squelch_tail_ms: Optional[float] = Field(default=None, ge=0, le=300)
     link_radio_tx_delay_ms: Optional[float] = Field(default=None, ge=0, le=500)
     vox_hold: Optional[float] = Field(default=None, ge=0, le=5)
+    vox_dtmf_hold: Optional[float] = Field(default=None, ge=0, le=10)
     tx_gain_db: Optional[float] = Field(default=None, ge=-40, le=20)
     tx_ctcss_hz: Optional[float] = Field(default=None, ge=60, le=260)
     clear_tx_ctcss_hz: bool = False

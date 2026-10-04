@@ -39,7 +39,10 @@ Set up both for a complete AllStar node.
 Tested with ASL3 (Asterisk 22.10.1, app_rpt 3.10.5). Set up the node itself
 first (node number, callsign, password) with `sudo asl-menu`, as for any
 ASL3 node. `scripts/install-pi.sh --allstar` installs ASL3 beside the
-controller, and sets up the file permissions and AMI login below.
+controller, and sets up the file permissions and AMI login below. On a new
+ASL3 it also turns off `chan_simpleusb` and `chan_usbradio` right away: the
+placeholder node 1999 that ASL3 comes with would open the controller's sound
+card.
 
 ### From the dashboard
 

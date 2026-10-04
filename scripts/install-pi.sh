@@ -88,6 +88,8 @@ asl_repo_package() {
 
 install_allstar() {
   step "Installing AllStarLink (ASL3)"
+  local fresh=0
+  if ! dpkg -s asl3 >/dev/null 2>&1; then fresh=1; fi
   if ! dpkg -s asl-apt-repos >/dev/null 2>&1; then
     local repo_deb
     repo_deb="$(asl_repo_package)"
@@ -105,6 +107,17 @@ install_allstar() {
   for file in rpt.conf modules.conf echolink.conf; do
     if [ -f "$ASTERISK_DIR/$file" ]; then chmod g+w "$ASTERISK_DIR/$file"; fi
   done
+  # ASL3 leaves these readable by every user: the AMI logins, and the
+  # autopatch phone line's SIP password.
+  for file in manager.conf pjsip.conf; do
+    if [ -f "$ASTERISK_DIR/$file" ]; then chmod o-rwx "$ASTERISK_DIR/$file"; fi
+  done
+  if [ "$fresh" -eq 1 ]; then
+    # A new ASL3's placeholder node 1999 runs on chan_simpleusb, which would
+    # open the controller's CM108. An existing install's drivers are its own.
+    sed -i -E 's/^load([[:space:]]*=>?[[:space:]]*)(chan_simpleusb|chan_usbradio)\.so/noload\1\2.so/' "$ASTERISK_DIR/modules.conf"
+    systemctl restart asterisk
+  fi
 
   # An AMI login of its own, usable only from this machine.
   local manager="$ASTERISK_DIR/manager.conf" secret

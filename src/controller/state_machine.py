@@ -543,7 +543,7 @@ class RepeaterController:
 
         if self._state_deadline is not None and now >= self._state_deadline:
             if self.state == COURTESY_TONE:
-                commands += self._end_simplex_courtesy_tone(now) if self._simplex else self._enter_hang_time(now)
+                commands += self._end_simplex_courtesy_tone(now) if self._simplex else self._end_courtesy_tone(now)
             elif self.state == HANG_TIME:
                 commands += self._enter_idle(now)
             elif self.state == TRANSMITTING_ID:
@@ -660,6 +660,13 @@ class RepeaterController:
         if self.config.transmitter_enabled and (self.carrier_present or self._remote_keyed):
             commands += self._enter_receiving(now)
         return commands
+
+    def _end_courtesy_tone(self, now: float) -> list[ControllerCommand]:
+        """A key-up while the tone played was ignored so the tone could
+        finish; pick it up now instead of hanging and dropping it."""
+        if self.config.transmitter_enabled and (self.carrier_present or self._remote_keyed):
+            return self._enter_receiving(now)
+        return self._enter_hang_time(now)
 
     def _enter_courtesy_tone(self, now: float, clip: str) -> list[ControllerCommand]:
         """`clip` says who unkeyed last: "courtesy_tone" (a local user),

@@ -64,6 +64,7 @@ from .node_directory import NodeDirectory
 from .autopatch import Autopatch, patch_settings_from_env
 from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_backup, restore_backup, write_backup
 from .boards import WIRING_FIELDS, alsa_card, apply_mixer, load_boards, preset_changes, run_amixer
+from .mixer import levels_on_card, read_volumes, set_volume, side_card, side_volumes
 from .sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
 from .sip_trunk import AsteriskSetupError, SipTrunk, TrunkSettings
 from .tx_fan import TxFan
@@ -117,6 +118,8 @@ from .models import (
     BoardApplyResponse,
     BoardResponse,
     SerialPortResponse,
+    SoundLevelsResponse,
+    SoundLevelUpdateRequest,
     EchoLinkRequest,
     EchoLinkStatusResponse,
     GpioOutputRequest,
@@ -463,7 +466,9 @@ def create_app(
     if service.activity is None:
         service.activity = ActivityRecorder(activity_store or ActivityStore())
     activity_store = service.activity.store
-    live_audio = live_audio or LiveAudio(service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings)
+    live_audio = live_audio or LiveAudio(
+        service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings, run_mixer=run_mixer
+    )
     monitor_receiver = monitor_receiver or MonitorReceiverService(service, renderer.sample_rate, monitor_recordings)
     cm108 = live_audio.cm108
     link_radio = link_radio or LinkRadio(
@@ -1048,9 +1053,71 @@ def create_app(
                     skipped.append(device or "System default")
                 elif card not in cards:
                     cards.append(card)
-            results = await asyncio.get_running_loop().run_in_executor(None, apply_mixer, cards, board.mixer, run_mixer)
+            loop = asyncio.get_running_loop()
+            results = await loop.run_in_executor(None, apply_mixer, cards, board.mixer, run_mixer)
             mixer = [dataclasses.asdict(result) for result in results]
+            output_card = side_card(config, "output")
+            if output_card is not None:
+                try:
+                    inputs, outputs = await loop.run_in_executor(
+                        None, levels_on_card, output_card, {control for control, _ in board.mixer}, run_mixer
+                    )
+                except OSError as error:
+                    logging.getLogger("moreopenrepeater.mixer").warning("couldn't read back the board's levels: %s", error)
+                else:
+                    if side_card(config, "input") != output_card:
+                        inputs = {}
+                    service.update_config(audio_input_levels=inputs, audio_output_levels=outputs)
         return BoardApplyResponse(config=_config_response(service), mixer=mixer, mixer_skipped=skipped)
+
+    def sound_levels() -> SoundLevelsResponse:
+        config = service.saved_config
+        levels, notes = [], []
+        read: dict[int, list] = {}
+        for side, saved in (("input", config.audio_input_levels), ("output", config.audio_output_levels)):
+            card = side_card(config, side)
+            if card is None:
+                notes.append(f"The {side} is the system default device; pick a specific sound card to set its levels.")
+                continue
+            if card not in read:
+                try:
+                    read[card] = read_volumes(card, run_mixer)
+                except OSError as error:
+                    notes.append(f"Couldn't read sound card {card}'s levels: {error}")
+                    read[card] = []
+            for volume in side_volumes(side, read[card]):
+                levels.append({
+                    **dataclasses.asdict(volume), "side": side, "card": card,
+                    "saved": saved.get(volume.control) == volume.value,
+                })
+        return SoundLevelsResponse(levels=levels, notes=notes)
+
+    @app.get("/api/audio/levels", response_model=SoundLevelsResponse, dependencies=auth_dependencies)
+    async def get_sound_levels() -> SoundLevelsResponse:
+        return await asyncio.get_running_loop().run_in_executor(None, sound_levels)
+
+    @app.put("/api/audio/levels", response_model=SoundLevelsResponse, dependencies=auth_dependencies)
+    async def put_sound_level(body: SoundLevelUpdateRequest, request: Request) -> SoundLevelsResponse:
+        config = service.saved_config
+        card = side_card(config, body.side)
+        if card is None:
+            raise HTTPException(status_code=409, detail=f"Pick a specific {body.side} sound card first")
+        loop = asyncio.get_running_loop()
+        try:
+            volumes = await loop.run_in_executor(None, read_volumes, card, run_mixer)
+        except OSError as error:
+            raise HTTPException(status_code=503, detail=f"Couldn't read sound card {card}'s levels: {error}")
+        volume = next((v for v in side_volumes(body.side, volumes) if v.control == body.control), None)
+        if volume is None:
+            raise HTTPException(status_code=404, detail=f"Sound card {card} has no {body.control} {body.side} level")
+        value = min(max(body.value, volume.min), volume.max)
+        error = await loop.run_in_executor(None, set_volume, card, volume.control, volume.direction, value, run_mixer)
+        if error:
+            raise HTTPException(status_code=503, detail=f"Couldn't set {volume.control}: {error}")
+        field_name = f"audio_{body.side}_levels"
+        service.update_config(**{field_name: {**getattr(service.saved_config, field_name), volume.control: value}})
+        request.state.audit_detail = f"{volume.control} {body.side} {value}"
+        return await loop.run_in_executor(None, sound_levels)
 
     @app.post("/api/audio/test-id", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def test_id() -> StatusResponse:

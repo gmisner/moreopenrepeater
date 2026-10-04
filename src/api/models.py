@@ -226,6 +226,8 @@ class ConfigResponse(BaseModel):
     setup_wizard_done: bool = False
     audio_input_device: str
     audio_output_device: str
+    audio_input_levels: dict[str, int] = {}
+    audio_output_levels: dict[str, int] = {}
     cos_source: CosSource
     cos_polarity: Polarity
     cos_gpio_pin: int
@@ -1041,6 +1043,29 @@ class BoardApplyResponse(BaseModel):
     mixer: list[MixerResultResponse]
     # Sound devices whose ALSA card couldn't be found, so their levels weren't set.
     mixer_skipped: list[str]
+
+
+class SoundLevelResponse(BaseModel):
+    side: Literal["input", "output"]
+    card: int
+    control: str
+    min: int
+    max: int
+    value: int
+    db: Optional[float]
+    saved: bool  # set again whenever the engine opens the card
+
+
+class SoundLevelsResponse(BaseModel):
+    levels: list[SoundLevelResponse]
+    # Why a side has no levels: the system default device, or amixer failing.
+    notes: list[str]
+
+
+class SoundLevelUpdateRequest(BaseModel):
+    side: Literal["input", "output"]
+    control: str = Field(min_length=1, max_length=60)
+    value: int = Field(ge=0, le=100000)
 
 
 class LinkAudioResponse(BaseModel):

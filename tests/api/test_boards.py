@@ -32,6 +32,8 @@ class FakeAmixer:
         self.missing = missing
 
     def __call__(self, args):
+        if args[-1] == "scontents":
+            return subprocess.CompletedProcess(args, 0, "", "")
         self.calls.append(args)
         control = args[5]
         if control in self.missing:

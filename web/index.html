@@ -842,6 +842,22 @@
           </div>
         </form>
 
+        <section class="card" id="sound-levels-card">
+          <div class="card-header">
+            <h2>Sound card levels</h2>
+          </div>
+          <p class="muted small">The interface's own volume controls: how loud the receiver comes in, and how loud
+            audio goes out to the transmitter. A change takes effect right away and is saved here, then set again
+            every time live audio starts, so it survives a reboot or a replugged interface.</p>
+          <div id="sound-levels-list" class="sound-levels"></div>
+          <p id="sound-levels-notes" class="muted small" hidden></p>
+          <div class="form-actions" id="sound-levels-actions" hidden>
+            <span class="muted small">Some levels were set outside the dashboard and aren't saved yet.</span>
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-ghost" id="sound-levels-save" data-requires-write>Save current levels</button>
+          </div>
+        </section>
+
         <form class="card config-form" data-config-form id="monitor-form">
           <div class="card-header">
             <h2>Monitor receiver</h2>

@@ -149,6 +149,9 @@ class RepeaterConfig:
     setup_wizard_done: bool = False  # the dashboard's first-run wizard was finished or skipped
     audio_input_device: str = ""  # PortAudio device name; "" = system default
     audio_output_device: str = ""
+    # api.mixer: mixer control -> volume step, set on the input card (capture) and output card (playback)
+    audio_input_levels: dict = field(default_factory=dict)
+    audio_output_levels: dict = field(default_factory=dict)
     # "gpio" = a Raspberry Pi header pin; "serial" = a serial port's CTS, DSR or DCD
     cos_source: Literal["vox", "ctcss", "cm108", "gpio", "serial"] = "vox"
     cos_polarity: Literal["low", "high"] = "low"  # hardware COS: the level meaning "carrier" (serial: high = asserted)

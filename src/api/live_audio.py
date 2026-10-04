@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import subprocess
 import time
 from typing import Callable, Optional
 
@@ -39,6 +40,8 @@ from controller.state_machine import RepeaterConfig
 from playout.renderer import RECORDING_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
+from .boards import run_amixer
+from .mixer import apply_saved_levels
 from .monitor import AudioMonitor
 from .recordings import RecordingStore
 from .service import RepeaterService
@@ -157,8 +160,10 @@ class LiveAudio:
         clock: Callable[[], float] = time.time,
         open_pin: Callable[..., GpioLine] = open_header_pin,
         open_serial: Callable[..., GpioLine] = open_serial_line,
+        run_mixer: Callable[[list[str]], subprocess.CompletedProcess] = run_amixer,
     ) -> None:
         self._service = service
+        self._run_mixer = run_mixer
         self._renderer = renderer
         self._cm108 = cm108
         self._engine_factory = engine_factory
@@ -436,6 +441,7 @@ class LiveAudio:
             on_audio=self.monitor.feed,
         )
         self._ptt_output = ptt_output
+        apply_saved_levels(config, self._run_mixer)
         try:
             engine.start()
         except Exception as error:  # PortAudio raises its own error types

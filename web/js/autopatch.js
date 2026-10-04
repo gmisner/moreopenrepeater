@@ -14,6 +14,11 @@ const numberInput = document.getElementById("patch-number");
 const dialButton = document.getElementById("patch-dial");
 const hangupButton = document.getElementById("patch-hangup");
 
+const callCard = document.getElementById("patch-card");
+const callCardTitle = document.getElementById("patch-card-title");
+const callCardDetail = document.getElementById("patch-card-detail");
+const callCardHangup = document.getElementById("patch-card-hangup");
+
 const trunkStatus = document.getElementById("trunk-status");
 const trunkPill = document.getElementById("trunk-pill");
 const trunkModules = document.getElementById("trunk-modules");
@@ -99,14 +104,55 @@ function describe(status) {
   return `Last call: ${who} at ${time(last.started_at)} — ${escapeHtml(last.result)}${talk}.${off}`;
 }
 
+function cardTitle(call) {
+  if (call.direction === "incoming") return "Phone call in";
+  return call.state === "dialing" ? "Autopatch dialing" : "Autopatch call";
+}
+
 function render(status) {
   statusLine.innerHTML = describe(status);
   hangupButton.hidden = !status.call;
   dialButton.disabled = Boolean(status.call) || !status.available;
+  callCard.hidden = !status.call;
+  if (status.call) {
+    callCardTitle.textContent = cardTitle(status.call);
+    callCardDetail.innerHTML = describe(status);
+  }
 }
 
 async function refresh() {
   render(await api("/api/autopatch"));
+}
+
+// The dashboard only asks about calls while the controller is in a call.
+let dashboardTimer = null;
+
+async function refreshDashboard() {
+  const status = await api("/api/autopatch");
+  render(status);
+  if (!status.call) stopDashboard();
+}
+
+function startDashboard() {
+  refreshDashboard().catch(() => {});
+  dashboardTimer ??= setInterval(() => {
+    if (!document.hidden) refreshDashboard().catch(() => {});
+  }, REFRESH_MS);
+}
+
+function stopDashboard() {
+  clearInterval(dashboardTimer);
+  dashboardTimer = null;
+}
+
+async function hangup(button) {
+  await withBusy(button, async () => {
+    try {
+      render(await api("/api/autopatch/hangup", { method: "POST" }));
+    } catch (error) {
+      toastError(error);
+    }
+  });
 }
 
 function providerFor(server) {
@@ -321,15 +367,11 @@ export function initAutopatch() {
   numberInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !dialButton.disabled) dial();
   });
-  hangupButton.addEventListener("click", () =>
-    withBusy(hangupButton, async () => {
-      try {
-        render(await api("/api/autopatch/hangup", { method: "POST" }));
-      } catch (error) {
-        toastError(error);
-      }
-    }),
-  );
+  hangupButton.addEventListener("click", () => hangup(hangupButton));
+  callCardHangup.addEventListener("click", () => hangup(callCardHangup));
+  store.addEventListener("status", ({ detail }) => {
+    if (detail.state === "patch" && currentView === "dashboard" && !dashboardTimer) startDashboard();
+  });
   trunkForm.addEventListener("input", () => (trunkFormDirty = true));
   trunkForm.elements.provider.addEventListener("change", chooseProvider);
   trunkForm.elements.server.addEventListener("change", recognizeServer);
@@ -346,6 +388,12 @@ export function initAutopatch() {
       }
     }),
   );
-  router.addEventListener("change", ({ detail }) => (detail === "autopatch" ? start() : stop()));
+  router.addEventListener("change", ({ detail }) => {
+    if (detail === "autopatch") start();
+    else stop();
+    if (detail !== "dashboard") stopDashboard();
+    else if (store.state.status?.state === "patch") startDashboard();
+    else callCard.hidden = true;
+  });
   if (currentView === "autopatch") start();
 }

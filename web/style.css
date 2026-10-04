@@ -338,6 +338,8 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 .lockout-card p { margin: 0; }
 .net-card { border-color: var(--accent); background: var(--accent-soft); }
 .net-card p { margin: 0; }
+.patch-card { border-color: var(--accent); background: var(--accent-soft); }
+.patch-card p { margin: 0; }
 .held-note { border-color: var(--amber); background: var(--amber-soft); color: var(--text); }
 .code-setup { display: flex; gap: var(--space-5); align-items: flex-start; flex-wrap: wrap; margin-top: var(--space-4); }
 .code-setup > div:last-child { flex: 1; min-width: 16rem; }

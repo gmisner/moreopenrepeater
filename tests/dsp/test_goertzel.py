@@ -80,3 +80,67 @@ def test_dtmf_detector_reports_held_digit_once():
     results = [detector.process(block) for block in _blocks(signal)]
 
     assert results.count("1") == 1
+
+
+def _tone_pair(row_hz, col_hz, row_amplitude, col_amplitude, sample_rate, seconds=1.0):
+    t = np.arange(int(sample_rate * seconds)) / sample_rate
+    return row_amplitude * np.sin(2 * np.pi * row_hz * t) + col_amplitude * np.sin(2 * np.pi * col_hz * t)
+
+
+def test_dtmf_detector_hears_a_quiet_uneven_pair():
+    """A star from a handheld into a CM108, as measured on a Pi: 941 Hz at
+    0.052 and 1209 Hz at 0.032, under a little receiver noise."""
+    rng = np.random.default_rng(seed=2)
+    signal = _tone_pair(941, 1209, 0.052, 0.032, 16000) + rng.normal(scale=0.0003, size=16000)
+
+    detector = DTMFDetector(sample_rate=16000, magnitude_threshold=0.01)
+    results = [detector.process(block) for block in _blocks(signal, 320)]
+
+    assert results.count("*") == 1
+
+
+def test_dtmf_detector_reports_a_held_key_once_through_dropouts():
+    """Over the air a held key's high tone dips for a block now and then, and
+    a busy Pi's sound card can drop 40 ms of input."""
+    signal = _tone_pair(941, 1209, 0.06, 0.035, 16000, seconds=1.5)
+    for start in (0.3, 0.7):
+        dip = slice(int(start * 16000), int(start * 16000) + 320)
+        signal[dip] = _tone_pair(941, 1209, 0.05, 0.012, 16000, seconds=0.02)
+    signal[int(1.1 * 16000) : int(1.1 * 16000) + 640] = 0  # the sound card filling a late input with silence
+
+    detector = DTMFDetector(sample_rate=16000, magnitude_threshold=0.01)
+    results = [detector.process(block) for block in _blocks(signal, 320)]
+
+    assert results.count("*") == 1
+
+
+def test_dtmf_detector_reports_digits_with_a_short_gap():
+    gap = _tone_pair(941, 1209, 0.0003, 0.0003, 16000, 0.08)  # receiver noise, not digital silence
+    signal = np.concatenate(
+        [_tone_pair(941, 1209, 0.05, 0.03, 16000, 0.1), gap, _tone_pair(697, 1209, 0.05, 0.03, 16000, 0.1)]
+    )
+
+    detector = DTMFDetector(sample_rate=16000, magnitude_threshold=0.01)
+    results = [detector.process(block) for block in _blocks(signal, 320)]
+
+    assert [r for r in results if r] == ["*", "1"]
+
+
+def test_dtmf_detector_ignores_noise_as_loud_as_a_digit():
+    rng = np.random.default_rng(seed=3)
+    noise = rng.normal(scale=0.05, size=16000 * 5)
+
+    detector = DTMFDetector(sample_rate=16000, magnitude_threshold=0.01)
+    results = [detector.process(block) for block in _blocks(noise, 320)]
+
+    assert all(r is None for r in results)
+
+
+def test_dtmf_detector_ignores_a_pair_buried_in_louder_audio():
+    rng = np.random.default_rng(seed=4)
+    signal = _tone_pair(941, 1209, 0.03, 0.03, 16000) + rng.normal(scale=0.1, size=16000)
+
+    detector = DTMFDetector(sample_rate=16000, magnitude_threshold=0.01)
+    results = [detector.process(block) for block in _blocks(signal, 320)]
+
+    assert all(r is None for r in results)

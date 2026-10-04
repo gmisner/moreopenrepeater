@@ -185,16 +185,24 @@ class DTMFDetector:
     before reporting it (debounce), and requires the tone pair to drop out
     before the same digit can be reported again, so a held-down key produces
     one digit event, not a stream of repeats.
+
+    Like `ToneBurstDetector`, a block only counts when the tone pair holds
+    most of its energy (`purity`: 1.0 for a clean pair), so the absolute
+    `magnitude_threshold` can stay low enough for quiet interfaces without
+    voice or squelch noise passing for a digit.
     """
 
     sample_rate: int
     magnitude_threshold: float = 0.3
     twist_ratio_db: float = 8.0
     press_blocks: int = 2
+    purity: float = 0.6
+    release_blocks: int = 3  # a held key's tones can dip over the air; that isn't a new press
 
     _candidate_digit: Optional[str] = field(default=None, init=False, repr=False)
     _candidate_count: int = field(default=0, init=False, repr=False)
     _last_reported_digit: Optional[str] = field(default=None, init=False, repr=False)
+    _missed_blocks: int = field(default=0, init=False, repr=False)
 
     @property
     def holding(self) -> Optional[str]:
@@ -202,6 +210,8 @@ class DTMFDetector:
         return self._last_reported_digit
 
     def process(self, block: np.ndarray) -> Optional[str]:
+        if np.count_nonzero(block) < 0.75 * len(block):
+            return None  # a sound card filling late input with silence, not a released key
         row_magnitudes = _goertzel_magnitudes(block, self.sample_rate, DTMF_ROW_FREQUENCIES_HZ)
         col_magnitudes = _goertzel_magnitudes(block, self.sample_rate, DTMF_COL_FREQUENCIES_HZ)
 
@@ -209,9 +219,11 @@ class DTMFDetector:
         best_col = max(range(4), key=lambda i: col_magnitudes[i])
 
         digit = None
+        rms = float(np.sqrt(np.mean(np.square(block, dtype=np.float64)))) if len(block) else 0.0
         if (
             row_magnitudes[best_row] >= self.magnitude_threshold
             and col_magnitudes[best_col] >= self.magnitude_threshold
+            and math.hypot(row_magnitudes[best_row], col_magnitudes[best_col]) >= self.purity * math.sqrt(2) * rms
         ):
             twist_db = 20 * math.log10(col_magnitudes[best_col] / row_magnitudes[best_row])
             if abs(twist_db) <= self.twist_ratio_db:
@@ -222,14 +234,21 @@ class DTMFDetector:
                         digit = candidate
                         break
 
+        if digit is not None and digit == self._last_reported_digit:
+            self._missed_blocks = 0
+            return None  # still holding the same key -- already reported
+
+        if self._last_reported_digit is not None:
+            self._missed_blocks += 1
+            if self._missed_blocks < self.release_blocks:
+                return None
+            self._last_reported_digit = None
+            self._missed_blocks = 0
+
         if digit is None:
             self._candidate_digit = None
             self._candidate_count = 0
-            self._last_reported_digit = None
             return None
-
-        if digit == self._last_reported_digit:
-            return None  # still holding the same key -- already reported
 
         if digit == self._candidate_digit:
             self._candidate_count += 1

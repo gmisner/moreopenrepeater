@@ -76,6 +76,17 @@ def test_dtmf_digits_are_reported_while_carrier_is_up():
     assert [e.digit for e in events if isinstance(e, DTMFDigit)] == ["5", "#"]
 
 
+def test_quiet_dtmf_from_a_handheld_is_reported():
+    """Levels measured from a handheld's speaker jack into a CM108: VOX at
+    -55 dB, a star at 941 Hz 0.052 and 1209 Hz 0.032."""
+    p = AudioProcessor(ProcessorSettings(RATE, vox_threshold_db=-55))
+    star = tone(941, 1.0, amplitude=0.052) + tone(1209, 1.0, amplitude=0.032)
+
+    _, events = run(p, star)
+
+    assert [e.digit for e in events if isinstance(e, DTMFDigit)] == ["*"]
+
+
 def test_receive_audio_is_repeated_only_while_keyed_and_repeating():
     p = AudioProcessor(ProcessorSettings(RATE, dtmf_mute=False))
     block = tone(1000, 0.02)

@@ -58,7 +58,7 @@ class ProcessorSettings:
     tx_ctcss_hz: Optional[float] = None
     tx_ctcss_level_db: float = -20.0
     ctcss_threshold: float = 0.05
-    dtmf_threshold: float = 0.01  # each tone, about -40 dBFS; the detector's purity check keeps noise out
+    dtmf_threshold: float = 0.003  # each tone, about -50 dBFS; the detector's purity check keeps noise out
     # False for a link radio: what it receives goes to the repeater, not back out its own transmitter.
     local_repeat: bool = True
     dtmf_mute: bool = True  # never pass DTMF tones on (transmitter, links, recordings)

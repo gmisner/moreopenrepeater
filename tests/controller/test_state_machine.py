@@ -67,6 +67,20 @@ def test_rekey_during_hang_time_returns_to_receiving():
     assert controller.state == RECEIVING
 
 
+def test_rekey_during_courtesy_tone_returns_to_receiving():
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    controller.handle_event(COSChanged(active=False), now=1.0)
+    controller.handle_event(COSChanged(active=True), now=1.1)
+    assert controller.state == COURTESY_TONE  # the tone plays out
+
+    commands = controller.tick(now=1.2)
+    assert controller.state == RECEIVING
+    assert AssertPTT(active=True) in commands
+    controller.tick(now=3.0)
+    assert controller.state == RECEIVING  # not dropped when hang time would have ended
+
+
 def test_timeout_timer_kills_transmit_and_requires_unkey_to_clear():
     controller = RepeaterController(make_config(tot_duration=2.0), now=0.0)
     controller.handle_event(COSChanged(active=True), now=0.0)

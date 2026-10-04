@@ -62,6 +62,20 @@ def _goertzel_magnitudes(block: np.ndarray, sample_rate: int, target_freqs) -> l
 
 
 @functools.lru_cache(maxsize=16)
+def _tone_basis(n: int, sample_rate: int, target_freqs: tuple[float, ...]) -> np.ndarray:
+    return np.exp(-2j * np.pi * np.outer(target_freqs, np.arange(n)) / sample_rate)
+
+
+def _tone_magnitudes(block: np.ndarray, sample_rate: int, target_freqs) -> list[float]:
+    """Like `_goertzel_magnitudes`, but at each exact frequency instead of the
+    nearest bin. A 20 ms block's bins are 50 Hz apart, and 1477 Hz falls
+    halfway between two: its nearest bin reads it 3.5 dB low."""
+    n = len(block)
+    basis = _tone_basis(n, sample_rate, tuple(target_freqs))
+    return list(np.abs(basis @ np.asarray(block, dtype=np.float64)) * 2.0 / n)
+
+
+@functools.lru_cache(maxsize=16)
 def _window_basis(length: int, window: int, ks: tuple[float, ...]) -> np.ndarray:
     return np.exp(-2j * np.pi * np.outer(ks, np.arange(length)) / window)
 
@@ -213,8 +227,8 @@ class DTMFDetector:
     def process(self, block: np.ndarray) -> Optional[str]:
         if np.count_nonzero(block) < 0.75 * len(block):
             return None  # a sound card filling late input with silence, not a released key
-        row_magnitudes = _goertzel_magnitudes(block, self.sample_rate, DTMF_ROW_FREQUENCIES_HZ)
-        col_magnitudes = _goertzel_magnitudes(block, self.sample_rate, DTMF_COL_FREQUENCIES_HZ)
+        row_magnitudes = _tone_magnitudes(block, self.sample_rate, DTMF_ROW_FREQUENCIES_HZ)
+        col_magnitudes = _tone_magnitudes(block, self.sample_rate, DTMF_COL_FREQUENCIES_HZ)
 
         best_row = max(range(4), key=lambda i: row_magnitudes[i])
         best_col = max(range(4), key=lambda i: col_magnitudes[i])

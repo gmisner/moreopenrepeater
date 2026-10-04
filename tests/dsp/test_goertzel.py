@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from dsp.goertzel import CTCSSDetector, DTMFDetector, _goertzel_magnitudes, ctcss_tone, dtmf_tone
-from dsp.tones import CTCSS_TONES_HZ
+from dsp.tones import CTCSS_TONES_HZ, DTMF_FREQUENCIES_BY_DIGIT
 
 SAMPLE_RATE = 8000
 BLOCK_SIZE = 320  # 40 ms
@@ -134,6 +134,19 @@ def test_dtmf_detector_hears_a_one_with_the_high_tone_9_db_down():
     results = [detector.process(block) for block in _blocks(signal, 320)]
 
     assert results.count("1") == 1
+
+
+@pytest.mark.parametrize("digit", list("123A456B789C*0#D"))
+def test_dtmf_detector_hears_every_digit_with_the_high_tone_9_5_db_down(digit):
+    """A 9 from a handheld over FM, as measured on a Pi: 852 Hz at 0.023, 1477 Hz at
+    0.0077. 1477 Hz sits halfway between two 50 Hz bins of a 20 ms block."""
+    row_hz, col_hz = DTMF_FREQUENCIES_BY_DIGIT[digit]
+    signal = _tone_pair(row_hz, col_hz, 0.023, 0.0077, 16000)
+
+    detector = DTMFDetector(sample_rate=16000, magnitude_threshold=0.003)
+    results = [detector.process(block) for block in _blocks(signal, 320)]
+
+    assert results.count(digit) == 1
 
 
 @pytest.mark.parametrize("row_amplitude, col_amplitude", [(0.1, 0.02), (0.02, 0.06)])

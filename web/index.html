@@ -1808,7 +1808,8 @@
             <small class="muted">Saving writes the line to Asterisk's <code>pjsip.conf</code>, in sections named
               <code>mor-trunk&hellip;</code>, and points autopatch at it. Other settings in that file are kept, but
               Asterisk removes its comments. Calls in are answered by a <code>mor-incoming</code> context in
-              <code>custom/extensions.conf</code> (or <code>extensions.conf</code> without AllStarLink).</small>
+              <code>custom/extensions.conf</code> (or <code>extensions.conf</code> without AllStarLink). The first save
+              also restarts Asterisk, which drops AllStar links for a few seconds.</small>
           </form>
         </div>
         <form class="card config-form" data-config-form>

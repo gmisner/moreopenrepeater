@@ -17,7 +17,9 @@ Calls can come in too: someone who calls the phone line's number and keys in
 an access code is put on the air (see [Calls in](#calls-in)).
 
 Settings are on the dashboard's **Autopatch** page, which also shows the call
-in progress, has a **Hang up** button, and can place a test call.
+in progress, has a **Hang up** button, and can place a test call. While a
+call is up, the main dashboard shows it too: who's being called, whether it's
+still dialing, how long it's been connected, and its own **Hang up** button.
 
 ## How it works
 

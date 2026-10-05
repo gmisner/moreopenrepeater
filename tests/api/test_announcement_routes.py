@@ -102,6 +102,18 @@ def test_announcement_with_unknown_asset_is_rejected():
     assert response.status_code == 400
 
 
+def test_announcement_asset_id_cant_reach_outside_the_clip_folder(tmp_path):
+    assets = AudioAssetStore(tmp_path / "audio")
+    (tmp_path / "elsewhere.wav").write_bytes(b"RIFF")
+    service = RepeaterService(config=RepeaterConfig(callsign="W1AW"))
+    client = TestClient(create_app(service=service, start_background_tick=False, assets_store=assets, log_path=tmp_path / "t.log"))
+
+    response = client.post("/api/announcements", json={"name": "x", "asset_id": "../elsewhere"})
+
+    assert response.status_code == 400
+    assert client.get("/api/assets/..%2Felsewhere/audio").status_code == 404
+
+
 def test_play_now_renders_then_transmits_when_idle():
     tts = FakeTTS()
     client, service, clock = make_client(tts=tts)

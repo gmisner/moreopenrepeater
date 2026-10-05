@@ -1258,7 +1258,7 @@ def create_app(
         raise HTTPException(status_code=404, detail=f"No announcement with id {announcement_id!r}")
 
     def save_announcement(announcement_id: str, body: AnnouncementFields) -> AnnouncementResponse:
-        if body.asset_id and not assets_store.path_for(body.asset_id).exists():
+        if body.asset_id and not assets_store.has(body.asset_id):
             raise HTTPException(status_code=400, detail=f"No audio clip with id {body.asset_id!r}")
         announcement = Announcement(id=announcement_id, **body.model_dump())
         return _announcement_response(service, service.save_announcement(announcement))
@@ -1726,10 +1726,9 @@ def create_app(
 
     @app.get("/api/assets/{asset_id}/audio", dependencies=auth_dependencies)
     def get_asset_audio(asset_id: str) -> FileResponse:
-        path = assets_store.path_for(asset_id)
-        if not path.exists():
+        if not assets_store.has(asset_id):
             raise HTTPException(status_code=404, detail=f"No asset with id {asset_id!r}")
-        return FileResponse(path, media_type="audio/wav")
+        return FileResponse(assets_store.path_for(asset_id), media_type="audio/wav")
 
     def recording_store(source: str) -> RecordingStore:
         return monitor_recordings if source == "monitor" else recordings

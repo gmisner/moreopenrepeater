@@ -1,4 +1,26 @@
+import pytest
+
 from api.assets import AudioAssetStore
+from api.safe_paths import child_path
+
+
+def test_child_path_stays_inside_its_folder(tmp_path):
+    assert child_path(tmp_path, "a.wav") == tmp_path / "a.wav"
+    for name in ("../a.wav", "x/../../a.wav", "/etc/passwd", "", "."):
+        with pytest.raises(KeyError):
+            child_path(tmp_path, name)
+
+
+def test_only_asset_ids_name_files(tmp_path):
+    store = AudioAssetStore(tmp_path / "audio")
+    (tmp_path / "elsewhere.wav").write_bytes(b"data")
+
+    for bad in ("../elsewhere", "missing", "ABCDEF" * 6, "0" * 31):
+        assert not store.has(bad)
+        with pytest.raises(KeyError):
+            store.path_for(bad)
+    store.delete_asset("../elsewhere")
+    assert (tmp_path / "elsewhere.wav").exists()
 
 
 def test_save_asset_persists_content_and_metadata(tmp_path):

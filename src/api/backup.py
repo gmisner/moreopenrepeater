@@ -31,8 +31,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterator, Optional, get_args
 
-from .assets import AssetInfo, AssetKind
+from .assets import ASSET_ID, AssetInfo, AssetKind
 from .persistence import database_has_table
+from .safe_paths import child_path
 
 if TYPE_CHECKING:
     from controller.state_machine import RepeaterConfig
@@ -46,7 +47,6 @@ if TYPE_CHECKING:
 
 FORMAT = "moreopenrepeater-backup"
 VERSION = 1
-_ASSET_ID = re.compile(r"^[0-9a-f]{32}$")
 _RECORDING = re.compile(r"^recordings/(\d{13,})\.wav$")
 _NAME = re.compile(r"^moreopenrepeater-[a-z0-9-]+-\d{8}-\d{6}\.zip$")
 _HISTORY = {"activity": ("activity", "airtime statistics"), "audit": ("audit", "audit log")}
@@ -79,7 +79,7 @@ def write_backup(path: Path, sources: BackupSources, include_recordings: bool, n
     """Writes a backup archive to `path` and returns its manifest."""
     settings = sources.service.export_snapshot()
     users = sources.users.export()
-    assets = [a for a in sources.assets.list_assets() if sources.assets.path_for(a.id).exists()]
+    assets = [a for a in sources.assets.list_assets() if sources.assets.has(a.id)]
     recordings = sources.recordings.paths() if include_recordings else []
     added_recordings = 0
     with tempfile.TemporaryDirectory() as tmp, zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -175,7 +175,7 @@ def _unpack(path: Path, directory: Path) -> OpenedBackup:
                 asset = AssetInfo(**entry)
             except TypeError:
                 raise BackupError("The audio clip list in the backup is damaged.") from None
-            if not _ASSET_ID.match(str(asset.id)) or asset.kind not in get_args(AssetKind):
+            if not ASSET_ID.fullmatch(str(asset.id)) or asset.kind not in get_args(AssetKind):
                 raise BackupError("The audio clip list in the backup is damaged.")
             member = f"audio/{asset.id}.wav"
             if member not in names:
@@ -256,9 +256,12 @@ class BackupFolder:
         return sorted(saved, key=lambda b: b.created_at, reverse=True)
 
     def path_for(self, name: str) -> Path:
-        if self.directory is None or not _NAME.match(name) or not (self.directory / name).is_file():
+        if self.directory is None or not _NAME.match(name):
             raise KeyError(name)
-        return self.directory / name
+        path = child_path(self.directory, name)
+        if not path.is_file():
+            raise KeyError(name)
+        return path
 
     def create(self, sources: BackupSources, include_recordings: bool, now: float) -> SavedBackup:
         if self.directory is None:

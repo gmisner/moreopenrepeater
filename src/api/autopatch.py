@@ -317,7 +317,7 @@ class Autopatch:
         self._waiting: dict[str, "asyncio.Future[tuple]"] = {}
         self._task: Optional[asyncio.Task] = None
         self._hangup_reason: Optional[str] = None
-        self._digits: Optional["asyncio.Queue[str]"] = None  # while a call is connected
+        self._digits: Optional["asyncio.Queue[Optional[str]]"] = None  # while a call is connected
         self.error: Optional[str] = None
         self.call: Optional[CallRecord] = None
         self.last_call: Optional[CallRecord] = None
@@ -541,18 +541,20 @@ class Autopatch:
         return asyncio.create_task(self._send_digits(self._digits, channel, ami))
 
     async def _stop_digits(self, sender: Optional[asyncio.Task]) -> None:
-        self._digits = None
-        if sender is not None:
-            sender.cancel()
-            await asyncio.gather(sender, return_exceptions=True)
+        digits, self._digits = self._digits, None
+        if sender is None:
+            return
+        if digits is not None:
+            digits.put_nowait(None)  # Python 3.11's wait_for can swallow the cancel
+        sender.cancel()
+        await asyncio.wait({sender}, timeout=AMI_TIMEOUT)
 
-    async def _send_digits(self, digits: "asyncio.Queue[str]", channel: str, ami: Optional[AMIClient]) -> None:
-        """Each queued digit to `channel`, in order. Without the call's own AMI
-        connection (a call in), one is opened at the first digit."""
+    async def _send_digits(self, digits: "asyncio.Queue[Optional[str]]", channel: str, ami: Optional[AMIClient]) -> None:
+        """Each queued digit to `channel`, in order, until None. Without the
+        call's own AMI connection (a call in), one is opened at the first digit."""
         own: Optional[AMIClient] = None
         try:
-            while True:
-                digit = await digits.get()
+            while (digit := await digits.get()) is not None:
                 try:
                     if ami is None:
                         assert self.settings is not None

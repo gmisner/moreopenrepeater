@@ -517,6 +517,9 @@ other devices, are in `docs/raspberry-pi.md`.
 
 ## Development
 
+Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for how to
+report bugs, run the checks and send a pull request.
+
 ```
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"

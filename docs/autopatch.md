@@ -13,6 +13,13 @@ default) ends the call, and so does the far end hanging up or the time
 limit (users hear a warning 30 seconds before). The transmitter stays keyed
 for the whole call, and the station ID still goes out on schedule.
 
+DTMF keyed on the radio during a call reaches the far end, so users can work
+phone menus and voicemail. The tones are muted from the audio like any other
+DTMF. The controller decodes each digit and has Asterisk send it as a SIP
+DTMF event, which providers handle more reliably than tones in the audio.
+The far end may hear the hang-up code too as the call ends, which does no
+harm.
+
 Calls can come in too: someone who calls the phone line's number and keys in
 an access code is put on the air (see [Calls in](#calls-in)).
 

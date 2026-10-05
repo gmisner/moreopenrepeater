@@ -108,6 +108,7 @@ class PatchCalls(Protocol):
 
     def dial(self, number: str, actor: str) -> Optional[str]: ...
     def hangup(self, reason: str) -> None: ...
+    def send_digit(self, digit: str) -> None: ...
 
 
 @dataclasses.dataclass(frozen=True)
@@ -493,6 +494,7 @@ class RepeaterService:
                 self.ctcss_hz = event.tone_hz
             elif isinstance(event, DTMFDigit):
                 _logger.info("DTMF digit %r received", event.digit)
+                self._pass_digit_to_call(event.digit)
             commands += self.controller.handle_event(event, self._clock())
         self._apply_commands(commands)
 
@@ -511,7 +513,13 @@ class RepeaterService:
 
     def simulate_dtmf(self, digit: str) -> None:
         _logger.info("simulate_dtmf(digit=%r)", digit)
+        self._pass_digit_to_call(digit)
         self._apply_commands(self.controller.handle_event(DTMFDigit(digit=digit), self._clock()))
+
+    def _pass_digit_to_call(self, digit: str) -> None:
+        """The audio's DTMF is muted, so a phone menu on an autopatch call gets the digit this way."""
+        if self.autopatch is not None:
+            self.autopatch.send_digit(digit)
 
     def simulate_remote_keyed(self, node_id: str, keyed: bool) -> None:
         _logger.info("simulate_remote_keyed(node_id=%r, keyed=%s)", node_id, keyed)

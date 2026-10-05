@@ -1,6 +1,9 @@
 # moreopenrepeater
 
 [![tests](https://github.com/gmisner/moreopenrepeater/actions/workflows/tests.yml/badge.svg)](https://github.com/gmisner/moreopenrepeater/actions/workflows/tests.yml)
+[![stable release](https://img.shields.io/github/v/release/gmisner/moreopenrepeater?label=stable%20release)](https://github.com/gmisner/moreopenrepeater/releases/latest)
+[![license](https://img.shields.io/github/license/gmisner/moreopenrepeater)](LICENSE)
+[![python](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fgmisner%2Fmoreopenrepeater%2Fmain%2Fpyproject.toml)](pyproject.toml)
 
 A modern, Python-native ham radio repeater controller for Raspberry Pi --
 a from-scratch reimagining of [OpenRepeater](https://github.com/OpenRepeater/openrepeater)

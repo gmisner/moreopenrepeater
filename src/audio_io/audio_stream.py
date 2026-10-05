@@ -30,10 +30,17 @@ class AudioBlockPump:
     input_queue: "queue.Queue[np.ndarray]"
     output_queue: "queue.Queue[np.ndarray]"
     block_size: int
-    dropped_input_blocks: int = field(default=0, init=False)
-    starved_output_blocks: int = field(default=0, init=False)
+    dropped_input_blocks: int = field(default=0, init=False)  # the worker fell behind
+    starved_output_blocks: int = field(default=0, init=False)  # no transmit audio ready in time
+    input_overflows: int = field(default=0, init=False)  # the sound card's own receive overrun (xrun)
+    output_underflows: int = field(default=0, init=False)  # its transmit underrun (xrun)
 
     def process(self, indata: np.ndarray, outdata: np.ndarray, frames: int, time, status) -> None:
+        if status:
+            if status.input_overflow:
+                self.input_overflows += 1
+            if status.output_underflow:
+                self.output_underflows += 1
         try:
             self.input_queue.put_nowait(indata.copy())
         except queue.Full:
@@ -117,3 +124,11 @@ class AudioStream:
     @property
     def starved_output_blocks(self) -> int:
         return self._pump.starved_output_blocks
+
+    @property
+    def input_overflows(self) -> int:
+        return self._pump.input_overflows
+
+    @property
+    def output_underflows(self) -> int:
+        return self._pump.output_underflows

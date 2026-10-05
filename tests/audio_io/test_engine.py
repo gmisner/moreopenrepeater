@@ -121,3 +121,21 @@ def test_hardware_cos_is_polled():
         assert COSChanged(active=True) in events
     finally:
         engine.stop()
+
+
+def test_each_new_glitch_is_reported_once():
+    glitches = []
+    engine, _, _, streams = make_engine(on_glitch=lambda name, count: glitches.append((name, count)))
+    engine.start()
+    stream = streams[0]
+
+    engine.check_glitches()
+    stream.starved_output_blocks = 2
+    stream.input_overflows = 1
+    engine.check_glitches()
+    engine.check_glitches()
+    stream.starved_output_blocks = 3
+    engine.check_glitches()
+    engine.stop()
+
+    assert glitches == [("starved_output_blocks", 2), ("input_overflows", 1), ("starved_output_blocks", 1)]

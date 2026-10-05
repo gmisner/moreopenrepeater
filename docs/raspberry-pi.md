@@ -314,6 +314,16 @@ itself:
 - openings a fixed time after the repeater unkeys point at it hearing itself
   or another radio answering it.
 
+**Audio glitches** lists each 20 ms block of audio lost since live audio
+started, with the controller's state and whether it was transmitting. Each
+one is also logged. The status line under the level meter counts them by
+kind:
+- **transmit gaps:** no audio was ready when the sound card needed it. While
+  transmitting, that's a short dropout on the air.
+- **receive drops:** processing fell behind and a received block was thrown
+  away.
+- **overruns and underruns:** reported by the sound card driver itself.
+
 Three settings shape the audio around each transmission:
 
 - **Mute DTMF tones** (Transmit audio, on by default): commands are still

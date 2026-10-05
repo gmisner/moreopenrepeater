@@ -410,3 +410,35 @@ def test_each_receiver_opening_is_logged_and_listed_newest_first(caplog):
     client = TestClient(create_app(service=service, live_audio=live, start_background_tick=False, log_path=tmp / "t.log"))
     listed = client.get("/api/audio/openings").json()
     assert [round(o["strongest_hz"], -1) for o in listed] == [700, 1000]
+
+
+def test_audio_glitches_are_logged_with_what_the_repeater_was_doing(caplog):
+    live, service, clock, _engines = make_live()
+    live._clock = lambda: clock["now"]
+    engine, stream = live.engine, live.engine._stream
+
+    with caplog.at_level("INFO", logger="moreopenrepeater.audio"):
+        stream.starved_output_blocks = 1
+        engine.check_glitches()
+        clock["now"] = 0.5
+        stream.starved_output_blocks = 3
+        engine.check_glitches()  # the same glitch within a second: one entry
+        service.simulate_cos(True)
+        clock["now"] = 0.7
+        stream.starved_output_blocks = 4
+        engine.check_glitches()  # now transmitting: a new entry
+
+    first, second = live.glitches
+    assert (first["counter"], first["count"], first["transmitting"], first["state"]) == ("starved_output_blocks", 3, False, "idle")
+    assert (second["count"], second["transmitting"], second["state"]) == (1, True, "receiving")
+    logged = [r.getMessage() for r in caplog.records if r.getMessage().startswith("audio glitch")]
+    assert logged == [
+        "audio glitch: 1 transmit block with no audio ready in time, not transmitting (state idle)",
+        "audio glitch: 1 transmit block with no audio ready in time, while transmitting (state receiving)",
+    ]
+    assert live.status()["starved_output_blocks"] == 4
+
+    tmp = Path(tempfile.mkdtemp())
+    client = TestClient(create_app(service=service, live_audio=live, start_background_tick=False, log_path=tmp / "t.log"))
+    assert [g["state"] for g in client.get("/api/audio/glitches").json()] == ["receiving", "idle"]
+    assert client.get("/api/audio/engine").json()["output_underflows"] == 0

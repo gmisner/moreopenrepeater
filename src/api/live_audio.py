@@ -32,7 +32,7 @@ import numpy as np
 
 from audio_io.audio_stream import sd
 from audio_io.cm108 import CM108Interface, LinuxHidrawDevice, find_interfaces
-from audio_io.engine import AudioEngine
+from audio_io.engine import GLITCH_COUNTERS, AudioEngine
 from audio_io.openings import ReceiverOpening
 from audio_io.patch import LinkAudio, PatchAudio
 from audio_io.pi_gpio import GpioLine, open_header_pin
@@ -52,6 +52,14 @@ from .service import RepeaterService
 _logger = logging.getLogger("moreopenrepeater.audio")
 _receiver_logger = logging.getLogger("moreopenrepeater.receiver")
 OPENINGS_KEPT = 200
+GLITCHES_KEPT = 200
+GLITCH_MERGE_SECONDS = 1.0  # more of the same glitch this soon joins the last entry instead of logging again
+GLITCH_LABELS = {
+    "dropped_input_blocks": ("receive block", "dropped (processing fell behind)"),
+    "starved_output_blocks": ("transmit block", "with no audio ready in time"),
+    "input_overflows": ("sound card receive overrun", ""),
+    "output_underflows": ("sound card transmit underrun", ""),
+}
 
 BLOCK_SECONDS = 0.02
 MIN_RECORDING_SECONDS = 1.0  # shorter captures are kerchunks, not worth keeping
@@ -208,6 +216,8 @@ class LiveAudio:
         self.monitor = AudioMonitor()
         # Each time the receiver opened, newest last (describe_opening).
         self.openings: collections.deque[dict] = collections.deque(maxlen=OPENINGS_KEPT)
+        # Audio glitches with what the repeater was doing, newest last.
+        self.glitches: collections.deque[dict] = collections.deque(maxlen=GLITCHES_KEPT)
 
     @property
     def cm108(self) -> Optional[CM108Interface]:
@@ -271,8 +281,7 @@ class LiveAudio:
             "cos_open": processor.cos_open if processor else False,
             "ctcss_hz": processor.ctcss_hz if processor else None,
             "transmitting": engine.transmitting if engine else False,
-            "dropped_input_blocks": engine.dropped_input_blocks if engine else 0,
-            "starved_output_blocks": engine.starved_output_blocks if engine else 0,
+            **(engine.glitch_counts() if engine else dict.fromkeys(GLITCH_COUNTERS, 0)),
             "hardware_ptt": self.hardware_ptt,
             "listeners": self.monitor.listener_count,
         }
@@ -402,6 +411,31 @@ class LiveAudio:
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self._record_opening, opening)
 
+    def _on_glitch(self, counter: str, count: int) -> None:
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._record_glitch, counter, count)
+
+    def _record_glitch(self, counter: str, count: int) -> None:
+        now = self._clock()
+        state, transmitting = self._service.controller.state, self._service.ptt_active
+        last = self.glitches[-1] if self.glitches else None
+        if (
+            last is not None and last["counter"] == counter and last["state"] == state
+            and last["transmitting"] == transmitting and now - last["last_at"] < GLITCH_MERGE_SECONDS
+        ):
+            last["count"] += count
+            last["last_at"] = now
+            return
+        self.glitches.append(
+            {"at": now, "last_at": now, "counter": counter, "count": count, "state": state, "transmitting": transmitting}
+        )
+        what, why = GLITCH_LABELS[counter]
+        described = f"{count} {what}{'s' if count > 1 else ''}{' ' + why if why else ''}"
+        _logger.info(
+            "audio glitch: %s, %s (state %s)",
+            described, "while transmitting" if transmitting else "not transmitting", state,
+        )
+
     def _record_opening(self, opening: ReceiverOpening) -> None:
         entry = {**dataclasses.asdict(opening), "started_at": self._clock() - opening.duration}
         self.openings.append(entry)
@@ -470,6 +504,7 @@ class LiveAudio:
             ptt_output=ptt_output,
             cos_input=cos_input,
             on_audio=self.monitor.feed,
+            on_glitch=self._on_glitch,
         )
         self._ptt_output = ptt_output
         apply_saved_levels(config, self._run_mixer)

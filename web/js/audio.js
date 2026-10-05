@@ -54,6 +54,26 @@ function setTag(tag, on, text, onClass = "tag-on") {
   tag.textContent = text;
 }
 
+const GLITCH_LABELS = {
+  dropped_input_blocks: "Receive audio dropped",
+  starved_output_blocks: "Transmit gap",
+  input_overflows: "Sound card receive overrun",
+  output_underflows: "Sound card transmit underrun",
+};
+const GLITCH_SHORT = {
+  dropped_input_blocks: "receive drops",
+  starved_output_blocks: "transmit gaps",
+  input_overflows: "receive overruns",
+  output_underflows: "transmit underruns",
+};
+
+function glitchSummary(engine) {
+  return Object.entries(GLITCH_SHORT)
+    .filter(([counter]) => engine[counter])
+    .map(([counter, label]) => `${engine[counter]} ${label}`)
+    .join(" · ");
+}
+
 function renderEngine(engine) {
   if (engine.running) setTag(stateTag, true, "running");
   else if (engine.error) setTag(stateTag, true, "error", "tag-danger");
@@ -72,12 +92,12 @@ function renderEngine(engine) {
   setTag(ctcssTag, running && engine.ctcss_hz != null, engine.ctcss_hz != null ? `${engine.ctcss_hz} Hz` : "no tone");
   setTag(txTag, running && engine.transmitting, "TX", "tag-danger");
 
-  const glitches = engine.dropped_input_blocks + engine.starved_output_blocks;
+  const glitches = glitchSummary(engine);
   const rate = engine.device_sample_rate ?? engine.sample_rate;
   const rateText =
     rate === engine.sample_rate ? `${rate / 1000} kHz` : `device ${rate / 1000} kHz → ${engine.sample_rate / 1000} kHz`;
   health.textContent = running
-    ? `${rateText}${PTT_LABELS[engine.hardware_ptt] ?? ""}${glitches ? ` · ${glitches} audio glitches` : ""}`
+    ? `${rateText}${PTT_LABELS[engine.hardware_ptt] ?? ""}${glitches ? ` · ${glitches}` : ""}`
     : "";
 }
 
@@ -194,6 +214,23 @@ async function saveCurrentLevels(button) {
   loadLevels();
 }
 
+const glitchesBody = document.getElementById("glitches-tbody");
+const glitchesEmpty = document.getElementById("glitches-empty");
+
+function renderGlitches(glitches) {
+  glitchesEmpty.hidden = glitches.length > 0;
+  glitchesBody.innerHTML = glitches
+    .map(
+      (g) => `<tr>
+        <td>${new Date(g.at * 1000).toLocaleTimeString()}</td>
+        <td>${GLITCH_LABELS[g.counter]}</td>
+        <td>${g.count}</td>
+        <td>${escapeHtml(g.state.replaceAll("_", " "))}${g.transmitting ? ", transmitting" : ""}</td>
+      </tr>`,
+    )
+    .join("");
+}
+
 const openingsBody = document.getElementById("openings-tbody");
 const openingsEmpty = document.getElementById("openings-empty");
 const OPENINGS_POLL_MS = 3000;
@@ -229,7 +266,9 @@ function renderOpenings(openings) {
 async function pollOpenings() {
   if (currentView === "audio" && !document.hidden) {
     try {
-      renderOpenings(await api("/api/audio/openings"));
+      const [openings, glitches] = await Promise.all([api("/api/audio/openings"), api("/api/audio/glitches")]);
+      renderOpenings(openings);
+      renderGlitches(glitches);
     } catch {
       // The next poll will retry.
     }

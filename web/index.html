@@ -879,6 +879,23 @@
           <p id="openings-empty" class="muted small">Nothing yet. The list starts when live audio does.</p>
         </section>
 
+        <section class="card" id="glitches-card">
+          <div class="card-header">
+            <h2>Audio glitches</h2>
+          </div>
+          <p class="muted small">Each 20&nbsp;ms block the audio lost since live audio started, newest first, with what
+            the repeater was doing. A transmit gap while transmitting is a short dropout on the air; one while idle
+            goes unheard. Receive drops mean processing fell behind; overruns and underruns are the sound card's
+            own. Each one is also written to the log.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Time</th><th>What</th><th>Blocks</th><th>While</th></tr></thead>
+              <tbody id="glitches-tbody"></tbody>
+            </table>
+          </div>
+          <p id="glitches-empty" class="muted small">None so far.</p>
+        </section>
+
         <form class="card config-form" data-config-form id="monitor-form">
           <div class="card-header">
             <h2>Monitor receiver</h2>

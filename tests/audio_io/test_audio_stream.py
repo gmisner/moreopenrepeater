@@ -57,3 +57,25 @@ def test_pump_writes_queued_output_block():
     pump.process(indata, outdata, frames=4, time=None, status=None)
 
     np.testing.assert_array_equal(outdata, queued_block)
+
+
+class Flags:
+    """Stands in for sounddevice.CallbackFlags."""
+
+    def __init__(self, input_overflow=False, output_underflow=False):
+        self.input_overflow = input_overflow
+        self.output_underflow = output_underflow
+
+    def __bool__(self):
+        return self.input_overflow or self.output_underflow
+
+
+def test_pump_counts_the_sound_cards_own_overruns_and_underruns():
+    pump = AudioBlockPump(input_queue=queue.Queue(maxsize=4), output_queue=queue.Queue(maxsize=4), block_size=4)
+    block = np.zeros((4, 1), dtype=np.float32)
+
+    pump.process(block, block.copy(), frames=4, time=None, status=Flags(input_overflow=True))
+    pump.process(block, block.copy(), frames=4, time=None, status=Flags(output_underflow=True))
+    pump.process(block, block.copy(), frames=4, time=None, status=Flags())
+
+    assert (pump.input_overflows, pump.output_underflows) == (1, 1)

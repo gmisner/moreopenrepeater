@@ -302,6 +302,18 @@ A command's reply comes that much later after the last key.
 which requires the receiver's audio to be unfiltered (discriminator or
 flat audio) so the tone reaches the sound card.
 
+**Receiver openings** (on the same page) lists every time the receiver
+opened since the service started: its length, the gap since the one before,
+the level when it opened and at its peak, the strongest frequency and how
+much of the audio was at it, any CTCSS tone or DTMF digits, and how long
+after the repeater unkeyed it came. Each one is also logged
+(`moreopenrepeater.receiver`). Use it to find what keys the repeater by
+itself:
+- a steady tone shows as nearly 100% at one frequency;
+- openings a fixed time apart point at another transmitter on a schedule;
+- openings a fixed time after the repeater unkeys point at it hearing itself
+  or another radio answering it.
+
 Three settings shape the audio around each transmission:
 
 - **Mute DTMF tones** (Transmit audio, on by default): commands are still

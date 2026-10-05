@@ -113,6 +113,7 @@ from .models import (
     AssetResponse,
     AudioDeviceResponse,
     AudioEngineResponse,
+    ReceiverOpeningResponse,
     AllStarNodeRequest,
     BoardApplyRequest,
     BoardApplyResponse,
@@ -1627,6 +1628,10 @@ def create_app(
     @app.get("/api/audio/engine", response_model=AudioEngineResponse, dependencies=auth_dependencies)
     def get_audio_engine() -> dict:
         return live_audio.status()
+
+    @app.get("/api/audio/openings", response_model=list[ReceiverOpeningResponse], dependencies=auth_dependencies)
+    def get_receiver_openings() -> list[dict]:
+        return list(reversed(live_audio.openings))
 
     @app.get("/api/autopatch", response_model=AutopatchStatusResponse, dependencies=auth_dependencies)
     def get_autopatch() -> dict:

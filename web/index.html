@@ -862,6 +862,23 @@
           </div>
         </section>
 
+        <section class="card" id="openings-card">
+          <div class="card-header">
+            <h2>Receiver openings</h2>
+          </div>
+          <p class="muted small">Every time the receiver opened since the service started, newest first, to track down
+            what keys the repeater. A steady tone shows as nearly 100% at one frequency; voice and noise are spread
+            out. Openings that come a fixed time apart, or a fixed time after the repeater unkeys, point at another
+            transmitter or at the repeater hearing itself. Each one is also written to the log.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Time</th><th>Length</th><th>Gap</th><th>Level</th><th>Strongest</th><th>CTCSS</th><th>Notes</th></tr></thead>
+              <tbody id="openings-tbody"></tbody>
+            </table>
+          </div>
+          <p id="openings-empty" class="muted small">Nothing yet. The list starts when live audio does.</p>
+        </section>
+
         <form class="card config-form" data-config-form id="monitor-form">
           <div class="card-header">
             <h2>Monitor receiver</h2>

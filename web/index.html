@@ -746,6 +746,10 @@
                     <span class="input-unit"><input type="number" step="0.05" min="0" max="5" name="vox_hold" required /><span>s</span></span>
                     <small>How long audio can drop out before the carrier counts as gone.</small>
                   </label>
+                  <label>VOX hold after a DTMF digit
+                    <span class="input-unit"><input type="number" step="0.5" min="0" max="10" name="vox_dtmf_hold" required /><span>s</span></span>
+                    <small>The hold when the quiet comes right after a keypad tone, so a slow dialer has time to press the next key. The longer of the two holds applies.</small>
+                  </label>
                   <label>Squelch-tail removal
                     <span class="input-unit"><input type="number" step="10" min="0" max="300" name="squelch_tail_ms" required /><span>ms</span></span>
                     <small>Cut this much from the end of each transmission, so the receiver's noise burst isn't repeated. Delays repeated audio by the same amount. 0 = off.</small>

@@ -76,6 +76,44 @@ def test_dtmf_digits_are_reported_while_carrier_is_up():
     assert [e.digit for e in events if isinstance(e, DTMFDigit)] == ["5", "#"]
 
 
+def test_vox_waits_longer_for_the_next_dtmf_digit():
+    p = AudioProcessor(ProcessorSettings(RATE, vox_threshold_db=-40, vox_hold=1.0, vox_dtmf_hold=3.0))
+    digit = lambda d: dtmf_tone(d, RATE, int(0.2 * RATE)).astype(np.float32)  # noqa: E731
+
+    _, events = run(p, np.concatenate([digit("6"), silence(2.5), digit("4"), silence(2.0)]))
+
+    assert [e.digit for e in events if isinstance(e, DTMFDigit)] == ["6", "4"]
+    assert [e for e in events if isinstance(e, COSChanged)] == [COSChanged(active=True)]
+
+
+def test_after_the_last_digit_vox_closes_once_the_dtmf_hold_passes():
+    p = AudioProcessor(ProcessorSettings(RATE, vox_threshold_db=-40, vox_hold=1.0, vox_dtmf_hold=3.0))
+
+    results, _ = run(p, np.concatenate([dtmf_tone("6", RATE, int(0.2 * RATE)).astype(np.float32), silence(4.0)]))
+
+    closed = next(i for i, r in enumerate(results) if COSChanged(active=False) in r.events)
+    assert closed - 10 == 149  # tone ends at block 10; closes once 3 s of quiet has passed
+
+
+def test_a_pause_after_speech_still_uses_the_normal_hold():
+    p = AudioProcessor(ProcessorSettings(RATE, vox_threshold_db=-40, vox_hold=1.0, vox_dtmf_hold=3.0))
+    digit = dtmf_tone("6", RATE, int(0.2 * RATE)).astype(np.float32)
+
+    results, _ = run(p, np.concatenate([digit, tone(400, 1.0), silence(2.0)]))
+
+    closed = next(i for i, r in enumerate(results) if COSChanged(active=False) in r.events)
+    assert closed - 60 == 49  # speech ends at block 60; the 1 s hold applies
+
+
+def test_the_dtmf_hold_never_shortens_a_longer_vox_hold():
+    p = AudioProcessor(ProcessorSettings(RATE, vox_threshold_db=-40, vox_hold=2.0, vox_dtmf_hold=0.5))
+
+    results, _ = run(p, np.concatenate([dtmf_tone("6", RATE, int(0.2 * RATE)).astype(np.float32), silence(3.0)]))
+
+    closed = next(i for i, r in enumerate(results) if COSChanged(active=False) in r.events)
+    assert closed - 10 == 99
+
+
 @pytest.mark.parametrize(
     "digit, row_hz, row_amplitude, col_amplitude",
     [("*", 941, 0.052, 0.032), ("*", 941, 0.011, 0.006), ("1", 697, 0.013, 0.004)],

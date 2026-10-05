@@ -71,7 +71,7 @@ _RESTART_FIELDS = (
 HARDWARE_COS = ("cm108", "gpio", "serial")
 # Same names on RepeaterConfig and ProcessorSettings; applied without a restart.
 _LIVE_FIELDS = (
-    "vox_threshold_db", "vox_hold", "tx_gain_db", "tx_ctcss_hz", "tx_ctcss_level_db", "squelch_tail_ms", "tx_delay_ms",
+    "vox_threshold_db", "vox_hold", "vox_dtmf_hold", "tx_gain_db", "tx_ctcss_hz", "tx_ctcss_level_db", "squelch_tail_ms", "tx_delay_ms",
     "dtmf_mute", "rx_deemphasis", "tx_preemphasis",
 )
 

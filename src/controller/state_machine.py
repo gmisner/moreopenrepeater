@@ -211,6 +211,7 @@ class RepeaterConfig:
     remote_base_ranges: str = "144-148, 222-225, 420-450"  # MHz it may transmit on
     remote_base_idle_minutes: float = 10.0  # turns itself off after this long unused; 0 = stays on
     vox_hold: float = 0.4
+    vox_dtmf_hold: float = 3.0  # VOX hold when the quiet follows a DTMF digit
     tx_gain_db: float = 0.0
     tx_ctcss_hz: Optional[float] = None  # sub-audible tone added to everything transmitted
     tx_ctcss_level_db: float = -20.0

@@ -294,7 +294,11 @@ as both input and output (it shows up as something like `USB Audio Device`),
 choose the carrier-detect source, and enable live audio. Without a COS wire,
 "Audio level (VOX)" works with a receiver whose squelch mutes its audio
 output; set the VOX threshold a few dB above the idle level shown on the
-meter. "CTCSS tone present" opens only when a sub-audible tone is decoded,
+meter. VOX closes after **VOX hold** of quiet, except when the quiet comes
+right after a DTMF digit: then it waits **VOX hold after a DTMF digit**
+(3 seconds by default), so someone dialing slowly isn't cut off between keys.
+A command's reply comes that much later after the last key.
+"CTCSS tone present" opens only when a sub-audible tone is decoded,
 which requires the receiver's audio to be unfiltered (discriminator or
 flat audio) so the tone reaches the sound card.
 

@@ -1,0 +1,16 @@
+# Groups the notes `gh release create --generate-notes` writes for each
+# stable release (see promote.yml) by the pull requests' labels.
+changelog:
+  categories:
+    - title: New features
+      labels: [enhancement]
+    - title: Fixes
+      labels: [bug]
+    - title: Documentation
+      labels: [documentation]
+    - title: Maintenance
+      labels: [maintenance]
+    - title: Dependencies
+      labels: [dependencies]
+    - title: Other changes
+      labels: ["*"]

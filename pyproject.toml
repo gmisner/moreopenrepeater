@@ -32,6 +32,9 @@ moreopenrepeater-api = "api.app:main"
 pythonpath = ["src"]
 testpaths = ["tests"]
 
+[tool.ruff.lint]
+select = ["F"]
+
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"

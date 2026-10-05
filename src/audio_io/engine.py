@@ -31,6 +31,8 @@ _logger = logging.getLogger("moreopenrepeater.audio")
 QUEUE_BLOCKS = 10
 PRIME_BLOCKS = 2  # output cushion so the first callbacks aren't starved
 COS_POLL_SECONDS = 0.02
+# The stream's glitch counters, each reported to `on_glitch` as it goes up.
+GLITCH_COUNTERS = ("dropped_input_blocks", "starved_output_blocks", "input_overflows", "output_underflows")
 
 
 class AudioEngine:
@@ -45,9 +47,13 @@ class AudioEngine:
         cos_input: Optional[Callable[[], bool]] = None,
         stream_factory: Callable[..., AudioStream] = AudioStream,
         on_audio: Optional[Callable[[np.ndarray, np.ndarray], None]] = None,
+        on_glitch: Optional[Callable[[str, int], None]] = None,
     ) -> None:
         """`on_audio(received, transmitted)` sees every processing block, on
-        the worker thread -- it must be quick."""
+        the worker thread -- it must be quick. `on_glitch(counter, count)`
+        too: a GLITCH_COUNTERS name and how much it just went up."""
+        self._on_glitch = on_glitch
+        self._glitches_seen = dict.fromkeys(GLITCH_COUNTERS, 0)
         self.processor = processor
         self._on_audio = on_audio
         self.block_size = block_size
@@ -87,6 +93,17 @@ class AudioEngine:
     def starved_output_blocks(self) -> int:
         return self._stream.starved_output_blocks if self._stream else 0
 
+    def glitch_counts(self) -> dict[str, int]:
+        return {name: getattr(self._stream, name, 0) if self._stream else 0 for name in GLITCH_COUNTERS}
+
+    def check_glitches(self) -> None:
+        """Report counters that went up since the last check (worker thread)."""
+        for name, count in self.glitch_counts().items():
+            new = count - self._glitches_seen[name]
+            self._glitches_seen[name] = count
+            if new > 0 and self._on_glitch is not None:
+                self._on_glitch(name, new)
+
     def start(self) -> None:
         self._stop.clear()
         rate = self.processor.settings.sample_rate
@@ -98,6 +115,7 @@ class AudioEngine:
             device=(self._input_device, self._output_device),
         )
         self._configure_device(self._stream.sample_rate, self._stream.block_size)
+        self._glitches_seen = dict.fromkeys(GLITCH_COUNTERS, 0)
         silence = np.zeros((self._device_block_size, 1), dtype=np.float32)
         for _ in range(PRIME_BLOCKS):
             self._output.put_nowait(silence)
@@ -158,6 +176,7 @@ class AudioEngine:
                 continue
             try:
                 self.process_one(block)
+                self.check_glitches()
             except Exception:
                 _logger.exception("audio processing failed for one block")
             self.last_block_at = time.monotonic()

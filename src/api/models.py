@@ -1223,6 +1223,15 @@ class ReceiverOpeningResponse(BaseModel):
     after_tx: Optional[float]  # 0 = while the repeater was transmitting; None = not in the last minute
 
 
+class AudioGlitchResponse(BaseModel):
+    at: float
+    last_at: float  # the same glitch repeating within a second joins one entry
+    counter: Literal["dropped_input_blocks", "starved_output_blocks", "input_overflows", "output_underflows"]
+    count: int
+    state: str  # the controller's state
+    transmitting: bool
+
+
 class AudioEngineResponse(BaseModel):
     enabled: bool
     running: bool
@@ -1237,6 +1246,8 @@ class AudioEngineResponse(BaseModel):
     transmitting: bool
     dropped_input_blocks: int
     starved_output_blocks: int
+    input_overflows: int = 0
+    output_underflows: int = 0
     hardware_ptt: Optional[str]  # "cm108", "gpio" or "serial"
     listeners: int = 0
 

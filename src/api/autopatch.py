@@ -12,7 +12,10 @@ A call goes like this:
      our TCP server and names the call by its UUID. From then on 20 ms
      frames of 8 kHz audio flow both ways: received radio audio to the
      phone, phone audio out the transmitter.
-  3. It ends on the hangup code, the far end hanging up, or the time limit.
+  3. DTMF keyed on the radio during the call is muted from the audio like
+     any other DTMF, so each decoded digit goes to the call's channel with
+     an AMI PlayDTMF instead (out of band, RFC 4733 on a SIP trunk).
+  4. It ends on the hangup code, the far end hanging up, or the time limit.
      We hang up by sending AudioSocket's hangup frame once connected, or an
      AMI Hangup of the ringing channel.
 
@@ -57,6 +60,7 @@ UUID_TIMEOUT = 5.0
 INCOMING_CONTEXT = "mor-incoming"
 PIN_TRIES = 3
 PIN_DIGIT_TIMEOUT = 10.0
+DTMF_DURATION_MS = 200
 
 
 class PatchSettings(NamedTuple):
@@ -141,6 +145,13 @@ def _to_pcm(samples: np.ndarray) -> bytes:
 
 def _from_pcm(payload: bytes) -> np.ndarray:
     return np.frombuffer(payload, dtype="<i2").astype(np.float32) / 32768
+
+
+async def _close_quietly(ami: AMIClient) -> None:
+    try:
+        await ami.close()
+    except OSError:
+        pass
 
 
 async def ami_list(ami: AMIClient, fields: AMIMessage) -> Optional[list[AMIMessage]]:
@@ -306,6 +317,7 @@ class Autopatch:
         self._waiting: dict[str, "asyncio.Future[tuple]"] = {}
         self._task: Optional[asyncio.Task] = None
         self._hangup_reason: Optional[str] = None
+        self._digits: Optional["asyncio.Queue[str]"] = None  # while a call is connected
         self.error: Optional[str] = None
         self.call: Optional[CallRecord] = None
         self.last_call: Optional[CallRecord] = None
@@ -382,6 +394,11 @@ class Autopatch:
         self._task = asyncio.create_task(self._run(self.call, config, patch))
         return None
 
+    def send_digit(self, digit: str) -> None:
+        """A digit keyed on the radio, for the far end of a connected call."""
+        if self._digits is not None:
+            self._digits.put_nowait(digit)
+
     def hangup(self, reason: str) -> None:
         if self._task is None or self._task.done() or self._hangup_reason is not None:
             return
@@ -402,6 +419,7 @@ class Autopatch:
         dialing_audio = asyncio.create_task(self._dialing_audio(patch, call.number, config))
         ami: Optional[AMIClient] = None
         watcher: Optional[asyncio.Task] = None
+        sender: Optional[asyncio.Task] = None
         connection: Optional[tuple] = None
         line: Optional[PhoneLine] = None
         speech = "Autopatch ended."
@@ -451,6 +469,7 @@ class Autopatch:
             line = PhoneLine(reader, writer, self.rate)
             line.connect(patch)
             line.start()
+            sender = self._start_digits(channel["name"] or call_id, ami)
             call.result = await self._talk(line, config.autopatch_max_call_seconds)
             if call.result == "time limit reached":
                 speech = "Time limit reached. Autopatch ended."
@@ -465,6 +484,7 @@ class Autopatch:
             call.result, speech = _UNCOMPLETED
         finally:
             dialing_audio.cancel()
+            await self._stop_digits(sender)
             self._waiting.pop(call_id, None)
             if connection is not None:
                 await self._close_socket(connection, line)
@@ -515,6 +535,42 @@ class Autopatch:
             await asyncio.wait_for(ami.send_action({"Action": "Hangup", "Channel": channel}), AMI_TIMEOUT)
         except (OSError, ConnectionError, asyncio.TimeoutError):
             _logger.warning("couldn't hang up %s", channel)
+
+    def _start_digits(self, channel: str, ami: Optional[AMIClient]) -> asyncio.Task:
+        self._digits = asyncio.Queue()
+        return asyncio.create_task(self._send_digits(self._digits, channel, ami))
+
+    async def _stop_digits(self, sender: Optional[asyncio.Task]) -> None:
+        self._digits = None
+        if sender is not None:
+            sender.cancel()
+            await asyncio.gather(sender, return_exceptions=True)
+
+    async def _send_digits(self, digits: "asyncio.Queue[str]", channel: str, ami: Optional[AMIClient]) -> None:
+        """Each queued digit to `channel`, in order. Without the call's own AMI
+        connection (a call in), one is opened at the first digit."""
+        own: Optional[AMIClient] = None
+        try:
+            while True:
+                digit = await digits.get()
+                try:
+                    if ami is None:
+                        assert self.settings is not None
+                        s = self.settings
+                        own = ami = self._ami_factory(s.ami_host, s.ami_port, s.ami_username, s.ami_secret)
+                        await asyncio.wait_for(ami.connect(), AMI_TIMEOUT)
+                    action = {"Action": "PlayDTMF", "Channel": channel, "Digit": digit, "Duration": str(DTMF_DURATION_MS)}
+                    response = await asyncio.wait_for(ami.send_action(action), AMI_TIMEOUT)
+                    if response.get("Response") != "Success":
+                        _logger.warning("Asterisk didn't send DTMF %r to %s: %s", digit, channel, response.get("Message"))
+                except (OSError, ConnectionError, asyncio.TimeoutError) as error:
+                    _logger.warning("couldn't send DTMF %r to %s: %r", digit, channel, error)
+                    if own is not None:
+                        await _close_quietly(own)
+                        ami = own = None
+        finally:
+            if own is not None:
+                await _close_quietly(own)
 
     async def _close_socket(self, connection: tuple, line: Optional[PhoneLine]) -> None:
         _reader, writer, done = connection
@@ -613,8 +669,8 @@ class Autopatch:
             return "a call is already in progress", "The repeater is on another call. Please try again later."
         return None
 
-    async def _find_incoming(self, call_id: str) -> Optional[str]:
-        """The caller's number ("" if unknown) if `call_id` is a call in, else None."""
+    async def _find_incoming(self, call_id: str) -> Optional[tuple[str, str]]:
+        """The caller's number ("" if unknown) and the channel if `call_id` is a call in, else None."""
         if self.settings is None:
             return None
         s = self.settings
@@ -637,15 +693,15 @@ class Autopatch:
                 and str(channel.get("ApplicationData", "")).lower().startswith(call_id + ",")
             ):
                 number = str(channel.get("CallerIDNum") or "")
-                return "" if number == "<unknown>" else number
+                return ("" if number == "<unknown>" else number), str(channel.get("Channel") or call_id)
         return None
 
-    async def _answer(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, caller: str) -> None:
+    async def _answer(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, caller: str, channel: str) -> None:
         line = PhoneLine(reader, writer, self.rate)
         line.start()
         try:
             if await self._screen(line, caller):
-                await self._run_incoming(line, caller)
+                await self._run_incoming(line, caller, channel)
         finally:
             await line.close()
 
@@ -681,7 +737,7 @@ class Autopatch:
             return False
         return True
 
-    async def _run_incoming(self, line: PhoneLine, caller: str) -> None:
+    async def _run_incoming(self, line: PhoneLine, caller: str, channel: str) -> None:
         config = self._service.config
         now = self._clock()
         call = CallRecord(number=caller, actor="phone", started_at=now, state="connected", connected_at=now, direction="incoming")
@@ -692,10 +748,12 @@ class Autopatch:
         self._service.begin_patch()
         self._set_patch(patch)
         speech = "Autopatch ended."
+        sender: Optional[asyncio.Task] = None
         self._audit(call.actor, "Autopatch call", call.who)
         try:
             await asyncio.gather(self._say(line, "You're on the air."), self._announce(patch, "Incoming phone call.", config))
             line.connect(patch)
+            sender = self._start_digits(channel, None)
             call.result = await self._talk(line, config.autopatch_max_call_seconds)
             if call.result == "time limit reached":
                 speech = "Time limit reached. Autopatch ended."
@@ -705,6 +763,7 @@ class Autopatch:
             _logger.error("autopatch %s failed: %r", call.who, error)
             call.result = "the connection failed"
         finally:
+            await self._stop_digits(sender)
             self._finish(call, speech)
 
     # -- AudioSocket server --------------------------------------------------
@@ -721,13 +780,13 @@ class Autopatch:
             waiting.set_result((reader, writer, done))
             await done  # the call owns the connection until it ends
             return
-        caller = await self._find_incoming(call_id) if call_id else None
-        if caller is None:
+        found = await self._find_incoming(call_id) if call_id else None
+        if found is None:
             _logger.warning("AudioSocket connection for unknown call %s; hanging up", call_id)
             writer.write(encode_frame(FrameType.HANGUP))
             writer.close()
             return
-        await self._answer(reader, writer, caller)
+        await self._answer(reader, writer, *found)
 
     def _config_changed(self, config: RepeaterConfig) -> None:
         if not config.autopatch_enabled:

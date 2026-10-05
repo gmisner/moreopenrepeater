@@ -5,6 +5,7 @@ import numpy as np
 
 from api.autopatch import Autopatch, CallRecord, PatchSettings, patch_settings_from_env
 from api.service import RepeaterService
+from controller.events import DTMFDigit
 from controller.state_machine import IDLE, PATCH, RepeaterConfig
 from link.audiosocket import FrameType, encode_frame, read_frame_async
 from playout.renderer import TTS_PREFIX
@@ -191,6 +192,34 @@ def test_hangup_code_ends_a_connected_call():
         await asyncio.wait_for(phones[0].got_hangup.wait(), 2)
         await wait_until(lambda: patch.call is None)
         assert patch.last_call.result == "hung up by a user"
+        await patch.stop()
+
+    asyncio.run(scenario())
+
+
+def dtmf_sent(ami):
+    return [(a["Channel"], a["Digit"], a["Duration"]) for a in ami.actions if a["Action"] == "PlayDTMF"]
+
+
+def test_digits_keyed_on_the_radio_reach_the_far_end():
+    async def scenario():
+        service, patch, ami, _ = make()
+        phones = []
+        ami.on_originate = answer(ami, patch, phones)
+        await patch.start()
+        patch.dial("8605551234", "DTMF")
+        service.handle_audio_events([DTMFDigit(digit="9")])  # still dialing: nobody to hear it
+        await wait_until(lambda: patch.call and patch.call.state == "connected")
+        service.handle_audio_events([DTMFDigit(digit="1")])
+        service.simulate_dtmf("2")
+        await wait_until(lambda: len(dtmf_sent(ami)) == 2)
+        assert dtmf_sent(ami) == [(CHANNEL, "1", "200"), (CHANNEL, "2", "200")]
+        assert patch.call is not None  # menu digits don't hang up
+        patch.hangup("test over")
+        await wait_until(lambda: patch.call is None)
+        service.simulate_dtmf("3")
+        await asyncio.sleep(0.05)
+        assert len(dtmf_sent(ami)) == 2
         await patch.stop()
 
     asyncio.run(scenario())
@@ -405,6 +434,25 @@ def test_call_in_with_the_access_code_goes_on_the_air():
         assert patch.last_call.result == "the other party hung up"
         assert service.controller.state != PATCH
         assert spoken(service) == ["Autopatch ended."]
+        await patch.stop()
+
+    asyncio.run(scenario())
+
+
+def test_digits_keyed_on_the_radio_reach_a_caller():
+    async def scenario():
+        service, patch, ami, _, _ = make_incoming()
+        await patch.start()
+        phone = ring_in(ami, patch)
+        await phone.connect()
+        phone.press("1234")
+        await wait_until(lambda: patch.call is not None)
+        await wait_until(lambda: patch._digits is not None)
+        service.simulate_dtmf("5")
+        await wait_until(lambda: len(dtmf_sent(ami)) == 1)
+        assert dtmf_sent(ami) == [("PJSIP/mor-trunk-00000002", "5", "200")]
+        phone.hang_up()
+        await wait_until(lambda: patch.call is None)
         await patch.stop()
 
     asyncio.run(scenario())

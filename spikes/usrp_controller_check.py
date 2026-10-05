@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import asyncio
 import socket
-import struct
 import sys
 import threading
 import time

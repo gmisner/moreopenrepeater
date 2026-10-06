@@ -157,7 +157,10 @@ class ClipRenderer:
     def _asset_version(self, asset_id: Optional[str]) -> Optional[float]:
         if not asset_id:
             return None
-        path = self._asset_path(asset_id)
+        try:
+            path = self._asset_path(asset_id)
+        except KeyError:
+            return None
         return path.stat().st_mtime if path.exists() else None
 
     def _cache_key(self, clip: str, config: RepeaterConfig) -> Hashable:
@@ -184,7 +187,11 @@ class ClipRenderer:
     def _load_asset(self, asset_id: Optional[str]) -> Optional[np.ndarray]:
         if not asset_id:
             return None
-        path = self._asset_path(asset_id)
+        try:
+            path = self._asset_path(asset_id)
+        except KeyError:
+            _logger.warning("%r isn't an audio asset ID; using the built-in sound", asset_id)
+            return None
         try:
             return read_wav(path, self.sample_rate)
         except (OSError, WavError):

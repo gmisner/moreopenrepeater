@@ -10,6 +10,7 @@ asset into transmit audio.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import uuid
 from dataclasses import asdict, dataclass
@@ -17,7 +18,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
+from .safe_paths import child_path
+
 AssetKind = Literal["courtesy_tone", "id", "timeout_tone", "custom"]
+ASSET_ID = re.compile(r"[0-9a-f]{32}")  # uuid4().hex
 
 
 @dataclass(frozen=True)
@@ -53,12 +57,20 @@ class AudioAssetStore:
     def delete_asset(self, asset_id: str) -> None:
         entries = [e for e in self._read_index() if e["id"] != asset_id]
         self._write_index(entries)
-        path = self.path_for(asset_id)
-        if path.exists():
-            path.unlink()
+        if self.has(asset_id):
+            self.path_for(asset_id).unlink()
+
+    def has(self, asset_id: str) -> bool:
+        try:
+            return self.path_for(asset_id).exists()
+        except KeyError:
+            return False
 
     def path_for(self, asset_id: str) -> Path:
-        return self._data_dir / f"{asset_id}.wav"
+        """KeyError for anything that isn't an asset ID."""
+        if not ASSET_ID.fullmatch(asset_id):
+            raise KeyError(asset_id)
+        return child_path(self._data_dir, f"{asset_id}.wav")
 
     def replace(self, assets: list[AssetInfo], source_dir: Path) -> None:
         """Swap in another set of clips (e.g. from a backup), whose files are

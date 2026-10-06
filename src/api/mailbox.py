@@ -29,6 +29,7 @@ from playout.renderer import RECORDING_PREFIX, TTS_PREFIX, ClipRenderer
 from playout.wav import encode_wav, read_wav
 
 from .persistence import StateStore
+from .safe_paths import child_path
 from .service import RepeaterService, spoken_time
 
 _logger = logging.getLogger("moreopenrepeater.mailbox")
@@ -98,7 +99,7 @@ class MailboxStore:
     def path_for(self, clip_id: str) -> Path:
         if self.directory is None or not (_MESSAGE_ID.match(clip_id) or _PLAYBACK_ID.match(clip_id)):
             raise KeyError(clip_id)
-        return self.directory / f"{clip_id}.wav"
+        return child_path(self.directory, f"{clip_id}.wav")
 
     def save(self, box: str, samples: np.ndarray, left_at: float) -> Optional[MessageInfo]:
         if self.directory is None:

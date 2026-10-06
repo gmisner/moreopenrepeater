@@ -18,6 +18,8 @@ import numpy as np
 
 from playout.wav import encode_wav
 
+from .safe_paths import child_path
+
 _WAV_HEADER_BYTES = 44
 _ID = re.compile(r"^\d{13,}$")
 
@@ -43,7 +45,7 @@ class RecordingStore:
     def path_for(self, recording_id: str) -> Path:
         if self.directory is None or not _ID.match(recording_id):
             raise KeyError(recording_id)
-        return self.directory / f"{recording_id}.wav"
+        return child_path(self.directory, f"{recording_id}.wav")
 
     def transcript_path(self, recording_id: str) -> Path:
         return self.path_for(recording_id).with_suffix(".txt")

@@ -509,14 +509,16 @@ curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scrip
 ```
 
 It installs the system packages, creates a `moreopenrepeater` service user,
-checks out the stable release in `/opt/moreopenrepeater`, sets up the CM108 udev rule,
+checks out the **stable** release in `/opt/moreopenrepeater`, sets up the CM108 udev rule,
 writes `/etc/moreopenrepeater/env` with a generated admin password, and starts
 the systemd service. It prints the password and how to reach the dashboard at
-the end; the dashboard then walks through a short setup wizard. Update from the dashboard's Updates page, or run it again. Add
-`-s -- --channel beta` (or `dev`) after `bash` to follow a pre-release channel.
-With `-s -- --allstar` after `bash`, it also installs AllStarLink
-(ASL3) and connects the controller to it. The manual steps, and how to reach the dashboard securely from
-other devices, are in `docs/raspberry-pi.md`.
+the end; the dashboard then walks through a short setup wizard. Keep production
+repeaters on stable (the default). Use `-s -- --channel beta` only on a test
+repeater, or `dev` for untested `main`. Update from the dashboard's Updates
+page, or run the installer again. With `-s -- --allstar` after `bash`, it also
+installs AllStarLink (ASL3) and connects the controller to it. The manual
+steps, and how to reach the dashboard securely from other devices, are in
+`docs/raspberry-pi.md`.
 
 ## Development
 

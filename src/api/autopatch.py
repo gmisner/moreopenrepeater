@@ -3,8 +3,9 @@
 A call goes like this:
 
   1. `dial(number)` checks the number against the allowed patterns, keys
-     the transmitter (the controller's PATCH state), says the number back
-     and plays ringback, while Asterisk places the call over AMI:
+     the transmitter (the controller's PATCH state), and asks Asterisk to
+     place the call over AMI. For a radio call, it waits for the carrier to
+     drop before saying the number back and playing ringback:
      Originate with Channel=<dial string>, Application=AudioSocket,
      Data=<call id>,<our address>, Async, and ChannelId=<call id> so the
      channel can be found (and hung up) while it rings.
@@ -416,7 +417,7 @@ class Autopatch:
         self._waiting[call_id] = answered
         channel: dict[str, Optional[str]] = {"name": None, "cause": None}
         hung_up = asyncio.Event()
-        dialing_audio = asyncio.create_task(self._dialing_audio(patch, call.number, config))
+        dialing_audio = asyncio.create_task(self._dialing_audio(patch, call.number, call.actor, config))
         ami: Optional[AMIClient] = None
         watcher: Optional[asyncio.Task] = None
         sender: Optional[asyncio.Task] = None
@@ -462,13 +463,15 @@ class Autopatch:
                 raise CallFailed(*failure)
             connection = await asyncio.wait_for(answered, ANSWER_TO_CONNECT_TIMEOUT)
             dialing_audio.cancel()
+            await asyncio.gather(dialing_audio, return_exceptions=True)
             call.state = "connected"
             call.connected_at = self._clock()
             _logger.info("autopatch call to %s connected", call.number)
             reader, writer, _done = connection
             line = PhoneLine(reader, writer, self.rate)
-            line.connect(patch)
             line.start()
+            await self._announce(patch, "Connected.", config)
+            line.connect(patch)
             sender = self._start_digits(channel["name"] or call_id, ami)
             call.result = await self._talk(line, config.autopatch_max_call_seconds)
             if call.result == "time limit reached":
@@ -484,6 +487,7 @@ class Autopatch:
             call.result, speech = _UNCOMPLETED
         finally:
             dialing_audio.cancel()
+            await asyncio.gather(dialing_audio, return_exceptions=True)
             await self._stop_digits(sender)
             self._waiting.pop(call_id, None)
             if connection is not None:
@@ -593,9 +597,13 @@ class Autopatch:
         if output is not None:
             output.set_patch(patch)
 
-    async def _dialing_audio(self, patch: PatchAudio, number: str, config: RepeaterConfig) -> None:
+    async def _dialing_audio(
+        self, patch: PatchAudio, number: str, actor: str, config: RepeaterConfig
+    ) -> None:
         """What the repeater hears until the far end answers: the number read
         back, then ringback."""
+        while actor == "DTMF" and self._service.cos_active:
+            await asyncio.sleep(FRAME_SECONDS)
         await self._announce(patch, "Dialing " + " ".join(number), config)
         ring = ringback(self.rate)
         while True:

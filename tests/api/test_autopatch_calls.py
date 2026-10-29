@@ -5,7 +5,7 @@ import numpy as np
 
 from api.autopatch import Autopatch, CallRecord, PatchSettings, patch_settings_from_env
 from api.service import RepeaterService
-from controller.events import DTMFDigit
+from controller.events import COSChanged, DTMFDigit
 from controller.state_machine import IDLE, PATCH, RepeaterConfig
 from link.audiosocket import FrameType, encode_frame, read_frame_async
 from playout.renderer import TTS_PREFIX
@@ -175,6 +175,77 @@ def test_answered_call_bridges_audio_until_the_far_end_hangs_up():
         assert service.controller.state != PATCH
         assert spoken(service) == ["Autopatch ended."]
         assert ami.closed
+        await patch.stop()
+
+    asyncio.run(scenario())
+
+
+def test_dialing_readback_waits_for_the_dtmf_user_to_unkey():
+    async def scenario():
+        service, patch, ami, _ = make()
+        announcements = []
+
+        async def announce(_patch, text, _config):
+            announcements.append(text)
+
+        patch._announce = announce
+        await patch.start()
+        service.handle_audio_events([COSChanged(active=True)])
+        patch.dial("911", "DTMF")
+        await wait_until(lambda: any(action["Action"] == "Originate" for action in ami.actions))
+        assert announcements == []
+
+        service.handle_audio_events([COSChanged(active=False)])
+        await wait_until(lambda: announcements)
+        assert announcements == ["Dialing 9 1 1"]
+        patch.hangup("test over")
+        await wait_until(lambda: patch.call is None)
+        await patch.stop()
+
+    asyncio.run(scenario())
+
+
+def test_dialing_readback_is_prompt_without_a_dtmf_carrier():
+    async def scenario(actor, carrier):
+        service, patch, _, _ = make()
+        announcements = []
+
+        async def announce(_patch, text, _config):
+            announcements.append(text)
+
+        patch._announce = announce
+        await patch.start()
+        if carrier:
+            service.handle_audio_events([COSChanged(active=True)])
+        patch.dial("911", actor)
+        await wait_until(lambda: announcements)
+        assert announcements == ["Dialing 9 1 1"]
+        patch.hangup("test over")
+        await wait_until(lambda: patch.call is None)
+        await patch.stop()
+
+    asyncio.run(scenario("DTMF", False))
+    asyncio.run(scenario("admin", True))
+
+
+def test_answered_call_says_connected():
+    async def scenario():
+        _, patch, ami, _ = make()
+        announcements = []
+        phones = []
+
+        async def announce(_patch, text, _config):
+            announcements.append(text)
+
+        patch._announce = announce
+        ami.on_originate = answer(ami, patch, phones)
+        await patch.start()
+        patch.dial("911", "DTMF")
+        await wait_until(lambda: patch.call and patch.call.state == "connected")
+        assert announcements[-1] == "Connected."
+        phone = phones[0]
+        phone.hang_up()
+        await wait_until(lambda: patch.call is None)
         await patch.stop()
 
     asyncio.run(scenario())

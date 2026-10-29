@@ -107,15 +107,11 @@ install_allstar() {
   for file in rpt.conf modules.conf echolink.conf; do
     if [ -f "$ASTERISK_DIR/$file" ]; then chmod g+w "$ASTERISK_DIR/$file"; fi
   done
-  # ASL3 leaves these readable by every user: the AMI logins, and the
-  # autopatch phone line's SIP password.
-  for file in manager.conf pjsip.conf; do
-    if [ -f "$ASTERISK_DIR/$file" ]; then chmod o-rwx "$ASTERISK_DIR/$file"; fi
-  done
+  # AMI logins and the autopatch SIP password must not be world-readable;
+  # a fresh ASL3 must not load chan_simpleusb onto the controller's CM108.
+  # (scripts/asl-harden.sh — covered by tests/scripts/test_asl_harden.py)
+  bash "$INSTALL_DIR/scripts/asl-harden.sh" "$ASTERISK_DIR" "$fresh"
   if [ "$fresh" -eq 1 ]; then
-    # A new ASL3's placeholder node 1999 runs on chan_simpleusb, which would
-    # open the controller's CM108. An existing install's drivers are its own.
-    sed -i -E 's/^load([[:space:]]*=>?[[:space:]]*)(chan_simpleusb|chan_usbradio)\.so/noload\1\2.so/' "$ASTERISK_DIR/modules.conf"
     systemctl restart asterisk
   fi
 

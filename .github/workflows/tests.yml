@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Lint
-        run: shellcheck scripts/install-pi.sh scripts/update.sh
+        run: shellcheck scripts/install-pi.sh scripts/update.sh scripts/asl-harden.sh
       # A local copy with the channel branches, all at the commit under test.
       - name: Prepare a local clone source
         run: |

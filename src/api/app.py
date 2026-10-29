@@ -45,7 +45,6 @@ from .activity import RETENTION_DAYS, ActivityRecorder, ActivityStore, summarize
 from .assets import AssetKind, AudioAssetStore
 from .auth import (
     SESSION_COOKIE_NAME,
-    SESSION_TTL_SECONDS,
     AuthSettings,
     SessionStore,
     auth_settings_from_env,
@@ -81,6 +80,7 @@ from .agents import MCP_PATH, AgentAccess, AgentEndpoint, build_server
 from .tokens import TokenStore
 from .users import Role, UserError, UserStore
 from .logging_config import configure_logging
+from .routes import session as session_routes
 from .routes import simulate as simulate_routes
 from .models import (
     ActivitySummaryResponse,
@@ -137,7 +137,6 @@ from .models import (
     BackupRestoreResponse,
     ConfigResponse,
     ConfigUpdateRequest,
-    LoginRequest,
     MacroCreateRequest,
     MacroResponse,
     NetCheckInRequest,
@@ -254,7 +253,6 @@ _aprs_logger = logging.getLogger("moreopenrepeater.aprs")
 _announce_logger = logging.getLogger("moreopenrepeater.announcements")
 _weather_logger = logging.getLogger("moreopenrepeater.weather")
 _link_logger = logging.getLogger("moreopenrepeater.link")
-_auth_logger = logging.getLogger("moreopenrepeater.auth")
 
 
 class Identity(NamedTuple):
@@ -960,38 +958,16 @@ def create_app(
             role=identity.role if identity else None,
         )
 
-    @app.get("/api/session", response_model=SessionResponse)
-    def get_session(request: Request) -> SessionResponse:
-        return session_response(identify(request))
-
-    @app.post("/api/login", response_model=SessionResponse)
-    async def login(body: LoginRequest, request: Request, response: Response) -> SessionResponse:
-        if not auth_enabled():
-            return session_response(_LOCAL)
-        request.state.audit_actor = body.username
-        # scrypt takes tens of milliseconds; keep it off the event loop.
-        identity = await asyncio.get_running_loop().run_in_executor(None, check_login, body.username, body.password)
-        if identity is None:
-            _auth_logger.warning("failed login for %r from %s", body.username, request.client.host if request.client else "?")
-            await asyncio.sleep(LOGIN_FAILURE_DELAY_SECONDS)
-            raise HTTPException(status_code=401, detail="Invalid username or password")
-        sessions.revoke(request.cookies.get(SESSION_COOKIE_NAME))
-        response.set_cookie(
-            SESSION_COOKIE_NAME,
-            sessions.create(body.username),
-            max_age=SESSION_TTL_SECONDS,
-            httponly=True,
-            samesite="strict",
-            secure=request.url.scheme == "https",
-        )
-        _auth_logger.info("login succeeded for %r", body.username)
-        return session_response(identity)
-
-    @app.post("/api/logout", response_model=SessionResponse)
-    async def logout(request: Request, response: Response) -> SessionResponse:
-        sessions.revoke(request.cookies.get(SESSION_COOKIE_NAME))
-        response.delete_cookie(SESSION_COOKIE_NAME, httponly=True, samesite="strict")
-        return session_response(None if auth_enabled() else _LOCAL)
+    session_routes.register(
+        app,
+        identify=identify,
+        auth_enabled=auth_enabled,
+        check_login=check_login,
+        sessions=sessions,
+        session_response=session_response,
+        local_identity=_LOCAL,
+        login_failure_delay=LOGIN_FAILURE_DELAY_SECONDS,
+    )
 
     @app.get("/api/status", response_model=StatusResponse, dependencies=auth_dependencies)
     def get_status() -> StatusResponse:

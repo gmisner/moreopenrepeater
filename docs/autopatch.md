@@ -6,12 +6,13 @@ waits 5 seconds):
 
     *6 8605551234 #
 
-The repeater reads the number back and plays ringback while the call is
-placed. Once it's answered, the caller's audio goes out over the repeater,
-and whoever is transmitting is heard on the phone. The hang-up code (`#` by
-default) ends the call, and so does the far end hanging up or the time
-limit (users hear a warning 30 seconds before). The transmitter stays keyed
-for the whole call, and the station ID still goes out on schedule.
+The call starts being placed immediately. After the user unkeys, the repeater
+says "Dialing" and reads the number back, then plays ringback. It says
+"Connected" when the far end answers; the caller's audio then goes out over
+the repeater, and whoever is transmitting is heard on the phone. The hang-up
+code (`#` by default) ends the call, and so does the far end hanging up or the
+time limit (users hear a warning 30 seconds before). The transmitter stays
+keyed for the whole call, and the station ID still goes out on schedule.
 
 DTMF keyed on the radio during a call reaches the far end, so users can work
 phone menus and voicemail. The tones are muted from the audio like any other
@@ -129,7 +130,9 @@ and not during a call.
 
 In the settings below the phone line, set a **Caller ID** your provider
 allows (usually a number on your account; Twilio wants `+1` and 10 digits),
-turn on **Allow autopatch calls**, and save. Use **Test call** to try it.
+turn on **Allow autopatch calls**, and save. Use **Test call** to try it. A
+test call starts its dialing announcement promptly because there is no radio
+user to unkey.
 
 ### Asterisk on another machine
 

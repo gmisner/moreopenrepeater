@@ -81,6 +81,7 @@ from .agents import MCP_PATH, AgentAccess, AgentEndpoint, build_server
 from .tokens import TokenStore
 from .users import Role, UserError, UserStore
 from .logging_config import configure_logging
+from .routes import simulate as simulate_routes
 from .models import (
     ActivitySummaryResponse,
     ControlCodeConfirmRequest,
@@ -153,10 +154,6 @@ from .models import (
     UserCreateRequest,
     UserResponse,
     UserUpdateRequest,
-    SimulateCOSRequest,
-    SimulateCTCSSRequest,
-    SimulateDTMFRequest,
-    SimulateRemoteKeyedRequest,
     SipTrunkRequest,
     SipTrunkStatusResponse,
     SnapshotImportRequest,
@@ -1138,25 +1135,12 @@ def create_app(
         service.clear_lockout()
         return _status_response(service.snapshot())
 
-    @app.post("/api/simulate/cos", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def simulate_cos(body: SimulateCOSRequest) -> StatusResponse:
-        service.simulate_cos(body.active)
-        return _status_response(service.snapshot())
-
-    @app.post("/api/simulate/ctcss", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def simulate_ctcss(body: SimulateCTCSSRequest) -> StatusResponse:
-        service.simulate_ctcss(body.tone_hz)
-        return _status_response(service.snapshot())
-
-    @app.post("/api/simulate/dtmf", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def simulate_dtmf(body: SimulateDTMFRequest) -> StatusResponse:
-        service.simulate_dtmf(body.digit)
-        return _status_response(service.snapshot())
-
-    @app.post("/api/simulate/remote-keyed", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def simulate_remote_keyed(body: SimulateRemoteKeyedRequest) -> StatusResponse:
-        service.simulate_remote_keyed(body.node_id, body.keyed)
-        return _status_response(service.snapshot())
+    simulate_routes.register(
+        app,
+        service=service,
+        transmit_dependencies=transmit_dependencies,
+        status_response=_status_response,
+    )
 
     def actor_of(request: Request) -> str:
         return request.state.identity.username or "local"

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Awaitable, Callable, NamedTuple, Optional
 from urllib.parse import urlsplit
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi import Path as UrlPath
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, RedirectResponse
@@ -42,7 +42,7 @@ from wx.nws import alert_areas, fetch_active_alerts, fetch_zone_geometry, missin
 
 from .activity import FLUSH_SECONDS as ACTIVITY_FLUSH_SECONDS
 from .activity import RETENTION_DAYS, ActivityRecorder, ActivityStore, summarize
-from .assets import AssetKind, AudioAssetStore
+from .assets import AudioAssetStore
 from .auth import (
     SESSION_COOKIE_NAME,
     AuthSettings,
@@ -74,13 +74,14 @@ from .remote_base import RemoteBase
 from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env, list_audio_devices
 from .monitor import AudioMonitor
 from .monitor_receiver import MonitorReceiverService
-from .recordings import RecordingInfo, RecordingStore
+from .recordings import RecordingStore
 from .agents import MCP_PATH, AgentAccess, AgentEndpoint, build_server
 from .tokens import TokenStore
 from .users import Role, UserError, UserStore
 from .logging_config import configure_logging
 from .routes import accounts as accounts_routes
 from .routes import autopatch as autopatch_routes
+from .routes import media as media_routes
 from .routes import session as session_routes
 from .routes import simulate as simulate_routes
 from .models import (
@@ -99,8 +100,6 @@ from .models import (
     LinkRadioStatus,
     MonitorReceiverStatus,
     PublicStatus,
-    RecordingSource,
-    TranscriptionStatus,
     StreamResponse,
     StreamSettingsRequest,
     AlertSettingsRequest,
@@ -112,7 +111,6 @@ from .models import (
     AprsStationResponse,
     AuditEntryResponse,
     AnnouncementResponse,
-    AssetResponse,
     AudioDeviceResponse,
     AudioEngineResponse,
     ReceiverOpeningResponse,
@@ -141,7 +139,6 @@ from .models import (
     NetCheckInRequest,
     NetStartRequest,
     NetStatusResponse,
-    RecordingResponse,
     SavedBackupResponse,
     SessionResponse,
     SnapshotImportRequest,
@@ -205,7 +202,6 @@ DEFAULT_MONITOR_RECORDINGS_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) 
 MAILBOX_TICK_SECONDS = 60.0
 DEFAULT_VOSK_MODEL_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "vosk-model"
 TRANSCRIBE_POLL_SECONDS = 15.0
-RECORDING_SEARCH_LIMIT = 500
 DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.json"
 DEFAULT_TOKENS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "tokens.json"
 DEFAULT_AGENT_ACCESS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "agent-access.json"
@@ -296,20 +292,9 @@ def _macro_response(macro: Macro) -> MacroResponse:
     return MacroResponse(**{**dataclasses.asdict(macro), "help_hidden": macro.hidden_from_help})
 
 
-def _asset_response(asset) -> AssetResponse:
-    return AssetResponse(**dataclasses.asdict(asset))
-
-
 def _audit_response(entry: AuditEntry) -> AuditEntryResponse:
     return AuditEntryResponse(
         at=datetime.fromtimestamp(entry.at), actor=entry.actor, action=entry.action, detail=entry.detail, status=entry.status
-    )
-
-
-def _recording_response(recording: RecordingInfo, transcript: Optional[str]) -> RecordingResponse:
-    return RecordingResponse(
-        id=recording.id, started_at=datetime.fromtimestamp(recording.started_at), duration=recording.duration,
-        transcript=transcript, callsigns=callsigns(transcript or ""),
     )
 
 
@@ -1597,83 +1582,15 @@ def create_app(
         transmit_dependencies=transmit_dependencies,
     )
 
-    @app.get("/api/assets", response_model=list[AssetResponse], dependencies=auth_dependencies)
-    def list_assets() -> list[AssetResponse]:
-        return [_asset_response(a) for a in assets_store.list_assets()]
-
-    @app.post("/api/assets", response_model=AssetResponse, dependencies=auth_dependencies)
-    async def upload_asset(kind: AssetKind = Form(...), file: UploadFile = File(...)) -> AssetResponse:
-        if not (file.filename or "").lower().endswith(".wav"):
-            raise HTTPException(status_code=400, detail="Only .wav files are accepted")
-        content = await file.read()
-        asset = assets_store.save_asset(kind, file.filename, content)
-        return _asset_response(asset)
-
-    @app.delete("/api/assets/{asset_id}", dependencies=auth_dependencies)
-    def delete_asset(asset_id: str) -> dict:
-        if asset_id not in {a.id for a in assets_store.list_assets()}:
-            raise HTTPException(status_code=404, detail=f"No asset with id {asset_id!r}")
-        assets_store.delete_asset(asset_id)
-        return {"deleted": asset_id}
-
-    @app.get("/api/assets/{asset_id}/audio", dependencies=auth_dependencies)
-    def get_asset_audio(asset_id: str) -> FileResponse:
-        if not assets_store.has(asset_id):
-            raise HTTPException(status_code=404, detail=f"No asset with id {asset_id!r}")
-        return FileResponse(assets_store.path_for(asset_id), media_type="audio/wav")
-
-    def recording_store(source: str) -> RecordingStore:
-        return monitor_recordings if source == "monitor" else recordings
-
-    def recording_path(recording_id: str, source: str = "repeater") -> Path:
-        try:
-            path = recording_store(source).path_for(recording_id)
-        except KeyError:
-            path = None
-        if path is None or not path.exists():
-            raise HTTPException(status_code=404, detail=f"No recording with id {recording_id!r}")
-        return path
-
-    @app.get("/api/recordings", response_model=list[RecordingResponse], dependencies=auth_dependencies)
-    def list_recordings(
-        limit: int = Query(default=50, ge=1, le=500), q: str = Query(default="", max_length=100),
-        source: RecordingSource = "repeater",
-    ) -> list[RecordingResponse]:
-        """`q` searches the transcripts (words, or a callsign however it was said)."""
-        q = q.strip()
-        store = recording_store(source)
-        found = []
-        for recording in store.list(RECORDING_SEARCH_LIMIT if q else limit):
-            response = _recording_response(recording, read_transcript(store, recording.id))
-            if q and q.upper() not in response.callsigns and q.lower() not in (response.transcript or "").lower():
-                continue
-            found.append(response)
-            if len(found) >= limit:
-                break
-        return found
-
-    @app.get("/api/transcription", response_model=TranscriptionStatus, dependencies=auth_dependencies)
-    def get_transcription_status() -> TranscriptionStatus:
-        return TranscriptionStatus(
-            engine=service.config.transcription_engine,
-            vosk_installed=transcriber.vosk.installed(),
-            vosk_model=transcriber.vosk.model_present(),
-            vosk_model_dir=str(transcriber.vosk.model_dir),
-            api_key_set=bool(transcriber.api_key),
-            pending=len(transcriber.pending()) if service.config.transcription_engine != "off" else 0,
-            transcribed=transcriber.status.transcribed,
-            last_error=transcriber.status.last_error,
-        )
-
-    @app.get("/api/recordings/{recording_id}/audio", dependencies=auth_dependencies)
-    def get_recording_audio(recording_id: str, source: RecordingSource = "repeater") -> FileResponse:
-        return FileResponse(recording_path(recording_id, source), media_type="audio/wav")
-
-    @app.delete("/api/recordings/{recording_id}", dependencies=auth_dependencies)
-    def delete_recording(recording_id: str, source: RecordingSource = "repeater") -> dict:
-        recording_path(recording_id, source)
-        recording_store(source).delete(recording_id)
-        return {"deleted": recording_id}
+    media_routes.register(
+        app,
+        service=service,
+        assets_store=assets_store,
+        recordings=recordings,
+        monitor_recordings=monitor_recordings,
+        transcriber=transcriber,
+        auth_dependencies=auth_dependencies,
+    )
 
     @app.get("/api/monitor-receiver", response_model=MonitorReceiverStatus, dependencies=auth_dependencies)
     def get_monitor_receiver() -> MonitorReceiverStatus:

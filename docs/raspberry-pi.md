@@ -17,8 +17,12 @@ password), and running it again updates an existing install. Options go
 after `-s --`, following `bash`:
 
 - `--channel stable|beta|dev` picks which releases to follow (default
-  stable, or whatever was chosen before); see [Updates](#6-updates).
-- `--lan` listens on the local network instead of only on the Pi.
+  **stable** — use that for any repeater on the air; `beta` is for a test
+  repeater trying the next release; `dev` follows every push to `main`).
+  See [Updates](#6-updates).
+- `--lan` listens on the local network instead of only on the Pi. Prefer
+  Tailscale, a TLS reverse proxy, or SSH instead of exposing plain HTTP;
+  see [Security](#security-sign-in-users-and-https).
 - `--allstar` also installs AllStarLink (ASL3) from its apt repository, for
   linking and autopatch. It gives the controller an AMI login of its own
   (usable only from the Pi) and lets it edit the node's settings; see
@@ -297,6 +301,19 @@ output; set the VOX threshold a few dB above the idle level shown on the
 meter. VOX closes after **VOX hold** of quiet, except when the quiet comes
 right after a DTMF digit: then it waits **VOX hold after a DTMF digit**
 (3 seconds by default), so someone dialing slowly isn't cut off between keys.
+
+**First key-up.** With a dummy load or low power, key a radio into the
+repeater and check:
+
+1. The dashboard's RX and PTT indicators follow the radio (COS/VOX and PTT).
+2. VOX threshold sits a few dB above the idle receive level, so quiet
+   receiver hiss doesn't hold the repeater open.
+3. TX gain is loud enough on the air without clipping; use a second radio
+   or the monitor if you have one.
+4. **Audio glitches** on the Radio interface card stays near zero while
+   someone talks (dropped or late audio blocks). A desktop session on the
+   Pi itself often causes late blocks — run Raspberry Pi OS Lite and use
+   the dashboard from another computer.
 A command's reply comes that much later after the last key.
 "CTCSS tone present" opens only when a sub-audible tone is decoded,
 which requires the receiver's audio to be unfiltered (discriminator or
@@ -639,8 +656,8 @@ reaches repeaters on the air:
 
 | Channel | Branch | Gets |
 | --- | --- | --- |
-| Stable | `stable` | Releases that went through beta. The default; keep production repeaters here. |
-| Beta | `beta` | The next stable release while it's tested, on a test repeater. |
+| Stable | `stable` | Releases that went through beta. **Default for any repeater on the air.** |
+| Beta | `beta` | The next stable release while it's tested — use only on a test repeater. |
 | Dev | `main` | Every change as soon as it's pushed, before any testing. |
 
 A change lands on `main` (dev) first. Once its tests pass, the **promote**

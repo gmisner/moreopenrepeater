@@ -775,6 +775,13 @@ A backup doesn't include the env file (the built-in admin and the Asterisk
 login) or Asterisk's own configuration, which holds the autopatch phone line.
 Keep a copy of `/etc/moreopenrepeater/env` and `/etc/asterisk/` too.
 
+## Support bundles
+
+The dashboard's **Logs** page (admins) has **Download support bundle**. It
+builds a `.zip` of recent controller and systemd logs, status, audio-engine
+state and settings — without passwords, the env file, users, tokens or
+recordings — so you can attach it when emailing for help.
+
 ## Alerts
 
 The dashboard's **Alerts & health** page (admins only) sends a message when

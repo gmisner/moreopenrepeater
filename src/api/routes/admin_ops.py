@@ -17,6 +17,7 @@ from starlette.background import BackgroundTask
 from ..audit import AuditLog
 from ..backup import BackupFolder, BackupSources, backup_name, write_backup
 from ..health import HealthMonitor
+from ..live_audio import LiveAudio
 from ..models import (
     AlertSettingsRequest,
     AlertSettingsResponse,
@@ -34,6 +35,7 @@ from ..models import (
 from ..notify import SECRET_FIELDS, Notifier
 from ..service import RepeaterService
 from ..auto_update import AutoUpdater
+from ..support_bundle import support_bundle_name, write_support_bundle
 from ..updates import UpdateChecker, Updater, installed_version, read_log
 
 
@@ -50,6 +52,8 @@ def register(
     auto_updater: AutoUpdater,
     notifier: Notifier,
     health: HealthMonitor,
+    live_audio: LiveAudio,
+    log_path: Path,
     restore_backup_file: Callable,
     repo_dir: Path,
     admin_dependencies: Sequence,
@@ -71,6 +75,35 @@ def register(
             path,
             media_type="application/zip",
             filename=backup_name(service.config.callsign, now),
+            background=BackgroundTask(path.unlink, missing_ok=True),
+        )
+
+    @app.get("/api/support-bundle", dependencies=admin_dependencies)
+    def download_support_bundle(request: Request) -> FileResponse:
+        now = time.time()
+        fd, name = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
+        path = Path(name)
+        try:
+            write_support_bundle(
+                path,
+                service=service,
+                log_path=log_path,
+                repo_dir=repo_dir,
+                update_channel=update_channel,
+                live_audio_status=live_audio.status(),
+                system_readings=health.probe.readings(),
+                updater=updater,
+                now=now,
+            )
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+        audit.record(now, request.state.identity.actor or "local", "download support bundle", "")
+        return FileResponse(
+            path,
+            media_type="application/zip",
+            filename=support_bundle_name(service.config.callsign, now),
             background=BackgroundTask(path.unlink, missing_ok=True),
         )
 

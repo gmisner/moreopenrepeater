@@ -919,6 +919,8 @@ def create_app(
         auto_updater=auto_updater,
         notifier=notifier,
         health=health,
+        live_audio=live_audio,
+        log_path=log_path,
         restore_backup_file=restore_backup_file,
         repo_dir=REPO_DIR,
         admin_dependencies=admin_dependencies,

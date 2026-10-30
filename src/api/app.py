@@ -6,41 +6,38 @@ import collections
 import dataclasses
 import logging
 import os
-import shutil
-import tempfile
 import time
-import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Awaitable, Callable, NamedTuple, Optional
-from urllib.parse import urlsplit
+from typing import Callable, NamedTuple, Optional
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi import Path as UrlPath
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
-import segno
-from starlette.background import BackgroundTask
 from starlette.requests import HTTPConnection
 from starlette.routing import Route
 
 from audio_io.serial_lines import find_serial_ports
 from controller.events import LinkStateChanged, SendLinkCommand
-from controller.modes import effective_config
 from controller.state_machine import RepeaterConfig
 from link.aprs_client import APRSClient, format_frequency_comment, format_position_report, format_status_report
+from link.asterisk_files import asterisk_files_from_env
 from link.node_link import NodeLinkClient
 from playout.renderer import ClipRenderer, UnknownClipError
 from playout.tts import TTSError, detect_tts
-from playout.wav import encode_wav
 from wx.nws import fetch_active_alerts, fetch_zone_geometry, missing_zones
 
 from .activity import FLUSH_SECONDS as ACTIVITY_FLUSH_SECONDS
-from .activity import RETENTION_DAYS, ActivityRecorder, ActivityStore, summarize
+from .activity import RETENTION_DAYS, ActivityRecorder, ActivityStore
+from .agents import MCP_PATH, AgentAccess, AgentEndpoint, build_server
+from .airport_weather import AirportWeather
+from .allstar_audio import AllStarAudio, usrp_listen_from_env, usrp_settings_from_env
+from .allstar_node import AllStarNode
+from .aprs_map import AprsReceiver, StationStore, spoken_summary
 from .assets import AudioAssetStore
+from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
+from .audit import AuditEntry, AuditLog
 from .auth import (
     SESSION_COOKIE_NAME,
     AuthSettings,
@@ -49,123 +46,56 @@ from .auth import (
     parse_basic_auth_header,
     verify_credentials,
 )
-from link.asterisk_files import asterisk_files_from_env
-
-from .allstar_audio import AllStarAudio, usrp_listen_from_env, usrp_settings_from_env
-from .allstar_node import AllStarNode, AllStarSetupError
-from .echolink import EchoLink, EchoLinkSettings
-from .gpio import GpioControl, GpioError
-from .links import LinkControl, LinkError
-from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkScheduler
-from .node_directory import NodeDirectory
+from .auto_update import POLL_SECONDS as AUTO_UPDATE_POLL_SECONDS, AutoUpdater
 from .autopatch import Autopatch, patch_settings_from_env
-from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_backup, restore_backup, write_backup
-from .boards import WIRING_FIELDS, alsa_card, apply_mixer, load_boards, preset_changes, run_amixer
-from .mixer import levels_on_card, read_volumes, set_volume, side_card, side_volumes
-from .sip_trunk import SipTrunk
-from .tx_fan import TxFan
-from .aprs_map import AprsReceiver, StationStore, bearing_degrees, distance_km, map_center, spoken_summary
-from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
-from .audit import AuditEntry, AuditLog, describe_config_change
+from .backup import BackupError, BackupFolder, BackupSources, open_backup, restore_backup
+from .boards import run_amixer
+from .control_codes import ControlCodes
+from .gpio import GpioControl
+from .health import CHECK_SECONDS as HEALTH_CHECK_SECONDS
+from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
+from .homeassistant import TOKEN_ENV as HOMEASSISTANT_TOKEN_ENV
+from .homeassistant import HomeAssistant
 from .link_radio import LinkRadio
-from .remote_base import RemoteBase
+from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkScheduler
+from .links import LinkControl, LinkError
 from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env, list_audio_devices
-from .monitor import AudioMonitor
-from .monitor_receiver import MonitorReceiverService
-from .recordings import RecordingStore
-from .agents import MCP_PATH, AgentAccess, AgentEndpoint, build_server
-from .tokens import TokenStore
-from .users import Role, UserError, UserStore
 from .logging_config import configure_logging
+from .mailbox import Mailbox, MailboxStore, is_mailbox_clip
+from .models import AuditEntryResponse, ConfigResponse, SessionResponse, SnapshotImportRequest, StatusResponse
+from .monitor_receiver import MonitorReceiverService
+from .net import POLL_SECONDS as NET_POLL_SECONDS
+from .net import NetMode
+from .node_directory import NodeDirectory
+from .notify import Notifier
+from .persistence import StateStore
+from .recordings import RecordingStore
+from .remote_base import RemoteBase
 from .routes import accounts as accounts_routes
+from .routes import activity as activity_routes
 from .routes import admin_ops as admin_ops_routes
+from .routes import audio_tools as audio_tools_routes
 from .routes import autopatch as autopatch_routes
 from .routes import control_codes as control_codes_routes
+from .routes import core as core_routes
 from .routes import linking as linking_routes
 from .routes import mailbox as mailbox_routes
 from .routes import media as media_routes
 from .routes import nets as nets_routes
 from .routes import programming as programming_routes
+from .routes import realtime as realtime_routes
 from .routes import session as session_routes
 from .routes import simulate as simulate_routes
-from .models import (
-    ActivitySummaryResponse,
-    ControlCodeConfirmRequest,
-    ControlCodeSetup,
-    ControlCodeStatus,
-    ControlCodeUser,
-    HomeAssistantStatus,
-    HomeAssistantTestRequest,
-    MailboxBoxRequest,
-    MailboxBoxResponse,
-    MailboxMessageResponse,
-    MailboxResponse,
-    ListenSource,
-    LinkRadioStatus,
-    MonitorReceiverStatus,
-    PublicStatus,
-    StreamResponse,
-    StreamSettingsRequest,
-    AlertSettingsRequest,
-    AlertSettingsResponse,
-    AlertsResponse,
-    AlertTestResponse,
-    AprsMapResponse,
-    AprsStationResponse,
-    AuditEntryResponse,
-    AudioDeviceResponse,
-    AudioEngineResponse,
-    ReceiverOpeningResponse,
-    AudioGlitchResponse,
-    AllStarNodeRequest,
-    BoardApplyRequest,
-    BoardApplyResponse,
-    BoardResponse,
-    SerialPortResponse,
-    SoundLevelsResponse,
-    SoundLevelUpdateRequest,
-    EchoLinkRequest,
-    EchoLinkStatusResponse,
-    GpioOutputRequest,
-    LinkConnectRequest,
-    LinksResponse,
-    GpioStatusResponse,
-    AllStarStatusResponse,
-    AudioPreviewRequest,
-    BackupFolderResponse,
-    BackupRestoreResponse,
-    ConfigResponse,
-    ConfigUpdateRequest,
-    SavedBackupResponse,
-    SessionResponse,
-    SnapshotImportRequest,
-    SnapshotModel,
-    StatusResponse,
-    TransmissionResponse,
-    TTSInfoResponse,
-    UpdateChannel,
-    UpdateCheckResponse,
-    UpdateRequest,
-    AutoUpdateSettings,
-    UpdatesResponse,
-)
-from .health import CHECK_SECONDS as HEALTH_CHECK_SECONDS
-from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
-from .control_codes import ControlCodes, provisioning_uri
-from .airport_weather import AirportWeather
-from .homeassistant import TOKEN_ENV as HOMEASSISTANT_TOKEN_ENV
-from .homeassistant import HomeAssistant, HomeAssistantError
-from .mailbox import Mailbox, MailboxStore, is_mailbox_clip
-from .stream import Streamer
-from .transcripts import API_KEY_ENV as TRANSCRIPTION_KEY_ENV
-from .transcripts import VOSK_MODEL_ENV, Transcriber, VoskEngine, callsigns, read_transcript
-from .net import POLL_SECONDS as NET_POLL_SECONDS
-from .net import NetMode
-from .notify import SECRET_FIELDS, Notifier
-from .persistence import StateStore
+from .routes import site as site_routes
 from .service import RepeaterService, StatusSnapshot
-from .auto_update import POLL_SECONDS as AUTO_UPDATE_POLL_SECONDS, AutoUpdater
-from .updates import UpdateChecker, Updater, channel_from_env, installed_version, read_log, repo_from_checkout, updater_settings_from_env
+from .sip_trunk import SipTrunk
+from .stream import Streamer
+from .tokens import TokenStore
+from .transcripts import API_KEY_ENV as TRANSCRIPTION_KEY_ENV
+from .transcripts import VOSK_MODEL_ENV, Transcriber, VoskEngine
+from .tx_fan import TxFan
+from .updates import UpdateChecker, Updater, channel_from_env, installed_version, repo_from_checkout, updater_settings_from_env
+from .users import Role, UserError, UserStore
 from .watchdog import Watchdog, ping_interval, sd_notify
 
 REPO_DIR = Path(__file__).resolve().parent.parent.parent
@@ -209,7 +139,6 @@ DEFAULT_NETS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "nets.json"
 DEFAULT_AUTO_UPDATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "auto-update.json"
 DEFAULT_CONTROL_CODES_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "control-codes.json"
 DEFAULT_STREAM_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "stream.json"
-PUBLIC_LISTENERS_PER_ADDRESS = 3
 DEFAULT_BACKUP_DIR = Path(
     os.environ.get("MOREOPENREPEATER_BACKUP_DIR") or _resolve_data_root(os.environ, _REPO_DATA_DIR) / "backups"
 )
@@ -224,7 +153,6 @@ TICK_INTERVAL_SECONDS = 0.05
 APRS_DISABLED_POLL_SECONDS = 5.0
 LINK_RECONNECT_DELAY_SECONDS = 5.0
 LOGIN_FAILURE_DELAY_SECONDS = 1.0
-MAX_PREVIEW_CLIP_LENGTH = 2000
 ANNOUNCEMENT_POLL_SECONDS = 1.0
 WEATHER_DISABLED_POLL_SECONDS = 5.0
 LONG_ID_WARM_SECONDS = 20.0
@@ -911,147 +839,16 @@ def create_app(
         login_failure_delay=LOGIN_FAILURE_DELAY_SECONDS,
     )
 
-    @app.get("/api/status", response_model=StatusResponse, dependencies=auth_dependencies)
-    def get_status() -> StatusResponse:
-        return _status_response(service.snapshot())
-
-    @app.get("/api/config", response_model=ConfigResponse, dependencies=auth_dependencies)
-    def get_config() -> ConfigResponse:
-        return _config_response(service)
-
-    @app.put("/api/config", response_model=ConfigResponse, dependencies=auth_dependencies)
-    async def put_config(update: ConfigUpdateRequest, request: Request) -> ConfigResponse:
-        clear_fields = {name for name in ConfigUpdateRequest.model_fields if name.startswith("clear_")}
-        overrides = update.model_dump(exclude=clear_fields, exclude_none=True)
-        for clear_field in clear_fields:
-            if getattr(update, clear_field):
-                overrides[clear_field.removeprefix("clear_")] = None
-        saved = service.saved_config
-        if saved.board_preset and any(overrides.get(name, getattr(saved, name)) != getattr(saved, name) for name in WIRING_FIELDS):
-            overrides["board_preset"] = ""
-        request.state.audit_detail = describe_config_change(dataclasses.asdict(saved), overrides)
-        service.update_config(**overrides)
-        return _config_response(service)
-
-    boards = {board.id: board for board in load_boards()}
-
-    @app.get("/api/boards", response_model=list[BoardResponse], dependencies=auth_dependencies)
-    def get_boards() -> list[BoardResponse]:
-        return [
-            BoardResponse(
-                **{name: getattr(board, name) for name in ("id", "name", "maker", "kind", "notes", "unsupported")},
-                device_hints=list(board.device_hints),
-                two_port=board.link is not None,
-                mixer=list(board.mixer),
-            )
-            for board in boards.values()
-        ]
-
-    @app.post("/api/boards/{board_id}/apply", response_model=BoardApplyResponse, dependencies=auth_dependencies)
-    async def apply_board(board_id: str, body: BoardApplyRequest, request: Request) -> BoardApplyResponse:
-        board = boards.get(board_id)
-        if board is None:
-            raise HTTPException(status_code=404, detail="No such interface board")
-        if board.unsupported:
-            raise HTTPException(status_code=409, detail=f"{board.name} isn't supported yet: {board.unsupported}")
-        changes = preset_changes(board, body.input_device, body.output_device, body.link_input_device, body.link_output_device)
-        request.state.audit_detail = board.name
-        service.update_config(**changes)
-        config = service.saved_config
-        mixer, skipped = [], []
-        if body.set_mixer and board.mixer:
-            devices = [config.audio_output_device]
-            if config.link_radio_enabled and board.link:
-                devices.append(config.link_radio_output_device)
-            cards = []
-            for device in devices:
-                card = alsa_card(device)
-                if card is None:
-                    skipped.append(device or "System default")
-                elif card not in cards:
-                    cards.append(card)
-            loop = asyncio.get_running_loop()
-            results = await loop.run_in_executor(None, apply_mixer, cards, board.mixer, run_mixer)
-            mixer = [dataclasses.asdict(result) for result in results]
-            output_card = side_card(config, "output")
-            if output_card is not None:
-                try:
-                    inputs, outputs = await loop.run_in_executor(
-                        None, levels_on_card, output_card, {control for control, _ in board.mixer}, run_mixer
-                    )
-                except OSError as error:
-                    logging.getLogger("moreopenrepeater.mixer").warning("couldn't read back the board's levels: %s", error)
-                else:
-                    if side_card(config, "input") != output_card:
-                        inputs = {}
-                    service.update_config(audio_input_levels=inputs, audio_output_levels=outputs)
-        return BoardApplyResponse(config=_config_response(service), mixer=mixer, mixer_skipped=skipped)
-
-    def sound_levels() -> SoundLevelsResponse:
-        config = service.saved_config
-        levels, notes = [], []
-        read: dict[int, list] = {}
-        for side, saved in (("input", config.audio_input_levels), ("output", config.audio_output_levels)):
-            card = side_card(config, side)
-            if card is None:
-                notes.append(f"The {side} is the system default device; pick a specific sound card to set its levels.")
-                continue
-            if card not in read:
-                try:
-                    read[card] = read_volumes(card, run_mixer)
-                except OSError as error:
-                    notes.append(f"Couldn't read sound card {card}'s levels: {error}")
-                    read[card] = []
-            for volume in side_volumes(side, read[card]):
-                levels.append({
-                    **dataclasses.asdict(volume), "side": side, "card": card,
-                    "saved": saved.get(volume.control) == volume.value,
-                })
-        return SoundLevelsResponse(levels=levels, notes=notes)
-
-    @app.get("/api/audio/levels", response_model=SoundLevelsResponse, dependencies=auth_dependencies)
-    async def get_sound_levels() -> SoundLevelsResponse:
-        return await asyncio.get_running_loop().run_in_executor(None, sound_levels)
-
-    @app.put("/api/audio/levels", response_model=SoundLevelsResponse, dependencies=auth_dependencies)
-    async def put_sound_level(body: SoundLevelUpdateRequest, request: Request) -> SoundLevelsResponse:
-        config = service.saved_config
-        card = side_card(config, body.side)
-        if card is None:
-            raise HTTPException(status_code=409, detail=f"Pick a specific {body.side} sound card first")
-        loop = asyncio.get_running_loop()
-        try:
-            volumes = await loop.run_in_executor(None, read_volumes, card, run_mixer)
-        except OSError as error:
-            raise HTTPException(status_code=503, detail=f"Couldn't read sound card {card}'s levels: {error}")
-        volume = next((v for v in side_volumes(body.side, volumes) if v.control == body.control), None)
-        if volume is None:
-            raise HTTPException(status_code=404, detail=f"Sound card {card} has no {body.control} {body.side} level")
-        value = min(max(body.value, volume.min), volume.max)
-        error = await loop.run_in_executor(None, set_volume, card, volume.control, volume.direction, value, run_mixer)
-        if error:
-            raise HTTPException(status_code=503, detail=f"Couldn't set {volume.control}: {error}")
-        field_name = f"audio_{body.side}_levels"
-        service.update_config(**{field_name: {**getattr(service.saved_config, field_name), volume.control: value}})
-        request.state.audit_detail = f"{volume.control} {body.side} {value}"
-        return await loop.run_in_executor(None, sound_levels)
-
-    @app.post("/api/audio/test-id", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def test_id() -> StatusResponse:
-        if not service.saved_config.audio_enabled:
-            raise HTTPException(status_code=409, detail="Turn on live audio first")
-        try:
-            await render_and_queue("id")
-        except TTSError as error:
-            raise HTTPException(status_code=503, detail=str(error))
-        return _status_response(service.snapshot())
-
-    @app.post("/api/lockout/clear", response_model=StatusResponse, dependencies=auth_dependencies)
-    async def clear_lockout() -> StatusResponse:
-        if not service.controller.locked_out:
-            raise HTTPException(status_code=409, detail="The repeater isn't locked out")
-        service.clear_lockout()
-        return _status_response(service.snapshot())
+    core_routes.register(
+        app,
+        service=service,
+        run_mixer=run_mixer,
+        render_and_queue=render_and_queue,
+        status_response=_status_response,
+        config_response=_config_response,
+        auth_dependencies=auth_dependencies,
+        transmit_dependencies=transmit_dependencies,
+    )
 
     simulate_routes.register(
         app,
@@ -1083,27 +880,13 @@ def create_app(
         transmit_dependencies=transmit_dependencies,
     )
 
-    @app.get("/api/activity/summary", response_model=ActivitySummaryResponse, dependencies=auth_dependencies)
-    def activity_summary(days: int = Query(default=7, ge=1, le=RETENTION_DAYS)) -> dict:
-        until = service.wall_now()
-        since = until - timedelta(days=days)
-        return summarize(activity_store.rows(since.timestamp(), until.timestamp()), since, until)
-
-    @app.get("/api/activity/transmissions", response_model=list[TransmissionResponse], dependencies=auth_dependencies)
-    def recent_transmissions(limit: int = Query(default=50, ge=1, le=500)) -> list[TransmissionResponse]:
-        return [
-            TransmissionResponse(started_at=datetime.fromtimestamp(r.started_at), duration=r.duration, timed_out=r.timed_out)
-            for r in activity_store.recent("rx", limit)
-        ]
-
-    @app.get("/api/snapshot", response_model=SnapshotModel, dependencies=auth_dependencies)
-    def get_snapshot() -> SnapshotModel:
-        return SnapshotModel(**service.export_snapshot())
-
-    @app.post("/api/snapshot", response_model=SnapshotModel, dependencies=auth_dependencies)
-    async def post_snapshot(snapshot: SnapshotImportRequest) -> SnapshotModel:
-        service.import_snapshot(_snapshot_to_import(snapshot))
-        return SnapshotModel(**service.export_snapshot())
+    activity_routes.register(
+        app,
+        service=service,
+        activity_store=activity_store,
+        snapshot_to_import=_snapshot_to_import,
+        auth_dependencies=auth_dependencies,
+    )
 
     def restore_backup_file(path: Path, loop: asyncio.AbstractEventLoop) -> dict:
         """Runs in a worker thread; the settings themselves are applied on the event loop."""
@@ -1141,35 +924,16 @@ def create_app(
         admin_dependencies=admin_dependencies,
     )
 
-    @app.get("/api/audio/tts", response_model=TTSInfoResponse, dependencies=auth_dependencies)
-    def get_tts_info() -> TTSInfoResponse:
-        return TTSInfoResponse(engine=renderer.tts.name if renderer.tts is not None else None)
-
-    # Plain `def`: FastAPI runs it in a worker thread, so a slow TTS render
-    # doesn't stall the event loop (and with it the controller tick).
-    @app.post("/api/audio/preview", response_class=Response, dependencies=auth_dependencies)
-    def audio_preview(body: AudioPreviewRequest) -> Response:
-        if len(body.clip) > MAX_PREVIEW_CLIP_LENGTH:
-            raise HTTPException(status_code=400, detail="Text is too long to preview")
-        config = effective_config(_apply_overrides(service.saved_config, body.config), net_active=body.net)
-        try:
-            samples = renderer.render(body.clip, config)
-        except UnknownClipError:
-            raise HTTPException(status_code=404, detail=f"Unknown clip {body.clip!r}")
-        except TTSError as error:
-            raise HTTPException(status_code=503, detail=str(error))
-        return Response(encode_wav(samples, renderer.sample_rate), media_type="audio/wav")
-
-    @app.get("/api/serial/ports", response_model=list[SerialPortResponse], dependencies=auth_dependencies)
-    def get_serial_ports() -> list[dict]:
-        return serial_ports()
-
-    @app.get("/api/audio/devices", response_model=list[AudioDeviceResponse], dependencies=auth_dependencies)
-    def get_audio_devices() -> list[dict]:
-        try:
-            return audio_devices()
-        except Exception as error:  # PortAudio errors
-            raise HTTPException(status_code=503, detail=f"couldn't list audio devices: {error}")
+    audio_tools_routes.register(
+        app,
+        service=service,
+        renderer=renderer,
+        live_audio=live_audio,
+        audio_devices=audio_devices,
+        serial_ports=serial_ports,
+        apply_overrides=_apply_overrides,
+        auth_dependencies=auth_dependencies,
+    )
 
     linking_routes.register(
         app,
@@ -1187,18 +951,6 @@ def create_app(
         admin_dependencies=admin_dependencies,
         transmit_dependencies=transmit_dependencies,
     )
-
-    @app.get("/api/audio/engine", response_model=AudioEngineResponse, dependencies=auth_dependencies)
-    def get_audio_engine() -> dict:
-        return live_audio.status()
-
-    @app.get("/api/audio/openings", response_model=list[ReceiverOpeningResponse], dependencies=auth_dependencies)
-    def get_receiver_openings() -> list[dict]:
-        return list(reversed(live_audio.openings))
-
-    @app.get("/api/audio/glitches", response_model=list[AudioGlitchResponse], dependencies=auth_dependencies)
-    def get_audio_glitches() -> list[dict]:
-        return list(reversed(live_audio.glitches))
 
     autopatch_routes.register(
         app,
@@ -1226,40 +978,22 @@ def create_app(
         admin_dependencies=admin_dependencies,
     )
 
-    @app.get("/api/logs", response_model=list[str], dependencies=auth_dependencies)
-    def get_logs(lines: int = 200) -> list[str]:
-        if not log_path.exists():
-            return []
-        with log_path.open() as f:
-            return [line.rstrip("\n") for line in collections.deque(f, maxlen=lines)]
-
-    @app.get("/api/aprs/stations", response_model=AprsMapResponse, dependencies=auth_dependencies)
-    def get_aprs_stations() -> AprsMapResponse:
-        config = service.config
-        center = map_center(config)
-        status = aprs_receiver.status
-        stations = []
-        for s in aprs_stations.stations(aprs_window_start()):
-            fields = dataclasses.asdict(s)
-            fields["trail"] = [[lat, lon] for _at, lat, lon in s.trail]
-            if center is not None:
-                fields["distance_km"] = round(distance_km(*center, s.lat, s.lon), 2)
-                fields["bearing"] = round(bearing_degrees(*center, s.lat, s.lon))
-            stations.append(AprsStationResponse(**fields))
-        return AprsMapResponse(
-            enabled=config.aprs_map_enabled,
-            center=list(center) if center else None,
-            radius_km=config.aprs_map_radius_km,
-            hours=config.aprs_map_hours,
-            tiles=config.aprs_map_tiles,
-            distance_units=config.distance_units,
-            connected=status.connected,
-            server=status.server,
-            error=status.error,
-            last_packet=datetime.fromtimestamp(status.last_packet) if status.last_packet else None,
-            packets=status.packets,
-            stations=stations,
-        )
+    site_routes.register(
+        app,
+        service=service,
+        log_path=log_path,
+        aprs_stations=aprs_stations,
+        aprs_receiver=aprs_receiver,
+        aprs_window_start=aprs_window_start,
+        homeassistant=homeassistant,
+        airport_weather=airport_weather,
+        streamer=streamer,
+        audit=audit,
+        audit_response=_audit_response,
+        actor_of=actor_of,
+        auth_dependencies=auth_dependencies,
+        admin_dependencies=admin_dependencies,
+    )
 
     accounts_routes.register(
         app,
@@ -1281,212 +1015,19 @@ def create_app(
         admin_dependencies=admin_dependencies,
     )
 
-    @app.get("/api/homeassistant", response_model=HomeAssistantStatus, dependencies=auth_dependencies)
-    def homeassistant_status() -> HomeAssistantStatus:
-        return HomeAssistantStatus(token_set=homeassistant.token_set)
-
-    @app.post("/api/homeassistant/test", dependencies=auth_dependencies)
-    async def test_homeassistant(request: Request, body: HomeAssistantTestRequest) -> dict:
-        data = {**homeassistant.payload("test", actor_of(request)), "test": True}
-        try:
-            await asyncio.get_running_loop().run_in_executor(None, homeassistant.send, body.target, data)
-        except HomeAssistantError as error:
-            raise HTTPException(status_code=502, detail=str(error)) from None
-        return {"ok": True}
-
-    @app.get("/api/metar/{icao}", dependencies=auth_dependencies)
-    async def metar_preview(icao: str = UrlPath(pattern=r"^[A-Za-z0-9]{4}$")) -> dict:
-        text = await asyncio.get_running_loop().run_in_executor(None, airport_weather.text, icao.upper())
-        return {"text": text}
-
-    def stream_response() -> StreamResponse:
-        return StreamResponse(**streamer.public_settings(), status=streamer.status)
-
-    @app.get("/api/stream", response_model=StreamResponse, dependencies=admin_dependencies)
-    def get_stream() -> StreamResponse:
-        return stream_response()
-
-    @app.put("/api/stream", response_model=StreamResponse, dependencies=admin_dependencies)
-    def put_stream(body: StreamSettingsRequest) -> StreamResponse:
-        streamer.update(body.model_dump())
-        return stream_response()
-
-    def public_page_mode() -> str:
-        return service.saved_config.public_page_mode
-
-    def listen_identity(conn: HTTPConnection) -> Optional[Identity]:
-        """Who's signed in, for the listening page; None if nobody is (or
-        sign-in is off, where everyone would count as the admin)."""
-        return identify(conn) if auth_enabled() else None
-
-    def may_open_listen_page(conn: HTTPConnection) -> bool:
-        mode = public_page_mode()
-        return mode == "anyone" or (mode == "signed_in" and identify(conn) is not None)
-
-    @app.get("/api/public/status", response_model=PublicStatus)
-    def public_status(request: Request) -> PublicStatus:
-        """What /listen shows: open to anyone or only to signed-in accounts,
-        depending on the listening page setting."""
-        if public_page_mode() == "off":
-            raise HTTPException(status_code=404, detail="Not found")
-        if not may_open_listen_page(request):
-            raise HTTPException(status_code=401, detail="Not authenticated")
-        identity = listen_identity(request)
-        config = service.saved_config
-        snapshot = service.snapshot()
-        return PublicStatus(
-            callsign=config.callsign,
-            text=config.public_page_text,
-            on_air=snapshot.ptt_active,
-            receiving=snapshot.cos_active,
-            net=nets.current["name"] if nets.current else None,
-            audio=config.public_page_audio,
-            listeners=sum(public_listeners.values()),
-            max_listeners=config.public_page_max_listeners,
-            username=identity.username if identity else None,
-        )
-
-    @app.get("/api/audit", response_model=list[AuditEntryResponse], dependencies=admin_dependencies)
-    def get_audit(limit: int = Query(default=200, ge=1, le=2000)) -> list[AuditEntryResponse]:
-        return [_audit_response(e) for e in audit.recent(limit)]
-
-    def same_origin(websocket: WebSocket) -> bool:
-        # WebSocket handshakes aren't subject to CORS, so a page on another
-        # origin could otherwise open one with the user's session cookie.
-        origin = websocket.headers.get("origin")
-        return not origin or urlsplit(origin).netloc == websocket.headers.get("host")
-
-    def websocket_allowed(websocket: WebSocket) -> bool:
-        if not auth_enabled():
-            return True
-        if not same_origin(websocket):
-            return False
-        identity = identify(websocket)
-        return identity is not None and identity.role != "listener"
-
-    @app.websocket("/ws/audio")
-    async def ws_audio(websocket: WebSocket, source: ListenSource = "tx") -> None:
-        """Binary frames of 16-bit little-endian mono PCM at the processing rate."""
-        if not websocket_allowed(websocket):
-            await websocket.close(code=1008)
-            return
-        await websocket.accept()
-        monitor: AudioMonitor = monitor_receiver.monitor if source == "monitor" else live_audio.monitor
-        queue = monitor.subscribe("rx" if source == "monitor" else source)
-
-        async def send_frames() -> None:
-            await websocket.send_json({"sample_rate": renderer.sample_rate, "source": source})
-            while True:
-                await websocket.send_bytes(await queue.get())
-
-        # Frames may never come (engine off), so watch for the disconnect separately.
-        sender = asyncio.create_task(send_frames())
-        try:
-            while (await websocket.receive())["type"] != "websocket.disconnect":
-                pass
-        finally:
-            sender.cancel()
-            monitor.unsubscribe(queue)
-
-    def client_address(websocket: WebSocket) -> str:
-        forwarded = websocket.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        return forwarded or (websocket.client.host if websocket.client else "")
-
-    @app.websocket("/ws/public/audio")
-    async def ws_public_audio(websocket: WebSocket) -> None:
-        """What's on the air, for /listen. Capped in total; listeners who
-        aren't signed in are also capped per address."""
-        config = service.saved_config
-        identity = listen_identity(websocket) if same_origin(websocket) else None
-        signed_in = identity is not None or not auth_enabled()
-
-        def allowed() -> bool:
-            config = service.saved_config
-            mode = config.public_page_mode
-            return config.public_page_audio and (mode == "anyone" or (mode == "signed_in" and signed_in))
-
-        if not allowed():
-            await websocket.close(code=1008)
-            return
-        key = f"user:{identity.username}" if identity else client_address(websocket)
-        full = sum(public_listeners.values()) >= config.public_page_max_listeners
-        if full or (identity is None and public_listeners[key] >= PUBLIC_LISTENERS_PER_ADDRESS):
-            await websocket.close(code=1013)
-            return
-        public_listeners[key] += 1
-        try:
-            await websocket.accept()
-            queue = live_audio.monitor.subscribe("tx")
-
-            async def send_frames() -> None:
-                await websocket.send_json({"sample_rate": renderer.sample_rate})
-                while True:
-                    await websocket.send_bytes(await queue.get())
-                    if not allowed():
-                        await websocket.close(code=1008)
-                        return
-
-            sender = asyncio.create_task(send_frames())
-            try:
-                while (await websocket.receive())["type"] != "websocket.disconnect":
-                    pass
-            finally:
-                sender.cancel()
-                live_audio.monitor.unsubscribe(queue)
-        finally:
-            public_listeners[key] -= 1
-            if public_listeners[key] <= 0:
-                del public_listeners[key]
-
-    @app.websocket("/ws/status")
-    async def ws_status(websocket: WebSocket) -> None:
-        if not websocket_allowed(websocket):
-            await websocket.close(code=1008)
-            return
-        await websocket.accept()
-        queue = service.subscribe()
-        try:
-            await websocket.send_json(_status_response(service.snapshot()).model_dump())
-            while True:
-                snapshot = await queue.get()
-                await websocket.send_json(_status_response(snapshot).model_dump())
-        except WebSocketDisconnect:
-            pass
-        finally:
-            service.unsubscribe(queue)
-
-    if WEB_DIR.is_dir():
-        def is_signed_in(request: Request) -> bool:
-            return identify(request) is not None
-
-        @app.get("/", response_model=None)
-        def index(request: Request) -> Response:
-            identity = identify(request)
-            if identity is None:
-                return RedirectResponse("/login", status_code=303)
-            if identity.role == "listener":
-                return RedirectResponse("/listen", status_code=303)
-            return FileResponse(WEB_DIR / "index.html")
-
-        @app.get("/listen", response_model=None)
-        def listen_page(request: Request) -> Response:
-            if public_page_mode() == "off":
-                raise HTTPException(status_code=404, detail="Not found")
-            if not may_open_listen_page(request):
-                return RedirectResponse("/login?next=/listen", status_code=303)
-            return FileResponse(WEB_DIR / "listen.html")
-
-        @app.get("/login", response_model=None)
-        def login_page(request: Request) -> Response:
-            if not auth_enabled() or is_signed_in(request):
-                return RedirectResponse("/", status_code=303)
-            return FileResponse(WEB_DIR / "login.html")
-
-        # Left unauthenticated: the JS/CSS hold no secrets (every piece of
-        # repeater data comes from the authenticated API), and a Mount is a
-        # raw ASGI sub-application that can't take route-level
-        # `dependencies=` anyway.
-        app.mount("/", StaticFiles(directory=WEB_DIR), name="web")
+    realtime_routes.register(
+        app,
+        service=service,
+        nets=nets,
+        live_audio=live_audio,
+        monitor_receiver=monitor_receiver,
+        renderer=renderer,
+        public_listeners=public_listeners,
+        identify=identify,
+        auth_enabled=auth_enabled,
+        status_response=_status_response,
+        web_dir=WEB_DIR,
+    )
 
     return app
 

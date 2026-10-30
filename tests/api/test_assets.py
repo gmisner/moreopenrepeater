@@ -11,6 +11,16 @@ def test_child_path_stays_inside_its_folder(tmp_path):
             child_path(tmp_path, name)
 
 
+def test_child_path_rejects_symlink_out_of_the_folder(tmp_path):
+    outside = tmp_path / "outside.wav"
+    outside.write_bytes(b"secret")
+    folder = tmp_path / "clips"
+    folder.mkdir()
+    (folder / "escape.wav").symlink_to(outside)
+    with pytest.raises(KeyError):
+        child_path(folder, "escape.wav")
+
+
 def test_only_asset_ids_name_files(tmp_path):
     store = AudioAssetStore(tmp_path / "audio")
     (tmp_path / "elsewhere.wav").write_bytes(b"data")

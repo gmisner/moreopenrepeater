@@ -12,8 +12,10 @@
 #   --channel stable|beta|dev
 #              which releases to follow (default: the one chosen before, or
 #              stable); see "Updates" in docs/raspberry-pi.md
-#   --lan      listen on all interfaces instead of only the Pi itself
-#              (first install only; see "Security" in docs/raspberry-pi.md)
+#   --localhost
+#              listen on 127.0.0.1 only (dashboard only from the Pi itself, or
+#              via SSH tunnel / Tailscale Serve). Default is 0.0.0.0 (LAN/Wi-Fi).
+#   --lan      deprecated; LAN listen is now the default (kept so old docs work)
 #   --allstar  also install AllStarLink (ASL3) for linking and autopatch, and
 #              connect the controller to it (Debian 12 or 13; docs/allstar.md)
 #   --protect-sd / --no-protect-sd
@@ -35,7 +37,7 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/moreopenrepeater}"
 SERVICE_USER=moreopenrepeater
 ENV_DIR=/etc/moreopenrepeater
 ENV_FILE="$ENV_DIR/env"
-LISTEN_LAN=0
+LISTEN_LOCALHOST=0
 ALLSTAR=0
 CHANNEL=""
 FETCHED=0
@@ -51,7 +53,8 @@ fail() { printf '\033[1;31mError:\033[0m %s\n' "$*" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --lan) LISTEN_LAN=1 ;;
+    --localhost) LISTEN_LOCALHOST=1 ;;
+    --lan) ;;  # default is LAN; kept for old docs / scripts
     --allstar) ALLSTAR=1 ;;
     --channel) CHANNEL="${2:-}"; shift ;;
     --channel=*) CHANNEL="${1#--channel=}" ;;
@@ -237,7 +240,7 @@ if [ "$FETCHED" -eq 0 ]; then
   find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o ! -type l -perm /022 -exec chmod go-w {} +
 
   pass=(--fetched --channel "$CHANNEL")
-  if [ "$LISTEN_LAN" -eq 1 ]; then pass+=(--lan); fi
+  if [ "$LISTEN_LOCALHOST" -eq 1 ]; then pass+=(--localhost); fi
   if [ "$ALLSTAR" -eq 1 ]; then pass+=(--allstar); fi
   if [ "$PROTECT_SD" = 1 ]; then pass+=(--protect-sd); fi
   if [ "$PROTECT_SD" = 0 ]; then pass+=(--no-protect-sd); fi
@@ -288,11 +291,13 @@ if [ ! -f "$ENV_FILE" ]; then
   GENERATED_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')"
   set_env MOREOPENREPEATER_AUTH_USER admin
   set_env MOREOPENREPEATER_AUTH_PASSWORD "$GENERATED_PASSWORD"
-  if [ "$LISTEN_LAN" -eq 1 ]; then
-    set_env MOREOPENREPEATER_HOST 0.0.0.0
-  fi
-elif [ "$LISTEN_LAN" -eq 1 ]; then
-  echo "Note: --lan only applies to a first install; edit MOREOPENREPEATER_HOST in $ENV_FILE instead."
+fi
+# Default is every interface (LAN/Wi-Fi). Older installs used 127.0.0.1;
+# move them unless --localhost was passed.
+if [ "$LISTEN_LOCALHOST" -eq 1 ]; then
+  set_env MOREOPENREPEATER_HOST 127.0.0.1
+elif [ "$(env_value MOREOPENREPEATER_HOST)" = "127.0.0.1" ] || [ -z "$(env_value MOREOPENREPEATER_HOST)" ]; then
+  set_env MOREOPENREPEATER_HOST 0.0.0.0
 fi
 set_env MOREOPENREPEATER_UPDATE_CHANNEL "$CHANNEL"
 if [ -n "$PROTECT_SD" ]; then set_env MOREOPENREPEATER_PROTECT_SD "$PROTECT_SD"; fi
@@ -337,12 +342,13 @@ if [ -n "$GENERATED_PASSWORD" ]; then
 else
   echo "moreopenrepeater is updated and running ($CHANNEL channel, $(git -C "$INSTALL_DIR" rev-parse --short HEAD))."
 fi
-if [ "$HOST" = "127.0.0.1" ] || [ -z "$HOST" ]; then
+if [ "$HOST" = "127.0.0.1" ]; then
   echo "  Dashboard (on the Pi):  http://127.0.0.1:$PORT"
-  echo "  From other devices:     see \"Security\" in $INSTALL_DIR/docs/raspberry-pi.md"
-  echo "                          (Tailscale: sudo tailscale serve --bg $PORT)"
+  echo "  From other devices:     SSH tunnel, Tailscale, or set MOREOPENREPEATER_HOST=0.0.0.0"
+  echo "                          (see \"Security\" in $INSTALL_DIR/docs/raspberry-pi.md)"
 else
   echo "  Dashboard:              http://$(hostname -I | awk '{print $1}'):$PORT"
+  echo "                          (also http://127.0.0.1:$PORT on the Pi)"
 fi
 if [ -n "$GENERATED_PASSWORD" ]; then
   echo "  Sign in as:             admin / $GENERATED_PASSWORD"

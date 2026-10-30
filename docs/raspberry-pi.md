@@ -20,9 +20,11 @@ after `-s --`, following `bash`:
   **stable** — use that for any repeater on the air; `beta` is for a test
   repeater trying the next release; `dev` follows every push to `main`).
   See [Updates](#6-updates).
-- `--lan` listens on the local network instead of only on the Pi. Prefer
-  Tailscale, a TLS reverse proxy, or SSH instead of exposing plain HTTP;
-  see [Security](#security-sign-in-users-and-https).
+- `--localhost` listens on `127.0.0.1` only (dashboard from the Pi itself, or
+  via SSH tunnel / Tailscale). The default is every interface (`0.0.0.0`), so
+  other devices on the LAN can open `http://<pi-ip>:8000`. Sign-in is on;
+  see [Security](#security-sign-in-users-and-https). `--lan` is accepted but
+  does nothing (LAN listen is already the default).
 - `--allstar` also installs AllStarLink (ASL3) from its apt repository, for
   linking and autopatch. It gives the controller an AMI login of its own
   (usable only from the Pi) and lets it edit the node's settings; see
@@ -526,8 +528,10 @@ sudo chmod 640 /etc/moreopenrepeater/env
 
 Anyone who can reach the HTTP port and get past sign-in can reconfigure
 the repeater (timers, audio, DTMF macros that key the AllStar link, and
-so on), so turn sign-in on before the dashboard is reachable from anywhere
-but the Pi itself.
+so on). The installer turns sign-in on and listens on every interface by
+default, so other devices on your LAN can open the dashboard at the Pi's
+IP. Use `--localhost` (or `MOREOPENREPEATER_HOST=127.0.0.1`) if you want
+it reachable only from the Pi itself.
 
 **Sign-in.** Set `MOREOPENREPEATER_AUTH_USER`/`MOREOPENREPEATER_AUTH_PASSWORD`
 in the env file. That account is always an admin and can't be edited from
@@ -611,13 +615,15 @@ dialed over the air, under **Tools → Audit log**. Settings changes show the
 old and new values. Request bodies aren't stored, so passwords never end up
 in it. Entries are kept for a year in `data/audit.db`.
 
-**HTTPS.** The service speaks plain HTTP, so on its own the password
-crosses the network unencrypted. The env file's default
-(`MOREOPENREPEATER_HOST=127.0.0.1`) only listens on the Pi itself. To reach
-it from elsewhere, pick one:
+**HTTPS.** The service speaks plain HTTP, so on the LAN the password
+crosses the network unencrypted (sign-in still stops strangers who don't
+have it). For HTTPS, or access from off your LAN, pick one:
 
-- **Tailscale** (simplest): install it on the Pi and your devices, then
-  `sudo tailscale serve --bg 8000`. The dashboard is at
+- **On the LAN:** open `http://<pi-ip>:8000` (the Pi's Wi-Fi or Ethernet
+  address from `hostname -I`). That works with the default
+  `MOREOPENREPEATER_HOST=0.0.0.0`.
+- **Tailscale** (HTTPS off-site): install Tailscale on the Pi and your
+  devices, then `sudo tailscale serve --bg 8000`. The dashboard is at
   `https://<pi-name>.<tailnet>.ts.net`, with a real certificate, and only
   your tailnet can reach it.
 - **Caddy reverse proxy** (for a public hostname pointing at the Pi, ports
@@ -631,7 +637,9 @@ it from elsewhere, pick one:
   ```
 
   Caddy gets and renews a Let's Encrypt certificate itself, and passes
-  WebSockets (live status, Listen live) through without extra config.
+  WebSockets (live status, Listen live) through without extra config. With
+  a reverse proxy, you can set `MOREOPENREPEATER_HOST=127.0.0.1` so only
+  Caddy on the Pi talks to the app.
 - **SSH port forwarding** for occasional access:
   `ssh -L 8000:127.0.0.1:8000 pi@<pi>`, then open `http://localhost:8000`.
 

@@ -456,11 +456,12 @@ new `MOREOPENREPEATER_HOST`/`_PORT`/`_DATA_DIR`/`_LOG_PATH`/`_AMI_*` env
 vars `api/app.py` now reads), and `packaging/99-cm108.rules` (a udev rule
 -- lifted verbatim from direwolf's own, vendor ID and all -- granting the
 `audio` group access to the CM108's normally-root-only `/dev/hidrawN`).
-Full walkthrough in `docs/raspberry-pi.md`, including a security note: the
-env file defaults to binding loopback-only regardless. Verified locally end
-to end: the console script honors all four new env vars (custom host/port,
-custom data/log directories), confirmed by actually starting it with them
-set and checking the log file landed in the right place.
+Full walkthrough in `docs/raspberry-pi.md`. The env file defaults to
+`MOREOPENREPEATER_HOST=0.0.0.0` (LAN/Wi-Fi) with sign-in on; use
+`127.0.0.1` or `install-pi.sh --localhost` for loopback only. Verified
+locally end to end: the console script honors the host/port/data/log env
+vars, confirmed by actually starting it with them set and checking the log
+file landed in the right place.
 
 **Sign-in** (`api/auth.py`, `api/users.py`): set both
 `MOREOPENREPEATER_AUTH_USER`/`MOREOPENREPEATER_AUTH_PASSWORD` to require

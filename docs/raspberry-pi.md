@@ -597,6 +597,13 @@ operator for anything that goes out. The switch is kept in
 `data/agent-access.json`, apart from the settings, so a settings change,
 snapshot or backup restore can't turn it on, and tokens can't change it.
 
+Treat `/mcp` like the dashboard: only on a trusted path (the Pi itself,
+Tailscale, or HTTPS behind a reverse proxy). Don't publish it on the open
+internet. The endpoint turns off DNS-rebinding Host checks so LAN agents
+can reach it by hostname; that only stays safe if the network path is
+already trusted. Prefer a **viewer** token for read-only agents, keep
+transmit off unless you need it, and revoke tokens you stop using.
+
 **Audit log.** Every change made through the dashboard or API is recorded
 with who made it (failed sign-ins included), along with DTMF commands
 dialed over the air, under **Tools → Audit log**. Settings changes show the
@@ -668,6 +675,22 @@ From a terminal: `gh workflow run promote.yml -f channel=beta` (or
 `channel=stable`). Each move of `stable` is also published as a GitHub
 release, tagged by date (such as `v2026.10.02`), with notes listing the pull
 requests merged since the last one.
+
+### Before promoting beta to stable
+
+Run the candidate on a **test** repeater on the beta channel long enough to
+exercise what changed — not only unit tests. Before moving `stable` up:
+
+- First key-up, hang time, courtesy tone and ID behave as before.
+- DTMF macros, lockout clear and any new access mode you use (CTCSS, 1750 Hz)
+  work with the radios you actually run.
+- If you use AllStar, autopatch or EchoLink: a link up/down, a short phone
+  call, and a hangup each succeed; AMI/SIP secrets stay non-world-readable.
+- If you use API tokens or MCP: a viewer token can read status; transmit stays
+  refused until Agent access allows it; `/mcp` is only reachable on your
+  trusted path.
+- Dashboard Updates still reports the channel, and an intentional bad update
+  (or the CI rollback path) still restores the previous version.
 
 To update, open the dashboard's **Updates** page (admins only). It shows the
 installed version and what the chosen channel has that's new; pick a channel

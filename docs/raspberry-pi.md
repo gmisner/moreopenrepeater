@@ -779,8 +779,9 @@ Keep a copy of `/etc/moreopenrepeater/env` and `/etc/asterisk/` too.
 
 The dashboard's **Logs** page (admins) has **Download support bundle**. It
 builds a `.zip` of recent controller and systemd logs, status, audio-engine
-state and settings — without passwords, the env file, users, tokens or
-recordings — so you can attach it when emailing for help.
+state and radio settings for troubleshooting configuration and audio —
+without passwords, the env file, users, tokens or recordings. Share the zip
+with whoever is helping you.
 
 ## Alerts
 

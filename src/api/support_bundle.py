@@ -1,5 +1,6 @@
-"""Support bundles: a zip of recent logs and safe diagnostics for emailing
-when asking for help. No passwords, env file, users, tokens or recordings.
+"""Support bundles: a zip of recent logs and safe diagnostics for
+troubleshooting radio configuration, audio and related setup. No passwords,
+env file, users, tokens or recordings.
 """
 from __future__ import annotations
 
@@ -74,9 +75,10 @@ def write_support_bundle(
         f"Callsign:  {callsign}\n"
         f"Channel:   {update_channel}\n"
         "\n"
-        "This zip holds recent logs and settings for troubleshooting.\n"
-        "It does not include passwords, the env file, users, tokens or recordings.\n"
-        "Email it to whoever is helping you (attach the whole .zip).\n"
+        "This zip holds recent logs, radio/audio settings and status for\n"
+        "troubleshooting configuration and audio. It does not include passwords,\n"
+        "the env file, users, tokens or recordings. Share the whole .zip with\n"
+        "whoever is helping you.\n"
     )
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("README.txt", readme)

@@ -6,189 +6,96 @@ import collections
 import dataclasses
 import logging
 import os
-import shutil
-import tempfile
 import time
-import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Awaitable, Callable, NamedTuple, Optional
-from urllib.parse import urlsplit
+from typing import Callable, NamedTuple, Optional
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi import Path as UrlPath
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
-import segno
-from starlette.background import BackgroundTask
 from starlette.requests import HTTPConnection
 from starlette.routing import Route
 
 from audio_io.serial_lines import find_serial_ports
-from controller.announcements import Announcement
 from controller.events import LinkStateChanged, SendLinkCommand
-from controller.macros import Macro
-from controller.modes import effective_config
 from controller.state_machine import RepeaterConfig
 from link.aprs_client import APRSClient, format_frequency_comment, format_position_report, format_status_report
+from link.asterisk_files import asterisk_files_from_env
 from link.node_link import NodeLinkClient
 from playout.renderer import ClipRenderer, UnknownClipError
 from playout.tts import TTSError, detect_tts
-from playout.wav import encode_wav
-from wx.nws import alert_areas, fetch_active_alerts, fetch_zone_geometry, missing_zones, speech_text
+from wx.nws import fetch_active_alerts, fetch_zone_geometry, missing_zones
 
 from .activity import FLUSH_SECONDS as ACTIVITY_FLUSH_SECONDS
-from .activity import RETENTION_DAYS, ActivityRecorder, ActivityStore, summarize
-from .assets import AssetKind, AudioAssetStore
+from .activity import RETENTION_DAYS, ActivityRecorder, ActivityStore
+from .agents import MCP_PATH, AgentAccess, AgentEndpoint, build_server
+from .airport_weather import AirportWeather
+from .allstar_audio import AllStarAudio, usrp_listen_from_env, usrp_settings_from_env
+from .allstar_node import AllStarNode
+from .aprs_map import AprsReceiver, StationStore, spoken_summary
+from .assets import AudioAssetStore
+from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
+from .audit import AuditEntry, AuditLog
 from .auth import (
     SESSION_COOKIE_NAME,
-    SESSION_TTL_SECONDS,
     AuthSettings,
     SessionStore,
     auth_settings_from_env,
     parse_basic_auth_header,
     verify_credentials,
 )
-from link.asterisk_files import asterisk_files_from_env
-
-from .allstar_audio import AllStarAudio, usrp_listen_from_env, usrp_settings_from_env
-from .allstar_node import AllStarNode, AllStarSetupError
-from .echolink import EchoLink, EchoLinkSettings
-from .gpio import GpioControl, GpioError
-from .links import LinkControl, LinkError
-from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkScheduler
-from .node_directory import NodeDirectory
+from .auto_update import POLL_SECONDS as AUTO_UPDATE_POLL_SECONDS, AutoUpdater
 from .autopatch import Autopatch, patch_settings_from_env
-from .backup import BackupError, BackupFolder, BackupSources, backup_name, open_backup, restore_backup, write_backup
-from .boards import WIRING_FIELDS, alsa_card, apply_mixer, load_boards, preset_changes, run_amixer
-from .mixer import levels_on_card, read_volumes, set_volume, side_card, side_volumes
-from .sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
-from .sip_trunk import AsteriskSetupError, SipTrunk, TrunkSettings
-from .tx_fan import TxFan
-from .aprs_map import AprsReceiver, StationStore, bearing_degrees, distance_km, map_center, spoken_summary
-from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
-from .audit import AuditEntry, AuditLog, describe_config_change
-from .link_radio import LinkRadio
-from .remote_base import RemoteBase
-from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env, list_audio_devices
-from .monitor import AudioMonitor
-from .monitor_receiver import MonitorReceiverService
-from .recordings import RecordingInfo, RecordingStore
-from .agents import MCP_PATH, AgentAccess, AgentEndpoint, build_server
-from .tokens import TokenStore
-from .users import Role, UserError, UserStore
-from .logging_config import configure_logging
-from .models import (
-    ActivitySummaryResponse,
-    ControlCodeConfirmRequest,
-    ControlCodeSetup,
-    ControlCodeStatus,
-    ControlCodeUser,
-    HomeAssistantStatus,
-    HomeAssistantTestRequest,
-    MailboxBoxRequest,
-    MailboxBoxResponse,
-    MailboxMessageResponse,
-    MailboxResponse,
-    ListenSource,
-    LinkRadioStatus,
-    MonitorReceiverStatus,
-    PublicStatus,
-    RecordingSource,
-    TranscriptionStatus,
-    StreamResponse,
-    StreamSettingsRequest,
-    AlertSettingsRequest,
-    AlertSettingsResponse,
-    AlertsResponse,
-    AlertTestResponse,
-    AnnouncementFields,
-    AprsMapResponse,
-    AprsStationResponse,
-    AuditEntryResponse,
-    AnnouncementResponse,
-    AssetResponse,
-    AudioDeviceResponse,
-    AudioEngineResponse,
-    ReceiverOpeningResponse,
-    AudioGlitchResponse,
-    AllStarNodeRequest,
-    BoardApplyRequest,
-    BoardApplyResponse,
-    BoardResponse,
-    SerialPortResponse,
-    SoundLevelsResponse,
-    SoundLevelUpdateRequest,
-    EchoLinkRequest,
-    EchoLinkStatusResponse,
-    GpioOutputRequest,
-    LinkConnectRequest,
-    LinksResponse,
-    GpioStatusResponse,
-    AllStarStatusResponse,
-    AudioPreviewRequest,
-    AutopatchDialRequest,
-    AutopatchStatusResponse,
-    BackupFolderResponse,
-    BackupRestoreResponse,
-    ConfigResponse,
-    ConfigUpdateRequest,
-    LoginRequest,
-    MacroCreateRequest,
-    MacroResponse,
-    NetCheckInRequest,
-    NetStartRequest,
-    NetStatusResponse,
-    RecordingResponse,
-    SavedBackupResponse,
-    SessionResponse,
-    AgentAccessRequest,
-    AgentAccessResponse,
-    TokenCreatedResponse,
-    TokenCreateRequest,
-    TokenResponse,
-    UserCreateRequest,
-    UserResponse,
-    UserUpdateRequest,
-    SimulateCOSRequest,
-    SimulateCTCSSRequest,
-    SimulateDTMFRequest,
-    SimulateRemoteKeyedRequest,
-    SipTrunkRequest,
-    SipTrunkStatusResponse,
-    SnapshotImportRequest,
-    SnapshotModel,
-    StatusResponse,
-    TransmissionResponse,
-    TTSInfoResponse,
-    UpdateChannel,
-    UpdateCheckResponse,
-    UpdateRequest,
-    AutoUpdateSettings,
-    UpdatesResponse,
-    WeatherAlertResponse,
-    WeatherStatusResponse,
-)
+from .backup import BackupError, BackupFolder, BackupSources, open_backup, restore_backup
+from .boards import run_amixer
+from .control_codes import ControlCodes
+from .gpio import GpioControl
 from .health import CHECK_SECONDS as HEALTH_CHECK_SECONDS
 from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
-from .control_codes import ControlCodes, provisioning_uri
-from .airport_weather import AirportWeather
 from .homeassistant import TOKEN_ENV as HOMEASSISTANT_TOKEN_ENV
-from .homeassistant import HomeAssistant, HomeAssistantError
+from .homeassistant import HomeAssistant
+from .link_radio import LinkRadio
+from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkScheduler
+from .links import LinkControl, LinkError
+from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env, list_audio_devices
+from .logging_config import configure_logging
 from .mailbox import Mailbox, MailboxStore, is_mailbox_clip
-from .stream import Streamer
-from .transcripts import API_KEY_ENV as TRANSCRIPTION_KEY_ENV
-from .transcripts import VOSK_MODEL_ENV, Transcriber, VoskEngine, callsigns, read_transcript
+from .models import AuditEntryResponse, ConfigResponse, SessionResponse, SnapshotImportRequest, StatusResponse
+from .monitor_receiver import MonitorReceiverService
 from .net import POLL_SECONDS as NET_POLL_SECONDS
-from .net import NetError, NetMode
-from .notify import SECRET_FIELDS, Notifier
+from .net import NetMode
+from .node_directory import NodeDirectory
+from .notify import Notifier
 from .persistence import StateStore
+from .recordings import RecordingStore
+from .remote_base import RemoteBase
+from .routes import accounts as accounts_routes
+from .routes import activity as activity_routes
+from .routes import admin_ops as admin_ops_routes
+from .routes import audio_tools as audio_tools_routes
+from .routes import autopatch as autopatch_routes
+from .routes import control_codes as control_codes_routes
+from .routes import core as core_routes
+from .routes import linking as linking_routes
+from .routes import mailbox as mailbox_routes
+from .routes import media as media_routes
+from .routes import nets as nets_routes
+from .routes import programming as programming_routes
+from .routes import realtime as realtime_routes
+from .routes import session as session_routes
+from .routes import simulate as simulate_routes
+from .routes import site as site_routes
 from .service import RepeaterService, StatusSnapshot
-from .auto_update import POLL_SECONDS as AUTO_UPDATE_POLL_SECONDS, AutoUpdater
-from .updates import UpdateChecker, Updater, channel_from_env, installed_version, read_log, repo_from_checkout, updater_settings_from_env
+from .sip_trunk import SipTrunk
+from .stream import Streamer
+from .tokens import TokenStore
+from .transcripts import API_KEY_ENV as TRANSCRIPTION_KEY_ENV
+from .transcripts import VOSK_MODEL_ENV, Transcriber, VoskEngine
+from .tx_fan import TxFan
+from .updates import UpdateChecker, Updater, channel_from_env, installed_version, repo_from_checkout, updater_settings_from_env
+from .users import Role, UserError, UserStore
 from .watchdog import Watchdog, ping_interval, sd_notify
 
 REPO_DIR = Path(__file__).resolve().parent.parent.parent
@@ -220,7 +127,6 @@ DEFAULT_MONITOR_RECORDINGS_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) 
 MAILBOX_TICK_SECONDS = 60.0
 DEFAULT_VOSK_MODEL_DIR = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "vosk-model"
 TRANSCRIBE_POLL_SECONDS = 15.0
-RECORDING_SEARCH_LIMIT = 500
 DEFAULT_USERS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "users.json"
 DEFAULT_TOKENS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "tokens.json"
 DEFAULT_AGENT_ACCESS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "agent-access.json"
@@ -233,7 +139,6 @@ DEFAULT_NETS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "nets.json"
 DEFAULT_AUTO_UPDATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "auto-update.json"
 DEFAULT_CONTROL_CODES_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "control-codes.json"
 DEFAULT_STREAM_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "stream.json"
-PUBLIC_LISTENERS_PER_ADDRESS = 3
 DEFAULT_BACKUP_DIR = Path(
     os.environ.get("MOREOPENREPEATER_BACKUP_DIR") or _resolve_data_root(os.environ, _REPO_DATA_DIR) / "backups"
 )
@@ -248,7 +153,6 @@ TICK_INTERVAL_SECONDS = 0.05
 APRS_DISABLED_POLL_SECONDS = 5.0
 LINK_RECONNECT_DELAY_SECONDS = 5.0
 LOGIN_FAILURE_DELAY_SECONDS = 1.0
-MAX_PREVIEW_CLIP_LENGTH = 2000
 ANNOUNCEMENT_POLL_SECONDS = 1.0
 WEATHER_DISABLED_POLL_SECONDS = 5.0
 LONG_ID_WARM_SECONDS = 20.0
@@ -257,7 +161,6 @@ _aprs_logger = logging.getLogger("moreopenrepeater.aprs")
 _announce_logger = logging.getLogger("moreopenrepeater.announcements")
 _weather_logger = logging.getLogger("moreopenrepeater.weather")
 _link_logger = logging.getLogger("moreopenrepeater.link")
-_auth_logger = logging.getLogger("moreopenrepeater.auth")
 
 
 class Identity(NamedTuple):
@@ -308,47 +211,9 @@ def _config_response(service: RepeaterService) -> ConfigResponse:
     return ConfigResponse(**dataclasses.asdict(service.saved_config))
 
 
-def _macro_response(macro: Macro) -> MacroResponse:
-    return MacroResponse(**{**dataclasses.asdict(macro), "help_hidden": macro.hidden_from_help})
-
-
-def _asset_response(asset) -> AssetResponse:
-    return AssetResponse(**dataclasses.asdict(asset))
-
-
 def _audit_response(entry: AuditEntry) -> AuditEntryResponse:
     return AuditEntryResponse(
         at=datetime.fromtimestamp(entry.at), actor=entry.actor, action=entry.action, detail=entry.detail, status=entry.status
-    )
-
-
-def _recording_response(recording: RecordingInfo, transcript: Optional[str]) -> RecordingResponse:
-    return RecordingResponse(
-        id=recording.id, started_at=datetime.fromtimestamp(recording.started_at), duration=recording.duration,
-        transcript=transcript, callsigns=callsigns(transcript or ""),
-    )
-
-
-def _announcement_response(service: RepeaterService, announcement: Announcement) -> AnnouncementResponse:
-    return AnnouncementResponse(
-        **dataclasses.asdict(announcement), next_run=service.next_announcement_run(announcement.id)
-    )
-
-
-def _weather_response(service: RepeaterService) -> WeatherStatusResponse:
-    alerts = [
-        WeatherAlertResponse(
-            id=a.id, event=a.event, severity=a.severity, urgency=a.urgency, headline=a.headline, area=a.area,
-            expires=a.expires, ends=a.ends, announced=service.weather_tracker.was_announced(a.id),
-            speech=speech_text(a),
-        )
-        for a in service.weather_alerts
-    ]
-    return WeatherStatusResponse(
-        enabled=service.config.wx_alerts_enabled,
-        last_checked=service.weather_last_checked,
-        last_error=service.weather_last_error,
-        alerts=alerts,
     )
 
 
@@ -963,381 +828,65 @@ def create_app(
             role=identity.role if identity else None,
         )
 
-    @app.get("/api/session", response_model=SessionResponse)
-    def get_session(request: Request) -> SessionResponse:
-        return session_response(identify(request))
+    session_routes.register(
+        app,
+        identify=identify,
+        auth_enabled=auth_enabled,
+        check_login=check_login,
+        sessions=sessions,
+        session_response=session_response,
+        local_identity=_LOCAL,
+        login_failure_delay=LOGIN_FAILURE_DELAY_SECONDS,
+    )
 
-    @app.post("/api/login", response_model=SessionResponse)
-    async def login(body: LoginRequest, request: Request, response: Response) -> SessionResponse:
-        if not auth_enabled():
-            return session_response(_LOCAL)
-        request.state.audit_actor = body.username
-        # scrypt takes tens of milliseconds; keep it off the event loop.
-        identity = await asyncio.get_running_loop().run_in_executor(None, check_login, body.username, body.password)
-        if identity is None:
-            _auth_logger.warning("failed login for %r from %s", body.username, request.client.host if request.client else "?")
-            await asyncio.sleep(LOGIN_FAILURE_DELAY_SECONDS)
-            raise HTTPException(status_code=401, detail="Invalid username or password")
-        sessions.revoke(request.cookies.get(SESSION_COOKIE_NAME))
-        response.set_cookie(
-            SESSION_COOKIE_NAME,
-            sessions.create(body.username),
-            max_age=SESSION_TTL_SECONDS,
-            httponly=True,
-            samesite="strict",
-            secure=request.url.scheme == "https",
-        )
-        _auth_logger.info("login succeeded for %r", body.username)
-        return session_response(identity)
+    core_routes.register(
+        app,
+        service=service,
+        run_mixer=run_mixer,
+        render_and_queue=render_and_queue,
+        status_response=_status_response,
+        config_response=_config_response,
+        auth_dependencies=auth_dependencies,
+        transmit_dependencies=transmit_dependencies,
+    )
 
-    @app.post("/api/logout", response_model=SessionResponse)
-    async def logout(request: Request, response: Response) -> SessionResponse:
-        sessions.revoke(request.cookies.get(SESSION_COOKIE_NAME))
-        response.delete_cookie(SESSION_COOKIE_NAME, httponly=True, samesite="strict")
-        return session_response(None if auth_enabled() else _LOCAL)
-
-    @app.get("/api/status", response_model=StatusResponse, dependencies=auth_dependencies)
-    def get_status() -> StatusResponse:
-        return _status_response(service.snapshot())
-
-    @app.get("/api/config", response_model=ConfigResponse, dependencies=auth_dependencies)
-    def get_config() -> ConfigResponse:
-        return _config_response(service)
-
-    @app.put("/api/config", response_model=ConfigResponse, dependencies=auth_dependencies)
-    async def put_config(update: ConfigUpdateRequest, request: Request) -> ConfigResponse:
-        clear_fields = {name for name in ConfigUpdateRequest.model_fields if name.startswith("clear_")}
-        overrides = update.model_dump(exclude=clear_fields, exclude_none=True)
-        for clear_field in clear_fields:
-            if getattr(update, clear_field):
-                overrides[clear_field.removeprefix("clear_")] = None
-        saved = service.saved_config
-        if saved.board_preset and any(overrides.get(name, getattr(saved, name)) != getattr(saved, name) for name in WIRING_FIELDS):
-            overrides["board_preset"] = ""
-        request.state.audit_detail = describe_config_change(dataclasses.asdict(saved), overrides)
-        service.update_config(**overrides)
-        return _config_response(service)
-
-    boards = {board.id: board for board in load_boards()}
-
-    @app.get("/api/boards", response_model=list[BoardResponse], dependencies=auth_dependencies)
-    def get_boards() -> list[BoardResponse]:
-        return [
-            BoardResponse(
-                **{name: getattr(board, name) for name in ("id", "name", "maker", "kind", "notes", "unsupported")},
-                device_hints=list(board.device_hints),
-                two_port=board.link is not None,
-                mixer=list(board.mixer),
-            )
-            for board in boards.values()
-        ]
-
-    @app.post("/api/boards/{board_id}/apply", response_model=BoardApplyResponse, dependencies=auth_dependencies)
-    async def apply_board(board_id: str, body: BoardApplyRequest, request: Request) -> BoardApplyResponse:
-        board = boards.get(board_id)
-        if board is None:
-            raise HTTPException(status_code=404, detail="No such interface board")
-        if board.unsupported:
-            raise HTTPException(status_code=409, detail=f"{board.name} isn't supported yet: {board.unsupported}")
-        changes = preset_changes(board, body.input_device, body.output_device, body.link_input_device, body.link_output_device)
-        request.state.audit_detail = board.name
-        service.update_config(**changes)
-        config = service.saved_config
-        mixer, skipped = [], []
-        if body.set_mixer and board.mixer:
-            devices = [config.audio_output_device]
-            if config.link_radio_enabled and board.link:
-                devices.append(config.link_radio_output_device)
-            cards = []
-            for device in devices:
-                card = alsa_card(device)
-                if card is None:
-                    skipped.append(device or "System default")
-                elif card not in cards:
-                    cards.append(card)
-            loop = asyncio.get_running_loop()
-            results = await loop.run_in_executor(None, apply_mixer, cards, board.mixer, run_mixer)
-            mixer = [dataclasses.asdict(result) for result in results]
-            output_card = side_card(config, "output")
-            if output_card is not None:
-                try:
-                    inputs, outputs = await loop.run_in_executor(
-                        None, levels_on_card, output_card, {control for control, _ in board.mixer}, run_mixer
-                    )
-                except OSError as error:
-                    logging.getLogger("moreopenrepeater.mixer").warning("couldn't read back the board's levels: %s", error)
-                else:
-                    if side_card(config, "input") != output_card:
-                        inputs = {}
-                    service.update_config(audio_input_levels=inputs, audio_output_levels=outputs)
-        return BoardApplyResponse(config=_config_response(service), mixer=mixer, mixer_skipped=skipped)
-
-    def sound_levels() -> SoundLevelsResponse:
-        config = service.saved_config
-        levels, notes = [], []
-        read: dict[int, list] = {}
-        for side, saved in (("input", config.audio_input_levels), ("output", config.audio_output_levels)):
-            card = side_card(config, side)
-            if card is None:
-                notes.append(f"The {side} is the system default device; pick a specific sound card to set its levels.")
-                continue
-            if card not in read:
-                try:
-                    read[card] = read_volumes(card, run_mixer)
-                except OSError as error:
-                    notes.append(f"Couldn't read sound card {card}'s levels: {error}")
-                    read[card] = []
-            for volume in side_volumes(side, read[card]):
-                levels.append({
-                    **dataclasses.asdict(volume), "side": side, "card": card,
-                    "saved": saved.get(volume.control) == volume.value,
-                })
-        return SoundLevelsResponse(levels=levels, notes=notes)
-
-    @app.get("/api/audio/levels", response_model=SoundLevelsResponse, dependencies=auth_dependencies)
-    async def get_sound_levels() -> SoundLevelsResponse:
-        return await asyncio.get_running_loop().run_in_executor(None, sound_levels)
-
-    @app.put("/api/audio/levels", response_model=SoundLevelsResponse, dependencies=auth_dependencies)
-    async def put_sound_level(body: SoundLevelUpdateRequest, request: Request) -> SoundLevelsResponse:
-        config = service.saved_config
-        card = side_card(config, body.side)
-        if card is None:
-            raise HTTPException(status_code=409, detail=f"Pick a specific {body.side} sound card first")
-        loop = asyncio.get_running_loop()
-        try:
-            volumes = await loop.run_in_executor(None, read_volumes, card, run_mixer)
-        except OSError as error:
-            raise HTTPException(status_code=503, detail=f"Couldn't read sound card {card}'s levels: {error}")
-        volume = next((v for v in side_volumes(body.side, volumes) if v.control == body.control), None)
-        if volume is None:
-            raise HTTPException(status_code=404, detail=f"Sound card {card} has no {body.control} {body.side} level")
-        value = min(max(body.value, volume.min), volume.max)
-        error = await loop.run_in_executor(None, set_volume, card, volume.control, volume.direction, value, run_mixer)
-        if error:
-            raise HTTPException(status_code=503, detail=f"Couldn't set {volume.control}: {error}")
-        field_name = f"audio_{body.side}_levels"
-        service.update_config(**{field_name: {**getattr(service.saved_config, field_name), volume.control: value}})
-        request.state.audit_detail = f"{volume.control} {body.side} {value}"
-        return await loop.run_in_executor(None, sound_levels)
-
-    @app.post("/api/audio/test-id", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def test_id() -> StatusResponse:
-        if not service.saved_config.audio_enabled:
-            raise HTTPException(status_code=409, detail="Turn on live audio first")
-        try:
-            await render_and_queue("id")
-        except TTSError as error:
-            raise HTTPException(status_code=503, detail=str(error))
-        return _status_response(service.snapshot())
-
-    @app.post("/api/lockout/clear", response_model=StatusResponse, dependencies=auth_dependencies)
-    async def clear_lockout() -> StatusResponse:
-        if not service.controller.locked_out:
-            raise HTTPException(status_code=409, detail="The repeater isn't locked out")
-        service.clear_lockout()
-        return _status_response(service.snapshot())
-
-    @app.post("/api/simulate/cos", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def simulate_cos(body: SimulateCOSRequest) -> StatusResponse:
-        service.simulate_cos(body.active)
-        return _status_response(service.snapshot())
-
-    @app.post("/api/simulate/ctcss", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def simulate_ctcss(body: SimulateCTCSSRequest) -> StatusResponse:
-        service.simulate_ctcss(body.tone_hz)
-        return _status_response(service.snapshot())
-
-    @app.post("/api/simulate/dtmf", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def simulate_dtmf(body: SimulateDTMFRequest) -> StatusResponse:
-        service.simulate_dtmf(body.digit)
-        return _status_response(service.snapshot())
-
-    @app.post("/api/simulate/remote-keyed", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def simulate_remote_keyed(body: SimulateRemoteKeyedRequest) -> StatusResponse:
-        service.simulate_remote_keyed(body.node_id, body.keyed)
-        return _status_response(service.snapshot())
+    simulate_routes.register(
+        app,
+        service=service,
+        transmit_dependencies=transmit_dependencies,
+        status_response=_status_response,
+    )
 
     def actor_of(request: Request) -> str:
         return request.state.identity.username or "local"
 
-    @app.get("/api/net", response_model=NetStatusResponse, dependencies=auth_dependencies)
-    def get_net() -> dict:
-        return nets.status()
+    nets_routes.register(
+        app,
+        nets=nets,
+        actor_of=actor_of,
+        auth_dependencies=auth_dependencies,
+        transmit_dependencies=transmit_dependencies,
+    )
 
-    @app.post("/api/net/start", response_model=NetStatusResponse, dependencies=transmit_dependencies)
-    async def start_net(body: NetStartRequest, request: Request) -> dict:
-        try:
-            net = await nets.start(actor_of(request), body.name)
-        except NetError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from None
-        request.state.audit_detail = net["name"]
-        return nets.status()
+    programming_routes.register(
+        app,
+        service=service,
+        assets_store=assets_store,
+        zone_shapes=zone_shapes,
+        render_and_queue=render_and_queue,
+        check_weather=check_weather,
+        status_response=_status_response,
+        auth_dependencies=auth_dependencies,
+        transmit_dependencies=transmit_dependencies,
+    )
 
-    @app.post("/api/net/end", response_model=NetStatusResponse, dependencies=transmit_dependencies)
-    async def end_net(request: Request) -> dict:
-        try:
-            net = await nets.end(actor_of(request))
-        except NetError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from None
-        request.state.audit_detail = f"{net['name']}: {len(net['checkins'])} check-ins"
-        return nets.status()
-
-    @app.post("/api/net/checkins", response_model=NetStatusResponse, dependencies=auth_dependencies)
-    def add_checkin(body: NetCheckInRequest, request: Request) -> dict:
-        request.state.audit_detail = body.callsign.upper()
-        try:
-            nets.add_checkin(body.callsign, body.notes)
-        except NetError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from None
-        return nets.status()
-
-    @app.put("/api/net/checkins/{checkin_id}", response_model=NetStatusResponse, dependencies=auth_dependencies)
-    def update_checkin(checkin_id: str, body: NetCheckInRequest) -> dict:
-        try:
-            nets.update_checkin(checkin_id, body.callsign, body.notes)
-        except NetError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from None
-        except KeyError:
-            raise HTTPException(status_code=404, detail="No such check-in") from None
-        return nets.status()
-
-    @app.delete("/api/net/checkins/{checkin_id}", response_model=NetStatusResponse, dependencies=auth_dependencies)
-    def delete_checkin(checkin_id: str) -> dict:
-        try:
-            nets.delete_checkin(checkin_id)
-        except NetError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from None
-        except KeyError:
-            raise HTTPException(status_code=404, detail="No such check-in") from None
-        return nets.status()
-
-    @app.get("/api/nets/{net_id}/checkins.csv", dependencies=auth_dependencies)
-    def net_csv(net_id: str) -> Response:
-        try:
-            net = nets.find(net_id)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="No such net") from None
-        day = datetime.fromtimestamp(net["started_at"]).strftime("%Y-%m-%d")
-        slug = "".join(c if c.isalnum() else "-" for c in net["name"].lower()).strip("-") or "net"
-        return Response(
-            nets.csv(net_id),
-            media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="{slug}-{day}.csv"'},
-        )
-
-    @app.delete("/api/nets/{net_id}", response_model=NetStatusResponse, dependencies=auth_dependencies)
-    def delete_net(net_id: str) -> dict:
-        try:
-            nets.delete(net_id)
-        except NetError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from None
-        except KeyError:
-            raise HTTPException(status_code=404, detail="No such net") from None
-        return nets.status()
-
-    @app.get("/api/macros", response_model=list[MacroResponse], dependencies=auth_dependencies)
-    def list_macros() -> list[MacroResponse]:
-        return [_macro_response(m) for m in service.list_macros()]
-
-    @app.post("/api/macros", response_model=list[MacroResponse], dependencies=auth_dependencies)
-    async def add_macro(body: MacroCreateRequest) -> list[MacroResponse]:
-        macro = Macro(**body.model_dump())
-        return [_macro_response(m) for m in service.add_macro(macro)]
-
-    @app.delete("/api/macros/{pattern}", response_model=list[MacroResponse], dependencies=auth_dependencies)
-    async def delete_macro(pattern: str) -> list[MacroResponse]:
-        if pattern not in {m.pattern for m in service.list_macros()}:
-            raise HTTPException(status_code=404, detail=f"No macro with pattern {pattern!r}")
-        return [_macro_response(m) for m in service.delete_macro(pattern)]
-
-    def find_announcement(announcement_id: str) -> Announcement:
-        for announcement in service.list_announcements():
-            if announcement.id == announcement_id:
-                return announcement
-        raise HTTPException(status_code=404, detail=f"No announcement with id {announcement_id!r}")
-
-    def save_announcement(announcement_id: str, body: AnnouncementFields) -> AnnouncementResponse:
-        if body.asset_id and not assets_store.has(body.asset_id):
-            raise HTTPException(status_code=400, detail=f"No audio clip with id {body.asset_id!r}")
-        announcement = Announcement(id=announcement_id, **body.model_dump())
-        return _announcement_response(service, service.save_announcement(announcement))
-
-    @app.get("/api/announcements", response_model=list[AnnouncementResponse], dependencies=auth_dependencies)
-    def list_announcements() -> list[AnnouncementResponse]:
-        return [_announcement_response(service, a) for a in service.list_announcements()]
-
-    @app.post("/api/announcements", response_model=AnnouncementResponse, dependencies=auth_dependencies)
-    async def create_announcement(body: AnnouncementFields) -> AnnouncementResponse:
-        return save_announcement(uuid.uuid4().hex, body)
-
-    @app.put("/api/announcements/{announcement_id}", response_model=AnnouncementResponse, dependencies=auth_dependencies)
-    async def update_announcement(announcement_id: str, body: AnnouncementFields) -> AnnouncementResponse:
-        find_announcement(announcement_id)
-        return save_announcement(announcement_id, body)
-
-    @app.delete("/api/announcements/{announcement_id}", dependencies=auth_dependencies)
-    async def delete_announcement(announcement_id: str) -> dict:
-        find_announcement(announcement_id)
-        service.delete_announcement(announcement_id)
-        return {"deleted": announcement_id}
-
-    @app.post("/api/announcements/{announcement_id}/play", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def play_announcement(announcement_id: str) -> StatusResponse:
-        clip = service.announcement_clip(find_announcement(announcement_id))
-        try:
-            await render_and_queue(clip)
-        except UnknownClipError:
-            raise HTTPException(status_code=404, detail="The announcement's audio clip no longer exists")
-        except TTSError as error:
-            raise HTTPException(status_code=503, detail=str(error))
-        return _status_response(service.snapshot())
-
-    @app.get("/api/weather", response_model=WeatherStatusResponse, dependencies=auth_dependencies)
-    def get_weather() -> WeatherStatusResponse:
-        return _weather_response(service)
-
-    @app.get("/api/weather/areas", dependencies=auth_dependencies)
-    def get_weather_areas() -> dict:
-        return alert_areas(service.weather_alerts, zone_shapes)
-
-    @app.post("/api/weather/check", response_model=WeatherStatusResponse, dependencies=auth_dependencies)
-    async def check_weather_now() -> WeatherStatusResponse:
-        await check_weather(announce=service.config.wx_alerts_enabled)
-        return _weather_response(service)
-
-    @app.post("/api/weather/alerts/{alert_id}/play", response_model=StatusResponse, dependencies=transmit_dependencies)
-    async def play_weather_alert(alert_id: str) -> StatusResponse:
-        alert = next((a for a in service.weather_alerts if a.id == alert_id), None)
-        if alert is None:
-            raise HTTPException(status_code=404, detail="That alert is no longer active")
-        try:
-            await render_and_queue(service.weather_alert_clip(alert))
-        except TTSError as error:
-            raise HTTPException(status_code=503, detail=str(error))
-        return _status_response(service.snapshot())
-
-    @app.get("/api/activity/summary", response_model=ActivitySummaryResponse, dependencies=auth_dependencies)
-    def activity_summary(days: int = Query(default=7, ge=1, le=RETENTION_DAYS)) -> dict:
-        until = service.wall_now()
-        since = until - timedelta(days=days)
-        return summarize(activity_store.rows(since.timestamp(), until.timestamp()), since, until)
-
-    @app.get("/api/activity/transmissions", response_model=list[TransmissionResponse], dependencies=auth_dependencies)
-    def recent_transmissions(limit: int = Query(default=50, ge=1, le=500)) -> list[TransmissionResponse]:
-        return [
-            TransmissionResponse(started_at=datetime.fromtimestamp(r.started_at), duration=r.duration, timed_out=r.timed_out)
-            for r in activity_store.recent("rx", limit)
-        ]
-
-    @app.get("/api/snapshot", response_model=SnapshotModel, dependencies=auth_dependencies)
-    def get_snapshot() -> SnapshotModel:
-        return SnapshotModel(**service.export_snapshot())
-
-    @app.post("/api/snapshot", response_model=SnapshotModel, dependencies=auth_dependencies)
-    async def post_snapshot(snapshot: SnapshotImportRequest) -> SnapshotModel:
-        service.import_snapshot(_snapshot_to_import(snapshot))
-        return SnapshotModel(**service.export_snapshot())
+    activity_routes.register(
+        app,
+        service=service,
+        activity_store=activity_store,
+        snapshot_to_import=_snapshot_to_import,
+        auth_dependencies=auth_dependencies,
+    )
 
     def restore_backup_file(path: Path, loop: asyncio.AbstractEventLoop) -> dict:
         """Runs in a worker thread; the settings themselves are applied on the event loop."""
@@ -1358,862 +907,127 @@ def create_app(
         except (BackupError, UserError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
 
-    @app.get("/api/backup", dependencies=admin_dependencies)
-    def download_backup(request: Request, recordings: bool = False) -> FileResponse:
-        now = time.time()
-        fd, name = tempfile.mkstemp(suffix=".zip")
-        os.close(fd)
-        path = Path(name)
-        try:
-            write_backup(path, backup_sources, recordings, now)
-        except BaseException:
-            path.unlink(missing_ok=True)
-            raise
-        # A GET, so the middleware skips it -- but it hands out password hashes.
-        audit.record(now, request.state.identity.actor or "local", "download backup", "with recordings" if recordings else "")
-        return FileResponse(
-            path,
-            media_type="application/zip",
-            filename=backup_name(service.config.callsign, now),
-            background=BackgroundTask(path.unlink, missing_ok=True),
-        )
-
-    @app.post("/api/backup/restore", response_model=BackupRestoreResponse, dependencies=admin_dependencies)
-    async def restore_uploaded_backup(request: Request, file: UploadFile = File(...)) -> dict:
-        request.state.audit_detail = file.filename or ""
-        loop = asyncio.get_running_loop()
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "backup.zip"
-            with path.open("wb") as out:
-                await loop.run_in_executor(None, shutil.copyfileobj, file.file, out)
-            return await loop.run_in_executor(None, restore_backup_file, path, loop)
-
-    def backup_folder_response() -> BackupFolderResponse:
-        return BackupFolderResponse(
-            enabled=backups.enabled,
-            directory=str(backups.directory) if backups.directory else None,
-            last_error=backups.last_error,
-            backups=[
-                SavedBackupResponse(
-                    name=b.name, created_at=datetime.fromtimestamp(b.created_at), size=b.size, contents=b.contents
-                )
-                for b in backups.list()
-            ],
-        )
-
-    def saved_backup_path(name: str) -> Path:
-        try:
-            return backups.path_for(name)
-        except KeyError:
-            raise HTTPException(status_code=404, detail=f"No backup named {name!r}") from None
-
-    @app.get("/api/backups", response_model=BackupFolderResponse, dependencies=admin_dependencies)
-    def list_backups() -> BackupFolderResponse:
-        return backup_folder_response()
-
-    @app.post("/api/backups", response_model=BackupFolderResponse, dependencies=admin_dependencies)
-    async def create_saved_backup() -> BackupFolderResponse:
-        if not backups.enabled:
-            raise HTTPException(status_code=409, detail="No backup folder is set up")
-        config = service.config
-        try:
-            await asyncio.get_running_loop().run_in_executor(
-                None, backups.create, backup_sources, config.backup_include_recordings, time.time()
-            )
-        except OSError as error:
-            raise HTTPException(status_code=507, detail=f"Couldn't save the backup: {error}") from None
-        return backup_folder_response()
-
-    @app.get("/api/backups/{name}", dependencies=admin_dependencies)
-    def download_saved_backup(name: str, request: Request) -> FileResponse:
-        path = saved_backup_path(name)
-        audit.record(time.time(), request.state.identity.actor or "local", "download backup", name)
-        return FileResponse(path, media_type="application/zip", filename=name)
-
-    @app.delete("/api/backups/{name}", response_model=BackupFolderResponse, dependencies=admin_dependencies)
-    def delete_saved_backup(name: str) -> BackupFolderResponse:
-        saved_backup_path(name).unlink(missing_ok=True)
-        return backup_folder_response()
-
-    @app.post("/api/backups/{name}/restore", response_model=BackupRestoreResponse, dependencies=admin_dependencies)
-    async def restore_saved_backup(name: str, request: Request) -> dict:
-        request.state.audit_detail = name
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, restore_backup_file, saved_backup_path(name), loop)
-
-    @app.get("/api/updates", response_model=UpdatesResponse, dependencies=admin_dependencies)
-    def get_updates() -> dict:
-        return {
-            "available": updater.available,
-            "channel": update_channel,
-            "version": installed_version(REPO_DIR),
-            "status": updater.status(),
-            "auto": auto_updater.status(),
-        }
-
-    @app.put("/api/updates/auto", response_model=UpdatesResponse, dependencies=admin_dependencies)
-    def set_auto_update(body: AutoUpdateSettings, request: Request) -> dict:
-        request.state.audit_detail = f"{body.start}-{body.end}" if body.enabled else "off"
-        auto_updater.update_settings(**body.model_dump())
-        return get_updates()
-
-    @app.get("/api/updates/check", response_model=UpdateCheckResponse, dependencies=admin_dependencies)
-    def check_for_update(channel: UpdateChannel, refresh: bool = False) -> dict:
-        version = installed_version(REPO_DIR)
-        return update_checker.check(channel, version["sha"] if version else "", refresh=refresh)
-
-    @app.get("/api/updates/log", response_model=list[str], dependencies=admin_dependencies)
-    def get_update_log() -> list[str]:
-        return read_log(updater.settings) if updater.settings else []
-
-    @app.post("/api/updates", response_model=UpdatesResponse, dependencies=admin_dependencies)
-    def start_update(body: UpdateRequest, request: Request) -> dict:
-        request.state.audit_detail = body.channel
-        if not updater.available:
-            raise HTTPException(status_code=409, detail="Updates are only available on installs made with install-pi.sh")
-        if updater.busy():
-            raise HTTPException(status_code=409, detail="An update is already in progress")
-        try:
-            updater.request(body.channel)
-        except OSError as error:
-            raise HTTPException(status_code=500, detail=f"Couldn't ask the updater: {error.strerror or error}") from None
-        return get_updates()
-
-    def alerts_response() -> dict:
-        settings = notifier.settings
-        return {
-            "settings": AlertSettingsResponse(**{k: getattr(settings, k) for k in AlertSettingsResponse.model_fields}),
-            "secrets_set": {name: bool(getattr(settings, name)) for name in SECRET_FIELDS},
-            "channels": notifier.channels,
-            "recent": [{**entry, "at": datetime.fromtimestamp(entry["at"])} for entry in notifier.recent],
-            "system": health.probe.readings(),
-            "last_unexpected_stop": health.last_unexpected_stop,
-        }
-
-    # Plain `def`s: the system readings read files and may run vcgencmd.
-    @app.get("/api/alerts", response_model=AlertsResponse, dependencies=admin_dependencies)
-    def get_alerts() -> dict:
-        return alerts_response()
-
-    @app.put("/api/alerts", response_model=AlertsResponse, dependencies=admin_dependencies)
-    def put_alerts(body: AlertSettingsRequest, request: Request) -> dict:
-        changes = body.model_dump(exclude_none=True)
-        request.state.audit_detail = ", ".join(
-            name for name, value in changes.items() if value != getattr(notifier.settings, name)
-        )
-        notifier.update(**changes)
-        return alerts_response()
-
-    @app.post("/api/alerts/test", response_model=AlertTestResponse, dependencies=admin_dependencies)
-    async def test_alerts() -> dict:
-        if not notifier.channels:
-            raise HTTPException(status_code=409, detail="Set up at least one way to send alerts first")
-        return {"results": await notifier.send_test()}
-
-    @app.get("/api/audio/tts", response_model=TTSInfoResponse, dependencies=auth_dependencies)
-    def get_tts_info() -> TTSInfoResponse:
-        return TTSInfoResponse(engine=renderer.tts.name if renderer.tts is not None else None)
-
-    # Plain `def`: FastAPI runs it in a worker thread, so a slow TTS render
-    # doesn't stall the event loop (and with it the controller tick).
-    @app.post("/api/audio/preview", response_class=Response, dependencies=auth_dependencies)
-    def audio_preview(body: AudioPreviewRequest) -> Response:
-        if len(body.clip) > MAX_PREVIEW_CLIP_LENGTH:
-            raise HTTPException(status_code=400, detail="Text is too long to preview")
-        config = effective_config(_apply_overrides(service.saved_config, body.config), net_active=body.net)
-        try:
-            samples = renderer.render(body.clip, config)
-        except UnknownClipError:
-            raise HTTPException(status_code=404, detail=f"Unknown clip {body.clip!r}")
-        except TTSError as error:
-            raise HTTPException(status_code=503, detail=str(error))
-        return Response(encode_wav(samples, renderer.sample_rate), media_type="audio/wav")
-
-    @app.get("/api/serial/ports", response_model=list[SerialPortResponse], dependencies=auth_dependencies)
-    def get_serial_ports() -> list[dict]:
-        return serial_ports()
-
-    @app.get("/api/audio/devices", response_model=list[AudioDeviceResponse], dependencies=auth_dependencies)
-    def get_audio_devices() -> list[dict]:
-        try:
-            return audio_devices()
-        except Exception as error:  # PortAudio errors
-            raise HTTPException(status_code=503, detail=f"couldn't list audio devices: {error}")
-
-    async def change_allstar(change: Awaitable[dict]) -> dict:
-        try:
-            return await change
-        except AllStarSetupError as error:
-            raise HTTPException(status_code=502, detail=str(error))
-
-    @app.get("/api/allstar", response_model=AllStarStatusResponse, dependencies=auth_dependencies)
-    async def get_allstar() -> dict:
-        return await allstar_node.status()
-
-    @app.put("/api/allstar", response_model=AllStarStatusResponse, dependencies=admin_dependencies)
-    async def put_allstar(body: AllStarNodeRequest, request: Request) -> dict:
-        no_call_in_progress()
-        request.state.audit_detail = f"node {body.node}"
-        return await change_allstar(allstar_node.use(body.node))
-
-    @app.delete("/api/allstar", response_model=AllStarStatusResponse, dependencies=admin_dependencies)
-    async def delete_allstar() -> dict:
-        no_call_in_progress()
-        return await change_allstar(allstar_node.release())
-
-    echolink = EchoLink(allstar_node)
-
-    @app.get("/api/allstar/echolink", response_model=EchoLinkStatusResponse, dependencies=auth_dependencies)
-    async def get_echolink() -> dict:
-        return await echolink.status()
-
-    @app.put("/api/allstar/echolink", response_model=EchoLinkStatusResponse, dependencies=admin_dependencies)
-    async def put_echolink(body: EchoLinkRequest, request: Request) -> dict:
-        no_call_in_progress()
-        request.state.audit_detail = f"{body.callsign}, node {body.node_number}" + (", new password" if body.password else "")
-        settings = EchoLinkSettings(**{**body.model_dump(), "password": body.password or None})
-        return await change_allstar(echolink.save(settings))
-
-    @app.delete("/api/allstar/echolink", response_model=EchoLinkStatusResponse, dependencies=admin_dependencies)
-    async def delete_echolink() -> dict:
-        no_call_in_progress()
-        return await change_allstar(echolink.disable())
-
-    async def links_status() -> dict:
-        status = await links.status()
-        for row in status["links"]:
-            row["until"] = link_scheduler.until(row["node"])
-        status["schedules"] = link_scheduler.status(service.wall_now())
-        return status
-
-    async def change_links(action) -> dict:
-        try:
-            await action
-        except LinkError as error:
-            raise HTTPException(status_code=409, detail=str(error))
-        return await links_status()
-
-    @app.get("/api/links", response_model=LinksResponse, dependencies=auth_dependencies)
-    async def get_links() -> dict:
-        return await links_status()
-
-    @app.post("/api/links", response_model=LinksResponse, dependencies=transmit_dependencies)
-    async def post_link(body: LinkConnectRequest, request: Request) -> dict:
-        request.state.audit_detail = f"node {body.node}" + (" (monitor)" if body.monitor else "")
-        return await change_links(links.connect(body.node, body.monitor))
-
-    @app.delete("/api/links", response_model=LinksResponse, dependencies=auth_dependencies)
-    async def delete_links() -> dict:
-        return await change_links(links.disconnect_all())
-
-    @app.delete("/api/links/{node}", response_model=LinksResponse, dependencies=transmit_dependencies)
-    async def delete_link(node: str = UrlPath(pattern=r"^[0-9]{1,10}$")) -> dict:
-        return await change_links(links.disconnect(node))
-
-    def gpio_status() -> dict:
-        return {**gpio.status(), "fan": tx_fan.status()}
-
-    @app.get("/api/gpio", response_model=GpioStatusResponse, dependencies=auth_dependencies)
-    def get_gpio() -> dict:
-        return gpio_status()
-
-    @app.put("/api/gpio/{pin}", response_model=GpioStatusResponse, dependencies=auth_dependencies)
-    def put_gpio(pin: int, body: GpioOutputRequest, request: Request) -> dict:
-        request.state.audit_detail = f"GPIO{pin} ({gpio.name(pin)}) {'on' if body.on else 'off'}"
-        try:
-            gpio.set_output(pin, body.on)
-        except GpioError as error:
-            raise HTTPException(status_code=409, detail=str(error))
-        return gpio_status()
-
-    @app.get("/api/audio/engine", response_model=AudioEngineResponse, dependencies=auth_dependencies)
-    def get_audio_engine() -> dict:
-        return live_audio.status()
-
-    @app.get("/api/audio/openings", response_model=list[ReceiverOpeningResponse], dependencies=auth_dependencies)
-    def get_receiver_openings() -> list[dict]:
-        return list(reversed(live_audio.openings))
-
-    @app.get("/api/audio/glitches", response_model=list[AudioGlitchResponse], dependencies=auth_dependencies)
-    def get_audio_glitches() -> list[dict]:
-        return list(reversed(live_audio.glitches))
-
-    @app.get("/api/autopatch", response_model=AutopatchStatusResponse, dependencies=auth_dependencies)
-    def get_autopatch() -> dict:
-        return autopatch.status()
-
-    @app.post("/api/autopatch/dial", response_model=AutopatchStatusResponse, dependencies=transmit_dependencies)
-    async def autopatch_dial(body: AutopatchDialRequest, request: Request) -> dict:
-        request.state.audit_detail = body.number
-        error = autopatch.dial(body.number, request.state.identity.username or "local")
-        if error is not None:
-            raise HTTPException(status_code=409, detail=error)
-        return autopatch.status()
-
-    @app.post("/api/autopatch/hangup", response_model=AutopatchStatusResponse, dependencies=auth_dependencies)
-    async def autopatch_hangup(request: Request) -> dict:
-        autopatch.hangup(f"hung up from the dashboard by {request.state.identity.username or 'local'}")
-        return autopatch.status()
-
-    async def trunk_status() -> dict:
-        config = service.config
-        return {
-            **await sip_trunk.status(),
-            "in_use": config.autopatch_dial_string == TRUNK_DIAL_STRING,
-            "ten_digit_prefix": config.autopatch_ten_digit_prefix,
-        }
-
-    async def change_trunk(change: Awaitable[None]) -> dict:
-        try:
-            await change
-        except AsteriskSetupError as error:
-            raise HTTPException(status_code=502, detail=str(error))
-        return await trunk_status()
-
-    def no_call_in_progress() -> None:
-        if autopatch.call is not None:
-            raise HTTPException(status_code=409, detail="Hang up the call first.")
-
-    @app.get("/api/autopatch/trunk", response_model=SipTrunkStatusResponse, dependencies=auth_dependencies)
-    async def get_trunk() -> dict:
-        return await trunk_status()
-
-    @app.post("/api/autopatch/trunk/modules", response_model=SipTrunkStatusResponse, dependencies=admin_dependencies)
-    async def enable_trunk_modules() -> dict:
-        return await change_trunk(sip_trunk.enable_modules())
-
-    @app.put("/api/autopatch/trunk", response_model=SipTrunkStatusResponse, dependencies=admin_dependencies)
-    async def put_trunk(body: SipTrunkRequest, request: Request) -> dict:
-        no_call_in_progress()
-        request.state.audit_detail = f"{body.username}@{body.server}" + (", new password" if body.password else "")
-        trunk = TrunkSettings(
-            server=body.server,
-            port=body.port,
-            transport=body.transport,
-            username=body.username,
-            auth_username=body.auth_username,
-            password=body.password or None,
-            registers=body.registers,
-            incoming_from=tuple(body.incoming_from),
-        )
-        status = await change_trunk(sip_trunk.save(trunk))
-        service.update_config(autopatch_dial_string=TRUNK_DIAL_STRING, autopatch_ten_digit_prefix=body.ten_digit_prefix)
-        return {**status, "in_use": True, "ten_digit_prefix": body.ten_digit_prefix}
-
-    @app.delete("/api/autopatch/trunk", response_model=SipTrunkStatusResponse, dependencies=admin_dependencies)
-    async def delete_trunk() -> dict:
-        no_call_in_progress()
-        return await change_trunk(sip_trunk.remove())
-
-    @app.get("/api/assets", response_model=list[AssetResponse], dependencies=auth_dependencies)
-    def list_assets() -> list[AssetResponse]:
-        return [_asset_response(a) for a in assets_store.list_assets()]
-
-    @app.post("/api/assets", response_model=AssetResponse, dependencies=auth_dependencies)
-    async def upload_asset(kind: AssetKind = Form(...), file: UploadFile = File(...)) -> AssetResponse:
-        if not (file.filename or "").lower().endswith(".wav"):
-            raise HTTPException(status_code=400, detail="Only .wav files are accepted")
-        content = await file.read()
-        asset = assets_store.save_asset(kind, file.filename, content)
-        return _asset_response(asset)
-
-    @app.delete("/api/assets/{asset_id}", dependencies=auth_dependencies)
-    def delete_asset(asset_id: str) -> dict:
-        if asset_id not in {a.id for a in assets_store.list_assets()}:
-            raise HTTPException(status_code=404, detail=f"No asset with id {asset_id!r}")
-        assets_store.delete_asset(asset_id)
-        return {"deleted": asset_id}
-
-    @app.get("/api/assets/{asset_id}/audio", dependencies=auth_dependencies)
-    def get_asset_audio(asset_id: str) -> FileResponse:
-        if not assets_store.has(asset_id):
-            raise HTTPException(status_code=404, detail=f"No asset with id {asset_id!r}")
-        return FileResponse(assets_store.path_for(asset_id), media_type="audio/wav")
-
-    def recording_store(source: str) -> RecordingStore:
-        return monitor_recordings if source == "monitor" else recordings
-
-    def recording_path(recording_id: str, source: str = "repeater") -> Path:
-        try:
-            path = recording_store(source).path_for(recording_id)
-        except KeyError:
-            path = None
-        if path is None or not path.exists():
-            raise HTTPException(status_code=404, detail=f"No recording with id {recording_id!r}")
-        return path
-
-    @app.get("/api/recordings", response_model=list[RecordingResponse], dependencies=auth_dependencies)
-    def list_recordings(
-        limit: int = Query(default=50, ge=1, le=500), q: str = Query(default="", max_length=100),
-        source: RecordingSource = "repeater",
-    ) -> list[RecordingResponse]:
-        """`q` searches the transcripts (words, or a callsign however it was said)."""
-        q = q.strip()
-        store = recording_store(source)
-        found = []
-        for recording in store.list(RECORDING_SEARCH_LIMIT if q else limit):
-            response = _recording_response(recording, read_transcript(store, recording.id))
-            if q and q.upper() not in response.callsigns and q.lower() not in (response.transcript or "").lower():
-                continue
-            found.append(response)
-            if len(found) >= limit:
-                break
-        return found
-
-    @app.get("/api/transcription", response_model=TranscriptionStatus, dependencies=auth_dependencies)
-    def get_transcription_status() -> TranscriptionStatus:
-        return TranscriptionStatus(
-            engine=service.config.transcription_engine,
-            vosk_installed=transcriber.vosk.installed(),
-            vosk_model=transcriber.vosk.model_present(),
-            vosk_model_dir=str(transcriber.vosk.model_dir),
-            api_key_set=bool(transcriber.api_key),
-            pending=len(transcriber.pending()) if service.config.transcription_engine != "off" else 0,
-            transcribed=transcriber.status.transcribed,
-            last_error=transcriber.status.last_error,
-        )
-
-    @app.get("/api/recordings/{recording_id}/audio", dependencies=auth_dependencies)
-    def get_recording_audio(recording_id: str, source: RecordingSource = "repeater") -> FileResponse:
-        return FileResponse(recording_path(recording_id, source), media_type="audio/wav")
-
-    @app.delete("/api/recordings/{recording_id}", dependencies=auth_dependencies)
-    def delete_recording(recording_id: str, source: RecordingSource = "repeater") -> dict:
-        recording_path(recording_id, source)
-        recording_store(source).delete(recording_id)
-        return {"deleted": recording_id}
-
-    @app.get("/api/monitor-receiver", response_model=MonitorReceiverStatus, dependencies=auth_dependencies)
-    def get_monitor_receiver() -> MonitorReceiverStatus:
-        return MonitorReceiverStatus(**monitor_receiver.status())
-
-    @app.get("/api/link-radio", response_model=LinkRadioStatus, dependencies=auth_dependencies)
-    def get_link_radio() -> LinkRadioStatus:
-        return LinkRadioStatus(**link_radio.status(), **remote_base.status())
-
-    @app.post("/api/link-radio/tune", response_model=LinkRadioStatus, dependencies=auth_dependencies)
-    async def retune_remote_base() -> LinkRadioStatus:
-        remote_base.retune()
-        await asyncio.sleep(0)
-        return LinkRadioStatus(**link_radio.status(), **remote_base.status())
-
-    def mailbox_response() -> MailboxResponse:
-        messages = mailbox_store.messages()
-        counts = collections.Counter(m.box for m in messages)
-        return MailboxResponse(
-            boxes=[
-                MailboxBoxResponse(box=box, name=info["name"], pin_set=bool(info.get("pin")), messages=counts[box])
-                for box, info in mailbox_store.boxes().items()
-            ],
-            messages=[
-                MailboxMessageResponse(
-                    id=m.id, box=m.box, left_at=datetime.fromtimestamp(m.left_at), duration=m.duration,
-                    transcript=(text := read_transcript(mailbox_store, m.id)), callsigns=callsigns(text or ""),
-                )
-                for m in reversed(messages)
-            ],
-        )
-
-    @app.get("/api/mailbox", response_model=MailboxResponse, dependencies=admin_dependencies)
-    def get_mailbox() -> MailboxResponse:
-        return mailbox_response()
-
-    @app.put("/api/mailbox/boxes/{box}", response_model=MailboxResponse, dependencies=admin_dependencies)
-    def put_mailbox_box(body: MailboxBoxRequest, box: str = UrlPath(pattern=r"^[0-9]{1,6}$")) -> MailboxResponse:
-        if box not in mailbox_store.boxes() and body.pin is None:
-            raise HTTPException(status_code=400, detail="A new mailbox needs a PIN")
-        mailbox_store.set_box(box, body.name.strip(), body.pin)
-        return mailbox_response()
-
-    @app.delete("/api/mailbox/boxes/{box}", response_model=MailboxResponse, dependencies=admin_dependencies)
-    def delete_mailbox_box(box: str) -> MailboxResponse:
-        if not mailbox_store.delete_box(box):
-            raise HTTPException(status_code=404, detail=f"No mailbox {box!r}")
-        return mailbox_response()
-
-    def mailbox_message_path(message_id: str) -> Path:
-        try:
-            path = mailbox_store.path_for(message_id)
-        except KeyError:
-            path = None
-        if path is None or not path.exists() or message_id.startswith("mailbox-play-"):
-            raise HTTPException(status_code=404, detail=f"No message with id {message_id!r}")
-        return path
-
-    @app.get("/api/mailbox/messages/{message_id}/audio", dependencies=admin_dependencies)
-    def get_mailbox_message_audio(message_id: str) -> FileResponse:
-        return FileResponse(mailbox_message_path(message_id), media_type="audio/wav")
-
-    @app.delete("/api/mailbox/messages/{message_id}", response_model=MailboxResponse, dependencies=admin_dependencies)
-    def delete_mailbox_message(message_id: str) -> MailboxResponse:
-        mailbox_message_path(message_id)
-        mailbox_store.delete_message(message_id)
-        return mailbox_response()
-
-    @app.get("/api/logs", response_model=list[str], dependencies=auth_dependencies)
-    def get_logs(lines: int = 200) -> list[str]:
-        if not log_path.exists():
-            return []
-        with log_path.open() as f:
-            return [line.rstrip("\n") for line in collections.deque(f, maxlen=lines)]
-
-    @app.get("/api/aprs/stations", response_model=AprsMapResponse, dependencies=auth_dependencies)
-    def get_aprs_stations() -> AprsMapResponse:
-        config = service.config
-        center = map_center(config)
-        status = aprs_receiver.status
-        stations = []
-        for s in aprs_stations.stations(aprs_window_start()):
-            fields = dataclasses.asdict(s)
-            fields["trail"] = [[lat, lon] for _at, lat, lon in s.trail]
-            if center is not None:
-                fields["distance_km"] = round(distance_km(*center, s.lat, s.lon), 2)
-                fields["bearing"] = round(bearing_degrees(*center, s.lat, s.lon))
-            stations.append(AprsStationResponse(**fields))
-        return AprsMapResponse(
-            enabled=config.aprs_map_enabled,
-            center=list(center) if center else None,
-            radius_km=config.aprs_map_radius_km,
-            hours=config.aprs_map_hours,
-            tiles=config.aprs_map_tiles,
-            distance_units=config.distance_units,
-            connected=status.connected,
-            server=status.server,
-            error=status.error,
-            last_packet=datetime.fromtimestamp(status.last_packet) if status.last_packet else None,
-            packets=status.packets,
-            stations=stations,
-        )
-
-    @app.get("/api/users", response_model=list[UserResponse], dependencies=account_dependencies)
-    def list_users() -> list[UserResponse]:
-        builtin = [UserResponse(username=auth_settings.username, role="admin", builtin=True)] if auth_settings else []
-        return builtin + [UserResponse(username=u.username, role=u.role, builtin=False) for u in users.list()]
-
-    @app.post("/api/users", response_model=list[UserResponse], dependencies=account_dependencies)
-    async def create_user(body: UserCreateRequest, request: Request) -> list[UserResponse]:
-        request.state.audit_detail = f"{body.username} ({body.role})"
-        try:
-            await asyncio.get_running_loop().run_in_executor(None, users.add, body.username, body.password, body.role)
-        except UserError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from None
-        return list_users()
-
-    @app.put("/api/users/{username}", response_model=list[UserResponse], dependencies=account_dependencies)
-    async def update_user(username: str, body: UserUpdateRequest, request: Request) -> list[UserResponse]:
-        changes = ([f"role → {body.role}"] if body.role else []) + (["password reset"] if body.password else [])
-        request.state.audit_detail = f"{username}: {', '.join(changes)}"
-        try:
-            await asyncio.get_running_loop().run_in_executor(None, users.update, username, body.password, body.role)
-        except KeyError:
-            raise HTTPException(status_code=404, detail=f"No user {username!r}") from None
-        except UserError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from None
-        return list_users()
-
-    @app.delete("/api/users/{username}", response_model=list[UserResponse], dependencies=account_dependencies)
-    def delete_user(username: str) -> list[UserResponse]:
-        try:
-            users.delete(username)
-        except KeyError:
-            raise HTTPException(status_code=404, detail=f"No user {username!r}") from None
-        except UserError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from None
-        control_codes.remove(username)
-        tokens.remove_user(username)
-        return list_users()
-
-    @app.get("/api/agent-access", response_model=AgentAccessResponse, dependencies=account_dependencies)
-    def get_agent_access() -> AgentAccessResponse:
-        return AgentAccessResponse(transmit=agent_access.transmit, mcp_available=agent_endpoint.available)
-
-    @app.put("/api/agent-access", response_model=AgentAccessResponse, dependencies=account_dependencies)
-    def put_agent_access(body: AgentAccessRequest, request: Request) -> AgentAccessResponse:
-        request.state.audit_detail = "agents may transmit" if body.transmit else "agents may not transmit"
-        agent_access.set_transmit(body.transmit)
-        return get_agent_access()
-
-    def token_list() -> list[TokenResponse]:
-        return [
-            TokenResponse(
-                id=t.id,
-                name=t.name,
-                username=t.username,
-                role=role_of(t.username),
-                created_at=datetime.fromtimestamp(t.created_at),
-                last_used_at=datetime.fromtimestamp(t.last_used_at) if t.last_used_at else None,
-            )
-            for t in tokens.list()
-        ]
-
-    @app.get("/api/tokens", response_model=list[TokenResponse], dependencies=account_dependencies)
-    def list_tokens() -> list[TokenResponse]:
-        return token_list()
-
-    @app.post("/api/tokens", response_model=TokenCreatedResponse, dependencies=account_dependencies)
-    def create_token(body: TokenCreateRequest, request: Request) -> TokenCreatedResponse:
-        request.state.audit_detail = f"{body.name} for {body.username}"
-        if role_of(body.username) is None:
-            raise HTTPException(status_code=400, detail=f"No user {body.username!r}")
-        if role_of(body.username) == "listener":
-            raise HTTPException(status_code=400, detail="Listener accounts can't have API tokens")
-        record, secret = tokens.create(body.name, body.username)
-        return TokenCreatedResponse(id=record.id, token=secret, tokens=token_list())
-
-    @app.delete("/api/tokens/{token_id}", response_model=list[TokenResponse], dependencies=account_dependencies)
-    def revoke_token(token_id: str, request: Request) -> list[TokenResponse]:
-        try:
-            record = tokens.revoke(token_id)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="No such token") from None
-        request.state.audit_detail = f"{record.name} ({record.username})"
-        return token_list()
-
-    def code_owner(request: Request) -> str:
-        return request.state.identity.username or "local"
-
-    @app.get("/api/me/control-code", response_model=ControlCodeStatus, dependencies=auth_dependencies)
-    def my_control_code(request: Request) -> ControlCodeStatus:
-        return ControlCodeStatus(**control_codes.status(code_owner(request)))
-
-    @app.post("/api/me/control-code", response_model=ControlCodeSetup, dependencies=auth_dependencies)
-    def begin_control_code(request: Request) -> ControlCodeSetup:
-        username = code_owner(request)
-        secret = control_codes.begin(username)
-        uri = provisioning_uri(secret, username, service.config.callsign or "MoreOpenRepeater")
-        qr_svg = segno.make(uri, error="m").svg_inline(scale=5, dark="#000", light="#fff")
-        return ControlCodeSetup(secret=secret, uri=uri, qr_svg=qr_svg)
-
-    @app.post("/api/me/control-code/confirm", response_model=ControlCodeStatus, dependencies=auth_dependencies)
-    def confirm_control_code(request: Request, body: ControlCodeConfirmRequest) -> ControlCodeStatus:
-        username = code_owner(request)
-        if not control_codes.confirm(username, body.code):
-            raise HTTPException(status_code=400, detail="That code doesn't match. Check the phone's clock and try the newest code.")
-        return ControlCodeStatus(**control_codes.status(username))
-
-    @app.delete("/api/me/control-code", response_model=ControlCodeStatus, dependencies=auth_dependencies)
-    def remove_my_control_code(request: Request) -> ControlCodeStatus:
-        username = code_owner(request)
-        control_codes.remove(username)
-        return ControlCodeStatus(**control_codes.status(username))
-
-    @app.get("/api/homeassistant", response_model=HomeAssistantStatus, dependencies=auth_dependencies)
-    def homeassistant_status() -> HomeAssistantStatus:
-        return HomeAssistantStatus(token_set=homeassistant.token_set)
-
-    @app.post("/api/homeassistant/test", dependencies=auth_dependencies)
-    async def test_homeassistant(request: Request, body: HomeAssistantTestRequest) -> dict:
-        data = {**homeassistant.payload("test", actor_of(request)), "test": True}
-        try:
-            await asyncio.get_running_loop().run_in_executor(None, homeassistant.send, body.target, data)
-        except HomeAssistantError as error:
-            raise HTTPException(status_code=502, detail=str(error)) from None
-        return {"ok": True}
-
-    @app.get("/api/metar/{icao}", dependencies=auth_dependencies)
-    async def metar_preview(icao: str = UrlPath(pattern=r"^[A-Za-z0-9]{4}$")) -> dict:
-        text = await asyncio.get_running_loop().run_in_executor(None, airport_weather.text, icao.upper())
-        return {"text": text}
-
-    def stream_response() -> StreamResponse:
-        return StreamResponse(**streamer.public_settings(), status=streamer.status)
-
-    @app.get("/api/stream", response_model=StreamResponse, dependencies=admin_dependencies)
-    def get_stream() -> StreamResponse:
-        return stream_response()
-
-    @app.put("/api/stream", response_model=StreamResponse, dependencies=admin_dependencies)
-    def put_stream(body: StreamSettingsRequest) -> StreamResponse:
-        streamer.update(body.model_dump())
-        return stream_response()
-
-    def public_page_mode() -> str:
-        return service.saved_config.public_page_mode
-
-    def listen_identity(conn: HTTPConnection) -> Optional[Identity]:
-        """Who's signed in, for the listening page; None if nobody is (or
-        sign-in is off, where everyone would count as the admin)."""
-        return identify(conn) if auth_enabled() else None
-
-    def may_open_listen_page(conn: HTTPConnection) -> bool:
-        mode = public_page_mode()
-        return mode == "anyone" or (mode == "signed_in" and identify(conn) is not None)
-
-    @app.get("/api/public/status", response_model=PublicStatus)
-    def public_status(request: Request) -> PublicStatus:
-        """What /listen shows: open to anyone or only to signed-in accounts,
-        depending on the listening page setting."""
-        if public_page_mode() == "off":
-            raise HTTPException(status_code=404, detail="Not found")
-        if not may_open_listen_page(request):
-            raise HTTPException(status_code=401, detail="Not authenticated")
-        identity = listen_identity(request)
-        config = service.saved_config
-        snapshot = service.snapshot()
-        return PublicStatus(
-            callsign=config.callsign,
-            text=config.public_page_text,
-            on_air=snapshot.ptt_active,
-            receiving=snapshot.cos_active,
-            net=nets.current["name"] if nets.current else None,
-            audio=config.public_page_audio,
-            listeners=sum(public_listeners.values()),
-            max_listeners=config.public_page_max_listeners,
-            username=identity.username if identity else None,
-        )
-
-    @app.get("/api/control-codes", response_model=list[ControlCodeUser], dependencies=admin_dependencies)
-    def list_control_codes() -> list[ControlCodeUser]:
-        return [ControlCodeUser(**user) for user in control_codes.enrolled()]
-
-    @app.delete("/api/control-codes/{username}", response_model=list[ControlCodeUser], dependencies=admin_dependencies)
-    def remove_control_code(username: str) -> list[ControlCodeUser]:
-        if username not in {user["username"] for user in control_codes.enrolled()}:
-            raise HTTPException(status_code=404, detail=f"{username!r} hasn't set up one-time codes")
-        control_codes.remove(username)
-        return list_control_codes()
-
-    @app.get("/api/audit", response_model=list[AuditEntryResponse], dependencies=admin_dependencies)
-    def get_audit(limit: int = Query(default=200, ge=1, le=2000)) -> list[AuditEntryResponse]:
-        return [_audit_response(e) for e in audit.recent(limit)]
-
-    def same_origin(websocket: WebSocket) -> bool:
-        # WebSocket handshakes aren't subject to CORS, so a page on another
-        # origin could otherwise open one with the user's session cookie.
-        origin = websocket.headers.get("origin")
-        return not origin or urlsplit(origin).netloc == websocket.headers.get("host")
-
-    def websocket_allowed(websocket: WebSocket) -> bool:
-        if not auth_enabled():
-            return True
-        if not same_origin(websocket):
-            return False
-        identity = identify(websocket)
-        return identity is not None and identity.role != "listener"
-
-    @app.websocket("/ws/audio")
-    async def ws_audio(websocket: WebSocket, source: ListenSource = "tx") -> None:
-        """Binary frames of 16-bit little-endian mono PCM at the processing rate."""
-        if not websocket_allowed(websocket):
-            await websocket.close(code=1008)
-            return
-        await websocket.accept()
-        monitor: AudioMonitor = monitor_receiver.monitor if source == "monitor" else live_audio.monitor
-        queue = monitor.subscribe("rx" if source == "monitor" else source)
-
-        async def send_frames() -> None:
-            await websocket.send_json({"sample_rate": renderer.sample_rate, "source": source})
-            while True:
-                await websocket.send_bytes(await queue.get())
-
-        # Frames may never come (engine off), so watch for the disconnect separately.
-        sender = asyncio.create_task(send_frames())
-        try:
-            while (await websocket.receive())["type"] != "websocket.disconnect":
-                pass
-        finally:
-            sender.cancel()
-            monitor.unsubscribe(queue)
-
-    def client_address(websocket: WebSocket) -> str:
-        forwarded = websocket.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        return forwarded or (websocket.client.host if websocket.client else "")
-
-    @app.websocket("/ws/public/audio")
-    async def ws_public_audio(websocket: WebSocket) -> None:
-        """What's on the air, for /listen. Capped in total; listeners who
-        aren't signed in are also capped per address."""
-        config = service.saved_config
-        identity = listen_identity(websocket) if same_origin(websocket) else None
-        signed_in = identity is not None or not auth_enabled()
-
-        def allowed() -> bool:
-            config = service.saved_config
-            mode = config.public_page_mode
-            return config.public_page_audio and (mode == "anyone" or (mode == "signed_in" and signed_in))
-
-        if not allowed():
-            await websocket.close(code=1008)
-            return
-        key = f"user:{identity.username}" if identity else client_address(websocket)
-        full = sum(public_listeners.values()) >= config.public_page_max_listeners
-        if full or (identity is None and public_listeners[key] >= PUBLIC_LISTENERS_PER_ADDRESS):
-            await websocket.close(code=1013)
-            return
-        public_listeners[key] += 1
-        try:
-            await websocket.accept()
-            queue = live_audio.monitor.subscribe("tx")
-
-            async def send_frames() -> None:
-                await websocket.send_json({"sample_rate": renderer.sample_rate})
-                while True:
-                    await websocket.send_bytes(await queue.get())
-                    if not allowed():
-                        await websocket.close(code=1008)
-                        return
-
-            sender = asyncio.create_task(send_frames())
-            try:
-                while (await websocket.receive())["type"] != "websocket.disconnect":
-                    pass
-            finally:
-                sender.cancel()
-                live_audio.monitor.unsubscribe(queue)
-        finally:
-            public_listeners[key] -= 1
-            if public_listeners[key] <= 0:
-                del public_listeners[key]
-
-    @app.websocket("/ws/status")
-    async def ws_status(websocket: WebSocket) -> None:
-        if not websocket_allowed(websocket):
-            await websocket.close(code=1008)
-            return
-        await websocket.accept()
-        queue = service.subscribe()
-        try:
-            await websocket.send_json(_status_response(service.snapshot()).model_dump())
-            while True:
-                snapshot = await queue.get()
-                await websocket.send_json(_status_response(snapshot).model_dump())
-        except WebSocketDisconnect:
-            pass
-        finally:
-            service.unsubscribe(queue)
-
-    if WEB_DIR.is_dir():
-        def is_signed_in(request: Request) -> bool:
-            return identify(request) is not None
-
-        @app.get("/", response_model=None)
-        def index(request: Request) -> Response:
-            identity = identify(request)
-            if identity is None:
-                return RedirectResponse("/login", status_code=303)
-            if identity.role == "listener":
-                return RedirectResponse("/listen", status_code=303)
-            return FileResponse(WEB_DIR / "index.html")
-
-        @app.get("/listen", response_model=None)
-        def listen_page(request: Request) -> Response:
-            if public_page_mode() == "off":
-                raise HTTPException(status_code=404, detail="Not found")
-            if not may_open_listen_page(request):
-                return RedirectResponse("/login?next=/listen", status_code=303)
-            return FileResponse(WEB_DIR / "listen.html")
-
-        @app.get("/login", response_model=None)
-        def login_page(request: Request) -> Response:
-            if not auth_enabled() or is_signed_in(request):
-                return RedirectResponse("/", status_code=303)
-            return FileResponse(WEB_DIR / "login.html")
-
-        # Left unauthenticated: the JS/CSS hold no secrets (every piece of
-        # repeater data comes from the authenticated API), and a Mount is a
-        # raw ASGI sub-application that can't take route-level
-        # `dependencies=` anyway.
-        app.mount("/", StaticFiles(directory=WEB_DIR), name="web")
+    admin_ops_routes.register(
+        app,
+        service=service,
+        backups=backups,
+        backup_sources=backup_sources,
+        audit=audit,
+        updater=updater,
+        update_checker=update_checker,
+        update_channel=update_channel,
+        auto_updater=auto_updater,
+        notifier=notifier,
+        health=health,
+        restore_backup_file=restore_backup_file,
+        repo_dir=REPO_DIR,
+        admin_dependencies=admin_dependencies,
+    )
+
+    audio_tools_routes.register(
+        app,
+        service=service,
+        renderer=renderer,
+        live_audio=live_audio,
+        audio_devices=audio_devices,
+        serial_ports=serial_ports,
+        apply_overrides=_apply_overrides,
+        auth_dependencies=auth_dependencies,
+    )
+
+    linking_routes.register(
+        app,
+        service=service,
+        autopatch=autopatch,
+        allstar_node=allstar_node,
+        links=links,
+        link_scheduler=link_scheduler,
+        gpio=gpio,
+        tx_fan=tx_fan,
+        monitor_receiver=monitor_receiver,
+        link_radio=link_radio,
+        remote_base=remote_base,
+        auth_dependencies=auth_dependencies,
+        admin_dependencies=admin_dependencies,
+        transmit_dependencies=transmit_dependencies,
+    )
+
+    autopatch_routes.register(
+        app,
+        service=service,
+        autopatch=autopatch,
+        sip_trunk=sip_trunk,
+        auth_dependencies=auth_dependencies,
+        admin_dependencies=admin_dependencies,
+        transmit_dependencies=transmit_dependencies,
+    )
+
+    media_routes.register(
+        app,
+        service=service,
+        assets_store=assets_store,
+        recordings=recordings,
+        monitor_recordings=monitor_recordings,
+        transcriber=transcriber,
+        auth_dependencies=auth_dependencies,
+    )
+
+    mailbox_routes.register(
+        app,
+        mailbox_store=mailbox_store,
+        admin_dependencies=admin_dependencies,
+    )
+
+    site_routes.register(
+        app,
+        service=service,
+        log_path=log_path,
+        aprs_stations=aprs_stations,
+        aprs_receiver=aprs_receiver,
+        aprs_window_start=aprs_window_start,
+        homeassistant=homeassistant,
+        airport_weather=airport_weather,
+        streamer=streamer,
+        audit=audit,
+        audit_response=_audit_response,
+        actor_of=actor_of,
+        auth_dependencies=auth_dependencies,
+        admin_dependencies=admin_dependencies,
+    )
+
+    accounts_routes.register(
+        app,
+        users=users,
+        tokens=tokens,
+        agent_access=agent_access,
+        agent_endpoint=agent_endpoint,
+        auth_settings=auth_settings,
+        control_codes=control_codes,
+        role_of=role_of,
+        account_dependencies=account_dependencies,
+    )
+
+    control_codes_routes.register(
+        app,
+        service=service,
+        control_codes=control_codes,
+        auth_dependencies=auth_dependencies,
+        admin_dependencies=admin_dependencies,
+    )
+
+    realtime_routes.register(
+        app,
+        service=service,
+        nets=nets,
+        live_audio=live_audio,
+        monitor_receiver=monitor_receiver,
+        renderer=renderer,
+        public_listeners=public_listeners,
+        identify=identify,
+        auth_enabled=auth_enabled,
+        status_response=_status_response,
+        web_dir=WEB_DIR,
+    )
 
     return app
 

@@ -1143,7 +1143,7 @@ def create_app(
         service.simulate_cos(body.active)
         return _status_response(service.snapshot())
 
-    @app.post("/api/simulate/ctcss", response_model=StatusResponse, dependencies=auth_dependencies)
+    @app.post("/api/simulate/ctcss", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def simulate_ctcss(body: SimulateCTCSSRequest) -> StatusResponse:
         service.simulate_ctcss(body.tone_hz)
         return _status_response(service.snapshot())

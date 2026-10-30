@@ -95,7 +95,9 @@ def test_transmitting_needs_an_admin_to_allow_it(repeater):
     error, message = tool(client, tokens["operator"], "send_id")
     assert error and "can't make the repeater transmit" in message
     assert client.post("/api/simulate/cos", json={"active": True}, headers={"Authorization": f"Bearer {tokens['operator']}"}).status_code == 403
+    assert client.post("/api/simulate/ctcss", json={"tone_hz": 100.0}, headers={"Authorization": f"Bearer {tokens['operator']}"}).status_code == 403
     assert client.post("/api/simulate/cos", json={"active": False}, headers=ADMIN).status_code == 200  # people aren't affected
+    assert client.post("/api/simulate/ctcss", json={"tone_hz": 100.0}, headers=ADMIN).status_code == 200
 
     assert client.put("/api/agent-access", json={"transmit": True}, headers={"Authorization": f"Bearer {tokens['operator']}"}).status_code == 403
     assert client.put("/api/agent-access", json={"transmit": True}, headers=ADMIN).json()["transmit"] is True

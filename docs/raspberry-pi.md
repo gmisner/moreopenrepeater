@@ -69,7 +69,7 @@ updater runs as root).
 sudo useradd --system --no-create-home --home-dir /opt/moreopenrepeater --shell /usr/sbin/nologin moreopenrepeater
 sudo usermod -aG audio,dialout,gpio moreopenrepeater   # /dev/hidrawN (below), USB-serial, header pins
 
-sudo git clone --branch stable <this repo's URL> /opt/moreopenrepeater
+sudo git clone --branch stable https://github.com/gmisner/moreopenrepeater.git /opt/moreopenrepeater
 cd /opt/moreopenrepeater
 sudo python3 -m venv .venv
 sudo .venv/bin/pip install -e .
@@ -262,6 +262,7 @@ the service user's `audio` group membership gives it access):
 |---|---|---|---|
 | Generic CM108/CM119 USB interface | CM108 GPIO3 | CM108 VOL_DN, active low | (left alone) |
 | DMK URI | CM108 GPIO3 | CM108 VOL_DN, active low | Speaker 75%, Mic 18 dB |
+| Digirig Lite | CM108 GPIO3 | Audio level (VOX); wire the COS pad for CM108 COS | (left alone) |
 | USB-RIM Lite | CM108 GPIO3 | CM108 VOL_DN, active low | Speaker 75%, Mic 18 dB |
 | AIOC | CM108 GPIO3 | virtual COS on VOL_DN | (left alone) |
 | SVXLink Card (F5UII/F8ASB) | GPIO16; port 2: GPIO17 | GPIO19, active low; port 2: GPIO18 | Speaker 75%, Mic 69% |

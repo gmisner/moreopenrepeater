@@ -20,6 +20,16 @@
     "mixer": [["Speaker", "75%"], ["Mic", "18dB"]]
   },
   {
+    "id": "digirig-lite",
+    "name": "Digirig Lite",
+    "maker": "Digirig",
+    "kind": "usb",
+    "notes": "CM108B with PTT on GPIO3. Carrier detect: use audio level (VOX) unless you've wired the board's COS pad to VOL_DN.",
+    "device_hints": ["USB Audio", "C-Media", "Digirig"],
+    "repeater": {"cos_source": "vox", "ptt_output": "cm108"},
+    "mixer": []
+  },
+  {
     "id": "usb-rim-lite",
     "name": "USB-RIM Lite",
     "maker": "Repeater Builder",

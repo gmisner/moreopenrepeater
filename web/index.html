@@ -56,6 +56,8 @@
     <symbol id="i-warning" viewBox="0 0 24 24"><path d="M12 3 2 20h20zM12 10v4M12 17h.01" /></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></symbol>
     <symbol id="i-trail" viewBox="0 0 24 24"><path d="M3 17c3 0 3-10 6-10s3 10 6 10 3-10 6-10" /></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z" /></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.5 14.4 9l5.6.8-4 4 1 5.7L12 16.8 7 19.5l1-5.7-4-4L9.6 9z" /></symbol>
   </svg>
   <div class="app">
     <aside class="sidebar" id="sidebar">
@@ -236,7 +238,7 @@
                     <button type="button" data-source="rx" title="Everything the receiver hears, repeated or not">Receiver</button>
                     <button type="button" data-source="monitor" id="listen-monitor" title="The listen-only monitor receiver" hidden>Monitor</button>
                   </div>
-                  <button type="button" class="btn btn-sm" id="listen-toggle">Listen</button>
+                  <button type="button" class="btn btn-sm" id="listen-toggle" aria-pressed="false">Listen</button>
                 </div>
               </div>
               <p id="listen-status" class="muted small">Streams the repeater's audio to this browser (needs live audio running).</p>
@@ -572,8 +574,8 @@
             </details>
           </div>
           <div class="form-actions">
-            <button type="button" class="btn btn-ghost" data-preview-clip="id">&#9654; Preview ID</button>
-            <button type="button" class="btn btn-ghost" data-preview-clip="id_long">&#9654; Preview long ID</button>
+            <button type="button" class="btn btn-ghost" data-preview-clip="id"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg> Preview ID</button>
+            <button type="button" class="btn btn-ghost" data-preview-clip="id_long"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg> Preview long ID</button>
             <span class="spacer"></span>
             <span class="dirty-note">Unsaved changes</span>
             <button type="button" class="btn btn-ghost" data-reset>Discard</button>
@@ -623,7 +625,7 @@
                     <small>Plays instead of the built-in tone.</small>
                   </label>
                 </div>
-                <button type="button" class="btn btn-ghost btn-sm" data-preview-clip="courtesy_tone_link">&#9654; Linked station tone</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-preview-clip="courtesy_tone_link"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg> Linked station tone</button>
               </div>
             </details>
             <details class="fold" data-summary="tone-patch">
@@ -640,7 +642,7 @@
                     <small>Plays instead of the built-in tone.</small>
                   </label>
                 </div>
-                <button type="button" class="btn btn-ghost btn-sm" data-preview-clip="courtesy_tone_patch">&#9654; Phone call tone</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-preview-clip="courtesy_tone_patch"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg> Phone call tone</button>
               </div>
             </details>
             <details class="fold" data-summary="tone-custom">
@@ -650,14 +652,14 @@
                   use it. A pitch of 0 is a pause, and a part left empty is skipped.</p>
                 <input type="hidden" name="courtesy_tone_custom" />
                 <div class="tone-segments" id="tone-segments"></div>
-                <button type="button" class="btn btn-ghost btn-sm" id="tone-custom-preview">&#9654; Custom tone</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="tone-custom-preview"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg> Custom tone</button>
               </div>
             </details>
           </div>
           <div class="form-actions">
-            <button type="button" class="btn btn-ghost" data-preview-clip="courtesy_tone">&#9654; Courtesy tone</button>
-            <button type="button" class="btn btn-ghost" data-preview-clip="id">&#9654; ID</button>
-            <button type="button" class="btn btn-ghost" data-preview-clip="timeout_tone">&#9654; Timeout tone</button>
+            <button type="button" class="btn btn-ghost" data-preview-clip="courtesy_tone"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg> Courtesy tone</button>
+            <button type="button" class="btn btn-ghost" data-preview-clip="id"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg> ID</button>
+            <button type="button" class="btn btn-ghost" data-preview-clip="timeout_tone"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg> Timeout tone</button>
             <span class="spacer"></span>
             <span class="dirty-note">Unsaved changes</span>
             <button type="button" class="btn btn-ghost" data-reset>Discard</button>
@@ -1681,7 +1683,7 @@
             </label>
           </div>
           <div class="form-actions">
-            <button type="button" class="btn btn-ghost" id="announcement-preview">&#9654; Preview</button>
+            <button type="button" class="btn btn-ghost" id="announcement-preview"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg> Preview</button>
             <span class="spacer"></span>
             <button type="button" class="btn btn-ghost" id="announcement-cancel" hidden>Cancel edit</button>
             <button type="submit" class="btn btn-primary" id="announcement-submit">Add announcement</button>
@@ -2823,7 +2825,7 @@
                     <small>Plays instead of the built-in tone.</small>
                   </label>
                 </div>
-                <button type="button" class="btn btn-ghost btn-sm" data-preview-clip="courtesy_tone" data-preview-net>&#9654; Net courtesy tone</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-preview-clip="courtesy_tone" data-preview-net><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg> Net courtesy tone</button>
               </div>
             </details>
             <details class="fold" data-summary="net-holds">

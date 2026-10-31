@@ -32,7 +32,7 @@ function render(status) {
   stateTag.textContent = running ? "running" : status.error ? "error" : status.enabled ? "stopped" : "off";
   errorLine.hidden = !status.error;
   errorLine.textContent = status.error ?? "";
-  levelFill.style.width = `${running ? meterPercent(status.level_db) : 0}%`;
+  levelFill.style.transform = `scaleX(${(running ? meterPercent(status.level_db) : 0) / 100})`;
   levelFill.classList.toggle("open", running && status.squelch_open);
   levelText.textContent = running ? `${status.level_db.toFixed(0)} dBFS` : "–";
   squelchTag.className = `tag ${running && status.squelch_open ? "tag-on" : ""}`;

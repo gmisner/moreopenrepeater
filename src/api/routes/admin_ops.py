@@ -14,10 +14,13 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
+from audio_io.cm108 import find_interfaces
+from audio_io.serial_lines import find_serial_ports
+
 from ..audit import AuditLog
 from ..backup import BackupFolder, BackupSources, backup_name, write_backup
 from ..health import HealthMonitor
-from ..live_audio import LiveAudio
+from ..live_audio import LiveAudio, list_audio_devices
 from ..models import (
     AlertSettingsRequest,
     AlertSettingsResponse,
@@ -98,6 +101,10 @@ def register(
                 receiver_openings=list(reversed(live_audio.openings)),
                 audio_glitches=list(reversed(live_audio.glitches)),
                 last_unexpected_stop=health.last_unexpected_stop,
+                audio_devices=list_audio_devices(),
+                serial_ports=find_serial_ports(),
+                cm108_interfaces=find_interfaces(),
+                cm108_path=getattr(getattr(live_audio.cm108, "device", None), "path", None),
             )
         except BaseException:
             path.unlink(missing_ok=True)

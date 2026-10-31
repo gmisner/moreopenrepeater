@@ -1,0 +1,35 @@
+/* MASTER-aligned field contrast. Mantine's dark Input vars (--input-bd /
+   --input-bg) sit too close to --panel; force a clear inset + edge. */
+
+[data-mantine-color-scheme="dark"] {
+  --mor-field-bg: #0b0c0f;
+  --mor-field-bd: #5a6270;
+  --mor-field-placeholder: #8a919c;
+}
+
+[data-mantine-color-scheme="light"] {
+  --mor-field-bg: #ffffff;
+  --mor-field-bd: #b9bfc8;
+  --mor-field-placeholder: #5a6270;
+}
+
+[data-mantine-color-scheme] .mantine-Input-input,
+[data-mantine-color-scheme] .mantine-TextInput-input,
+[data-mantine-color-scheme] .mantine-NumberInput-input,
+[data-mantine-color-scheme] .mantine-Select-input,
+[data-mantine-color-scheme] .mantine-Textarea-input,
+[data-mantine-color-scheme] .mantine-PasswordInput-input,
+[data-mantine-color-scheme] .mantine-PillsInput-inputField {
+  --input-bd: var(--mor-field-bd) !important;
+  --input-bg: var(--mor-field-bg) !important;
+  --input-placeholder-color: var(--mor-field-placeholder);
+  border-color: var(--mor-field-bd);
+  background-color: var(--mor-field-bg);
+}
+
+[data-mantine-color-scheme="dark"] .mantine-Button-root[data-variant="default"] {
+  --button-bd: 1px solid #5a6270;
+  border: 1px solid #5a6270;
+  background: #22272e;
+  color: #e6e8eb;
+}

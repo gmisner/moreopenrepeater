@@ -1,6 +1,7 @@
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import "@mantine/dates/styles.css";
+import "./field-contrast.css";
 
 import { ColorSchemeScript, MantineProvider, localStorageColorSchemeManager } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";

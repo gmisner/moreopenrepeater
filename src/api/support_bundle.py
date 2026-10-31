@@ -60,6 +60,9 @@ def write_support_bundle(
     system_readings: Optional[dict],
     updater: Optional[Updater],
     now: float,
+    receiver_openings: Optional[list] = None,
+    audio_glitches: Optional[list] = None,
+    last_unexpected_stop: Optional[dict] = None,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> None:
     """Writes a support-bundle archive to `path`."""
@@ -68,6 +71,10 @@ def write_support_bundle(
     settings = service.export_snapshot()
     status = vars(service.snapshot())
     update_lines = read_log(updater.settings, UPDATE_LOG_LINES) if updater and updater.settings else []
+    health = {
+        "system": system_readings if system_readings is not None else {},
+        "last_unexpected_stop": last_unexpected_stop,
+    }
     readme = (
         "moreopenrepeater support bundle\n"
         "================================\n"
@@ -75,10 +82,17 @@ def write_support_bundle(
         f"Callsign:  {callsign}\n"
         f"Channel:   {update_channel}\n"
         "\n"
-        "This zip holds recent logs, radio/audio settings and status for\n"
-        "troubleshooting configuration and audio. It does not include passwords,\n"
-        "the env file, users, tokens or recordings. Share the whole .zip with\n"
-        "whoever is helping you.\n"
+        "Contents for radio/audio troubleshooting:\n"
+        "  config.json         settings, macros, announcements\n"
+        "  status.json         controller state at capture\n"
+        "  audio-engine.json   levels, COS, TX, device names\n"
+        "  openings.json       recent squelch openings (levels, DTMF, after_tx)\n"
+        "  glitches.json       audio underruns/overruns\n"
+        "  health.json         Pi readings + last unexpected stop\n"
+        "  moreopenrepeater.log / journal.txt / update.log\n"
+        "\n"
+        "It does not include passwords, the env file, users, tokens or recordings.\n"
+        "Share the whole .zip with whoever is helping you.\n"
     )
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("README.txt", readme)
@@ -92,6 +106,15 @@ def write_support_bundle(
             "audio-engine.json",
             json.dumps(live_audio_status if live_audio_status is not None else {}, indent=2, default=str) + "\n",
         )
+        archive.writestr(
+            "openings.json",
+            json.dumps(list(receiver_openings or []), indent=2, default=str) + "\n",
+        )
+        archive.writestr(
+            "glitches.json",
+            json.dumps(list(audio_glitches or []), indent=2, default=str) + "\n",
+        )
+        archive.writestr("health.json", json.dumps(health, indent=2, default=str) + "\n")
         archive.writestr(
             "system.json",
             json.dumps(system_readings if system_readings is not None else {}, indent=2, default=str) + "\n",

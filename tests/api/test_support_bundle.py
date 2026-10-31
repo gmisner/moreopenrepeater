@@ -74,6 +74,9 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
         system_readings={"temperature_c": 42.0},
         updater=None,
         now=1_700_000_000.0,
+        receiver_openings=[{"duration": 1.2, "peak_db": -5.0, "dtmf_digits": "*11"}],
+        audio_glitches=[{"counter": "output_underflows", "count": 1}],
+        last_unexpected_stop={"watchdog": "audio engine"},
         run=fake_run,
     )
 
@@ -85,6 +88,9 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
             "config.json",
             "status.json",
             "audio-engine.json",
+            "openings.json",
+            "glitches.json",
+            "health.json",
             "system.json",
             "moreopenrepeater.log",
             "journal.txt",
@@ -98,6 +104,10 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
         assert "password" not in json.dumps(config).lower()
         assert json.loads(archive.read("audio-engine.json"))["running"] is False
         assert json.loads(archive.read("system.json"))["temperature_c"] == 42.0
+        assert json.loads(archive.read("openings.json"))[0]["dtmf_digits"] == "*11"
+        assert json.loads(archive.read("glitches.json"))[0]["counter"] == "output_underflows"
+        assert json.loads(archive.read("health.json"))["last_unexpected_stop"]["watchdog"] == "audio engine"
+        assert "openings.json" in archive.read("README.txt").decode()
         assert "does not include passwords" in archive.read("README.txt").decode()
 
 

@@ -50,9 +50,18 @@ type LinksStatus = {
 };
 
 function Indicator({ name, on, value, danger }: { name: string; on: boolean; value: string; danger?: boolean }) {
+  // Mantine rejects bg="green.light" (throws → blank React tree). Use the CSS var.
   const color = on ? (danger ? "red" : "green") : "gray";
   return (
-    <Card withBorder padding="md" radius="md" bg={on ? `${color}.light` : undefined} style={{ borderColor: on ? `var(--mantine-color-${color}-4)` : undefined }}>
+    <Card
+      withBorder
+      padding="md"
+      radius="md"
+      style={{
+        background: on ? `var(--mantine-color-${color}-light)` : undefined,
+        borderColor: on ? `var(--mantine-color-${color}-4)` : undefined,
+      }}
+    >
       <Stack gap={4} align="center">
         <Box
           w={14}

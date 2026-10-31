@@ -20,9 +20,11 @@ WorkingDirectory=/opt/moreopenrepeater
 Environment=OPENBLAS_NUM_THREADS=1
 # The dashboard's Updates page asks moreopenrepeater-update.path for an
 # update by writing the request file, and reads progress from the updater's
-# state directory.
+# state directory. Remote access (Tailscale) uses the same pattern.
 Environment=MOREOPENREPEATER_UPDATER=/var/lib/moreopenrepeater-update
 Environment=MOREOPENREPEATER_UPDATE_REQUEST=/opt/moreopenrepeater/data/update-request
+Environment=MOREOPENREPEATER_TAILSCALE=/var/lib/moreopenrepeater-tailscale
+Environment=MOREOPENREPEATER_TAILSCALE_REQUEST=/opt/moreopenrepeater/data/tailscale-request
 EnvironmentFile=/etc/moreopenrepeater/env
 # /run/moreopenrepeater (in memory) holds the log when the SD card is
 # protected (install-pi.sh --protect-sd); kept across restarts until reboot.

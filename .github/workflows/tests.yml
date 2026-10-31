@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Lint
-        run: shellcheck scripts/install-pi.sh scripts/update.sh scripts/asl-harden.sh
+        run: shellcheck scripts/install-pi.sh scripts/update.sh scripts/asl-harden.sh scripts/tailscale.sh
       # A local copy with the channel branches, all at the commit under test.
       - name: Prepare a local clone source
         run: |
@@ -79,6 +79,7 @@ jobs:
           if sudo -u moreopenrepeater touch /opt/moreopenrepeater/src/api/app.py; then exit 1; fi
           sudo grep -qx MOREOPENREPEATER_UPDATE_CHANNEL=stable /etc/moreopenrepeater/env
           systemctl is-enabled moreopenrepeater-update.path
+          systemctl is-enabled moreopenrepeater-tailscale.path
       - name: Run again (update)
         run: |
           before=$(sudo md5sum /etc/moreopenrepeater/env)

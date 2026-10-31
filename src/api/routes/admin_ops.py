@@ -30,6 +30,9 @@ from ..models import (
     BackupFolderResponse,
     BackupRestoreResponse,
     SavedBackupResponse,
+    TailscaleResponse,
+    TailscaleServeRequest,
+    TailscaleUpRequest,
     UpdateChannel,
     UpdateCheckResponse,
     UpdateRequest,
@@ -39,6 +42,7 @@ from ..notify import SECRET_FIELDS, Notifier
 from ..service import RepeaterService
 from ..auto_update import AutoUpdater
 from ..support_bundle import support_bundle_name, write_support_bundle
+from ..tailscale import TailscaleControl, read_log as read_tailscale_log
 from ..updates import UpdateChecker, Updater, installed_version, read_log
 
 
@@ -60,6 +64,7 @@ def register(
     restore_backup_file: Callable,
     repo_dir: Path,
     admin_dependencies: Sequence,
+    tailscale: TailscaleControl,
 ) -> None:
     @app.get("/api/backup", dependencies=admin_dependencies)
     def download_backup(request: Request, recordings: bool = False) -> FileResponse:
@@ -248,3 +253,51 @@ def register(
         if not notifier.channels:
             raise HTTPException(status_code=409, detail="Set up at least one way to send alerts first")
         return {"results": await notifier.send_test()}
+
+    def tailscale_response() -> dict:
+        return tailscale.snapshot()
+
+    def ask_tailscale(action: str, auth_key: str | None = None) -> dict:
+        if not tailscale.available:
+            raise HTTPException(
+                status_code=409,
+                detail="Remote access is only available on installs made with install-pi.sh",
+            )
+        if tailscale.busy():
+            raise HTTPException(status_code=409, detail="A Tailscale change is already in progress")
+        try:
+            tailscale.request(action, auth_key)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+        except OSError as error:
+            raise HTTPException(status_code=500, detail=f"Couldn't ask Tailscale: {error.strerror or error}") from None
+        return tailscale_response()
+
+    @app.get("/api/tailscale", response_model=TailscaleResponse, dependencies=admin_dependencies)
+    def get_tailscale() -> dict:
+        return tailscale_response()
+
+    @app.get("/api/tailscale/log", response_model=list[str], dependencies=admin_dependencies)
+    def get_tailscale_log() -> list[str]:
+        return read_tailscale_log(tailscale.settings) if tailscale.settings else []
+
+    @app.post("/api/tailscale/install", response_model=TailscaleResponse, dependencies=admin_dependencies)
+    def install_tailscale(request: Request) -> dict:
+        request.state.audit_detail = "install"
+        return ask_tailscale("install")
+
+    @app.post("/api/tailscale/up", response_model=TailscaleResponse, dependencies=admin_dependencies)
+    def join_tailscale(body: TailscaleUpRequest, request: Request) -> dict:
+        request.state.audit_detail = "auth key" if (body.auth_key or "").strip() else "login link"
+        return ask_tailscale("up", body.auth_key)
+
+    @app.post("/api/tailscale/serve", response_model=TailscaleResponse, dependencies=admin_dependencies)
+    def set_tailscale_serve(body: TailscaleServeRequest, request: Request) -> dict:
+        action = "serve-on" if body.enabled else "serve-off"
+        request.state.audit_detail = "on" if body.enabled else "off"
+        return ask_tailscale(action)
+
+    @app.post("/api/tailscale/down", response_model=TailscaleResponse, dependencies=admin_dependencies)
+    def leave_tailscale(request: Request) -> dict:
+        request.state.audit_detail = "leave"
+        return ask_tailscale("down")

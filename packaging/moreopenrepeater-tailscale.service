@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply a Tailscale change the moreopenrepeater dashboard asked for
+# Started by moreopenrepeater-tailscale.path; see scripts/tailscale.sh.
+
+[Service]
+Type=oneshot
+ExecStart=/opt/moreopenrepeater/scripts/tailscale.sh
+# /var/lib/moreopenrepeater-tailscale: status.json and tailscale.log, readable by the service.
+StateDirectory=moreopenrepeater-tailscale
+StateDirectoryMode=0755
+TimeoutStartSec=30min

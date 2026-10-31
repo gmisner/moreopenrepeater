@@ -94,6 +94,7 @@ from .tokens import TokenStore
 from .transcripts import API_KEY_ENV as TRANSCRIPTION_KEY_ENV
 from .transcripts import VOSK_MODEL_ENV, Transcriber, VoskEngine
 from .tx_fan import TxFan
+from .tailscale import TailscaleControl, tailscale_settings_from_env
 from .updates import UpdateChecker, Updater, channel_from_env, installed_version, repo_from_checkout, updater_settings_from_env
 from .users import Role, UserError, UserStore
 from .watchdog import Watchdog, ping_interval, sd_notify
@@ -292,6 +293,7 @@ def create_app(
     updater: Optional[Updater] = None,
     update_checker: Optional[UpdateChecker] = None,
     update_channel: Optional[str] = None,
+    tailscale: Optional[TailscaleControl] = None,
     notifier: Optional[Notifier] = None,
     run_marker: Optional[RunMarker] = None,
     system_probe: Optional[SystemProbe] = None,
@@ -415,6 +417,7 @@ def create_app(
     updater = updater or Updater(updater_settings_from_env(os.environ))
     update_checker = update_checker or UpdateChecker(repo_from_checkout(REPO_DIR))
     update_channel = update_channel or channel_from_env(os.environ)
+    tailscale = tailscale or TailscaleControl(tailscale_settings_from_env(os.environ))
 
     def installed_sha() -> str:
         version = installed_version(REPO_DIR)
@@ -924,6 +927,7 @@ def create_app(
         restore_backup_file=restore_backup_file,
         repo_dir=REPO_DIR,
         admin_dependencies=admin_dependencies,
+        tailscale=tailscale,
     )
 
     audio_tools_routes.register(

@@ -881,6 +881,36 @@ class UpdateRequest(BaseModel):
     channel: UpdateChannel
 
 
+class TailscaleRunStatus(BaseModel):
+    state: Literal["requested", "running", "needs_login", "succeeded", "failed"]
+    action: Optional[str] = None
+    started_at: Optional[float] = None
+    finished_at: Optional[float] = None
+    message: Optional[str] = None
+    auth_url: Optional[str] = None
+
+
+class TailscaleResponse(BaseModel):
+    available: bool  # install-pi.sh units present
+    installed: bool
+    backend_state: Optional[str] = None
+    dns_name: Optional[str] = None
+    auth_url: Optional[str] = None
+    serve_enabled: bool
+    serve_url: Optional[str] = None
+    port: int
+    cli_error: Optional[str] = None
+    status: Optional[TailscaleRunStatus] = None
+
+
+class TailscaleUpRequest(BaseModel):
+    auth_key: Optional[str] = Field(default=None, max_length=200)
+
+
+class TailscaleServeRequest(BaseModel):
+    enabled: bool
+
+
 _URL_OR_EMPTY = r"^$|^https?://[^\s]+$"
 _ONE_LINE = r"^[^\r\n]*$"  # these go into email headers
 

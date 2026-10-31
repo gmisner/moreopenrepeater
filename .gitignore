@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 /data/
 .DS_Store
+
+# Mantine build output (ADR 0001). Committed only at cutover with web/dist/.ready.
+/web/dist/

@@ -115,11 +115,12 @@ body {
   margin: 0;
   font-family: var(--font);
   font-size: 15px;
+  line-height: 1.5;
   background: var(--bg);
   color: var(--text);
 }
 
-h1 { font-size: var(--text-xl); margin: 0 0 var(--space-1); }
+h1 { font-size: var(--text-xl); margin: 0 0 var(--space-2); }
 h2 {
   font-size: var(--text-xs);
   margin: 0 0 var(--space-4);
@@ -210,12 +211,15 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 .station-chip {
   display: flex;
   flex-direction: column;
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-2);
+  padding: var(--space-3);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
-.station-chip strong { font-family: var(--mono); font-size: var(--text-base); }
+.station-chip strong { font-family: var(--mono); font-size: var(--text-base); line-height: 1.25; }
+/* Hide the tag row when every tag is hidden so the chip doesn't keep an empty gap. */
+.station-chip-tags:not(:has(.tag:not([hidden]))) { display: none; }
 
 .nav { display: flex; flex-direction: column; gap: var(--space-2); overflow-y: auto; }
 .nav a {
@@ -257,7 +261,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 }
 [data-connection="lost"] [data-view="dashboard"] .card { opacity: 0.55; }
 .view { display: flex; flex-direction: column; gap: var(--space-4); }
-.view-header { margin-bottom: var(--space-2); }
+.view-header { margin-bottom: var(--space-3); }
 .view-header p { margin: 0; }
 
 .dash-columns, .dash-main, .dash-side { display: flex; flex-direction: column; gap: var(--space-4); }
@@ -277,7 +281,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
   border-radius: var(--radius);
   padding: var(--space-5) var(--space-5);
 }
-.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
+.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3); }
 .card-header h2 { margin: 0; }
 /* Viewers are read-only: the server refuses changes, so don't offer them. */
 [data-role="viewer"] .form-actions,
@@ -326,7 +330,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 
 /* ---------- status ---------- */
 
-.state-card { display: flex; flex-direction: column; gap: var(--space-1); justify-content: center; }
+.state-card { display: flex; flex-direction: column; gap: var(--space-2); justify-content: center; }
 .state-badge { font-size: var(--text-2xl); font-weight: 700; text-transform: capitalize; }
 .sim-status .state-badge { font-size: var(--text-lg); }
 .state-unknown, .state-idle { color: var(--muted); }

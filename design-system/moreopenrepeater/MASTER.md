@@ -6,8 +6,11 @@ site, and change settings at a desk. The design follows from that: status has to
 be readable at a glance and at a distance, controls must be hard to hit by
 accident, and nothing decorative competes with live state.
 
-Everything lives in `web/style.css`. The tokens are at the top; components below
-them use only token names.
+The dashboard is moving to React + Mantine (`frontend/`, see
+`docs/adr/0001-mantine-dashboard.md`). Until cutover (`web/dist/.ready`), the
+vanilla UI in `web/` still ships. Theme tokens below are the source of truth for
+both; Mantine maps them in `frontend/src/theme.ts`. Legacy components live in
+`web/style.css` and use only token names.
 
 ## Principles
 
@@ -80,7 +83,7 @@ with the theme.
 ### Type
 
 System font stack (`--font`) and `--mono` for callsigns, node numbers, times and
-logs. The body is 15px.
+logs. The body is 15px with `line-height: 1.5`.
 
 | Token | Size | Use |
 | --- | --- | --- |
@@ -94,7 +97,10 @@ logs. The body is 15px.
 | `--text-2xl` | 1.9rem | Controller state on the dashboard |
 
 Uppercase labels use `letter-spacing: 0.06em`. Numbers that update live use
-`font-variant-numeric: tabular-nums` so they don't jitter.
+`font-variant-numeric: tabular-nums` so they don't jitter. Label→value stacks that
+people glance at (station chip, controller state, page headers, card headers) use
+at least `--space-2` between rows; tiny indicator tiles and form field labels can
+stay on `--space-1`.
 
 ### Spacing
 

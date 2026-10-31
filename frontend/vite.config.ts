@@ -8,7 +8,8 @@ export default defineConfig({
   build: {
     outDir: "../web/dist",
     emptyOutDir: true,
-    sourcemap: true,
+    // Sourcemaps stay local; the Pi checkout ships the hashed bundles only.
+    sourcemap: false,
   },
   server: {
     proxy: {

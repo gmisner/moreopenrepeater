@@ -37,10 +37,8 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
-      # Cutover marker is not required for the compile check; when web/dist/.ready
-      # is committed, this build must match what ships on the Pi.
-      - name: Typecheck already ran via npm run build
-        run: true
+      - name: Cutover marker present
+        run: test -f ../web/dist/.ready
 
   pytest:
     runs-on: ubuntu-latest

@@ -37,8 +37,9 @@ cutover (login, listen, and all authenticated views land together).
 - Runtime cost depends on careful subscription boundaries around live
   status; done poorly, TX/RX can feel worse than imperative DOM updates.
 - Contributors need Node locally (or CI) to change the UI.
-- Vanilla `web/index.html`, `web/js/*`, and most of `web/style.css` go away
-  at cutover; Leaflet stays vendored for the map.
-- Cutover is gated on committing `web/dist/.ready` (with matching built
-  assets). Until then FastAPI keeps serving the vanilla dashboard even if
-  `web/dist/` exists from a local build.
+- Vanilla `web/index.html`, `web/js/*`, and most of `web/style.css` remain
+  in the tree as fallback/reference until deleted in a follow-up; Leaflet
+  stays vendored under `frontend/public/vendor` and is copied into dist.
+- Cutover is gated on `web/dist/.ready`. `npm run build` writes that marker
+  with the hashed assets; both are committed so Pi installs serve Mantine
+  with no Node. Removing `.ready` falls back to the vanilla dashboard.

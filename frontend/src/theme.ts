@@ -68,6 +68,21 @@ const gray: MantineColorsTuple = [
   "#111317",
 ];
 
+// Mantine's dark scheme (inputs, cards, default borders) uses `colors.dark`,
+// not `gray`. Pin it to MASTER so fields keep a visible edge on panels.
+const dark: MantineColorsTuple = [
+  "#e6e8eb", // 0 body text (--text)
+  "#d5d9df",
+  "#b9bfc8",
+  "#8a919c", // 3 muted / placeholders
+  "#4a515c", // 4 borders — a step above MASTER --border so inputs read on --panel
+  "#22272e", // 5 --panel-2 / filled controls
+  "#0b0c0f", // 6 --inset / default input fill (darker than panel)
+  "#1b1f25", // 7 --panel
+  "#16191e", // 8 --sidebar
+  "#111317", // 9 --bg
+];
+
 export const theme = createTheme({
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   fontFamilyMonospace: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -80,10 +95,13 @@ export const theme = createTheme({
     red,
     amber,
     gray,
+    dark,
     // Virtual colors flip between light/dark semantic stops.
     brand: virtualColor({ name: "brand", light: "accent", dark: "accent" }),
   },
   primaryShade: { light: 5, dark: 4 },
+  white: "#ffffff",
+  black: "#111317",
   fontSizes: {
     xs: "0.78rem",
     sm: "0.86rem",
@@ -115,6 +133,34 @@ export const theme = createTheme({
     md: "53.75em",
     lg: "75em",
     xl: "88em",
+  },
+  components: {
+    Input: {
+      defaultProps: {
+        variant: "default",
+      },
+      styles: {
+        input: {
+          // Keep typed values at body contrast; placeholders stay on dark-3.
+          color: "var(--mantine-color-text)",
+        },
+      },
+    },
+    TextInput: {
+      defaultProps: { variant: "default" },
+    },
+    NumberInput: {
+      defaultProps: { variant: "default" },
+    },
+    Select: {
+      defaultProps: { variant: "default" },
+    },
+    Textarea: {
+      defaultProps: { variant: "default" },
+    },
+    PasswordInput: {
+      defaultProps: { variant: "default" },
+    },
   },
   other: {
     status: {

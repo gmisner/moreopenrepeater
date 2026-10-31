@@ -217,7 +217,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); 
 }
 .station-chip strong { font-family: var(--mono); font-size: var(--text-base); }
 
-.nav { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.nav { display: flex; flex-direction: column; gap: var(--space-2); overflow-y: auto; }
 .nav a {
   display: flex;
   align-items: center;
@@ -572,7 +572,14 @@ input[type="file"] { padding: var(--space-2); }
   border: 1px solid var(--border);
   overflow: hidden;
 }
-.level-meter-fill { height: 100%; width: 0; background: var(--muted); transition: width 0.12s linear; }
+.level-meter-fill {
+  height: 100%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: var(--muted);
+  transition: transform 0.12s linear, background var(--speed);
+}
 .level-meter-fill.open { background: var(--green); }
 .level-meter-threshold { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--amber); }
 .level-readout { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) 0 var(--space-4); }
@@ -651,6 +658,11 @@ input[type="file"] { padding: var(--space-2); }
 .btn-ghost { background: transparent; }
 .btn-sm { padding: var(--space-1) var(--space-2); font-size: var(--text-xs); }
 .btn-block { width: 100%; }
+#listen-toggle[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .btn-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .btn-row .input-unit { width: 9rem; }
 .w-8 { width: 8rem; }
@@ -944,6 +956,24 @@ body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-ins
 @media (pointer: coarse) {
   .btn, .segmented button, .map-filter, .nav a, .mini-status, .day-picker label { min-height: 44px; }
   input:not([type="checkbox"], [type="radio"], [type="file"]), select, textarea { min-height: 44px; font-size: 16px; }
+  .switch { min-height: 44px; }
+  .check-cell {
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  input[type="checkbox"] { width: 22px; height: 22px; }
+  .keypad { grid-template-columns: repeat(4, minmax(44px, 2.8rem)); gap: var(--space-2); }
+  .key { min-width: 44px; min-height: 44px; }
+  .hint-icon {
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
 }
 
 /* Description icons (js/hints.js) */

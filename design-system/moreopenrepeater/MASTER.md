@@ -131,9 +131,10 @@ Transitions use `--speed` (0.15s) and animate only color, opacity and transform.
 - **Phone (600px and under):** cards get 1rem padding, the brand name is hidden
   (the logo stays), the controller state sits on one line, and toasts span the
   width.
-- **Dashboard order**, at every width: controller state and PTT/COS/CTCSS, weather
-  alerts (only when there are any), links, GPIO (only when set up), listen live,
-  recent activity, then the static station and feature summaries.
+- **Dashboard order**, at every width: controller state and PTT/COS/CTCSS, then any
+  live incident cards (lockout, net running, phone call), weather alerts (only when
+  there are any), links, GPIO (only when set up), listen live, recent activity, then
+  the static station and feature summaries.
 - **Wide dashboard (1200px and up):** two columns split 3:2. The left column has
   the controller state, alerts, links, GPIO and listen; the right has PTT/COS,
   activity and the summaries. The status row uses the same split so the columns

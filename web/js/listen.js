@@ -81,7 +81,7 @@ async function start() {
   connect();
   watchdog = setInterval(showStatus, 500);
   toggle.textContent = "Stop";
-  toggle.classList.add("btn-danger");
+  toggle.setAttribute("aria-pressed", "true");
 }
 
 function stop() {
@@ -91,7 +91,7 @@ function stop() {
   clearInterval(watchdog);
   context?.suspend();
   toggle.textContent = "Listen";
-  toggle.classList.remove("btn-danger");
+  toggle.setAttribute("aria-pressed", "false");
   statusLine.textContent = IDLE_TEXT;
 }
 

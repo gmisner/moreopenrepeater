@@ -2,7 +2,7 @@ import { api } from "./api.js";
 import { shortTime } from "./link_schedules.js";
 import { currentView, router } from "./router.js";
 import { store } from "./store.js";
-import { escapeHtml, toast, toastError, withBusy } from "./ui.js";
+import { escapeHtml, svgIcon, toast, toastError, withBusy } from "./ui.js";
 
 const REFRESH_MS = 3000;
 const MODE_LABELS = { monitor: "monitor", "local monitor": "local monitor", connecting: "connecting" };
@@ -59,7 +59,7 @@ function render(status) {
           const on = linked.has(fav.node);
           const title = `${fav.description || ""}${fav.monitor ? " (monitor only)" : ""}`.trim();
           return `<button type="button" class="btn btn-sm ${on ? "btn-primary" : "btn-ghost"}" data-favorite="${escapeHtml(fav.node)}"
-            ${on ? "disabled" : ""} title="${escapeHtml(title)}">★ ${escapeHtml(nodeTitle(fav))}</button>`;
+            ${on ? "disabled" : ""} title="${escapeHtml(title)}">${svgIcon("star")} ${escapeHtml(nodeTitle(fav))}</button>`;
         })
         .join("")
     : "";

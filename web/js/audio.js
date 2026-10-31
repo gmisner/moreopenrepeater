@@ -85,7 +85,7 @@ function renderEngine(engine) {
   const running = engine.running;
   silentPolls = running && engine.rx_level_db <= SILENCE_DB ? silentPolls + 1 : 0;
   silenceHint.hidden = silentPolls < SILENT_POLLS_BEFORE_HINT;
-  levelFill.style.width = `${running ? meterPercent(engine.rx_level_db) : 0}%`;
+  levelFill.style.transform = `scaleX(${(running ? meterPercent(engine.rx_level_db) : 0) / 100})`;
   levelFill.classList.toggle("open", running && engine.cos_open);
   levelText.textContent = running ? `${engine.rx_level_db.toFixed(0)} dBFS` : "–";
   setTag(cosTag, running && engine.cos_open, "carrier");

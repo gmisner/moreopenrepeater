@@ -40,7 +40,7 @@ function render(status) {
   stateTag.textContent = running ? "connected" : status.error ? "error" : status.enabled ? "stopped" : "off";
   errorLine.hidden = !status.error;
   errorLine.textContent = status.error ?? "";
-  levelFill.style.width = `${running ? meterPercent(status.rx_level_db) : 0}%`;
+  levelFill.style.transform = `scaleX(${(running ? meterPercent(status.rx_level_db) : 0) / 100})`;
   levelFill.classList.toggle("open", running && status.receiving);
   levelText.textContent = running ? `${status.rx_level_db.toFixed(0)} dBFS` : "–";
   rxTag.className = `tag ${running && status.receiving ? "tag-on" : ""}`;

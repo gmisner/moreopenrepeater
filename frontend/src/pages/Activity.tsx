@@ -1,4 +1,4 @@
-import { Card, Group, NumberInput, SegmentedControl, SimpleGrid, Stack, Switch, Table, Text } from "@mantine/core";
+import { Badge, Card, Group, NumberInput, SegmentedControl, SimpleGrid, Stack, Switch, Table, Text } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
@@ -18,8 +18,13 @@ type UsageSummary = {
   ids: number;
   announcements: number;
   by_hour: number[];
-  by_day: { date: string; rx_seconds: number; tx_seconds: number }[];
-  recent: { started_at: string; duration_seconds: number }[];
+  by_day: { date: string; rx_seconds: number; tx_seconds: number; rx_count?: number }[];
+};
+
+type Transmission = {
+  started_at: string;
+  duration: number;
+  timed_out: boolean;
 };
 
 type RecValues = { record_transmissions: boolean; recording_retention_days: number };
@@ -51,6 +56,7 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
 export function Activity() {
   const [days, setDays] = useState("7");
   const [summary, setSummary] = useState<UsageSummary | null>(null);
+  const [recent, setRecent] = useState<Transmission[]>([]);
   const rec = useConfigSlice<RecValues>(["record_transmissions", "recording_retention_days"], {
     record_transmissions: false,
     recording_retention_days: 30,
@@ -58,7 +64,12 @@ export function Activity() {
 
   const load = useCallback(async () => {
     try {
-      setSummary(await api<UsageSummary>(`/api/usage?days=${days}`));
+      const [nextSummary, nextRecent] = await Promise.all([
+        api<UsageSummary>(`/api/activity/summary?days=${days}`),
+        api<Transmission[]>("/api/activity/transmissions?limit=25"),
+      ]);
+      setSummary(nextSummary);
+      setRecent(nextRecent);
     } catch (error) {
       notifyError(error);
     }
@@ -71,6 +82,12 @@ export function Activity() {
   }, [load]);
 
   const s = summary;
+  const kerchunkNote =
+    s == null
+      ? ""
+      : `under 1.5 s${s.rx_count ? ` · ${Math.round((100 * s.kerchunks) / s.rx_count)}%` : ""}${
+          s.kerchunks_filtered ? ` · ${s.kerchunks_filtered} more filtered out` : ""
+        }`;
 
   return (
     <Page title="Activity" description="How much the repeater gets used. Recorded automatically and kept for about a year.">
@@ -92,11 +109,7 @@ export function Activity() {
           <Stat label="User airtime" value={formatAirtime(s.rx_seconds)} note={`${s.rx_count} transmissions`} />
           <Stat label="Transmitter on" value={formatAirtime(s.tx_seconds)} note="incl. tails, IDs, announcements" />
           <Stat label="Longest" value={formatAirtime(s.longest_rx_seconds)} note="single transmission" />
-          <Stat
-            label="Kerchunks"
-            value={String(s.kerchunks)}
-            note={`under 1.5 s${s.rx_count ? ` · ${Math.round((100 * s.kerchunks) / s.rx_count)}%` : ""}`}
-          />
+          <Stat label="Kerchunks" value={String(s.kerchunks)} note={kerchunkNote} />
           <Stat label="Timeouts" value={String(s.timeouts)} note={s.lockouts ? `${s.lockouts} stuck-carrier lockouts` : "timeout timer tripped"} />
           <Stat label="IDs / announcements" value={`${s.ids} / ${s.announcements}`} />
         </SimpleGrid>
@@ -106,19 +119,29 @@ export function Activity() {
         <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} mb="sm" style={{ letterSpacing: "0.06em" }}>
           Recent transmissions
         </Text>
-        {s?.recent?.length ? (
+        {recent.length ? (
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>When</Table.Th>
                 <Table.Th>Length</Table.Th>
+                <Table.Th />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {s.recent.map((row) => (
+              {recent.map((row) => (
                 <Table.Tr key={row.started_at}>
                   <Table.Td>{new Date(row.started_at).toLocaleString()}</Table.Td>
-                  <Table.Td>{formatAirtime(row.duration_seconds)}</Table.Td>
+                  <Table.Td>{formatAirtime(row.duration)}</Table.Td>
+                  <Table.Td>
+                    {row.timed_out ? (
+                      <Badge color="red" variant="light">
+                        timed out
+                      </Badge>
+                    ) : row.duration < 1.5 ? (
+                      <Badge variant="outline">kerchunk</Badge>
+                    ) : null}
+                  </Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

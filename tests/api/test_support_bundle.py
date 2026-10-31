@@ -57,10 +57,17 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
     def fake_run(cmd, **_kwargs):
         class Result:
             returncode = 0
-            stdout = "journal line\n"
+            stdout = ""
             stderr = ""
 
-        assert cmd[:3] == ["journalctl", "-u", "moreopenrepeater"]
+        if cmd[:3] == ["journalctl", "-u", "moreopenrepeater"]:
+            Result.stdout = "journal line\n"
+        elif cmd[:2] == ["journalctl", "-k"]:
+            Result.stdout = "kernel: usb 1-1.3: reset full-speed USB device\nother line\n"
+        elif cmd[0] == "lsusb":
+            Result.stdout = "Bus 001 Device 023: ID 1209:7388 Generic All-In-One-Cable\n"
+        elif cmd[0] == "udevadm":
+            Result.stdout = "DEVNAME=/dev/hidraw4\nID_MODEL=All-In-One-Cable\nOTHER=x\n"
         return Result()
 
     path = tmp_path / "bundle.zip"
@@ -74,6 +81,9 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
         system_readings={"temperature_c": 42.0},
         updater=None,
         now=1_700_000_000.0,
+        receiver_openings=[{"duration": 1.2, "peak_db": -5.0, "dtmf_digits": "*11"}],
+        audio_glitches=[{"counter": "output_underflows", "count": 1}],
+        last_unexpected_stop={"watchdog": "audio engine"},
         run=fake_run,
     )
 
@@ -85,7 +95,11 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
             "config.json",
             "status.json",
             "audio-engine.json",
+            "openings.json",
+            "glitches.json",
+            "health.json",
             "system.json",
+            "usb.txt",
             "moreopenrepeater.log",
             "journal.txt",
             "update.log",
@@ -98,6 +112,14 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
         assert "password" not in json.dumps(config).lower()
         assert json.loads(archive.read("audio-engine.json"))["running"] is False
         assert json.loads(archive.read("system.json"))["temperature_c"] == 42.0
+        assert json.loads(archive.read("openings.json"))[0]["dtmf_digits"] == "*11"
+        assert json.loads(archive.read("glitches.json"))[0]["counter"] == "output_underflows"
+        assert json.loads(archive.read("health.json"))["last_unexpected_stop"]["watchdog"] == "audio engine"
+        usb = archive.read("usb.txt").decode()
+        assert "All-In-One-Cable" in usb
+        assert "reset full-speed USB device" in usb
+        assert "openings.json" in archive.read("README.txt").decode()
+        assert "usb.txt" in archive.read("README.txt").decode()
         assert "does not include passwords" in archive.read("README.txt").decode()
 
 

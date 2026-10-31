@@ -95,6 +95,9 @@ def register(
                 system_readings=health.probe.readings(),
                 updater=updater,
                 now=now,
+                receiver_openings=list(reversed(live_audio.openings)),
+                audio_glitches=list(reversed(live_audio.glitches)),
+                last_unexpected_stop=health.last_unexpected_stop,
             )
         except BaseException:
             path.unlink(missing_ok=True)

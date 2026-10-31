@@ -37,6 +37,19 @@ const SEVERITY_COLORS: Record<string, string> = {
 
 const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 
+/** Attribution only when the tile host is really OpenStreetMap (not a substring spoof). */
+function osmTileAttribution(url: string): string {
+  try {
+    const host = new URL(url.replaceAll(/\{[sxyz]\}/gi, "0")).hostname.toLowerCase();
+    if (host === "openstreetmap.org" || host.endsWith(".openstreetmap.org")) {
+      return '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+    }
+  } catch {
+    /* ignore bad templates */
+  }
+  return "";
+}
+
 type Weather = {
   temp_f?: number | null;
   wind_mph?: number | null;
@@ -345,9 +358,7 @@ export function MapPage() {
     let errors = 0;
     const tile = L.tileLayer(url, {
       maxZoom: 18,
-      attribution: url.includes("openstreetmap.org")
-        ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        : "",
+      attribution: osmTileAttribution(url),
     });
     tile.on("tileload", () => {
       if (!loaded) {

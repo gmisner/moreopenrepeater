@@ -89,7 +89,9 @@ def test_login_page_is_public():
     response = client.get("/login")
 
     assert response.status_code == 200
-    assert "<form" in response.text
+    # Mantine SPA shell (ADR 0001); the form is rendered client-side.
+    assert 'id="root"' in response.text
+    assert "/assets/" in response.text
 
 
 def test_simulate_dtmf_requires_auth_when_configured():

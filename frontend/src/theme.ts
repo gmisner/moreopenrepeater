@@ -141,8 +141,10 @@ export const theme = createTheme({
       },
       styles: {
         input: {
-          // Keep typed values at body contrast; placeholders stay on dark-3.
           color: "var(--mantine-color-text)",
+          // --mor-field-* come from field-contrast.css (scheme-aware).
+          border: "2px solid var(--mor-field-bd, #8a919c)",
+          backgroundColor: "var(--mor-field-bg, #0b0c0f)",
         },
       },
     },

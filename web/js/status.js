@@ -26,6 +26,13 @@ const miniStatus = document.getElementById("mini-status");
 
 let previous = null;
 let lostAt = null;
+let pollTimer = null;
+let connectGeneration = 0;
+const POLL_MS = 1000;
+// Tailscale Serve's HTTPS front speaks HTTP/2 and doesn't proxy browser
+// WebSocket upgrades yet, so the first handshake often never opens. Poll
+// over plain HTTPS in that case, and keep retrying the socket less often.
+const WS_RETRY_WHILE_POLLING_MS = 15000;
 
 function setIndicator(id, on, valueText) {
   const el = document.getElementById(id);
@@ -118,35 +125,73 @@ function setLost(lost) {
   connectionBanner.textContent = `Lost the connection to the controller at ${lostAt.toLocaleTimeString()}. What's shown may be out of date. Reconnecting…`;
 }
 
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  setConnection("polling", "pill-on");
+  setLost(false);
+  const tick = async () => {
+    try {
+      applyStatus(await api("/api/status"));
+      setConnection("polling", "pill-on");
+      setLost(false);
+    } catch {
+      setConnection("offline", "pill-off");
+      setLost(true);
+    }
+  };
+  tick();
+  pollTimer = setInterval(tick, POLL_MS);
+}
+
 export function connectStatusSocket() {
+  const generation = ++connectGeneration;
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${protocol}//${location.host}/ws/status`);
   let opened = false;
 
   ws.onopen = () => {
+    if (generation !== connectGeneration) {
+      ws.close();
+      return;
+    }
     opened = true;
+    stopPolling();
     setConnection("live", "pill-on");
     setLost(false);
   };
   ws.onmessage = (event) => applyStatus(JSON.parse(event.data));
   ws.onerror = () => ws.close();
   ws.onclose = async () => {
-    setConnection("reconnecting…", "pill-warn");
-    if (previous) setLost(true);
-    if (!opened) {
-      // A handshake rejected before opening is most likely an expired
-      // session -- api() redirects to the login page on a 401.
-      try {
-        const session = await api("/api/session");
-        if (session.auth_required && !session.authenticated) {
-          location.replace("/login");
-          return;
-        }
-      } catch {
-        setConnection("offline", "pill-off");
-      }
+    if (generation !== connectGeneration) return;
+    if (opened) {
+      setConnection("reconnecting…", "pill-warn");
+      if (previous) setLost(true);
+      setTimeout(connectStatusSocket, 1000);
+      return;
     }
-    setTimeout(connectStatusSocket, opened ? 1000 : 3000);
+    // Handshake never opened. Session may be gone, or a proxy (Tailscale
+    // Serve over HTTPS) can't upgrade WebSockets — fall back to polling.
+    try {
+      const session = await api("/api/session");
+      if (session.auth_required && !session.authenticated) {
+        location.replace("/login");
+        return;
+      }
+    } catch {
+      setConnection("offline", "pill-off");
+      if (previous) setLost(true);
+      setTimeout(connectStatusSocket, 3000);
+      return;
+    }
+    startPolling();
+    setTimeout(connectStatusSocket, WS_RETRY_WHILE_POLLING_MS);
   };
 }
 

@@ -12,6 +12,8 @@ WatchdogSec=30
 TimeoutStartSec=120
 User=moreopenrepeater
 Group=moreopenrepeater
+# Support bundles run journalctl -u moreopenrepeater from this process.
+SupplementaryGroups=systemd-journal
 WorkingDirectory=/opt/moreopenrepeater
 # Multithreaded BLAS makes the audio worker's small matrix products late now
 # and then on a Pi (waking the other cores costs more than it saves).

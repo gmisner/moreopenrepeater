@@ -27,11 +27,31 @@ const connected = () => {
 
 async function copyText(text) {
   try {
-    await navigator.clipboard.writeText(text);
-    toast("Copied");
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      toast("Copied");
+      return;
+    }
   } catch {
-    toastError(new Error("Couldn't copy"));
+    /* fall through — Clipboard API needs a secure context */
   }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.focus();
+  area.select();
+  area.setSelectionRange(0, text.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } finally {
+    area.remove();
+  }
+  if (ok) toast("Copied");
+  else toastError(new Error("Couldn't copy"));
 }
 
 function phaseTag() {

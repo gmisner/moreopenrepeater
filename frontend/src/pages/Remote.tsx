@@ -14,6 +14,7 @@ import {
 } from "@mantine/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { copyToClipboard } from "../clipboard";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
@@ -82,7 +83,7 @@ function phaseBadge(info: TailscaleInfo): { color: string; label: string } {
 
 async function copyText(text: string) {
   try {
-    await navigator.clipboard.writeText(text);
+    await copyToClipboard(text);
     notifySuccess("Copied");
   } catch {
     notifyError(new Error("Couldn't copy"));

@@ -16,6 +16,7 @@ import {
 } from "@mantine/core";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
+import { copyToClipboard } from "../clipboard";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
@@ -180,7 +181,7 @@ export function Users() {
   const copyToken = async () => {
     if (!newToken) return;
     try {
-      await navigator.clipboard.writeText(newToken);
+      await copyToClipboard(newToken);
       notifySuccess("Token copied");
     } catch {
       notifyError(new Error("Couldn't copy to clipboard"));

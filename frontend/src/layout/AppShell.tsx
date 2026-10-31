@@ -14,12 +14,14 @@ import {
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import { useEffect, type ReactNode } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Icon } from "../icons/Icon";
 import { NAV, PAGE_TITLES, TABBAR } from "../nav";
 import { roleLabel, useSession } from "../session";
 import { useStatus } from "../status";
 import { BrandMark } from "./BrandMark";
 import { ConnectionPill } from "./ConnectionPill";
 import { MiniStatus } from "./MiniStatus";
+import "./shell.css";
 
 export function AppShell() {
   const { session, logout } = useSession();
@@ -40,9 +42,9 @@ export function AppShell() {
   const themeValue = colorScheme === "auto" ? "auto" : colorScheme;
 
   const nav = (
-    <Stack gap="xs" p="md">
+    <Stack gap={4} px="xs">
       {NAV.map((group) => (
-        <Box key={group.label ?? "top"}>
+        <Box key={group.label ?? "top"} mb={group.label ? 8 : 0}>
           {group.label ? (
             <Text size="xs" c="dimmed" tt="uppercase" fw={600} px="sm" mb={4} style={{ letterSpacing: "0.08em" }}>
               {group.label}
@@ -53,11 +55,14 @@ export function AppShell() {
             .map((item) => (
               <NavLink
                 key={item.id}
+                className="mor-nav-link"
                 component={Link}
                 to={`/${item.id}`}
                 label={item.label}
+                leftSection={<Icon name={item.icon} size={18} />}
                 active={view === item.id}
                 onClick={close}
+                variant="subtle"
               />
             ))}
         </Box>
@@ -95,14 +100,14 @@ export function AppShell() {
             p="sm"
             style={{
               border: "1px solid var(--mor-border, var(--mantine-color-default-border))",
-              borderRadius: "var(--mantine-radius-md)",
+              borderRadius: "10px",
               background: "var(--mor-panel, var(--mantine-color-body))",
             }}
           >
-            <Text size="sm" c="dimmed">
+            <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.08em" }}>
               Station
             </Text>
-            <Text ff="monospace" fw={700}>
+            <Text ff="monospace" fw={700} size="md">
               {(status?.callsign as string) || "(no callsign)"}
             </Text>
           </Box>
@@ -146,6 +151,7 @@ export function AppShell() {
           {TABBAR.map((item) => (
             <UnstyledButton
               key={item.id}
+              className="mor-tabbar-btn"
               onClick={() => {
                 navigate(`/${item.id}`);
                 close();
@@ -161,10 +167,12 @@ export function AppShell() {
                 fontWeight: 600,
               }}
             >
+              <Icon name={item.icon} size={24} />
               {item.label}
             </UnstyledButton>
           ))}
           <UnstyledButton
+            className="mor-tabbar-btn"
             onClick={toggle}
             style={{
               height: "100%",
@@ -177,6 +185,7 @@ export function AppShell() {
               fontWeight: 600,
             }}
           >
+            <Icon name="more" size={24} />
             More
           </UnstyledButton>
         </Group>
@@ -189,7 +198,7 @@ export function Page({ title, children, description }: { title: string; descript
   return (
     <Stack gap="md">
       <Box>
-        <Title order={1} tabIndex={-1}>
+        <Title order={1} className="mor-page-title" tabIndex={-1}>
           {title}
         </Title>
         {description ? (

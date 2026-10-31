@@ -353,7 +353,9 @@ export function SetupWizardProvider({ children }: { children: ReactNode }) {
         closeOnClickOutside={false}
       >
         <Stack gap="md">
-          <Title order={2}>{current?.title}</Title>
+          <Title order={2} className="mor-title-plain">
+            {current?.title}
+          </Title>
 
           {current?.id === "station" ? (
             <Stack gap="md">

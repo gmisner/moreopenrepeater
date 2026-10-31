@@ -1,56 +1,56 @@
-export type NavItem = { id: string; label: string; adminOnly?: boolean };
+export type NavItem = { id: string; label: string; icon: string; adminOnly?: boolean };
 export type NavGroup = { label?: string; items: NavItem[] };
 
 export const NAV: NavGroup[] = [
   {
     items: [
-      { id: "dashboard", label: "Dashboard" },
-      { id: "activity", label: "Activity" },
+      { id: "dashboard", label: "Dashboard", icon: "dashboard" },
+      { id: "activity", label: "Activity", icon: "activity" },
     ],
   },
   {
     label: "Repeater",
     items: [
-      { id: "timing", label: "Timing" },
-      { id: "identification", label: "Identification" },
-      { id: "audio", label: "Audio & tones" },
+      { id: "timing", label: "Timing", icon: "timing" },
+      { id: "identification", label: "Identification", icon: "id" },
+      { id: "audio", label: "Audio & tones", icon: "audio" },
     ],
   },
   {
     label: "Features",
     items: [
-      { id: "macros", label: "DTMF macros" },
-      { id: "net", label: "Net" },
-      { id: "mailbox", label: "Mailbox" },
-      { id: "announcements", label: "Announcements" },
-      { id: "weather", label: "Weather" },
-      { id: "autopatch", label: "Autopatch" },
-      { id: "allstar", label: "AllStarLink" },
-      { id: "aprs", label: "APRS" },
-      { id: "map", label: "APRS map" },
-      { id: "public", label: "Public listening" },
+      { id: "macros", label: "DTMF macros", icon: "macros" },
+      { id: "net", label: "Net", icon: "net" },
+      { id: "mailbox", label: "Mailbox", icon: "mail" },
+      { id: "announcements", label: "Announcements", icon: "announce" },
+      { id: "weather", label: "Weather", icon: "weather" },
+      { id: "autopatch", label: "Autopatch", icon: "phone" },
+      { id: "allstar", label: "AllStarLink", icon: "links" },
+      { id: "aprs", label: "APRS", icon: "radio" },
+      { id: "map", label: "APRS map", icon: "pin" },
+      { id: "public", label: "Public listening", icon: "headphones" },
     ],
   },
   {
     label: "Tools",
     items: [
-      { id: "simulator", label: "Simulator" },
-      { id: "logs", label: "Logs" },
-      { id: "backup", label: "Backup & restore" },
-      { id: "users", label: "Users", adminOnly: true },
-      { id: "audit", label: "Audit log", adminOnly: true },
-      { id: "alerts", label: "Alerts & health", adminOnly: true },
-      { id: "updates", label: "Updates", adminOnly: true },
-      { id: "remote", label: "Remote access", adminOnly: true },
+      { id: "simulator", label: "Simulator", icon: "simulator" },
+      { id: "logs", label: "Logs", icon: "logs" },
+      { id: "backup", label: "Backup & restore", icon: "backup" },
+      { id: "users", label: "Users", icon: "users", adminOnly: true },
+      { id: "audit", label: "Audit log", icon: "audit", adminOnly: true },
+      { id: "alerts", label: "Alerts & health", icon: "bell", adminOnly: true },
+      { id: "updates", label: "Updates", icon: "update", adminOnly: true },
+      { id: "remote", label: "Remote access", icon: "remote", adminOnly: true },
     ],
   },
 ];
 
 export const TABBAR: NavItem[] = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "activity", label: "Activity" },
-  { id: "allstar", label: "Links" },
-  { id: "map", label: "Map" },
+  { id: "dashboard", label: "Dashboard", icon: "dashboard" },
+  { id: "activity", label: "Activity", icon: "activity" },
+  { id: "allstar", label: "Links", icon: "links" },
+  { id: "map", label: "Map", icon: "pin" },
 ];
 
 export const PAGE_TITLES: Record<string, string> = Object.fromEntries(

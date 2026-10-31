@@ -94,9 +94,9 @@ export function AppShell() {
           <Box
             p="sm"
             style={{
-              border: "1px solid var(--mantine-color-default-border)",
+              border: "1px solid var(--mor-border, var(--mantine-color-default-border))",
               borderRadius: "var(--mantine-radius-md)",
-              background: "var(--mantine-color-body)",
+              background: "var(--mor-panel, var(--mantine-color-body))",
             }}
           >
             <Text size="sm" c="dimmed">

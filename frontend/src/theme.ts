@@ -68,19 +68,20 @@ const gray: MantineColorsTuple = [
   "#111317",
 ];
 
-// Mantine's dark scheme (inputs, cards, default borders) uses `colors.dark`,
-// not `gray`. Pin it to MASTER so fields keep a visible edge on panels.
+// Mantine dark scheme uses `colors.dark` for body/borders/defaults:
+// dark-4 = default border, dark-6 = default fill, dark-7 = --mantine-color-body.
+// Cards are painted to MASTER --panel in field-contrast.css (Paper uses body).
 const dark: MantineColorsTuple = [
   "#e6e8eb", // 0 body text (--text)
   "#d5d9df",
   "#b9bfc8",
   "#8a919c", // 3 muted / placeholders
-  "#4a515c", // 4 borders — a step above MASTER --border so inputs read on --panel
-  "#22272e", // 5 --panel-2 / filled controls
-  "#0b0c0f", // 6 --inset / default input fill (darker than panel)
-  "#1b1f25", // 7 --panel
+  "#2c323b", // 4 --border
+  "#22272e", // 5 --panel-2
+  "#0b0c0f", // 6 --inset / default control fill
+  "#111317", // 7 --bg (Mantine body)
   "#16191e", // 8 --sidebar
-  "#111317", // 9 --bg
+  "#0b0c0f", // 9 deepest
 ];
 
 export const theme = createTheme({
@@ -143,7 +144,7 @@ export const theme = createTheme({
         input: {
           color: "var(--mantine-color-text)",
           // --mor-field-* come from field-contrast.css (scheme-aware).
-          border: "2px solid var(--mor-field-bd, #8a919c)",
+          border: "1px solid var(--mor-field-bd, #2c323b)",
           backgroundColor: "var(--mor-field-bg, #0b0c0f)",
         },
       },

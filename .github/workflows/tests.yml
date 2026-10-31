@@ -39,6 +39,8 @@ jobs:
         run: npm run check:indicator-bg
       - name: Activity API paths
         run: npm run check:activity-api
+      - name: Clipboard fallback
+        run: npm run check:clipboard
       - name: Build
         run: npm run build
       - name: Cutover marker present

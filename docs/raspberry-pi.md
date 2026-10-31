@@ -69,7 +69,7 @@ updater runs as root).
 
 ```
 sudo useradd --system --no-create-home --home-dir /opt/moreopenrepeater --shell /usr/sbin/nologin moreopenrepeater
-sudo usermod -aG audio,dialout,gpio moreopenrepeater   # /dev/hidrawN (below), USB-serial, header pins
+sudo usermod -aG audio,dialout,gpio,systemd-journal moreopenrepeater   # hidraw, USB-serial, GPIO, journalctl
 
 sudo git clone --branch stable https://github.com/gmisner/moreopenrepeater.git /opt/moreopenrepeater
 cd /opt/moreopenrepeater

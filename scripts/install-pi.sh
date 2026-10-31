@@ -266,6 +266,10 @@ usermod -aG audio,dialout "$SERVICE_USER"
 if getent group gpio >/dev/null; then
   usermod -aG gpio "$SERVICE_USER"
 fi
+# So the Logs page support bundle can include journalctl -u moreopenrepeater.
+if getent group systemd-journal >/dev/null; then
+  usermod -aG systemd-journal "$SERVICE_USER"
+fi
 # Settings, recordings, logs and backups: the only part the service can write.
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$INSTALL_DIR/data"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data"

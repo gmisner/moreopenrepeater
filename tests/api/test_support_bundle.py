@@ -68,8 +68,17 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
             Result.stdout = "Bus 001 Device 023: ID 1209:7388 Generic All-In-One-Cable\n"
         elif cmd[0] == "udevadm":
             Result.stdout = "DEVNAME=/dev/hidraw4\nID_MODEL=All-In-One-Cable\nOTHER=x\n"
+        elif cmd[:2] == ["amixer", "-c"]:
+            Result.stdout = (
+                "Simple mixer control 'Mic',0\n"
+                "  Capabilities: cvolume\n"
+                "  Limits: Capture 0 - 16\n"
+                "  Capture channels: Mono\n"
+                "  Mono: Capture 8 [50%] [12.00dB]\n"
+            )
         return Result()
 
+    service.update_config(audio_input_device="USB Audio (hw:2,0)", audio_output_device="USB Audio (hw:2,0)")
     path = tmp_path / "bundle.zip"
     write_support_bundle(
         path,
@@ -84,6 +93,10 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
         receiver_openings=[{"duration": 1.2, "peak_db": -5.0, "dtmf_digits": "*11"}],
         audio_glitches=[{"counter": "output_underflows", "count": 1}],
         last_unexpected_stop={"watchdog": "audio engine"},
+        audio_devices=[{"name": "USB Audio (hw:2,0)", "inputs": 1, "outputs": 1}],
+        serial_ports=[{"path": "/dev/serial/by-id/usb-Digirig", "target": "/dev/ttyUSB0"}],
+        cm108_interfaces=[{"path": "/dev/hidraw4", "name": "C-Media"}],
+        cm108_path="/dev/hidraw4",
         run=fake_run,
     )
 
@@ -95,6 +108,7 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
             "config.json",
             "status.json",
             "audio-engine.json",
+            "devices.json",
             "openings.json",
             "glitches.json",
             "health.json",
@@ -115,10 +129,15 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
         assert json.loads(archive.read("openings.json"))[0]["dtmf_digits"] == "*11"
         assert json.loads(archive.read("glitches.json"))[0]["counter"] == "output_underflows"
         assert json.loads(archive.read("health.json"))["last_unexpected_stop"]["watchdog"] == "audio engine"
+        devices = json.loads(archive.read("devices.json"))
+        assert devices["cm108_path"] == "/dev/hidraw4"
+        assert devices["serial_ports"][0]["path"].endswith("Digirig")
+        assert devices["audio_devices"][0]["name"].startswith("USB Audio")
+        assert devices["mixer"]["2"]["volumes"][0]["control"] == "Mic"
         usb = archive.read("usb.txt").decode()
         assert "All-In-One-Cable" in usb
         assert "reset full-speed USB device" in usb
-        assert "openings.json" in archive.read("README.txt").decode()
+        assert "devices.json" in archive.read("README.txt").decode()
         assert "usb.txt" in archive.read("README.txt").decode()
         assert "does not include passwords" in archive.read("README.txt").decode()
 

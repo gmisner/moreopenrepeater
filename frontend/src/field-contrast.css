@@ -1,0 +1,105 @@
+/* MASTER surfaces + field contrast for Mantine dark/light.
+   Mantine's Paper/Card use --mantine-color-body, so without these
+   overrides the page and cards are the same color and look "off". */
+
+[data-mantine-color-scheme="dark"] {
+  --mor-bg: #111317;
+  --mor-sidebar: #16191e;
+  --mor-panel: #1b1f25;
+  --mor-panel-2: #22272e;
+  --mor-border: #2c323b;
+  --mor-field-bg: #0b0c0f;
+  --mor-field-bd: #2c323b;
+  --mor-field-placeholder: #8a919c;
+  --mor-text: #e6e8eb;
+  --mor-muted: #8a919c;
+  --mor-green: #35d07f;
+  --mor-amber: #ffb020;
+  --mor-red: #ff7070;
+  --mor-on-status: #111317;
+
+  --mantine-color-body: var(--mor-bg);
+  --mantine-color-default-border: var(--mor-border);
+  --mantine-color-dimmed: var(--mor-muted);
+  --mantine-color-text: var(--mor-text);
+}
+
+[data-mantine-color-scheme="light"] {
+  --mor-bg: #f3f4f6;
+  --mor-sidebar: #ffffff;
+  --mor-panel: #ffffff;
+  --mor-panel-2: #eef0f3;
+  --mor-border: #d5d9df;
+  --mor-field-bg: #ffffff;
+  --mor-field-bd: #d5d9df;
+  --mor-field-placeholder: #5a6270;
+  --mor-text: #1a1d22;
+  --mor-muted: #5a6270;
+  --mor-green: #0a6b3b;
+  --mor-amber: #8a5200;
+  --mor-red: #b8292a;
+  --mor-on-status: #ffffff;
+
+  --mantine-color-body: var(--mor-bg);
+  --mantine-color-default-border: var(--mor-border);
+  --mantine-color-dimmed: var(--mor-muted);
+  --mantine-color-text: var(--mor-text);
+}
+
+/* Cards/panels sit above the page bg (MASTER --panel). */
+[data-mantine-color-scheme] :where(.mantine-Card-root),
+[data-mantine-color-scheme] :where(.mantine-Paper-root),
+[data-mantine-color-scheme] :where(.mantine-Modal-content) {
+  background-color: var(--mor-panel);
+  border-color: var(--mor-border);
+}
+
+[data-mantine-color-scheme] :where(.mantine-AppShell-navbar),
+[data-mantine-color-scheme] :where(.mantine-AppShell-header),
+[data-mantine-color-scheme] :where(.mantine-AppShell-footer) {
+  background-color: var(--mor-sidebar);
+  border-color: var(--mor-border);
+}
+
+[data-mantine-color-scheme] :where(.mantine-Input-input),
+[data-mantine-color-scheme] :where(.mantine-TextInput-input),
+[data-mantine-color-scheme] :where(.mantine-NumberInput-input),
+[data-mantine-color-scheme] :where(.mantine-Select-input),
+[data-mantine-color-scheme] :where(.mantine-Textarea-input),
+[data-mantine-color-scheme] :where(.mantine-PasswordInput-input),
+[data-mantine-color-scheme] :where(.mantine-Input-wrapper) {
+  --input-bd: var(--mor-field-bd) !important;
+  --input-bg: var(--mor-field-bg) !important;
+  --input-placeholder-color: var(--mor-field-placeholder) !important;
+}
+
+[data-mantine-color-scheme] :where(.mantine-Input-input),
+[data-mantine-color-scheme] :where(.mantine-TextInput-input),
+[data-mantine-color-scheme] :where(.mantine-NumberInput-input),
+[data-mantine-color-scheme] :where(.mantine-Select-input),
+[data-mantine-color-scheme] :where(.mantine-Textarea-input),
+[data-mantine-color-scheme] :where(.mantine-PasswordInput-input) {
+  border: 1px solid var(--mor-field-bd) !important;
+  background-color: var(--mor-field-bg) !important;
+  color: var(--mantine-color-text) !important;
+}
+
+[data-mantine-color-scheme="dark"] :where(.mantine-Button-root[data-variant="default"]) {
+  --button-bd: 1px solid var(--mor-border);
+  border: 1px solid var(--mor-border) !important;
+  background: var(--mor-panel-2) !important;
+  color: var(--mor-text) !important;
+}
+
+/* Status pills: solid MASTER green/amber with dark ink (vanilla .pill-on). */
+.mor-status-pill[data-status="live"] {
+  background: var(--mor-green) !important;
+  border-color: var(--mor-green) !important;
+  color: var(--mor-on-status) !important;
+}
+
+.mor-status-pill[data-status="warn"] {
+  background: var(--mor-amber) !important;
+  border-color: var(--mor-amber) !important;
+  color: var(--mor-on-status) !important;
+}

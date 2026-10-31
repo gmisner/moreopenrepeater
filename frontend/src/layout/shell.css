@@ -1,0 +1,80 @@
+/* Bring Mantine shell closer to the vanilla MASTER dashboard. */
+
+.mor-icon {
+  display: inline-block;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: middle;
+}
+
+.mor-nav-link {
+  border-radius: var(--mantine-radius-md);
+  font-size: 0.92rem;
+  min-height: 44px;
+}
+
+.mor-nav-link .mantine-NavLink-section[data-position="left"] {
+  margin-inline-end: 0.5rem;
+}
+
+.mor-nav-link .mor-icon {
+  color: var(--mor-muted, var(--mantine-color-dimmed));
+}
+
+.mor-nav-link[data-active] {
+  background: color-mix(in srgb, var(--mantine-color-accent-4) 14%, transparent);
+  color: var(--mantine-color-accent-4);
+  font-weight: 600;
+}
+
+.mor-nav-link[data-active] .mor-icon {
+  color: inherit;
+}
+
+.mor-nav-link:hover {
+  background: var(--mor-panel, var(--mantine-color-default-hover));
+}
+
+.mor-nav-link[data-active]:hover {
+  background: color-mix(in srgb, var(--mantine-color-accent-4) 18%, transparent);
+}
+
+.mor-tabbar-btn {
+  min-height: 44px;
+  gap: 2px;
+}
+
+.mor-tabbar-btn .mor-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.mor-page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+/* Card section labels match vanilla h2 (MASTER --text-2xs uppercase muted). */
+.mantine-Title-root[data-order="2"] {
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--mor-muted, var(--mantine-color-dimmed)) !important;
+  line-height: 1.4 !important;
+}
+
+/* Wizard / listen titles that need a real heading keep order=2 but opt out. */
+.mantine-Title-root[data-order="2"].mor-title-plain {
+  font-size: 1.25rem !important;
+  font-weight: 700 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  color: var(--mantine-color-text) !important;
+}

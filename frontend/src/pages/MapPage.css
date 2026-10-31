@@ -1,0 +1,110 @@
+.mor-map {
+  height: min(68vh, 640px);
+  min-height: 320px;
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid var(--mantine-color-default-border);
+  isolation: isolate;
+  background: var(--mantine-color-body);
+}
+
+.mor-map.mor-map-offline,
+.mor-map.mor-map-offline.leaflet-container {
+  background-color: var(--mantine-color-body);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--mantine-color-default-border) 70%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--mantine-color-default-border) 70%, transparent) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.mor-map.mor-map-offline .leaflet-tile-pane {
+  display: none;
+}
+
+.mor-map-station {
+  display: flex;
+  align-items: center;
+}
+
+.mor-map-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid;
+  background: color-mix(in srgb, var(--mantine-color-body) 92%, transparent);
+  box-shadow: var(--mantine-shadow-xs);
+  color: var(--mantine-color-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mor-map-label {
+  display: none;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--mantine-color-body) 85%, transparent);
+  color: var(--mantine-color-text);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mor-map-labels .mor-map-label {
+  display: inline;
+}
+
+.mor-map-home span {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--mantine-color-accent-4);
+  border: 3px solid var(--mantine-color-body);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--mantine-color-accent-4) 35%, transparent);
+}
+
+.mor-map-ring-label {
+  transform: translate(-50%, -120%);
+  color: var(--mantine-color-accent-4);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mor-map .leaflet-popup-content-wrapper,
+.mor-map .leaflet-popup-tip {
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+}
+
+.mor-map .leaflet-popup-content {
+  margin: 0.75rem 1rem;
+  min-width: 13rem;
+  font-size: 0.875rem;
+}
+
+.mor-map a {
+  color: var(--mantine-color-accent-4);
+}
+
+.mor-map-popup-comment {
+  margin-top: 0.25rem;
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-map-popup-kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.75rem;
+  margin: 0.5rem 0;
+  font-size: 0.75rem;
+}
+
+.mor-map-popup-kv dt {
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-map-popup-kv dd {
+  margin: 0;
+}

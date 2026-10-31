@@ -42,7 +42,11 @@ def test_public_page_shows_status_without_signing_in(tmp_path, monkeypatch):
         "callsign": "W1AW", "text": "146.940 -600 PL 100", "on_air": False, "receiving": False,
         "net": None, "audio": True, "listeners": 0, "max_listeners": 20, "username": None,
     }
-    assert "Listen live" in client.get("/listen").text
+    # Mantine SPA shell (ADR 0001); listen UI is rendered client-side.
+    listen = client.get("/listen")
+    assert listen.status_code == 200
+    assert 'id="root"' in listen.text
+    assert "/assets/" in listen.text
 
 
 def test_public_audio_is_capped_per_address(tmp_path, monkeypatch):

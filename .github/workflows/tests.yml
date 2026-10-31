@@ -37,6 +37,8 @@ jobs:
         run: npm ci
       - name: Indicator bg regression
         run: npm run check:indicator-bg
+      - name: Activity API paths
+        run: npm run check:activity-api
       - name: Build
         run: npm run build
       - name: Cutover marker present

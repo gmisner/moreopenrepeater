@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && touch ../web/dist/.ready",
+    "check:indicator-bg": "node scripts/check-indicator-bg.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
   },

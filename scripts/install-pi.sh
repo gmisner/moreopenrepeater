@@ -233,9 +233,13 @@ if [ "$FETCHED" -eq 0 ]; then
     git clone -q --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
   fi
   # Default ACLs (some systems put them on /opt) would make files writable
-  # by everyone whatever the umask.
+  # by everyone whatever the umask. Clear one path at a time so a transient
+  # git lock that vanishes mid-run (maintenance.lock) doesn't fail the install.
   if command -v setfacl >/dev/null; then
-    find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o ! -type l -exec setfacl -bk {} +
+    find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o ! -type l -print0 |
+      while IFS= read -r -d '' path; do
+        setfacl -bk "$path" 2>/dev/null || true
+      done
   fi
   find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o ! -type l -perm /022 -exec chmod go-w {} +
 

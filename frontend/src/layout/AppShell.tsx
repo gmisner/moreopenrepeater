@@ -4,12 +4,10 @@ import {
   Burger,
   Group,
   NavLink,
-  SegmentedControl,
   Stack,
   Text,
   Title,
   UnstyledButton,
-  useMantineColorScheme,
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import { useEffect, type ReactNode } from "react";
@@ -21,12 +19,12 @@ import { useStatus } from "../status";
 import { BrandMark } from "./BrandMark";
 import { ConnectionPill } from "./ConnectionPill";
 import { MiniStatus } from "./MiniStatus";
+import { ThemePicker } from "./ThemePicker";
 import "./shell.css";
 
 export function AppShell() {
   const { session, logout } = useSession();
   const { status, connected } = useStatus();
-  const { colorScheme, setColorScheme } = useMantineColorScheme();
   const [opened, { toggle, close }] = useDisclosure(false);
   const isPhone = useMediaQuery("(max-width: 53.75em)");
   const location = useLocation();
@@ -38,8 +36,6 @@ export function AppShell() {
     document.title = `${title} · moreopenrepeater`;
     window.scrollTo(0, 0);
   }, [title]);
-
-  const themeValue = colorScheme === "auto" ? "auto" : colorScheme;
 
   const nav = (
     <Stack gap={4} px="xs">
@@ -113,17 +109,7 @@ export function AppShell() {
           </Box>
           <Box style={{ flex: 1, overflow: "auto" }}>{nav}</Box>
           <Stack gap="sm">
-            <SegmentedControl
-              size="xs"
-              fullWidth
-              value={themeValue}
-              onChange={(value) => setColorScheme(value as "auto" | "light" | "dark")}
-              data={[
-                { label: "Auto", value: "auto" },
-                { label: "Light", value: "light" },
-                { label: "Dark", value: "dark" },
-              ]}
-            />
+            <ThemePicker />
             <ConnectionPill connected={connected} />
             {session?.auth_required ? (
               <Box>

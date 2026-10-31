@@ -18,6 +18,7 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { api, apiBlob } from "../api";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
+import { labeled } from "../components/FieldHint";
 
 type Asset = { id: string; kind: string; filename: string; uploaded_at: string };
 
@@ -309,8 +310,7 @@ export function Announcements() {
               onChange={(event) => setField("name", event.currentTarget.value)}
             />
             <Select
-              label="Audio"
-              description="Or play an uploaded clip (Audio & tones → Library)."
+              label={labeled("Audio", "Or play an uploaded clip (Audio & tones → Library).")}
               data={assets.map((asset) => ({ value: asset.id, label: asset.filename }))}
               value={form.asset_id || null}
               onChange={(value) => setField("asset_id", value || "")}
@@ -320,8 +320,7 @@ export function Announcements() {
             />
             {!usesClip ? (
               <TextInput
-                label="Message"
-                description="Spoken with text-to-speech. {callsign} is replaced with your callsign, spelled out."
+                label={labeled("Message", "Spoken with text-to-speech. {callsign} is replaced with your callsign, spelled out.")}
                 style={{ gridColumn: "1 / -1" }}
                 maxLength={2000}
                 placeholder="The {callsign} net meets tonight at 8 pm on this repeater."
@@ -351,8 +350,7 @@ export function Announcements() {
               />
             ) : (
               <TextInput
-                label="Times"
-                description="24-hour, station local time, comma-separated."
+                label={labeled("Times", "24-hour, station local time, comma-separated.")}
                 placeholder="08:00, 19:30"
                 value={form.times}
                 onChange={(event) => setField("times", event.currentTarget.value)}

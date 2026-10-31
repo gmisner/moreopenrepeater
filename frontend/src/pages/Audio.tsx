@@ -22,6 +22,7 @@ import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
 import { useSetupWizard } from "../wizard/SetupWizard";
+import { labeled } from "../components/FieldHint";
 
 type Asset = { id: string; kind: string; filename: string; uploaded_at: string };
 type AudioDevice = { name: string; inputs: number; outputs: number; default_samplerate: number };
@@ -558,8 +559,7 @@ export function Audio() {
                     allowDeselect={false}
                   />
                   <Select
-                    label="Clip"
-                    description="Plays instead of the built-in tone."
+                    label={labeled("Clip", "Plays instead of the built-in tone.")}
                     data={assetOptions(assets, "courtesy_tone")}
                     value={sounds.values.courtesy_tone_link_asset_id || null}
                     onChange={(value) => sounds.setField("courtesy_tone_link_asset_id", value || "")}
@@ -590,8 +590,7 @@ export function Audio() {
                     allowDeselect={false}
                   />
                   <Select
-                    label="Clip"
-                    description="Plays instead of the built-in tone."
+                    label={labeled("Clip", "Plays instead of the built-in tone.")}
                     data={assetOptions(assets, "courtesy_tone")}
                     value={sounds.values.courtesy_tone_patch_asset_id || null}
                     onChange={(value) => sounds.setField("courtesy_tone_patch_asset_id", value || "")}
@@ -737,14 +736,12 @@ export function Audio() {
                 </SimpleGrid>
                 <Stack gap="sm" mt="md">
                   <Switch
-                    label="De-emphasize receive audio"
-                    description="For flat audio taken from the discriminator, which sounds tinny without it (6 dB per octave, 300–3000 Hz)"
+                    label={labeled("De-emphasize receive audio", "For flat audio taken from the discriminator, which sounds tinny without it (6 dB per octave, 300–3000 Hz)")}
                     checked={engine.values.rx_deemphasis}
                     onChange={(event) => engine.setField("rx_deemphasis", event.currentTarget.checked)}
                   />
                   <Switch
-                    label="Pre-emphasize transmit audio"
-                    description="For a flat transmitter input that skips the radio's own pre-emphasis; turn transmit gain down if the highs clip"
+                    label={labeled("Pre-emphasize transmit audio", "For a flat transmitter input that skips the radio\'s own pre-emphasis; turn transmit gain down if the highs clip")}
                     checked={engine.values.tx_preemphasis}
                     onChange={(event) => engine.setField("tx_preemphasis", event.currentTarget.checked)}
                   />
@@ -771,8 +768,7 @@ export function Audio() {
                   />
                   {cosHardware ? (
                     <Select
-                      label="COS polarity"
-                      description="On a serial port, active high means the line is on (asserted) during a carrier."
+                      label={labeled("COS polarity", "On a serial port, active high means the line is on (asserted) during a carrier.")}
                       data={[
                         { value: "low", label: "Active low (pulled to ground on carrier)" },
                         { value: "high", label: "Active high" },
@@ -784,8 +780,7 @@ export function Audio() {
                   ) : null}
                   {engine.values.cos_source === "gpio" ? (
                     <NumberInput
-                      label="COS pin"
-                      description="BCM number; GPIO27 is header pin 13. 3.3 V only."
+                      label={labeled("COS pin", "BCM number; GPIO27 is header pin 13. 3.3 V only.")}
                       suffix=" GPIO"
                       min={2}
                       max={27}
@@ -797,12 +792,9 @@ export function Audio() {
                   {engine.values.cos_source === "serial" ? (
                     <>
                       <TextInput
-                        label="COS serial port"
-                        description={
-                          serialPorts.length
+                        label={labeled("COS serial port", serialPorts.length
                             ? `Known ports: ${serialPorts.map((p) => p.path).join(", ")}`
-                            : "A /dev/serial/by-id name stays the same when adapters are plugged in a different order."
-                        }
+                            : "A /dev/serial/by-id name stays the same when adapters are plugged in a different order.")}
                         placeholder="/dev/ttyUSB0"
                         spellCheck={false}
                         autoComplete="off"
@@ -832,8 +824,7 @@ export function Audio() {
                     required
                   />
                   <NumberInput
-                    label="VOX hold"
-                    description="How long audio can drop out before the carrier counts as gone."
+                    label={labeled("VOX hold", "How long audio can drop out before the carrier counts as gone.")}
                     suffix=" s"
                     min={0}
                     max={5}
@@ -844,8 +835,7 @@ export function Audio() {
                     required
                   />
                   <NumberInput
-                    label="VOX hold after a DTMF digit"
-                    description="The hold when the quiet comes right after a keypad tone. The longer of the two holds applies."
+                    label={labeled("VOX hold after a DTMF digit", "The hold when the quiet comes right after a keypad tone. The longer of the two holds applies.")}
                     suffix=" s"
                     min={0}
                     max={10}
@@ -856,8 +846,7 @@ export function Audio() {
                     required
                   />
                   <NumberInput
-                    label="Squelch-tail removal"
-                    description="Cut this much from the end of each transmission. 0 = off."
+                    label={labeled("Squelch-tail removal", "Cut this much from the end of each transmission. 0 = off.")}
                     suffix=" ms"
                     min={0}
                     max={300}
@@ -887,8 +876,7 @@ export function Audio() {
                   />
                   {engine.values.ptt_output === "gpio" ? (
                     <NumberInput
-                      label="PTT pin"
-                      description="BCM number; GPIO17 is header pin 11. Drive the radio through a transistor."
+                      label={labeled("PTT pin", "BCM number; GPIO17 is header pin 11. Drive the radio through a transistor.")}
                       suffix=" GPIO"
                       min={2}
                       max={27}
@@ -900,12 +888,9 @@ export function Audio() {
                   {engine.values.ptt_output === "serial" ? (
                     <>
                       <TextInput
-                        label="PTT serial port"
-                        description={
-                          serialPorts.length
+                        label={labeled("PTT serial port", serialPorts.length
                             ? `Known ports: ${serialPorts.map((p) => p.path).join(", ")}`
-                            : undefined
-                        }
+                            : undefined)}
                         placeholder="/dev/ttyUSB0"
                         spellCheck={false}
                         autoComplete="off"
@@ -926,8 +911,7 @@ export function Audio() {
                   ) : null}
                   {engine.values.ptt_output === "gpio" || engine.values.ptt_output === "serial" ? (
                     <Select
-                      label="PTT polarity"
-                      description="On a serial port, active high turns the line on (asserts it) to transmit."
+                      label={labeled("PTT polarity", "On a serial port, active high turns the line on (asserts it) to transmit.")}
                       data={[
                         { value: "high", label: "Active high (pin goes high to transmit)" },
                         { value: "low", label: "Active low" },
@@ -938,8 +922,7 @@ export function Audio() {
                     />
                   ) : null}
                   <NumberInput
-                    label="Transmit delay"
-                    description="Key up, then wait this long before any audio. 0 = off."
+                    label={labeled("Transmit delay", "Key up, then wait this long before any audio. 0 = off.")}
                     suffix=" ms"
                     min={0}
                     max={500}
@@ -957,8 +940,7 @@ export function Audio() {
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <NumberInput
-                    label="Transmit gain"
-                    description="Applied to repeated receive audio."
+                    label={labeled("Transmit gain", "Applied to repeated receive audio.")}
                     suffix=" dB"
                     min={-40}
                     max={20}
@@ -969,8 +951,7 @@ export function Audio() {
                     required
                   />
                   <Select
-                    label="Transmit CTCSS tone"
-                    description="Added under everything the repeater sends. Leave blank for none."
+                    label={labeled("Transmit CTCSS tone", "Added under everything the repeater sends. Leave blank for none.")}
                     data={CTCSS_TONES.map((hz) => ({ value: String(hz), label: `${hz.toFixed(1)} Hz` }))}
                     value={engine.values.tx_ctcss_hz === "" ? null : String(engine.values.tx_ctcss_hz)}
                     onChange={(value) =>
@@ -981,8 +962,7 @@ export function Audio() {
                     placeholder="off"
                   />
                   <NumberInput
-                    label="CTCSS level"
-                    description="Adjust for about 500–750 Hz of deviation on the transmitter."
+                    label={labeled("CTCSS level", "Adjust for about 500–750 Hz of deviation on the transmitter.")}
                     suffix=" dBFS"
                     min={-40}
                     max={-6}
@@ -993,8 +973,7 @@ export function Audio() {
                 </SimpleGrid>
                 <Switch
                   mt="md"
-                  label="Mute DTMF tones"
-                  description="Commands are still decoded, but the tones aren't transmitted, sent to links or recorded"
+                  label={labeled("Mute DTMF tones", "Commands are still decoded, but the tones aren\'t transmitted, sent to links or recorded")}
                   checked={engine.values.dtmf_mute}
                   onChange={(event) => engine.setField("dtmf_mute", event.currentTarget.checked)}
                 />

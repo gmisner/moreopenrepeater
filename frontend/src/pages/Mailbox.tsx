@@ -18,6 +18,7 @@ import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, notifySuccess, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
+import { labeled } from "../components/FieldHint";
 
 type MailboxBox = {
   box: string;
@@ -188,8 +189,7 @@ export function Mailbox() {
           />
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <TextInput
-              label="Leave a message"
-              description="Then the mailbox number and #. Key up again to record."
+              label={labeled("Leave a message", "Then the mailbox number and #. Key up again to record.")}
               required
               maxLength={8}
               pattern="[0-9A-D*]{1,8}"
@@ -197,8 +197,7 @@ export function Mailbox() {
               onChange={(event) => setField("mailbox_leave_code", event.currentTarget.value)}
             />
             <TextInput
-              label="Play messages"
-              description="Then the mailbox number, *, the PIN and #."
+              label={labeled("Play messages", "Then the mailbox number, *, the PIN and #.")}
               required
               maxLength={8}
               pattern="[0-9A-D*]{1,8}"
@@ -206,8 +205,7 @@ export function Mailbox() {
               onChange={(event) => setField("mailbox_play_code", event.currentTarget.value)}
             />
             <TextInput
-              label="Delete messages"
-              description="Then the mailbox number, *, the PIN and #."
+              label={labeled("Delete messages", "Then the mailbox number, *, the PIN and #.")}
               required
               maxLength={8}
               pattern="[0-9A-D*]{1,8}"
@@ -234,8 +232,7 @@ export function Mailbox() {
               onChange={(value) => setField("mailbox_retention_days", Number(value) || 0)}
             />
             <NumberInput
-              label="Remind every"
-              description={'"Messages waiting for mailbox 1 2." 0 turns reminders off. Skipped during a net.'}
+              label={labeled("Remind every", '"Messages waiting for mailbox 1 2." 0 turns reminders off. Skipped during a net.')}
               suffix=" minutes"
               min={0}
               max={1440}
@@ -325,8 +322,7 @@ export function Mailbox() {
                     onChange={(event) => setBoxName(event.currentTarget.value)}
                   />
                   <TextInput
-                    label="PIN"
-                    description={pinNote}
+                    label={labeled("PIN", pinNote)}
                     inputMode="numeric"
                     maxLength={8}
                     pattern="[0-9]{4,8}"

@@ -19,6 +19,7 @@ import { api } from "../api";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
+import { labeled } from "../components/FieldHint";
 
 const POLL_MS = 2000;
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -461,8 +462,7 @@ export function Updates() {
             onChange={(event) => setAutoForm((prev) => ({ ...prev, start: event.currentTarget.value }))}
           />
           <TextInput
-            label="Until"
-            description="Earlier than From runs past midnight."
+            label={labeled("Until", "Earlier than From runs past midnight.")}
             type="time"
             required
             value={autoForm.end}

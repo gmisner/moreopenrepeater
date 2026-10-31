@@ -19,6 +19,7 @@ import { api } from "../api";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
+import { labeled } from "../components/FieldHint";
 
 const ROLES = [
   { value: "viewer", label: "Viewer" },
@@ -284,8 +285,7 @@ export function Users() {
             onChange={(event) => setUsername(event.currentTarget.value)}
           />
           <PasswordInput
-            label="Password"
-            description="At least 8 characters."
+            label={labeled("Password", "At least 8 characters.")}
             required
             minLength={8}
             autoComplete="new-password"
@@ -425,8 +425,7 @@ export function Users() {
               <Code block>{mcpConfig}</Code>
             </Stack>
             <Switch
-              label="Let API tokens make the repeater transmit"
-              description="Sending the ID, dialing DTMF macros, playing announcements, linking, starting nets and phone calls. Off, a token can still change settings but can't key up. You're still the control operator for whatever goes out."
+              label={labeled("Let API tokens make the repeater transmit", "Sending the ID, dialing DTMF macros, playing announcements, linking, starting nets and phone calls. Off, a token can still change settings but can\'t key up. You\'re still the control operator for whatever goes out.")}
               checked={Boolean(agent?.transmit)}
               onChange={(event) => void setTransmit(event.currentTarget.checked)}
             />

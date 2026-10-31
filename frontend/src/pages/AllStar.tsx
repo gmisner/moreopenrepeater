@@ -19,6 +19,7 @@ import { api } from "../api";
 import { notifyError, notifySuccess, useConfig } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
+import { labeled } from "../components/FieldHint";
 
 const REFRESH_MS = 2000;
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -444,14 +445,11 @@ export function AllStar() {
           <form onSubmit={(event) => void bindNode(event)}>
             <Stack gap="md" mt="md">
               <Select
-                label="Node"
-                description={
-                  selected
+                label={labeled("Node", selected
                     ? selected.controlled
                       ? "The repeater is its radio."
                       : `Its radio is ${radioName(selected.rxchannel)} now.`
-                    : undefined
-                }
+                    : undefined)}
                 data={status!.nodes.map((n) => ({ value: n.number, label: n.number }))}
                 value={selectedNode || null}
                 onChange={(value) => setSelectedNode(value || "")}
@@ -718,8 +716,7 @@ export function AllStar() {
               <Stack gap="md" mt="md">
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <TextInput
-                    label="Callsign"
-                    description="With -R for a repeater, as validated by EchoLink."
+                    label={labeled("Callsign", "With -R for a repeater, as validated by EchoLink.")}
                     required
                     value={echoForm.callsign}
                     onChange={(event) => setEchoField("callsign", event.currentTarget.value)}
@@ -790,8 +787,7 @@ export function AllStar() {
                     }
                   />
                   <NumberInput
-                    label="Tone"
-                    description="0 for none."
+                    label={labeled("Tone", "0 for none.")}
                     suffix=" Hz"
                     min={0}
                     max={300}

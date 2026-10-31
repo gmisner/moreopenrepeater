@@ -4,6 +4,7 @@ import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
+import { labeled } from "../components/FieldHint";
 
 type UsageSummary = {
   rx_seconds: number;
@@ -144,8 +145,7 @@ export function Activity() {
             Recordings
           </Text>
           <Switch
-            label="Record transmissions"
-            description="Saves what the repeater hears (needs live audio)"
+            label={labeled("Record transmissions", "Saves what the repeater hears (needs live audio)")}
             checked={rec.values.record_transmissions}
             onChange={(event) => rec.setField("record_transmissions", event.currentTarget.checked)}
           />

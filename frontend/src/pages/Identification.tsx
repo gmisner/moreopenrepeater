@@ -2,6 +2,7 @@ import { Card, NumberInput, Select, SimpleGrid, Stack, Switch, Text, TextInput, 
 import { ConfigActions } from "../components/ConfigActions";
 import { useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
+import { labeled } from "../components/FieldHint";
 
 type IdValues = {
   gmrs_mode: boolean;
@@ -71,8 +72,7 @@ export function Identification() {
       <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <Stack gap="md">
           <Switch
-            label="GMRS mode"
-            description="Uses GMRS channel rules and wording where they differ from amateur"
+            label={labeled("GMRS mode", "Uses GMRS channel rules and wording where they differ from amateur")}
             checked={values.gmrs_mode}
             onChange={(event) => setField("gmrs_mode", event.currentTarget.checked)}
           />
@@ -93,8 +93,7 @@ export function Identification() {
               onChange={(value) => setField("id_mode", value || "voice")}
             />
             <NumberInput
-              label="ID interval"
-              description="How often the station ID goes out while the repeater is in use."
+              label={labeled("ID interval", "How often the station ID goes out while the repeater is in use.")}
               suffix=" s"
               min={1}
               value={values.id_interval}
@@ -102,8 +101,7 @@ export function Identification() {
               required
             />
             <NumberInput
-              label="ID audio duration"
-              description="Reserved airtime for the ID clip."
+              label={labeled("ID audio duration", "Reserved airtime for the ID clip.")}
               suffix=" s"
               min={0.1}
               step={0.1}
@@ -113,8 +111,7 @@ export function Identification() {
               required
             />
             <NumberInput
-              label="Skip ID after short QSOs"
-              description="If the last key-up was shorter than this, wait for the next one before IDing."
+              label={labeled("Skip ID after short QSOs", "If the last key-up was shorter than this, wait for the next one before IDing.")}
               suffix=" s"
               min={0}
               max={10}
@@ -126,8 +123,7 @@ export function Identification() {
             />
           </SimpleGrid>
           <Switch
-            label="ID when idle"
-            description="Also ID on the interval when nobody is using the repeater"
+            label={labeled("ID when idle", "Also ID on the interval when nobody is using the repeater")}
             checked={values.idle_id}
             onChange={(event) => setField("idle_id", event.currentTarget.checked)}
           />
@@ -138,7 +134,7 @@ export function Identification() {
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <NumberInput label="Speed" suffix=" WPM" min={1} max={60} value={values.cw_wpm} onChange={(value) => setField("cw_wpm", Number(value) || 0)} required />
             <NumberInput label="Tone" suffix=" Hz" min={100} max={3000} value={values.cw_tone_hz} onChange={(value) => setField("cw_tone_hz", Number(value) || 0)} required />
-            <TextInput label="Suffix" placeholder="none" description="e.g. /R" value={values.cw_id_suffix} onChange={(event) => setField("cw_id_suffix", event.currentTarget.value)} />
+            <TextInput label={labeled("Suffix", "e.g. /R")} placeholder="none" value={values.cw_id_suffix} onChange={(event) => setField("cw_id_suffix", event.currentTarget.value)} />
           </SimpleGrid>
 
           <Title order={2} c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>
@@ -146,9 +142,8 @@ export function Identification() {
           </Title>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <TextInput
-              label="Spoken ID text"
+              label={labeled("Spoken ID text", "Use {callsign} and {time} placeholders.")}
               placeholder="{callsign} repeater"
-              description="Use {callsign} and {time} placeholders."
               value={values.voice_id_text}
               onChange={(event) => setField("voice_id_text", event.currentTarget.value)}
             />

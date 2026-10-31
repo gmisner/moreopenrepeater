@@ -18,6 +18,7 @@ import { useMemo, useState } from "react";
 import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, useConfig, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
+import { labeled } from "../components/FieldHint";
 
 const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const MAX_COMMENT = 43;
@@ -237,8 +238,7 @@ export function Aprs() {
           />
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <TextInput
-              label="APRS callsign"
-              description="Your passcode is derived from this automatically."
+              label={labeled("APRS callsign", "Your passcode is derived from this automatically.")}
               placeholder="e.g. W1AW-10"
               value={beacon.values.aprs_callsign}
               onChange={(event) => beacon.setField("aprs_callsign", event.currentTarget.value)}
@@ -253,12 +253,9 @@ export function Aprs() {
               onChange={(value) => beacon.setField("aprs_beacon_interval", Number(value) || 0)}
             />
             <TextInput
-              label="Beacon comment"
-              description={
-                preview
+              label={labeled("Beacon comment", preview
                   ? `Sends: ${preview}${preview.length > MAX_COMMENT ? ` — ${preview.length} characters; radios may only show the first ${MAX_COMMENT}.` : ""}`
-                  : undefined
-              }
+                  : undefined)}
               placeholder="e.g. Hartford CT, net Tue 8pm"
               value={beacon.values.aprs_comment}
               onChange={(event) => beacon.setField("aprs_comment", event.currentTarget.value)}
@@ -297,8 +294,7 @@ export function Aprs() {
                       }
                     />
                     <TextInput
-                      label="Grid square or coordinates"
-                      description="Fills in the latitude and longitude."
+                      label={labeled("Grid square or coordinates", "Fills in the latitude and longitude.")}
                       placeholder="FN31pr or 41.7148, -72.7272"
                       autoComplete="off"
                       value={lookup}
@@ -333,8 +329,7 @@ export function Aprs() {
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <NumberInput
-                    label="Output frequency"
-                    description="Lets APRS radios tune to the repeater with one button."
+                    label={labeled("Output frequency", "Lets APRS radios tune to the repeater with one button.")}
                     suffix=" MHz"
                     placeholder="blank = leave out"
                     min={28}
@@ -347,8 +342,7 @@ export function Aprs() {
                     }
                   />
                   <NumberInput
-                    label="Offset"
-                    description="e.g. -0.6 or 5. Use 0 for simplex."
+                    label={labeled("Offset", "e.g. -0.6 or 5. Use 0 for simplex.")}
                     suffix=" MHz"
                     placeholder="standard"
                     min={-9.99}
@@ -466,13 +460,10 @@ export function Aprs() {
               allowDeselect={false}
             />
             <TextInput
-              label="Map tiles"
-              description={
-                <>
+              label={labeled("Map tiles", <>
                   A <Code>{`{z}/{x}/{y}`}</Code> tile URL. Leave blank on repeaters without internet to show range rings
                   only.
-                </>
-              }
+                </>)}
               placeholder="blank = no background map"
               value={map.values.aprs_map_tiles}
               onChange={(event) => map.setField("aprs_map_tiles", event.currentTarget.value)}

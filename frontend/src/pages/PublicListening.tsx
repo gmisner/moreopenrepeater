@@ -20,6 +20,7 @@ import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, notifySuccess, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
+import { labeled } from "../components/FieldHint";
 
 const STATUS_POLL_MS = 3000;
 
@@ -209,8 +210,7 @@ export function PublicListening() {
       >
         <Stack gap="md">
           <Select
-            label="Listening page"
-            description='"Signed-in accounts only" asks for a sign-in first. Any account works, and a Listener account (added on the Users page) gets this page and nothing else.'
+            label={labeled("Listening page", "\"Signed-in accounts only\" asks for a sign-in first. Any account works, and a Listener account (added on the Users page) gets this page and nothing else.")}
             data={[
               { value: "off", label: "Off" },
               { value: "signed_in", label: "Signed-in accounts only" },
@@ -230,22 +230,19 @@ export function PublicListening() {
             </Text>
           ) : null}
           <TextInput
-            label="Text on the page"
-            description="Shown under the callsign. The page also shows whether the repeater is on the air and whether a net is in session."
+            label={labeled("Text on the page", "Shown under the callsign. The page also shows whether the repeater is on the air and whether a net is in session.")}
             maxLength={500}
             placeholder="146.940 MHz, -0.6 MHz, 100.0 Hz tone"
             value={page.values.public_page_text}
             onChange={(event) => page.setField("public_page_text", event.currentTarget.value)}
           />
           <Switch
-            label="Visitors can listen live"
-            description="Only what's transmitted"
+            label={labeled("Visitors can listen live", "Only what\'s transmitted")}
             checked={page.values.public_page_audio}
             onChange={(event) => page.setField("public_page_audio", event.currentTarget.checked)}
           />
           <NumberInput
-            label="Listeners at once"
-            description="Each listener takes about 256 kbps of this controller's upload. Without a sign-in, at most 3 from one address."
+            label={labeled("Listeners at once", "Each listener takes about 256 kbps of this controller\'s upload. Without a sign-in, at most 3 from one address.")}
             min={1}
             max={200}
             required
@@ -306,14 +303,9 @@ export function PublicListening() {
                 onChange={(event) => setStreamField("username", event.currentTarget.value)}
               />
               <TextInput
-                label="Password"
-                type="password"
-                autoComplete="new-password"
-                description={
-                  passwordSet
+                label={labeled("Password", passwordSet
                     ? "Saved on this controller only, out of backups."
-                    : "Kept on this controller only, out of backups."
-                }
+                    : "Kept on this controller only, out of backups.")}
                 placeholder={passwordSet ? "(saved; leave blank to keep)" : undefined}
                 value={streamForm.password}
                 onChange={(event) => setStreamField("password", event.currentTarget.value)}

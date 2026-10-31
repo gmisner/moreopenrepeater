@@ -20,6 +20,7 @@ import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
 import { useStatus } from "../status";
+import { labeled } from "../components/FieldHint";
 
 type Checkin = { id: string; at: number; callsign: string; notes: string };
 
@@ -549,8 +550,7 @@ export function Net() {
               onChange={(event) => settings.setField("net_name", event.currentTarget.value)}
             />
             <NumberInput
-              label="End by itself after"
-              description="In case nobody ends it."
+              label={labeled("End by itself after", "In case nobody ends it.")}
               suffix=" minutes"
               min={10}
               max={1440}
@@ -559,8 +559,7 @@ export function Net() {
               required
             />
             <NumberInput
-              label="Timeout timer during a net"
-              description="Net control often talks longer than the usual timeout allows."
+              label={labeled("Timeout timer during a net", "Net control often talks longer than the usual timeout allows.")}
               suffix=" s"
               min={30}
               max={3600}
@@ -580,16 +579,14 @@ export function Net() {
               required
             />
             <Select
-              label="Built-in courtesy tone"
-              description="Replaces every courtesy tone while the net runs."
+              label={labeled("Built-in courtesy tone", "Replaces every courtesy tone while the net runs.")}
               data={TONE_STYLES}
               value={settings.values.net_courtesy_tone_style}
               onChange={(value) => settings.setField("net_courtesy_tone_style", value || "same")}
               allowDeselect={false}
             />
             <TextInput
-              label="Courtesy tone clip"
-              description="Plays instead of the built-in tone. Asset id, or blank for none."
+              label={labeled("Courtesy tone clip", "Plays instead of the built-in tone. Asset id, or blank for none.")}
               value={settings.values.net_courtesy_tone_asset_id}
               onChange={(event) => settings.setField("net_courtesy_tone_asset_id", event.currentTarget.value)}
             />
@@ -605,8 +602,7 @@ export function Net() {
               allowDeselect={false}
             />
             <TextInput
-              label="Node"
-              description='For "Link a node": dropped again when the net ends.'
+              label={labeled("Node", "For \"Link a node\": dropped again when the net ends.")}
               inputMode="numeric"
               pattern="[0-9]{0,10}"
               placeholder="2000"
@@ -621,8 +617,7 @@ export function Net() {
               onChange={(event) => settings.setField("net_start_say", event.currentTarget.value)}
             />
             <TextInput
-              label="When it ends"
-              description="{name} is the net's name."
+              label={labeled("When it ends", "{name} is the net\'s name.")}
               placeholder="Net mode off."
               maxLength={500}
               value={settings.values.net_end_say}
@@ -630,14 +625,12 @@ export function Net() {
             />
           </SimpleGrid>
           <Switch
-            label="Hold announcements"
-            description="Ones that come due play after the net (weather alerts still go out)"
+            label={labeled("Hold announcements", "Ones that come due play after the net (weather alerts still go out)")}
             checked={settings.values.net_hold_announcements}
             onChange={(event) => settings.setField("net_hold_announcements", event.currentTarget.checked)}
           />
           <Switch
-            label="Hold phone patch"
-            description="A call in progress is hung up when the net starts"
+            label={labeled("Hold phone patch", "A call in progress is hung up when the net starts")}
             checked={settings.values.net_hold_autopatch}
             onChange={(event) => settings.setField("net_hold_autopatch", event.currentTarget.checked)}
           />

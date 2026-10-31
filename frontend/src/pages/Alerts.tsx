@@ -22,6 +22,7 @@ import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
+import { labeled } from "../components/FieldHint";
 
 const CHANNEL_LABELS: Record<string, string> = {
   ntfy: "ntfy",
@@ -454,8 +455,7 @@ export function Alerts() {
         <Stack gap="md">
           <Title order={2}>Where to send alerts</Title>
           <Switch
-            label="Send alerts"
-            description="Each problem once when it starts (and again when it's over), at most a dozen an hour"
+            label={labeled("Send alerts", "Each problem once when it starts (and again when it\'s over), at most a dozen an hour")}
             checked={form.enabled}
             onChange={(event) => setField("enabled", event.currentTarget.checked)}
           />
@@ -492,8 +492,7 @@ export function Alerts() {
                     />
                     <Stack gap={4}>
                       <PasswordInput
-                        label="Access token"
-                        description="Only for a server with access control."
+                        label={labeled("Access token", "Only for a server with access control.")}
                         placeholder={secretPlaceholder("ntfy_token")}
                         value={form.ntfy_token}
                         onChange={(event) => setField("ntfy_token", event.currentTarget.value)}
@@ -574,8 +573,7 @@ export function Alerts() {
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
                   <TextInput
-                    label="Send to"
-                    description="Separate several addresses with commas."
+                    label={labeled("Send to", "Separate several addresses with commas.")}
                     placeholder="you@example.com"
                     value={form.email_to}
                     onChange={(event) => setField("email_to", event.currentTarget.value)}
@@ -617,8 +615,7 @@ export function Alerts() {
                   />
                   <Stack gap={4}>
                     <PasswordInput
-                      label="Password"
-                      description="For Gmail, an app password."
+                      label={labeled("Password", "For Gmail, an app password.")}
                       placeholder={secretPlaceholder("smtp_password")}
                       value={form.smtp_password}
                       onChange={(event) => setField("smtp_password", event.currentTarget.value)}
@@ -654,8 +651,7 @@ export function Alerts() {
               <Accordion.Panel>
                 <Stack gap={4}>
                   <PasswordInput
-                    label="URL"
-                    description="Gets a JSON POST. Slack and Discord webhook URLs work as they are."
+                    label={labeled("URL", "Gets a JSON POST. Slack and Discord webhook URLs work as they are.")}
                     placeholder={secretPlaceholder("webhook_url") || "https://hooks.slack.com/services/…"}
                     value={form.webhook_url}
                     onChange={(event) => setField("webhook_url", event.currentTarget.value)}
@@ -675,8 +671,7 @@ export function Alerts() {
             Limits
           </Title>
           <NumberInput
-            label="CPU temperature alert"
-            description="A Pi slows itself down at 80–85 °C."
+            label={labeled("CPU temperature alert", "A Pi slows itself down at 80–85 °C.")}
             suffix=" °C"
             min={40}
             max={100}

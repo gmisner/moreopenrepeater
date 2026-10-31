@@ -2,6 +2,7 @@ import { Card, NumberInput, Select, SimpleGrid, Stack, Switch, Text, Title } fro
 import { ConfigActions } from "../components/ConfigActions";
 import { useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
+import { labeled } from "../components/FieldHint";
 
 type TimingValues = {
   transmitter_enabled: boolean;
@@ -59,15 +60,13 @@ export function Timing() {
       <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <Stack gap="md">
           <Switch
-            label="Transmitter enabled"
-            description="Off stops all transmissions; DTMF still works"
+            label={labeled("Transmitter enabled", "Off stops all transmissions; DTMF still works")}
             checked={values.transmitter_enabled}
             onChange={(event) => setField("transmitter_enabled", event.currentTarget.checked)}
           />
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <NumberInput
-              label="Courtesy tone duration"
-              description="How long the courtesy tone plays after a user unkeys."
+              label={labeled("Courtesy tone duration", "How long the courtesy tone plays after a user unkeys.")}
               suffix=" s"
               min={0.1}
               step={0.1}
@@ -77,8 +76,7 @@ export function Timing() {
               required
             />
             <NumberInput
-              label="Hang time"
-              description="Transmitter stays keyed this long after the courtesy tone. Not used on a simplex node."
+              label={labeled("Hang time", "Transmitter stays keyed this long after the courtesy tone. Not used on a simplex node.")}
               suffix=" s"
               min={0.1}
               step={0.1}
@@ -88,8 +86,7 @@ export function Timing() {
               required
             />
             <NumberInput
-              label="Timeout timer (TOT)"
-              description="Maximum continuous transmission before the repeater times out."
+              label={labeled("Timeout timer (TOT)", "Maximum continuous transmission before the repeater times out.")}
               suffix=" s"
               min={1}
               step={1}
@@ -98,8 +95,7 @@ export function Timing() {
               required
             />
             <NumberInput
-              label="Required CTCSS tone"
-              description="Leave blank for carrier access (no tone required)."
+              label={labeled("Required CTCSS tone", "Leave blank for carrier access (no tone required).")}
               suffix=" Hz"
               min={0}
               step={0.1}
@@ -109,8 +105,7 @@ export function Timing() {
               onChange={(value) => setField("require_ctcss_hz", value === "" || value === undefined ? "" : Number(value))}
             />
             <Select
-              label="Access"
-              description="Every transmission: carrier, plus the required CTCSS tone if one is set."
+              label={labeled("Access", "Every transmission: carrier, plus the required CTCSS tone if one is set.")}
               data={[
                 { value: "carrier", label: "Every transmission" },
                 { value: "ctcss_open", label: "CTCSS opens, then carrier" },
@@ -120,8 +115,7 @@ export function Timing() {
               onChange={(value) => setField("access_mode", value || "carrier")}
             />
             <NumberInput
-              label="Tone burst length"
-              description="The shortest 1750 Hz burst that opens the repeater."
+              label={labeled("Tone burst length", "The shortest 1750 Hz burst that opens the repeater.")}
               suffix=" ms"
               min={100}
               max={2000}
@@ -131,8 +125,7 @@ export function Timing() {
               required
             />
             <NumberInput
-              label="Kerchunk filter"
-              description="A key-up must last this long before the repeater comes up. 0 turns the filter off."
+              label={labeled("Kerchunk filter", "A key-up must last this long before the repeater comes up. 0 turns the filter off.")}
               suffix=" s"
               min={0}
               max={3}
@@ -161,8 +154,7 @@ export function Timing() {
             onChange={(value) => setField("node_mode", value || "repeater")}
           />
           <Switch
-            label="Courtesy tone after a local user"
-            description="Simplex node only; tells them the node heard them"
+            label={labeled("Courtesy tone after a local user", "Simplex node only; tells them the node heard them")}
             checked={values.simplex_courtesy_tone}
             onChange={(event) => setField("simplex_courtesy_tone", event.currentTarget.checked)}
           />
@@ -175,8 +167,7 @@ export function Timing() {
           </Text>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <NumberInput
-              label="Lock out after"
-              description="0 turns the lockout off."
+              label={labeled("Lock out after", "0 turns the lockout off.")}
               suffix=" timeouts"
               min={0}
               max={20}
@@ -194,8 +185,7 @@ export function Timing() {
               required
             />
             <NumberInput
-              label="Clear after quiet for"
-              description="Or clear it from the dashboard, or with a DTMF macro."
+              label={labeled("Clear after quiet for", "Or clear it from the dashboard, or with a DTMF macro.")}
               suffix=" s"
               min={5}
               max={3600}

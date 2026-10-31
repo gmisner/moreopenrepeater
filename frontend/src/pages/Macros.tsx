@@ -19,6 +19,7 @@ import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
+import { labeled } from "../components/FieldHint";
 
 type Macro = {
   pattern: string;
@@ -368,16 +369,14 @@ export function Macros() {
               allowDeselect={false}
             />
             <TextInput
-              label="Description"
-              description="Spoken help reads this after the digits."
+              label={labeled("Description", "Spoken help reads this after the digits.")}
               placeholder="Disconnect all links"
               value={form.description}
               onChange={(event) => setField("description", event.currentTarget.value)}
             />
             {action === "help" ? (
               <NumberInput
-                label="Page"
-                description="Long lists are split into pages of 8 when there's a help macro for the next page."
+                label={labeled("Page", "Long lists are split into pages of 8 when there\'s a help macro for the next page.")}
                 min={1}
                 max={99}
                 value={form.help_page === "" ? undefined : Number(form.help_page)}
@@ -457,8 +456,7 @@ export function Macros() {
             ) : null}
             {action === "homeassistant" ? (
               <TextInput
-                label="Webhook ID or event"
-                description="A webhook ID, or event: and an event type (letters, digits, _ . -)."
+                label={labeled("Webhook ID or event", "A webhook ID, or event: and an event type (letters, digits, _ . -).")}
                 placeholder="porch_light or event:repeater_porch"
                 required
                 pattern="(event:)?[A-Za-z0-9_.\-]{1,100}"
@@ -468,8 +466,7 @@ export function Macros() {
             ) : null}
             {action === "metar" ? (
               <Select
-                label="Airport"
-                description="Airports are listed on the Weather page."
+                label={labeled("Airport", "Airports are listed on the Weather page.")}
                 data={airportOptions}
                 value={form.metar_icao}
                 onChange={(value) => setField("metar_icao", value ?? "")}
@@ -542,8 +539,7 @@ export function Macros() {
           </Text>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <TextInput
-              label="Home Assistant address"
-              description="As this controller reaches it."
+              label={labeled("Home Assistant address", "As this controller reaches it.")}
               placeholder="http://homeassistant.local:8123"
               pattern="https?://\S+"
               value={ha.values.homeassistant_url}

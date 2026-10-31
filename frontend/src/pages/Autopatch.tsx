@@ -19,6 +19,7 @@ import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, notifySuccess, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
+import { labeled } from "../components/FieldHint";
 
 const REFRESH_MS = 1000;
 const TRUNK_REFRESH_MS = 5000;
@@ -558,8 +559,7 @@ export function Autopatch() {
             <Stack gap="md" mt="md">
               <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                 <Select
-                  label="Provider"
-                  description={provider.hint}
+                  label={labeled("Provider", provider.hint)}
                   data={[
                     { value: "voipms", label: "VoIP.ms" },
                     { value: "telnyx", label: "Telnyx" },
@@ -598,8 +598,7 @@ export function Autopatch() {
                   onChange={(event) => setTrunkField("password", event.currentTarget.value)}
                 />
                 <Select
-                  label="Number format"
-                  description="How 10-digit numbers are sent. 911 always goes out as dialed."
+                  label={labeled("Number format", "How 10-digit numbers are sent. 911 always goes out as dialed.")}
                   data={[
                     { value: "", label: "As dialed" },
                     { value: "1", label: "1 + 10 digits" },
@@ -616,8 +615,7 @@ export function Autopatch() {
                   <Accordion.Panel>
                     <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                       <TextInput
-                        label="Login name"
-                        description="Only if the provider gives a separate one."
+                        label={labeled("Login name", "Only if the provider gives a separate one.")}
                         autoComplete="off"
                         spellCheck={false}
                         placeholder="Same as username"
@@ -643,8 +641,7 @@ export function Autopatch() {
                         allowDeselect={false}
                       />
                       <TextInput
-                        label="Calls in come from"
-                        description="Addresses or networks, separated by spaces, that your provider sends calls from besides the server."
+                        label={labeled("Calls in come from", "Addresses or networks, separated by spaces, that your provider sends calls from besides the server.")}
                         autoComplete="off"
                         spellCheck={false}
                         placeholder="Just the server"
@@ -699,16 +696,14 @@ export function Autopatch() {
           />
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <TextInput
-              label="Access code"
-              description="Users send this, the number, then # (or just unkey, or wait 5 seconds)."
+              label={labeled("Access code", "Users send this, the number, then # (or just unkey, or wait 5 seconds).")}
               required
               autoComplete="off"
               value={patch.values.autopatch_access_code}
               onChange={(event) => patch.setField("autopatch_access_code", event.currentTarget.value)}
             />
             <TextInput
-              label="Hang-up code"
-              description="Ends the call while one is up."
+              label={labeled("Hang-up code", "Ends the call while one is up.")}
               required
               autoComplete="off"
               value={patch.values.autopatch_hangup_code}
@@ -721,15 +716,13 @@ export function Autopatch() {
               <Accordion.Panel>
                 <Stack gap="md">
                   <TextInput
-                    label="Allowed numbers"
-                    description="Patterns separated by spaces: X is any digit, N is 2–9, Z is 1–9."
+                    label={labeled("Allowed numbers", "Patterns separated by spaces: X is any digit, N is 2–9, Z is 1–9.")}
                     autoComplete="off"
                     value={patch.values.autopatch_allowed}
                     onChange={(event) => patch.setField("autopatch_allowed", event.currentTarget.value)}
                   />
                   <TextInput
-                    label="Blocked numbers"
-                    description="Checked after the allowed list."
+                    label={labeled("Blocked numbers", "Checked after the allowed list.")}
                     autoComplete="off"
                     value={patch.values.autopatch_blocked}
                     onChange={(event) => patch.setField("autopatch_blocked", event.currentTarget.value)}
@@ -742,8 +735,7 @@ export function Autopatch() {
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <NumberInput
-                    label="Maximum call length"
-                    description="Users hear a warning 30 seconds before the end."
+                    label={labeled("Maximum call length", "Users hear a warning 30 seconds before the end.")}
                     suffix=" s"
                     min={30}
                     max={3600}
@@ -770,16 +762,14 @@ export function Autopatch() {
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <TextInput
-                    label="Dial string"
-                    description="{number} becomes the dialed digits. PJSIP/{number}@mor-trunk is the phone line above."
+                    label={labeled("Dial string", "{number} becomes the dialed digits. PJSIP/{number}@mor-trunk is the phone line above.")}
                     required
                     autoComplete="off"
                     value={patch.values.autopatch_dial_string}
                     onChange={(event) => patch.setField("autopatch_dial_string", event.currentTarget.value)}
                   />
                   <TextInput
-                    label="Caller ID"
-                    description='e.g. "W1AW Repeater" <8605550100>'
+                    label={labeled("Caller ID", "e.g. \"W1AW Repeater\" <8605550100>")}
                     autoComplete="off"
                     value={patch.values.autopatch_caller_id}
                     onChange={(event) => patch.setField("autopatch_caller_id", event.currentTarget.value)}
@@ -810,8 +800,7 @@ export function Autopatch() {
             onChange={(event) => incoming.setField("autopatch_incoming_enabled", event.currentTarget.checked)}
           />
           <TextInput
-            label="Access code"
-            description="Callers key it in, then #. Calls aren't answered without one."
+            label={labeled("Access code", "Callers key it in, then #. Calls aren\'t answered without one.")}
             inputMode="numeric"
             autoComplete="off"
             placeholder="4 to 8 digits"

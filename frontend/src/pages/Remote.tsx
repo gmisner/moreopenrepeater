@@ -17,6 +17,7 @@ import { api } from "../api";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
+import { labeled } from "../components/FieldHint";
 
 const POLL_MS = 2000;
 
@@ -273,8 +274,7 @@ export function Remote() {
               Either way, this controller becomes a device on your tailnet.
             </Text>
             <PasswordInput
-              label="Auth key"
-              description="Optional if you use the login link instead."
+              label={labeled("Auth key", "Optional if you use the login link instead.")}
               placeholder="tskey-auth-…"
               value={authKey}
               onChange={(event) => setAuthKey(event.currentTarget.value)}

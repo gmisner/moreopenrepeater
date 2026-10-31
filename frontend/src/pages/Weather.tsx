@@ -18,6 +18,7 @@ import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
+import { labeled } from "../components/FieldHint";
 
 type WeatherAlert = {
   id: string;
@@ -314,8 +315,7 @@ export function Weather() {
               onChange={(value) => wx.setField("wx_lon", value === "" || value === undefined ? "" : Number(value))}
             />
             <TextInput
-              label="Grid square or coordinates"
-              description="Fills in the latitude and longitude."
+              label={labeled("Grid square or coordinates", "Fills in the latitude and longitude.")}
               placeholder="FN31pr or 41.7148, -72.7272"
               value={lookup}
               onChange={(event) => setLookup(event.currentTarget.value)}
@@ -353,8 +353,7 @@ export function Weather() {
               required
             />
             <NumberInput
-              label="Repeat ongoing alerts every"
-              description="0 = announce each alert only once."
+              label={labeled("Repeat ongoing alerts every", "0 = announce each alert only once.")}
               suffix=" min"
               min={0}
               step={5}

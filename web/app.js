@@ -36,6 +36,7 @@ import { applyStatus, connectStatusSocket, initStatus } from "./js/status.js";
 import { initThemePicker } from "./js/theme_picker.js";
 import { initTranscripts } from "./js/transcripts.js";
 import { toastError } from "./js/ui.js";
+import { initTailscale } from "./js/tailscale.js";
 import { initUpdates } from "./js/updates.js";
 import { initUsage } from "./js/usage.js";
 import { initUsers } from "./js/users.js";
@@ -82,6 +83,7 @@ async function main() {
   initUsers();
   initAudit();
   initUpdates();
+  initTailscale();
   initAlerts();
   initWizard();
   // Last, so fold summaries describe values the other modules just filled in.

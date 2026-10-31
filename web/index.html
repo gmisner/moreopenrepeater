@@ -33,6 +33,7 @@
     <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5" /><path d="M3 20c.8-3.5 3.3-5.5 6-5.5s5.2 2 6 5.5" /><circle cx="17" cy="9" r="2.5" /><path d="M17 14.5c2 .3 3.5 2 4 4.5" /></symbol>
     <symbol id="i-audit" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1M9 13l2 2 4-4" /></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></symbol>
+    <symbol id="i-remote" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2" /><path d="M7.5 7.5a6.4 6.4 0 0 1 9 0M5 5a10 10 0 0 1 14 0M7.5 16.5a6.4 6.4 0 0 0 9 0M5 19a10 10 0 0 0 14 0" /></symbol>
     <symbol id="i-update" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9" /><path d="M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2" /></symbol>
     <symbol id="i-net" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1M8.5 10h.01M8.5 14h.01M8.5 18h.01M11.5 10H16M11.5 14H16M11.5 18H14" /></symbol>
     <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3" /><rect x="3.5" y="14" width="4" height="6.5" rx="1.5" /><rect x="16.5" y="14" width="4" height="6.5" rx="1.5" /></symbol>
@@ -107,6 +108,7 @@
         <a href="#/audit" data-nav="audit" data-admin-only hidden><svg class="icon" aria-hidden="true"><use href="#i-audit" /></svg>Audit log</a>
         <a href="#/alerts" data-nav="alerts" data-admin-only hidden><svg class="icon" aria-hidden="true"><use href="#i-bell" /></svg>Alerts &amp; health</a>
         <a href="#/updates" data-nav="updates" data-admin-only hidden><svg class="icon" aria-hidden="true"><use href="#i-update" /></svg>Updates</a>
+        <a href="#/remote" data-nav="remote" data-admin-only hidden><svg class="icon" aria-hidden="true"><use href="#i-remote" /></svg>Remote access</a>
       </nav>
       <div class="sidebar-footer">
         <div id="theme-picker" class="segmented segmented-sm" role="group" aria-label="Color theme">
@@ -2644,6 +2646,85 @@
           </div>
           <p class="muted small" id="updates-message"></p>
           <pre class="logs-view" id="updates-log"></pre>
+        </div>
+      </section>
+
+      <!-- Remote access / Tailscale (admins only) -->
+      <section class="view" data-view="remote" data-title="Remote access" hidden>
+        <header class="view-header">
+          <h1>Remote access</h1>
+          <p class="muted">Reach this dashboard from your other devices over a private Tailscale network
+            (tailnet), with HTTPS. Only devices on your tailnet can connect — nothing is opened to the
+            public internet.</p>
+        </header>
+        <p id="remote-unavailable" class="card muted" hidden>Remote access from the dashboard needs an install made with
+          <code>scripts/install-pi.sh</code>.</p>
+        <div class="card" id="remote-status-card">
+          <div class="card-header">
+            <h2>Status</h2>
+            <span id="remote-state"></span>
+          </div>
+          <dl class="kv" id="remote-kv"></dl>
+          <p class="form-error" id="remote-cli-error" hidden></p>
+        </div>
+        <div class="card" id="remote-install-card" hidden>
+          <h2>Install Tailscale</h2>
+          <p class="muted small">Adds Tailscale's package to this controller. You join your tailnet in the next step.</p>
+          <div class="form-actions">
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-primary" id="remote-install">Install Tailscale</button>
+          </div>
+        </div>
+        <div class="card" id="remote-join-card" hidden>
+          <h2>Join your tailnet</h2>
+          <p class="muted small">Create a reusable auth key in the Tailscale admin console (Settings → Keys), or use a
+            one-time login link. Either way, this controller becomes a device on your tailnet.</p>
+          <label>Auth key
+            <input type="password" id="remote-auth-key" autocomplete="off" spellcheck="false"
+              placeholder="tskey-auth-…" />
+            <small>Optional if you use the login link instead.</small>
+          </label>
+          <p class="muted small" id="remote-auth-url-wrap" hidden>
+            Login link: <a id="remote-auth-url" href="#" target="_blank" rel="noopener"></a>
+            <button type="button" class="btn btn-ghost btn-sm" id="remote-copy-auth">Copy</button>
+          </p>
+          <div class="form-actions">
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-primary" id="remote-join">Join tailnet</button>
+          </div>
+        </div>
+        <div class="card" id="remote-serve-card" hidden>
+          <div class="card-header">
+            <h2>Dashboard over Tailscale</h2>
+            <label class="switch switch-sm">
+              <input type="checkbox" id="remote-serve" />
+              <span class="switch-track"></span>
+              <span>Serve dashboard</span>
+            </label>
+          </div>
+          <p class="muted small">When Serve is on, open the HTTPS address below from any device signed into the same
+            tailnet. The controller keeps listening on loopback; Tailscale terminates TLS.</p>
+          <p id="remote-serve-url-wrap" class="muted small" hidden>
+            <a id="remote-serve-url" href="#" target="_blank" rel="noopener"></a>
+            <button type="button" class="btn btn-ghost btn-sm" id="remote-copy-serve">Copy</button>
+          </p>
+        </div>
+        <div class="card" id="remote-leave-card" hidden>
+          <h2>Leave the tailnet</h2>
+          <p class="muted small">Turns Serve off and logs this controller out of Tailscale. Install stays; you can join
+            again later.</p>
+          <div class="form-actions">
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-danger" id="remote-leave">Leave tailnet</button>
+          </div>
+        </div>
+        <div class="card" id="remote-progress" hidden>
+          <div class="card-header">
+            <h2>Last change</h2>
+            <span id="remote-progress-state"></span>
+          </div>
+          <p class="muted small" id="remote-progress-message"></p>
+          <pre class="logs-view" id="remote-log"></pre>
         </div>
       </section>
 

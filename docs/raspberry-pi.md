@@ -622,10 +622,12 @@ have it). For HTTPS, or access from off your LAN, pick one:
 - **On the LAN:** open `http://<pi-ip>:8000` (the Pi's Wi-Fi or Ethernet
   address from `hostname -I`). That works with the default
   `MOREOPENREPEATER_HOST=0.0.0.0`.
-- **Tailscale** (HTTPS off-site): install Tailscale on the Pi and your
-  devices, then `sudo tailscale serve --bg 8000`. The dashboard is at
+- **Tailscale** (HTTPS off-site): on the dashboard, open **Tools → Remote
+  access**. That page installs Tailscale, joins your tailnet (auth key or
+  login link), and turns on Serve for the dashboard port. The address is
   `https://<pi-name>.<tailnet>.ts.net`, with a real certificate, and only
-  your tailnet can reach it.
+  your tailnet can reach it. From the shell instead: install Tailscale,
+  then `sudo tailscale serve --bg 8000`.
 - **Caddy reverse proxy** (for a public hostname pointing at the Pi, ports
   80/443 open): `sudo apt install caddy`, then put this in
   `/etc/caddy/Caddyfile` and `sudo systemctl reload caddy`:
@@ -651,9 +653,9 @@ address in the env file.
 ## 5. Install and start the service
 
 ```
-sudo cp packaging/moreopenrepeater.service packaging/moreopenrepeater-update.* /etc/systemd/system/
+sudo cp packaging/moreopenrepeater.service packaging/moreopenrepeater-update.* packaging/moreopenrepeater-tailscale.* /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now moreopenrepeater moreopenrepeater-update.path
+sudo systemctl enable --now moreopenrepeater moreopenrepeater-update.path moreopenrepeater-tailscale.path
 sudo systemctl status moreopenrepeater
 ```
 

@@ -626,8 +626,11 @@ have it). For HTTPS, or access from off your LAN, pick one:
   access**. That page installs Tailscale, joins your tailnet (auth key or
   login link), and turns on Serve for the dashboard port. The address is
   `https://<pi-name>.<tailnet>.ts.net`, with a real certificate, and only
-  your tailnet can reach it. From the shell instead: install Tailscale,
-  then `sudo tailscale serve --bg 8000`.
+  your tailnet can reach it. Live status falls back to HTTP polling when
+  Tailscale Serve can't upgrade a WebSocket (its HTTPS front speaks
+  HTTP/2). Listen live may still need a LAN or SSH path until that works.
+  From the shell instead: install Tailscale, then
+  `sudo tailscale serve --bg 8000`.
 - **Caddy reverse proxy** (for a public hostname pointing at the Pi, ports
   80/443 open): `sudo apt install caddy`, then put this in
   `/etc/caddy/Caddyfile` and `sudo systemctl reload caddy`:

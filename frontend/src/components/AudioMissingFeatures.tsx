@@ -31,6 +31,7 @@ import {
 } from "../gpio";
 import { labeled } from "./FieldHint";
 import { ConfigActions } from "./ConfigActions";
+import { soundAssignments, soundDeviceOptions } from "../deviceUsage";
 
 type Asset = { id: string; kind: string; filename: string; uploaded_at: string };
 type AudioDevice = { name: string; inputs: number };
@@ -145,6 +146,7 @@ function monitorState(status: MonitorStatus | null) {
 }
 
 export function MonitorReceiverCard({ devices }: { devices: AudioDevice[] }) {
+  const { config } = useConfig();
   const monitor = useConfigSlice<MonitorValues>(MONITOR_KEYS, MONITOR_DEFAULTS);
   const [status, setStatus] = useState<MonitorStatus | null>(null);
 
@@ -168,14 +170,31 @@ export function MonitorReceiverCard({ devices }: { devices: AudioDevice[] }) {
     };
   }, []);
 
-  const inputNames = devices.filter((device) => device.inputs > 0).map((device) => device.name);
-  const inputOptions = inputNames.map((name) => ({ value: name, label: name }));
-  if (monitor.values.monitor_input_device && !inputNames.includes(monitor.values.monitor_input_device)) {
-    inputOptions.push({
-      value: monitor.values.monitor_input_device,
-      label: `${monitor.values.monitor_input_device} (not connected)`,
-    });
-  }
+  const soundUsage = useMemo(
+    () =>
+      soundAssignments({
+        audio_input_device: typeof config?.audio_input_device === "string" ? config.audio_input_device : "",
+        audio_output_device: typeof config?.audio_output_device === "string" ? config.audio_output_device : "",
+        link_radio_input_device:
+          typeof config?.link_radio_input_device === "string" ? config.link_radio_input_device : "",
+        link_radio_output_device:
+          typeof config?.link_radio_output_device === "string" ? config.link_radio_output_device : "",
+        monitor_input_device: monitor.values.monitor_input_device,
+      }),
+    [
+      config?.audio_input_device,
+      config?.audio_output_device,
+      config?.link_radio_input_device,
+      config?.link_radio_output_device,
+      monitor.values.monitor_input_device,
+    ],
+  );
+  const inputOptions = soundDeviceOptions(
+    devices.map((device) => ({ ...device, outputs: 0 })),
+    "inputs",
+    monitor.values.monitor_input_device,
+    soundUsage,
+  );
   const state = monitorState(status);
   const health = status?.running
     ? [

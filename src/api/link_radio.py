@@ -34,6 +34,8 @@ from controller.state_machine import RepeaterConfig
 from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
+from .boards import run_amixer
+from .mixer import apply_saved_levels
 from .service import RepeaterService
 
 _logger = logging.getLogger("moreopenrepeater.link_radio")
@@ -114,6 +116,7 @@ class LinkRadio:
         open_pin: Callable[..., GpioLine] = open_header_pin,
         clock: Callable[[], float] = lambda: asyncio.get_running_loop().time(),
         open_serial: Callable[..., GpioLine] = open_serial_line,
+        run_mixer: Callable[..., object] = run_amixer,
     ) -> None:
         """`sending()`: the repeater is repeating a local user right now.
         `attach_port` hands the repeater's half of the audio crossing to
@@ -128,6 +131,7 @@ class LinkRadio:
         self._engine_factory = engine_factory
         self._open_pin = open_pin
         self._open_serial = open_serial
+        self._run_mixer = run_mixer
         self._clock = clock
         self._pins: list[GpioLine] = []
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -317,6 +321,7 @@ class LinkRadio:
             ptt_output=ptt_output,
             cos_input=cos_input,
         )
+        apply_saved_levels(config, self._run_mixer, sides=("link_input", "link_output"))
         try:
             engine.start()
         except Exception as error:  # PortAudio raises its own error types

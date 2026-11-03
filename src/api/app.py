@@ -346,6 +346,7 @@ def create_app(
         sending=lambda: live_audio.repeating_voice,
         attach_port=live_audio.set_port,
         find_cm108=lambda: link_cm108_from_env(os.environ, cm108),
+        run_mixer=run_mixer,
     )
     remote_base = remote_base or RemoteBase(service)
     gpio = gpio or GpioControl(service, cm108)

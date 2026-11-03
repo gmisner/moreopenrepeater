@@ -36,7 +36,7 @@ type Asset = { id: string; kind: string; filename: string; uploaded_at: string }
 type AudioDevice = { name: string; inputs: number; outputs: number; default_samplerate: number };
 type SerialPort = { path: string; target: string };
 type SoundLevel = {
-  side: "input" | "output";
+  side: "input" | "output" | "link_input" | "link_output";
   card: number;
   control: string;
   min: number;
@@ -317,7 +317,12 @@ const METER_FLOOR_DB = -80;
 const SILENCE_DB = -120;
 const SILENT_POLLS_BEFORE_HINT = 20;
 const POLL_MS = 250;
-const SIDE_LABELS = { input: "Receive", output: "Transmit" } as const;
+const SIDE_LABELS = {
+  input: "Receive",
+  output: "Transmit",
+  link_input: "Link receive",
+  link_output: "Link transmit",
+} as const;
 const PTT_LABELS: Record<string, string> = { cm108: " · CM108 PTT", gpio: " · GPIO PTT", serial: " · serial PTT" };
 const GLITCH_SHORT: Record<string, string> = {
   dropped_input_blocks: "receive drops",
@@ -532,7 +537,13 @@ export function Audio() {
 
   useEffect(() => {
     void loadLevels();
-  }, [config?.audio_input_device, config?.audio_output_device, loadLevels]);
+  }, [
+    config?.audio_input_device,
+    config?.audio_output_device,
+    config?.link_radio_input_device,
+    config?.link_radio_output_device,
+    loadLevels,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1193,7 +1204,10 @@ export function Audio() {
         <Stack gap="md">
           <Title order={2}>Sound card levels</Title>
           <Text c="dimmed" size="sm" maw="75ch">
-            The interface&apos;s own volume controls: how loud the receiver comes in, and how loud audio goes out to the transmitter. A change takes effect right away and is saved here, then set again every time live audio starts.
+            Each radio&apos;s USB interface volume controls (repeater and link radio when its devices are set): how loud
+            receive comes in, and how loud audio goes out to the transmitter. A change takes effect right away and is
+            saved here, then set again whenever that radio&apos;s audio starts. A CM108 Mic playback control only loops
+            receive audio and isn&apos;t listed.
           </Text>
           {levels.length === 0 ? (
             <Text size="sm" c="dimmed">

@@ -282,17 +282,20 @@ station as set up by hand.
 **Audio & tones → Sound card levels** has a slider for each of the
 interface's own volume controls: the capture levels on the input device's
 card (Receive) and the playback levels on the output device's card
-(Transmit). A CM108's Mic playback control only loops receive audio back out
-to the radio, so it isn't listed.
+(Transmit). When the [link radio](#link-radio) has its own sound devices
+chosen, **Link receive** and **Link transmit** sliders appear for that
+dongle (a second Digirig / CM108) the same way. A CM108's Mic playback
+control only loops receive audio back out to the radio, so it isn't listed.
 
 A USB interface forgets its levels when it's unplugged, and the service user
 can't run `sudo alsactl store`, so the controller keeps them in its own
-config and sets them with `amixer` every time live audio starts: at boot,
-after a restart, and when the sound devices change. They're saved by control
-name, so they follow the interface if its ALSA card number changes. A board
-preset's levels are saved the same way. A level set from a terminal with
-`amixer` or `alsamixer` shows as **not saved** until you move its slider or
-press **Save current levels**.
+config and sets them with `amixer` every time that radio's audio starts: at
+boot, after a restart, and when the sound devices change. They're saved by
+control name, so they follow the interface if its ALSA card number changes.
+A board preset's levels are saved the same way (including the link card on
+two-port boards). A level set from a terminal with `amixer` or `alsamixer`
+shows as **not saved** until you move its slider or press **Save current
+levels**.
 
 ### Audio devices
 

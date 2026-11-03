@@ -1,13 +1,13 @@
-"""Sound card levels: the ALSA mixer volumes of the repeater's interface,
-saved with the rest of the config and set again whenever the audio engine
-opens the card.
+"""Sound card levels: the ALSA mixer volumes of the repeater and link
+radio interfaces, saved with the rest of the config and set again
+whenever each audio engine opens its cards.
 
 A USB interface forgets its levels when it's unplugged, and the service
 can't run `alsactl store` (it isn't root), so the controller keeps them
-itself: the receive side's capture volumes on the input device's card, and
-the transmit side's playback volumes on the output device's card. They're
-saved by control name, not card number, so they follow the interface if
-ALSA numbers the cards differently after a reboot.
+itself: capture volumes on each radio's input card, and playback volumes
+on each radio's output card. They're saved by control name, not card
+number, so they follow the interface if ALSA numbers the cards differently
+after a reboot.
 """
 from __future__ import annotations
 
@@ -21,12 +21,32 @@ from .boards import alsa_card, run_amixer
 
 _logger = logging.getLogger("moreopenrepeater.mixer")
 
-Side = Literal["input", "output"]
+# "input"/"output" = repeater; "link_input"/"link_output" = link radio.
+Side = Literal["input", "output", "link_input", "link_output"]
 Run = Callable[[list[str]], subprocess.CompletedProcess]
 
 _CONTROL = re.compile(r"^Simple mixer control '(.+)',(\d+)$")
 _LIMITS = re.compile(r"(Playback|Capture) (-?\d+) - (-?\d+)")
 _READING = re.compile(r"(Playback|Capture) (-?\d+) \[\d+%\](?: \[(-?[\d.]+)dB\])?")
+
+_SIDE_DEVICE = {
+    "input": "audio_input_device",
+    "output": "audio_output_device",
+    "link_input": "link_radio_input_device",
+    "link_output": "link_radio_output_device",
+}
+_SIDE_LEVELS = {
+    "input": "audio_input_levels",
+    "output": "audio_output_levels",
+    "link_input": "link_radio_input_levels",
+    "link_output": "link_radio_output_levels",
+}
+_SIDE_LABEL = {
+    "input": "input",
+    "output": "output",
+    "link_input": "link radio input",
+    "link_output": "link radio output",
+}
 
 
 @dataclass(frozen=True)
@@ -85,11 +105,16 @@ def read_volumes(card: int, run: Run = run_amixer) -> list[Volume]:
     return parse_volumes(done.stdout)
 
 
+def io_side(side: Side) -> Literal["input", "output"]:
+    """Capture vs playback half of a Side."""
+    return "input" if side in ("input", "link_input") else "output"
+
+
 def side_volumes(side: Side, volumes: list[Volume]) -> list[Volume]:
     """What each side's sliders adjust: capture on the input card; playback
     on the output card, leaving out a mic's monitor path (a control that
     also captures), which only loops receive audio back out."""
-    if side == "input":
+    if io_side(side) == "input":
         return [v for v in volumes if v.direction == "capture"]
     capturing = {v.control for v in volumes if v.direction == "capture"}
     return [v for v in volumes if v.direction == "playback" and v.control not in capturing]
@@ -107,20 +132,31 @@ def set_volume(card: int, control: str, direction: str, value: int, run: Run = r
 
 
 def side_card(config, side: Side) -> Optional[int]:
-    return alsa_card(config.audio_input_device if side == "input" else config.audio_output_device)
+    return alsa_card(getattr(config, _SIDE_DEVICE[side]))
 
 
-def apply_saved_levels(config, run: Run = run_amixer) -> None:
-    """Set the saved levels on the interface's cards, before the engine opens them."""
-    for side, levels, direction in (
-        ("input", config.audio_input_levels, "capture"),
-        ("output", config.audio_output_levels, "playback"),
-    ):
+def side_levels(config, side: Side) -> dict:
+    return getattr(config, _SIDE_LEVELS[side])
+
+
+def side_levels_field(side: Side) -> str:
+    return _SIDE_LEVELS[side]
+
+
+def side_label(side: Side) -> str:
+    return _SIDE_LABEL[side]
+
+
+def apply_saved_levels(config, run: Run = run_amixer, *, sides: Optional[tuple[Side, ...]] = None) -> None:
+    """Set the saved levels on the chosen radios' cards, before an engine opens them."""
+    for side in sides or ("input", "output", "link_input", "link_output"):
+        levels = side_levels(config, side)
         if not levels:
             continue
         card = side_card(config, side)
         if card is None:
             continue
+        direction = "capture" if io_side(side) == "input" else "playback"
         for control, value in levels.items():
             error = set_volume(card, control, direction, int(value), run)
             if error:

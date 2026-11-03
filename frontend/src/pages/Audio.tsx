@@ -912,11 +912,14 @@ export function Audio() {
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <Select
-                    label="Detect a carrier by"
+                    label={labeled(
+                      "Detect a carrier by",
+                      "CM108 COS is the VOL_DN / COS line on this radio's USB interface (the same Digirig, URI, or CM108 as its sound card) — not the link radio's.",
+                    )}
                     data={[
                       { value: "vox", label: "Audio level (VOX)" },
                       { value: "ctcss", label: "CTCSS tone present" },
-                      { value: "cm108", label: "CM108 COS input" },
+                      { value: "cm108", label: "This radio's CM108 COS" },
                       { value: "gpio", label: "Raspberry Pi GPIO pin" },
                       { value: "serial", label: "Serial port (CTS, DSR or DCD)" },
                     ]}
@@ -1024,9 +1027,12 @@ export function Audio() {
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <Select
-                    label="Key the transmitter with"
+                    label={labeled(
+                      "Key the transmitter with",
+                      "CM108 PTT is GPIO3 on this radio's USB interface (Digirig Lite, DMK URI, USB-RIM, …) — the same dongle as its sound card. Not the link radio's Digirig.",
+                    )}
                     data={[
-                      { value: "cm108", label: "CM108 interface (if set up)" },
+                      { value: "cm108", label: "This radio's CM108 (Digirig, URI, …)" },
                       { value: "gpio", label: "Raspberry Pi GPIO pin" },
                       { value: "serial", label: "Serial port (RTS or DTR)" },
                     ]}
@@ -1271,8 +1277,8 @@ export function Audio() {
           </Group>
           <Text c="dimmed" size="sm" maw="75ch">
             A second radio on its own sound device for cross-band or a far link. Local users go out the link;
-            what it hears is transmitted here. It never transmits over the far end. Needs its own interface
-            (second Digirig / CM108), not the repeater&apos;s.
+            what it hears is transmitted here. It never transmits over the far end. Give it its own Digirig
+            (or other CM108) — separate USB dongle from the repeater radio&apos;s.
           </Text>
           <Switch
             label={linkRemoteBase ? "Turn the remote base on" : "Connect the link radio"}
@@ -1370,11 +1376,14 @@ export function Audio() {
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <Select
-                    label="Detect a carrier by"
+                    label={labeled(
+                      "Detect a carrier by",
+                      "CM108 COS is on this link radio's Digirig/URI — not the repeater's. Digirig Lite usually uses VOX unless you wired the COS pad.",
+                    )}
                     data={[
                       { value: "vox", label: "Audio level (VOX)" },
                       { value: "ctcss", label: "CTCSS tone present" },
-                      { value: "cm108", label: "A second CM108's COS input" },
+                      { value: "cm108", label: "This link radio's CM108 COS" },
                       { value: "gpio", label: "Raspberry Pi GPIO pin" },
                       { value: "serial", label: "Serial port (CTS, DSR or DCD)" },
                     ]}
@@ -1460,9 +1469,12 @@ export function Audio() {
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <Select
-                    label="Key the transmitter with"
+                    label={labeled(
+                      "Key the transmitter with",
+                      "CM108 PTT is GPIO3 on this link radio's own Digirig/URI (the USB interface for the link sound devices above) — not the repeater radio's CM108. Auto-picked as the other CM108, or set MOREOPENREPEATER_LINK_CM108_HIDRAW.",
+                    )}
                     data={[
-                      { value: "cm108", label: "A second CM108's PTT" },
+                      { value: "cm108", label: "This link radio's CM108 (its Digirig / URI)" },
                       { value: "gpio", label: "Raspberry Pi GPIO pin" },
                       { value: "serial", label: "Serial port (RTS or DTR)" },
                       { value: "none", label: "Nothing (the radio's own VOX keys it)" },

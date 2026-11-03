@@ -457,16 +457,18 @@ far station ──> link radio RX ──> repeater TX (link courtesy tone)
 
 Detect the far end with **Audio level (VOX)** (for a radio whose squelch
 mutes its audio), **CTCSS tone present**, a **Raspberry Pi GPIO pin** (GPIO23,
-header pin 16, by default), a **second CM108's COS input** or a **serial
-port** line. Key it with a **Raspberry Pi GPIO pin** (GPIO24, header pin 18,
-by default; through a transistor as above), a **second CM108's PTT**, a
-**serial port** line, or **nothing** for a radio that keys itself on audio
-with its own VOX. Pins and serial lines can't be shared with the repeater's
-PTT and COS or the monitor's squelch. The second CM108 is found
-by itself at startup (the first one the repeater isn't using). Pick one with
+header pin 16, by default), **this link radio's CM108 COS** (on its Digirig /
+URI — not the repeater's) or a **serial port** line. Key it with a
+**Raspberry Pi GPIO pin** (GPIO24, header pin 18, by default; through a
+transistor as above), **this link radio's CM108 PTT** (GPIO3 on that same
+dongle), a **serial port** line, or **nothing** for a radio that keys itself
+on audio with its own VOX. Pins and serial lines can't be shared with the
+repeater's PTT and COS or the monitor's squelch. The link CM108 is found by
+itself at startup (the first one the repeater isn't using). Pick one with
 `MOREOPENREPEATER_LINK_CM108_HIDRAW=/dev/hidrawN` in the env file, or set
-it to `off`. **Transmit CTCSS tone** adds a tone under the link transmitter for
-a far repeater that needs one to open.
+it to `off`. Digirig Lite has no USB-serial port: use CM108 PTT and VOX COS
+unless you wired the COS pad. **Transmit CTCSS tone** adds a tone under the
+link transmitter for a far repeater that needs one to open.
 
 To connect and disconnect the link over the air, add DTMF macros with the
 "Link radio on" and "Link radio off" actions (put a secret code in the

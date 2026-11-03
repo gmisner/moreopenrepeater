@@ -61,6 +61,10 @@ class LinkControl:
         error = None
         if client is None:
             links = {node: (None, False) for node in self._service.linked_nodes}
+        elif not client.local_node_id:
+            # AMI is up but the node isn't chosen yet — not a read failure.
+            # The dashboard shows the AllStarLink setup hint when unavailable.
+            links = {}
         else:
             try:
                 links = await asyncio.wait_for(client.links(), AMI_TIMEOUT)
@@ -78,7 +82,7 @@ class LinkControl:
         ]
         return {
             "available": client is not None and bool(client.local_node_id),
-            "node": client.local_node_id if client else None,
+            "node": (client.local_node_id or None) if client else None,
             "error": error,
             "links": rows,
             "favorites": favorites,

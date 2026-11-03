@@ -180,6 +180,10 @@ class RepeaterConfig:
     # A second radio linking the repeater to a far station (api.link_radio).
     link_radio_enabled: bool = False
     link_radio_name: str = ""  # "Link to W1XYZ"
+    # Operator notes only (dashboard); not used by the audio path.
+    link_radio_model: str = ""  # "Baofeng UV-5R", "Digirig + IC-2730"
+    link_radio_frequency: str = ""  # free text: "446.000", "146.94 / 146.34"
+    link_radio_notes: str = ""
     link_radio_input_device: str = ""
     link_radio_output_device: str = ""
     link_radio_cos: Literal["vox", "ctcss", "cm108", "gpio", "serial"] = "vox"  # "cm108": a second CM108

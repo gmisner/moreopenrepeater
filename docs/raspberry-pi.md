@@ -823,10 +823,14 @@ POSTs a JSON array of events (Axiom's ingest shape):
 ]
 ```
 
-For [Axiom](https://axiom.co): create a dataset, create an **API token** with
-ingest permission (not a personal access token), then use
-`https://api.axiom.co/v1/ingest/<dataset>` as the URL and the API token as the
-Bearer token. Query with APL, e.g. `['dataset'] | where level == "WARNING"`.
+For [Axiom](https://axiom.co): create a dataset, create an **API token**
+(`xaat-…`, ingest permission — not a personal `xapt-` token), then use the
+**edge** ingest URL for the region that holds the dataset (not `api.axiom.co`):
+
+- US East: `https://us-east-1.aws.edge.axiom.co/v1/ingest/<dataset>`
+- EU Central: `https://eu-central-1.aws.edge.axiom.co/v1/ingest/<dataset>`
+
+Query with APL, e.g. `['dataset'] | where level == "WARNING"`.
 
 Off by default. The URL and token live in `data/log-shipping.json` only —
 not in backups or `GET /api/config`. Use **Send test** after saving. Turn it

@@ -320,9 +320,9 @@ export function Logs() {
               <div>
                 <Text fw={600}>Remote logging</Text>
                 <Text size="sm" c="dimmed" maw="75ch">
-                  Ship live controller log lines to an HTTPS ingest URL someone helping you provides (Axiom:
-                  https://api.axiom.co/v1/ingest/… plus an ingest API token). Off by default. The URL and token are
-                  stored only on this Pi — not in backups.
+                  Ship live controller log lines to an HTTPS ingest URL someone helping you provides (Axiom edge:
+                  https://us-east-1.aws.edge.axiom.co/v1/ingest/… plus an xaat- API token). Off by default. The URL and
+                  token are stored only on this Pi — not in backups.
                 </Text>
               </div>
               <Switch

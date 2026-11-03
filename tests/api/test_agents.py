@@ -73,6 +73,8 @@ def test_agents_see_the_repeater_through_its_tools(repeater):
     assert not error and audio["rx_level_db"] == -120.0
     error, status = tool(client, tokens["viewer"], "get_status")
     assert not error and status["state"] == "idle"
+    error, logs = tool(client, tokens["viewer"], "recent_logs", lines=10, after=0)
+    assert not error and "lines" in logs and "after" in logs
 
 
 def test_settings_changes_follow_the_tokens_role_and_are_audited(repeater):

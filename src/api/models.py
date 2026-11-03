@@ -988,6 +988,51 @@ class AlertTestResponse(BaseModel):
     results: dict[str, Optional[str]]  # channel -> error, or None if it went
 
 
+class LogLineResponse(BaseModel):
+    seq: int
+    line: str
+    level: str
+    at: float
+
+
+class LogsSinceResponse(BaseModel):
+    lines: list[LogLineResponse]
+    after: int  # pass back as `after` on the next poll
+
+
+class LogShippingSettingsResponse(BaseModel):
+    """Everything but the token and URL secret, which are only ever written."""
+
+    enabled: bool
+    min_level: str
+    batch_seconds: float
+    batch_lines: int
+
+
+class LogShippingSettingsRequest(BaseModel):
+    """Omitted fields are left as they are; an empty string clears url/token."""
+
+    enabled: Optional[bool] = None
+    url: Optional[str] = Field(default=None, max_length=500, pattern=_URL_OR_EMPTY)
+    token: Optional[str] = Field(default=None, max_length=500, pattern=_ONE_LINE)
+    min_level: Optional[Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]] = None
+    batch_seconds: Optional[float] = Field(default=None, ge=0.5, le=60)
+    batch_lines: Optional[int] = Field(default=None, ge=1, le=500)
+
+
+class LogShippingResponse(BaseModel):
+    settings: LogShippingSettingsResponse
+    secrets_set: dict[str, bool]
+    active: bool
+    last_error: str
+    last_sent_at: Optional[datetime]
+    lines_sent: int
+
+
+class LogShippingTestResponse(BaseModel):
+    error: Optional[str]  # None if the test POST succeeded
+
+
 class RestartResponse(BaseModel):
     available: bool  # installed with install-pi.sh, so the restart units exist
     requested: bool = False

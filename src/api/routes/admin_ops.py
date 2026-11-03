@@ -21,6 +21,8 @@ from ..audit import AuditLog
 from ..backup import BackupFolder, BackupSources, backup_name, write_backup
 from ..health import HealthMonitor
 from ..live_audio import LiveAudio, list_audio_devices
+from ..log_hub import SECRET_FIELDS as LOG_SHIPPING_SECRET_FIELDS
+from ..log_hub import LogShipper
 from ..models import (
     AlertSettingsRequest,
     AlertSettingsResponse,
@@ -29,6 +31,10 @@ from ..models import (
     AutoUpdateSettings,
     BackupFolderResponse,
     BackupRestoreResponse,
+    LogShippingResponse,
+    LogShippingSettingsRequest,
+    LogShippingSettingsResponse,
+    LogShippingTestResponse,
     SavedBackupResponse,
     TailscaleResponse,
     TailscaleServeRequest,
@@ -61,6 +67,7 @@ def register(
     health: HealthMonitor,
     live_audio: LiveAudio,
     log_path: Path,
+    log_shipper: LogShipper,
     restore_backup_file: Callable,
     repo_dir: Path,
     admin_dependencies: Sequence,
@@ -253,6 +260,46 @@ def register(
         if not notifier.channels:
             raise HTTPException(status_code=409, detail="Set up at least one way to send alerts first")
         return {"results": await notifier.send_test()}
+
+    def log_shipping_response() -> dict:
+        settings = log_shipper.settings
+        return {
+            "settings": LogShippingSettingsResponse(
+                enabled=settings.enabled,
+                min_level=settings.min_level,
+                batch_seconds=settings.batch_seconds,
+                batch_lines=settings.batch_lines,
+            ),
+            "secrets_set": {name: bool(getattr(settings, name)) for name in LOG_SHIPPING_SECRET_FIELDS},
+            "active": log_shipper.active,
+            "last_error": log_shipper.last_error,
+            "last_sent_at": datetime.fromtimestamp(log_shipper.last_sent_at) if log_shipper.last_sent_at else None,
+            "lines_sent": log_shipper.lines_sent,
+        }
+
+    @app.get("/api/log-shipping", response_model=LogShippingResponse, dependencies=admin_dependencies)
+    def get_log_shipping() -> dict:
+        return log_shipping_response()
+
+    @app.put("/api/log-shipping", response_model=LogShippingResponse, dependencies=admin_dependencies)
+    def put_log_shipping(body: LogShippingSettingsRequest, request: Request) -> dict:
+        changes = body.model_dump(exclude_none=True)
+        request.state.audit_detail = ", ".join(
+            name for name, value in changes.items() if value != getattr(log_shipper.settings, name, None)
+        )
+        try:
+            log_shipper.update(**changes)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+        log_shipper.set_callsign(service.config.callsign)
+        return log_shipping_response()
+
+    @app.post("/api/log-shipping/test", response_model=LogShippingTestResponse, dependencies=admin_dependencies)
+    def test_log_shipping() -> dict:
+        if not log_shipper.settings.url:
+            raise HTTPException(status_code=409, detail="Set an ingest URL first")
+        log_shipper.set_callsign(service.config.callsign)
+        return {"error": log_shipper.send_test()}
 
     def tailscale_response() -> dict:
         return tailscale.snapshot()

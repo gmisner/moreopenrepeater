@@ -130,6 +130,30 @@ def test_status_without_app_rpt_uses_the_known_links():
     asyncio.run(scenario())
 
 
+def test_status_with_ami_but_no_node_is_not_an_error():
+    """Choosing the node is setup, not a failed app_rpt read."""
+
+    async def scenario():
+        class Counting(FakeClient):
+            def __init__(self):
+                super().__init__()
+                self.link_reads = 0
+
+            async def links(self):
+                self.link_reads += 1
+                raise ValueError("the repeater's AllStarLink node isn't chosen yet")
+
+        links = LinkControl(RepeaterService(), NodeDirectory(None), lambda: "")
+        client = Counting()
+        links.client = client
+        status = await links.status()
+        assert not status["available"] and status["node"] is None
+        assert status["error"] is None and status["links"] == []
+        assert client.link_reads == 0
+
+    asyncio.run(scenario())
+
+
 def test_app_rpt_failures_are_reported():
     class Broken(FakeClient):
         async def links(self):

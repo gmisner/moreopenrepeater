@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { notifyError, notifySuccess } from "../config";
+import { fanText, gpioStateText, shortTime, type GpioPinStatus, type GpioStatus } from "../gpio";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
 import { useStatus } from "../status";
@@ -83,6 +84,51 @@ function Indicator({ name, on, value, danger }: { name: string; on: boolean; val
   );
 }
 
+function GpioIndicator({
+  pin,
+  available,
+  canSwitch,
+  busy,
+  onToggle,
+}: {
+  pin: GpioPinStatus;
+  available: boolean;
+  canSwitch: boolean;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  const content = (
+    <Stack gap={4} align="center">
+      <Box
+        w={14}
+        h={14}
+        style={{
+          borderRadius: "50%",
+          background: pin.on ? "var(--mantine-color-green-4)" : "var(--mantine-color-gray-5)",
+          boxShadow: pin.on ? "0 0 10px var(--mantine-color-green-4)" : undefined,
+        }}
+      />
+      <Text fw={700} style={{ letterSpacing: "0.05em" }}>{pin.name || `GPIO${pin.pin}`}</Text>
+      <Text size="xs" c="dimmed">
+        {pin.mode} · {busy ? "switching…" : gpioStateText(pin, available)}
+        {pin.until ? ` until ${shortTime(pin.until)}` : ""}
+      </Text>
+    </Stack>
+  );
+  const style = {
+    background: pin.on ? "var(--mantine-color-green-light)" : undefined,
+    borderColor: pin.on ? "var(--mantine-color-green-4)" : undefined,
+    cursor: canSwitch ? "pointer" : undefined,
+  };
+  return canSwitch ? (
+    <Card component="button" type="button" withBorder padding="md" radius="md" style={style} onClick={onToggle}>
+      {content}
+    </Card>
+  ) : (
+    <Card withBorder padding="md" radius="md" style={style}>{content}</Card>
+  );
+}
+
 export function Dashboard() {
   const { status, connected } = useStatus();
   const { session } = useSession();
@@ -98,6 +144,8 @@ export function Dashboard() {
   const [listenSource, setListenSource] = useState("tx");
   const [listening, setListening] = useState(false);
   const [listenNote, setListenNote] = useState("Streams the repeater's audio to this browser (needs live audio running).");
+  const [gpio, setGpio] = useState<GpioStatus | null>(null);
+  const [gpioBusy, setGpioBusy] = useState<number | null>(null);
 
   const refreshLinks = useCallback(async () => {
     try {
@@ -112,6 +160,22 @@ export function Dashboard() {
     const timer = window.setInterval(() => void refreshLinks(), 3000);
     return () => window.clearInterval(timer);
   }, [refreshLinks]);
+
+  const refreshGpio = useCallback(async () => {
+    try {
+      setGpio(await api<GpioStatus>("/api/gpio"));
+    } catch {
+      /* keep last */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshGpio();
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void refreshGpio();
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [refreshGpio]);
 
   useEffect(() => {
     if (!status?.locked_out) return;
@@ -153,6 +217,17 @@ export function Dashboard() {
       notifySuccess("Lockout cleared");
     } catch (error) {
       notifyError(error);
+    }
+  };
+
+  const switchGpio = async (pin: GpioPinStatus) => {
+    setGpioBusy(pin.pin);
+    try {
+      setGpio(await api<GpioStatus>(`/api/gpio/${pin.pin}`, { method: "PUT", json: { on: !pin.on } }));
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setGpioBusy(null);
     }
   };
 
@@ -264,6 +339,42 @@ export function Dashboard() {
           </SimpleGrid>
         </Grid.Col>
       </Grid>
+
+      {gpio && (gpio.pins.some((pin) => pin.mode === "input" || pin.mode === "output") || gpio.fan?.output !== "none") ? (
+        <Card withBorder padding="lg" radius="md">
+          <Stack gap="md">
+            <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
+              GPIO
+            </Text>
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
+              {gpio.fan && gpio.fan.output !== "none" ? (
+                <Indicator
+                  name="Transmitter fan"
+                  on={Boolean(gpio.fan.on)}
+                  value={gpio.fan.error ? "error" : fanText(gpio.fan)}
+                />
+              ) : null}
+              {gpio.pins
+                .filter((pin) => pin.mode === "input" || pin.mode === "output")
+                .map((pin) => (
+                  <GpioIndicator
+                    key={pin.pin}
+                    pin={pin}
+                    available={gpio.available}
+                    canSwitch={canWrite && gpio.available && pin.mode === "output"}
+                    busy={gpioBusy === pin.pin}
+                    onToggle={() => void switchGpio(pin)}
+                  />
+                ))}
+            </SimpleGrid>
+            {gpio.error || (!gpio.available && gpio.pins.some((pin) => pin.mode === "input" || pin.mode === "output")) ? (
+              <Text c={gpio.error ? "red" : "dimmed"} size="sm">
+                {gpio.error || "No CM108 interface is connected, so the pins cannot be read or switched."}
+              </Text>
+            ) : null}
+          </Stack>
+        </Card>
+      ) : null}
 
       <Grid>
         <Grid.Col span={{ base: 12, lg: 7 }}>

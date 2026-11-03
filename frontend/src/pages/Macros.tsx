@@ -17,7 +17,9 @@ import {
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
+import { ControlCodesCard, HomeAssistantTest } from "../components/MacroMissingFeatures";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
+import { pinLabel, SPARE_PINS } from "../gpio";
 import { Page } from "../layout/AppShell";
 import { labeled } from "../components/FieldHint";
 
@@ -38,7 +40,6 @@ type HaValues = {
   homeassistant_say_result: boolean;
 };
 
-const SPARE_PINS = [1, 2, 4, 5, 6, 7, 8];
 const HIDDEN_FROM_HELP = new Set(["tx_disable", "tx_enable", "link_radio_on", "link_radio_off"]);
 const GPIO_VERBS: Record<string, string> = { on: "on", off: "off", toggle: "toggle", pulse: "on for" };
 
@@ -91,10 +92,6 @@ const EMPTY_FORM = {
   needs_code: false,
   help_hidden: false,
 };
-
-function pinLabel(pin: number | string, name?: string) {
-  return name ? `${name} (GPIO${pin})` : `GPIO${pin}`;
-}
 
 function macroDetails(
   macro: Macro,
@@ -552,9 +549,12 @@ export function Macros() {
               onChange={(event) => ha.setField("homeassistant_say_result", event.currentTarget.checked)}
             />
           </SimpleGrid>
+          <HomeAssistantTest />
           <ConfigActions dirty={ha.dirty} saving={ha.saving} onReset={ha.reset} />
         </Stack>
       </Card>
+
+      <ControlCodesCard />
     </Page>
   );
 }

@@ -60,6 +60,7 @@ from .link_radio import LinkRadio
 from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkScheduler
 from .links import LinkControl, LinkError
 from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env, list_audio_devices
+from .log_hub import LogHub, LogShipper
 from .logging_config import configure_logging
 from .mailbox import Mailbox, MailboxStore, is_mailbox_clip
 from .models import AuditEntryResponse, ConfigResponse, SessionResponse, SnapshotImportRequest, StatusResponse
@@ -135,6 +136,7 @@ DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
 DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
 DEFAULT_NODE_LIST_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "allstar-nodes.txt"
 DEFAULT_ALERTS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "alerts.json"
+DEFAULT_LOG_SHIPPING_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "log-shipping.json"
 DEFAULT_RUN_MARKER_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "run-state.json"
 DEFAULT_NETS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "nets.json"
 DEFAULT_AUTO_UPDATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "auto-update.json"
@@ -295,6 +297,8 @@ def create_app(
     update_channel: Optional[str] = None,
     tailscale: Optional[TailscaleControl] = None,
     notifier: Optional[Notifier] = None,
+    log_hub: Optional[LogHub] = None,
+    log_shipper: Optional[LogShipper] = None,
     run_marker: Optional[RunMarker] = None,
     system_probe: Optional[SystemProbe] = None,
     watchdog: Optional[Watchdog] = None,
@@ -319,7 +323,8 @@ def create_app(
     module-level `app` below opts in.
     `fetch_weather(lat, lon, contact)` and `fetch_zone(url, contact)` are swappable so tests stay offline."""
     log_path = log_path or DEFAULT_LOG_PATH
-    configure_logging(log_path)
+    log_hub = log_hub or LogHub()
+    configure_logging(log_path, hub=log_hub)
     assets_store = assets_store or AudioAssetStore(DEFAULT_DATA_DIR)
     recordings = recordings or RecordingStore(None)
     mailbox_store = mailbox_store or MailboxStore(None, None)
@@ -432,6 +437,10 @@ def create_app(
     notifier.station = lambda: service.config.callsign
     notifier.audit_hook = lambda at, action, detail: audit.record(at, "alerts", action, detail)
     service.lockout_hook = lambda locked_out: notifier.post(lockout_alert(locked_out))
+    log_shipper = log_shipper or LogShipper(log_hub)
+    log_shipper.set_callsign(service.config.callsign)
+    if log_shipper.active:
+        log_shipper.start()
     health = HealthMonitor(
         notifier,
         system_probe or SystemProbe(_resolve_data_root(os.environ, _REPO_DATA_DIR)),
@@ -929,6 +938,7 @@ def create_app(
         health=health,
         live_audio=live_audio,
         log_path=log_path,
+        log_shipper=log_shipper,
         restore_backup_file=restore_backup_file,
         repo_dir=REPO_DIR,
         admin_dependencies=admin_dependencies,
@@ -993,6 +1003,7 @@ def create_app(
         app,
         service=service,
         log_path=log_path,
+        log_hub=log_hub,
         aprs_stations=aprs_stations,
         aprs_receiver=aprs_receiver,
         aprs_window_start=aprs_window_start,
@@ -1043,6 +1054,7 @@ def create_app(
     return app
 
 
+_LOG_HUB = LogHub()
 app = create_app(
     state_store=StateStore(DEFAULT_STATE_PATH),
     activity_store=ActivityStore(DEFAULT_ACTIVITY_PATH),
@@ -1057,6 +1069,8 @@ app = create_app(
     backups=BackupFolder(DEFAULT_BACKUP_DIR),
     node_directory=NodeDirectory(DEFAULT_NODE_LIST_PATH),
     notifier=Notifier(StateStore(DEFAULT_ALERTS_PATH)),
+    log_hub=_LOG_HUB,
+    log_shipper=LogShipper(_LOG_HUB, StateStore(DEFAULT_LOG_SHIPPING_PATH)),
     run_marker=RunMarker(StateStore(DEFAULT_RUN_MARKER_PATH)),
     net_store=StateStore(DEFAULT_NETS_PATH),
     auto_update_store=StateStore(DEFAULT_AUTO_UPDATE_PATH),

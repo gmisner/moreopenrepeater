@@ -593,10 +593,10 @@ Agent access** shows the same thing with this controller's address filled in:
 ```
 
 The agent can read the live status, the audio engine (receive level, carrier
-detect, CTCSS), settings, activity, macros and the log. With an operator's
-token it can also change settings. Each tool calls the same HTTP API the
-dashboard uses, with the agent's token, so the role checks and the audit log
-are the same as for curl.
+detect, CTCSS), settings, activity, macros and the log (`recent_logs` with an
+`after` cursor for live follow). With an operator's token it can also change
+settings. Each tool calls the same HTTP API the dashboard uses, with the
+agent's token, so the role checks and the audit log are the same as for curl.
 
 Nothing a token does can make the repeater transmit until an admin turns on
 **Let API tokens make the repeater transmit** under Agent access. That covers
@@ -794,6 +794,43 @@ state, PortAudio/serial/CM108/mixer device inventory, receiver openings
 snapshot and radio settings for troubleshooting configuration and audio —
 without passwords, the env file, users, tokens or recordings. Share the zip
 with whoever is helping you.
+
+## Remote logging
+
+Two ways for someone helping you (who may not manage the Pi) to follow the
+controller log in real time:
+
+**Pull — when they can reach the dashboard.** Give them a viewer API token
+and a path onto the Pi (LAN, Tailscale, or Tailscale Serve). Their agent uses
+MCP `recent_logs` with the `after` cursor, or `GET /api/logs/stream` (SSE)
+with the same Bearer token. The Logs page itself tails over SSE.
+
+**Push — when they can't reach the Pi.** On **Tools → Logs → Remote
+logging**, paste the HTTPS ingest URL they give you (optional Bearer token),
+pick a minimum level, and turn **Ship logs to a helper** on. The controller
+POSTs a JSON array of events (Axiom's ingest shape):
+
+```json
+[
+  {
+    "_time": 1730000000.0,
+    "seq": 12,
+    "level": "WARNING",
+    "message": "…",
+    "callsign": "W1AW",
+    "source": "moreopenrepeater"
+  }
+]
+```
+
+For [Axiom](https://axiom.co): create a dataset, create an **API token** with
+ingest permission (not a personal access token), then use
+`https://api.axiom.co/v1/ingest/<dataset>` as the URL and the API token as the
+Bearer token. Query with APL, e.g. `['dataset'] | where level == "WARNING"`.
+
+Off by default. The URL and token live in `data/log-shipping.json` only —
+not in backups or `GET /api/config`. Use **Send test** after saving. Turn it
+off when the session is over.
 
 ## Alerts
 

@@ -4,17 +4,27 @@ Every repeater controller has this kind of operational log -- it was
 conspicuously absent from this project until now. All modules log under the
 "moreopenrepeater" logger (or a child of it, e.g. "moreopenrepeater.controller"),
 which is configured here rather than left to logging defaults.
+
+When a LogHub is given, each formatted line is also pushed there for the live
+SSE stream, MCP cursor polls, and optional remote shipping.
 """
 from __future__ import annotations
 
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Optional
+
+from .log_hub import HubHandler, LogHub
 
 LOGGER_NAME = "moreopenrepeater"
 
 
-def configure_logging(log_path: Path, level: int = logging.INFO) -> logging.Logger:
+def configure_logging(
+    log_path: Path,
+    level: int = logging.INFO,
+    hub: Optional[LogHub] = None,
+) -> logging.Logger:
     logger = logging.getLogger(LOGGER_NAME)
     logger.setLevel(level)
     logger.propagate = False
@@ -38,5 +48,11 @@ def configure_logging(log_path: Path, level: int = logging.INFO) -> logging.Logg
     stream_handler.setFormatter(formatter)
     stream_handler._moreopenrepeater_managed = True  # type: ignore[attr-defined]
     logger.addHandler(stream_handler)
+
+    if hub is not None:
+        hub_handler = HubHandler(hub)
+        hub_handler.setFormatter(formatter)
+        hub_handler._moreopenrepeater_managed = True  # type: ignore[attr-defined]
+        logger.addHandler(hub_handler)
 
     return logger

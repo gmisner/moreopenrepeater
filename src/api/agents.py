@@ -49,6 +49,9 @@ Tools that make the repeater transmit (send_id, dial_dtmf,
 play_announcement) only work if an admin has allowed agents to transmit.
 Everything you change is recorded in the repeater's audit log under your
 API token's name.
+
+For live debugging, call recent_logs with after=0, then keep calling it with
+the returned after cursor so you only see new lines.
 """
 
 _authorization: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("mcp_authorization", default=None)
@@ -138,10 +141,15 @@ def build_server(app_getter: Callable[[], ASGIApp]) -> Optional["MCPServer"]:
         return await api("GET", "/api/activity/summary", params={"days": max(1, min(days, 365))})
 
     @server.tool()
-    async def recent_logs(lines: int = 100) -> list:
-        """The last lines of the controller's log: audio engine starts and errors, settings
-        changes, link events, warnings."""
-        return await api("GET", "/api/logs", params={"lines": max(1, min(lines, 1000))})
+    async def recent_logs(lines: int = 100, after: int = 0) -> dict:
+        """Controller log lines for debugging. Pass `after` from the previous response's
+        `after` cursor to only get new lines (0 = from the live buffer's start). Each
+        item is `{seq, line, level, at}`; use `after` on the next call to follow live."""
+        return await api(
+            "GET",
+            "/api/logs/since",
+            params={"lines": max(1, min(lines, 1000)), "after": max(0, after)},
+        )
 
     @server.tool()
     async def list_macros() -> list:

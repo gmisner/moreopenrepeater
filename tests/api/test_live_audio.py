@@ -1,3 +1,4 @@
+import errno
 import tempfile
 from pathlib import Path
 
@@ -247,6 +248,17 @@ def test_release_ptt_and_progress_for_the_watchdog():
     assert live.progress() is None
     live.release_ptt()  # nothing to release once the engine is stopped
     assert cm108.ptt == [False]
+
+
+def test_release_ptt_swallows_a_gone_interface():
+    """Watchdog restart prep must still finish when PTT hardware has vanished."""
+
+    class GoneCM108(FakeCM108):
+        def set_ptt(self, active):
+            raise OSError(errno.ENODEV, "No such device")
+
+    live, _service, _clock, _engines = make_live(cm108=GoneCM108())
+    live.release_ptt()  # must not raise
 
 
 def test_cm108_path_can_be_set_explicitly(tmp_path):

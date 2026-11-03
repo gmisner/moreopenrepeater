@@ -447,8 +447,12 @@ def create_app(
     watchdog.watch("audio engine", live_audio.progress)
 
     def before_watchdog_restart(stalled: str) -> None:
-        live_audio.release_ptt()
-        health.marker.remember(watchdog=stalled)
+        try:
+            live_audio.release_ptt()
+        finally:
+            # Remember even if unkey fails so the next start reports a watchdog
+            # restart instead of a generic crash.
+            health.marker.remember(watchdog=stalled)
 
     watchdog.on_stall = before_watchdog_restart
 

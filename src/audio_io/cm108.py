@@ -24,7 +24,9 @@ GET_REPORT on the HID interface) and direwolf's cm108.c (hidraw write):
 """
 from __future__ import annotations
 
+import errno
 import fcntl
+import logging
 import os
 import threading
 from pathlib import Path
@@ -39,6 +41,11 @@ VOL_UP = 0x01
 VOL_DN = 0x02
 
 INPUT_REPORT_LENGTH = 4
+
+# USB unplug/reset: the hidraw node is gone, or the open fd's device vanished.
+_GONE_ERRNOS = frozenset({errno.ENODEV, errno.ENOENT})
+
+_logger = logging.getLogger("moreopenrepeater.cm108")
 
 
 def gpio_bit(pin: int) -> int:
@@ -114,9 +121,21 @@ class CM108Interface:
         self._levels = 0  # data
         self._lock = threading.Lock()
         self.last_inputs: Optional[tuple[int, int]] = None  # (buttons, GPIO levels)
+        self._gone = False  # hidraw disappeared; further writes are no-ops
 
     def _write(self) -> None:
-        self.device.write_report(bytes([0x00, 0x00, self._levels, self._outputs, 0x00]))
+        try:
+            self.device.write_report(bytes([0x00, 0x00, self._levels, self._outputs, 0x00]))
+        except OSError as error:
+            if error.errno in _GONE_ERRNOS:
+                # Unplugged or reset: PTT/COS are unreachable. Treat as done so
+                # unkey/cleanup (watchdog restart) doesn't explode on a dead fd.
+                if not self._gone:
+                    path = getattr(self.device, "path", "CM108")
+                    _logger.warning("%s is gone (%s); GPIO writes ignored until restart", path, error)
+                    self._gone = True
+                return
+            raise
 
     def set_gpio(self, pin: int, active: bool) -> None:
         """Make GPIO<pin> an output and drive it high (`active`) or low."""

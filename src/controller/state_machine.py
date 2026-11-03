@@ -149,6 +149,10 @@ class RepeaterConfig:
     setup_wizard_done: bool = False  # the dashboard's first-run wizard was finished or skipped
     audio_input_device: str = ""  # PortAudio device name; "" = system default
     audio_output_device: str = ""
+    # Operator notes for the main radio interface (dashboard only).
+    radio_model: str = ""  # "Yaesu DR-1X", "two mobiles + AIOC"
+    radio_frequency: str = ""  # free text: "146.94 / 146.34", "GMRS ch 20"
+    radio_notes: str = ""
     # api.mixer: mixer control -> volume step, set on the input card (capture) and output card (playback)
     audio_input_levels: dict = field(default_factory=dict)
     audio_output_levels: dict = field(default_factory=dict)

@@ -91,6 +91,14 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
   );
 }
 
+function isOpenAiHost(url: string) {
+  try {
+    return new URL(url).hostname.toLowerCase() === "api.openai.com";
+  } catch {
+    return false;
+  }
+}
+
 function TranscriptionNote({ status, url }: { status: TranscriptionStatus | null; url: string }) {
   if (!status || status.engine === "off") return null;
   if (status.engine === "vosk" && !status.vosk_installed) {
@@ -103,7 +111,7 @@ function TranscriptionNote({ status, url }: { status: TranscriptionStatus | null
   if (status.engine === "vosk" && !status.vosk_model) {
     return <Text c="dimmed" size="sm">No Vosk model yet. Unpack a model into <Code>{status.vosk_model_dir}</Code>.</Text>;
   }
-  if (status.engine === "openai" && !status.api_key_set && url.includes("api.openai.com")) {
+  if (status.engine === "openai" && !status.api_key_set && isOpenAiHost(url)) {
     return (
       <Text c="dimmed" size="sm">
         OpenAI needs an API key in <Code>MOREOPENREPEATER_TRANSCRIPTION_API_KEY</Code> in <Code>/etc/moreopenrepeater/env</Code>, followed by a restart.

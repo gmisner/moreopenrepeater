@@ -93,6 +93,39 @@ type EngineValues = {
   dtmf_mute: boolean;
 };
 
+type LinkValues = {
+  link_radio_enabled: boolean;
+  link_radio_mode: string;
+  link_radio_name: string;
+  link_radio_input_device: string;
+  link_radio_output_device: string;
+  link_radio_cos: string;
+  link_radio_cos_polarity: string;
+  link_radio_cos_gpio_pin: number;
+  link_radio_cos_serial_device: string;
+  link_radio_cos_serial_line: string;
+  link_radio_vox_threshold_db: number;
+  link_radio_ptt: string;
+  link_radio_ptt_gpio_pin: number;
+  link_radio_ptt_serial_device: string;
+  link_radio_ptt_serial_line: string;
+  link_radio_ptt_polarity: string;
+  link_radio_tx_gain_db: number;
+  link_radio_tx_ctcss_hz: number | "";
+  link_radio_timeout: number;
+  link_radio_tx_delay_ms: number;
+  link_radio_squelch_tail_ms: number;
+  link_radio_courtesy_tone: boolean;
+  remote_base_rigctld: string;
+  remote_base_mhz: number;
+  remote_base_shift: string;
+  remote_base_offset_mhz: number | "";
+  remote_base_tone_hz: number | "";
+  remote_base_rig_mode: string;
+  remote_base_ranges: string;
+  remote_base_idle_minutes: number;
+};
+
 const TONE_STYLES = [
   { value: "beep", label: "Beep" },
   { value: "high_low", label: "High–low" },
@@ -189,6 +222,72 @@ const ENGINE_DEFAULTS: EngineValues = {
   tx_ctcss_hz: "",
   tx_ctcss_level_db: -20,
   dtmf_mute: true,
+};
+
+const LINK_KEYS = [
+  "link_radio_enabled",
+  "link_radio_mode",
+  "link_radio_name",
+  "link_radio_input_device",
+  "link_radio_output_device",
+  "link_radio_cos",
+  "link_radio_cos_polarity",
+  "link_radio_cos_gpio_pin",
+  "link_radio_cos_serial_device",
+  "link_radio_cos_serial_line",
+  "link_radio_vox_threshold_db",
+  "link_radio_ptt",
+  "link_radio_ptt_gpio_pin",
+  "link_radio_ptt_serial_device",
+  "link_radio_ptt_serial_line",
+  "link_radio_ptt_polarity",
+  "link_radio_tx_gain_db",
+  "link_radio_tx_ctcss_hz",
+  "link_radio_timeout",
+  "link_radio_tx_delay_ms",
+  "link_radio_squelch_tail_ms",
+  "link_radio_courtesy_tone",
+  "remote_base_rigctld",
+  "remote_base_mhz",
+  "remote_base_shift",
+  "remote_base_offset_mhz",
+  "remote_base_tone_hz",
+  "remote_base_rig_mode",
+  "remote_base_ranges",
+  "remote_base_idle_minutes",
+] as (keyof LinkValues)[];
+
+const LINK_DEFAULTS: LinkValues = {
+  link_radio_enabled: false,
+  link_radio_mode: "link",
+  link_radio_name: "",
+  link_radio_input_device: "",
+  link_radio_output_device: "",
+  link_radio_cos: "vox",
+  link_radio_cos_polarity: "low",
+  link_radio_cos_gpio_pin: 23,
+  link_radio_cos_serial_device: "",
+  link_radio_cos_serial_line: "cts",
+  link_radio_vox_threshold_db: -40,
+  link_radio_ptt: "cm108",
+  link_radio_ptt_gpio_pin: 24,
+  link_radio_ptt_serial_device: "",
+  link_radio_ptt_serial_line: "rts",
+  link_radio_ptt_polarity: "high",
+  link_radio_tx_gain_db: 0,
+  link_radio_tx_ctcss_hz: "",
+  link_radio_timeout: 180,
+  link_radio_tx_delay_ms: 0,
+  link_radio_squelch_tail_ms: 0,
+  link_radio_courtesy_tone: true,
+  remote_base_rigctld: "localhost:4532",
+  remote_base_mhz: 146.52,
+  remote_base_shift: "simplex",
+  remote_base_offset_mhz: "",
+  remote_base_tone_hz: "",
+  remote_base_rig_mode: "FM",
+  remote_base_ranges: "144-148, 222-225, 420-450",
+  remote_base_idle_minutes: 10,
 };
 
 const CTCSS_TONES = [
@@ -335,6 +434,7 @@ export function Audio() {
   const isViewer = session?.role === "viewer";
   const sounds = useConfigSlice<SoundValues>(SOUND_KEYS, SOUND_DEFAULTS);
   const engine = useConfigSlice<EngineValues>(ENGINE_KEYS, ENGINE_DEFAULTS);
+  const link = useConfigSlice<LinkValues>(LINK_KEYS, LINK_DEFAULTS);
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
@@ -466,6 +566,20 @@ export function Audio() {
   const state = engineState(engineStatus);
   const boardPreset = (config?.board_preset as string) || "";
   const cosHardware = ["cm108", "gpio", "serial"].includes(engine.values.cos_source);
+  const linkCosHardware = ["cm108", "gpio", "serial"].includes(link.values.link_radio_cos);
+  const linkRemoteBase = link.values.link_radio_mode === "remote_base";
+  const linkTxCtcss =
+    link.values.link_radio_tx_ctcss_hz === "" || link.values.link_radio_tx_ctcss_hz == null
+      ? null
+      : String(link.values.link_radio_tx_ctcss_hz);
+  const remoteTone =
+    link.values.remote_base_tone_hz === "" || link.values.remote_base_tone_hz == null
+      ? null
+      : String(link.values.remote_base_tone_hz);
+  const remoteOffset =
+    link.values.remote_base_offset_mhz === "" || link.values.remote_base_offset_mhz == null
+      ? ""
+      : link.values.remote_base_offset_mhz;
   const glitchCount = (counter: keyof typeof GLITCH_SHORT) => {
     if (!engineStatus) return 0;
     if (counter === "dropped_input_blocks") return engineStatus.dropped_input_blocks;
@@ -1087,6 +1201,357 @@ export function Audio() {
               </Button>
             </Group>
           ) : null}
+        </Stack>
+      </Card>
+
+      <Card
+        withBorder
+        padding="lg"
+        radius="md"
+        component="form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void link.submit();
+        }}
+      >
+        <Stack gap="md">
+          <Group justify="space-between" align="center">
+            <Title order={2}>Link radio</Title>
+            <Badge color={link.values.link_radio_enabled ? "green" : "gray"} variant="light">
+              {link.values.link_radio_enabled ? "on" : "off"}
+            </Badge>
+          </Group>
+          <Text c="dimmed" size="sm" maw="75ch">
+            A second radio on its own sound device for cross-band or a far link. Local users go out the link;
+            what it hears is transmitted here. It never transmits over the far end. Needs its own interface
+            (second Digirig / CM108), not the repeater&apos;s.
+          </Text>
+          <Switch
+            label={linkRemoteBase ? "Turn the remote base on" : "Connect the link radio"}
+            checked={link.values.link_radio_enabled}
+            onChange={(event) => link.setField("link_radio_enabled", event.currentTarget.checked)}
+          />
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            <Select
+              label={labeled(
+                "Use it as",
+                'A remote base is off until a "Link radio on" macro, tuned by DTMF, and turns off when idle.',
+              )}
+              data={[
+                { value: "link", label: "A link to a far station" },
+                { value: "remote_base", label: "A remote base (tuned by DTMF)" },
+              ]}
+              value={link.values.link_radio_mode}
+              onChange={(value) => link.setField("link_radio_mode", value || "link")}
+              allowDeselect={false}
+            />
+            <TextInput
+              label="Name"
+              placeholder="Link to W1XYZ"
+              maxLength={40}
+              value={link.values.link_radio_name}
+              onChange={(event) => link.setField("link_radio_name", event.currentTarget.value)}
+            />
+            <Select
+              label={labeled("Input (link receiver)", "Its own sound device, not the repeater's.")}
+              data={deviceOptions(devices, "inputs", link.values.link_radio_input_device)}
+              value={link.values.link_radio_input_device || null}
+              onChange={(value) => link.setField("link_radio_input_device", value || "")}
+              searchable
+              clearable
+              placeholder="System default"
+            />
+            <Select
+              label="Output (link transmitter)"
+              data={deviceOptions(devices, "outputs", link.values.link_radio_output_device)}
+              value={link.values.link_radio_output_device || null}
+              onChange={(value) => link.setField("link_radio_output_device", value || "")}
+              searchable
+              clearable
+              placeholder="System default"
+            />
+            <Select
+              label="Detect the far end by"
+              data={[
+                { value: "vox", label: "Audio level (VOX)" },
+                { value: "ctcss", label: "CTCSS tone present" },
+                { value: "cm108", label: "A second CM108's COS input" },
+                { value: "gpio", label: "Raspberry Pi GPIO pin" },
+                { value: "serial", label: "Serial port (CTS, DSR or DCD)" },
+              ]}
+              value={link.values.link_radio_cos}
+              onChange={(value) => link.setField("link_radio_cos", value || "vox")}
+              allowDeselect={false}
+            />
+            {link.values.link_radio_cos === "vox" ? (
+              <NumberInput
+                label="VOX threshold"
+                suffix=" dBFS"
+                min={-90}
+                max={0}
+                value={link.values.link_radio_vox_threshold_db}
+                onChange={(value) => link.setField("link_radio_vox_threshold_db", Number(value) || 0)}
+                required
+              />
+            ) : null}
+            {link.values.link_radio_cos === "gpio" ? (
+              <NumberInput
+                label={labeled("COS pin", "BCM number; GPIO23 is header pin 16. 3.3 V only.")}
+                suffix=" GPIO"
+                min={2}
+                max={27}
+                value={link.values.link_radio_cos_gpio_pin}
+                onChange={(value) => link.setField("link_radio_cos_gpio_pin", Number(value) || 0)}
+                required
+              />
+            ) : null}
+            {link.values.link_radio_cos === "serial" ? (
+              <>
+                <TextInput
+                  label="COS serial port"
+                  placeholder="/dev/ttyUSB1"
+                  spellCheck={false}
+                  autoComplete="off"
+                  value={link.values.link_radio_cos_serial_device}
+                  onChange={(event) => link.setField("link_radio_cos_serial_device", event.currentTarget.value)}
+                />
+                <Select
+                  label="COS line"
+                  data={[
+                    { value: "cts", label: "CTS" },
+                    { value: "dsr", label: "DSR" },
+                    { value: "dcd", label: "DCD" },
+                  ]}
+                  value={link.values.link_radio_cos_serial_line}
+                  onChange={(value) => link.setField("link_radio_cos_serial_line", value || "cts")}
+                  allowDeselect={false}
+                />
+              </>
+            ) : null}
+            {linkCosHardware ? (
+              <Select
+                label="COS polarity"
+                data={[
+                  { value: "low", label: "Active low (pulled to ground on carrier)" },
+                  { value: "high", label: "Active high" },
+                ]}
+                value={link.values.link_radio_cos_polarity}
+                onChange={(value) => link.setField("link_radio_cos_polarity", value || "low")}
+                allowDeselect={false}
+              />
+            ) : null}
+            <Select
+              label="Key the link radio with"
+              data={[
+                { value: "cm108", label: "A second CM108's PTT" },
+                { value: "gpio", label: "Raspberry Pi GPIO pin" },
+                { value: "serial", label: "Serial port (RTS or DTR)" },
+                { value: "none", label: "Nothing (the radio's own VOX keys it)" },
+              ]}
+              value={link.values.link_radio_ptt}
+              onChange={(value) => link.setField("link_radio_ptt", value || "cm108")}
+              allowDeselect={false}
+            />
+            {link.values.link_radio_ptt === "gpio" ? (
+              <NumberInput
+                label={labeled("PTT pin", "BCM number; GPIO24 is header pin 18. Drive the radio through a transistor.")}
+                suffix=" GPIO"
+                min={2}
+                max={27}
+                value={link.values.link_radio_ptt_gpio_pin}
+                onChange={(value) => link.setField("link_radio_ptt_gpio_pin", Number(value) || 0)}
+                required
+              />
+            ) : null}
+            {link.values.link_radio_ptt === "serial" ? (
+              <>
+                <TextInput
+                  label="PTT serial port"
+                  placeholder="/dev/ttyUSB1"
+                  spellCheck={false}
+                  autoComplete="off"
+                  value={link.values.link_radio_ptt_serial_device}
+                  onChange={(event) => link.setField("link_radio_ptt_serial_device", event.currentTarget.value)}
+                />
+                <Select
+                  label="PTT line"
+                  data={[
+                    { value: "rts", label: "RTS" },
+                    { value: "dtr", label: "DTR" },
+                  ]}
+                  value={link.values.link_radio_ptt_serial_line}
+                  onChange={(value) => link.setField("link_radio_ptt_serial_line", value || "rts")}
+                  allowDeselect={false}
+                />
+              </>
+            ) : null}
+            {link.values.link_radio_ptt === "gpio" || link.values.link_radio_ptt === "serial" ? (
+              <Select
+                label="PTT polarity"
+                data={[
+                  { value: "high", label: "Active high (pin goes high to transmit)" },
+                  { value: "low", label: "Active low" },
+                ]}
+                value={link.values.link_radio_ptt_polarity}
+                onChange={(value) => link.setField("link_radio_ptt_polarity", value || "high")}
+                allowDeselect={false}
+              />
+            ) : null}
+            <NumberInput
+              label="Transmit gain"
+              suffix=" dB"
+              min={-40}
+              max={20}
+              step={0.5}
+              decimalScale={1}
+              value={link.values.link_radio_tx_gain_db}
+              onChange={(value) => link.setField("link_radio_tx_gain_db", Number(value) || 0)}
+              required
+            />
+            <Select
+              label={labeled("Transmit CTCSS tone", "For a far repeater that needs a tone to open.")}
+              data={CTCSS_TONES.map((hz) => ({ value: String(hz), label: `${hz.toFixed(1)} Hz` }))}
+              value={linkTxCtcss}
+              onChange={(value) =>
+                link.setField("link_radio_tx_ctcss_hz", value == null || value === "" ? "" : Number(value))
+              }
+              searchable
+              clearable
+              placeholder="off"
+            />
+            <NumberInput
+              label={labeled("Link timeout", "Longest one transmission out the link radio.")}
+              suffix=" s"
+              min={30}
+              max={1800}
+              value={link.values.link_radio_timeout}
+              onChange={(value) => link.setField("link_radio_timeout", Number(value) || 0)}
+              required
+            />
+            <NumberInput
+              label="Transmit delay"
+              suffix=" ms"
+              min={0}
+              max={500}
+              step={10}
+              value={link.values.link_radio_tx_delay_ms}
+              onChange={(value) => link.setField("link_radio_tx_delay_ms", Number(value) || 0)}
+              required
+            />
+            <NumberInput
+              label="Squelch-tail removal"
+              suffix=" ms"
+              min={0}
+              max={300}
+              step={10}
+              value={link.values.link_radio_squelch_tail_ms}
+              onChange={(value) => link.setField("link_radio_squelch_tail_ms", Number(value) || 0)}
+              required
+            />
+          </SimpleGrid>
+          <Switch
+            label="Courtesy tone on the link when a local user unkeys"
+            checked={link.values.link_radio_courtesy_tone}
+            onChange={(event) => link.setField("link_radio_courtesy_tone", event.currentTarget.checked)}
+          />
+
+          {linkRemoteBase ? (
+            <Stack gap="md">
+              <Title order={3}>Remote base</Title>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                <TextInput
+                  label={labeled(
+                    "Radio control (rigctld)",
+                    "Hamlib rigctld for the radio. Blank: no CAT, so DTMF tuning is off.",
+                  )}
+                  placeholder="localhost:4532"
+                  spellCheck={false}
+                  autoComplete="off"
+                  value={link.values.remote_base_rigctld}
+                  onChange={(event) => link.setField("remote_base_rigctld", event.currentTarget.value)}
+                />
+                <NumberInput
+                  label="Frequency"
+                  suffix=" MHz"
+                  min={1}
+                  max={10000}
+                  step={0.0001}
+                  decimalScale={4}
+                  value={link.values.remote_base_mhz}
+                  onChange={(value) => link.setField("remote_base_mhz", Number(value) || 0)}
+                  required
+                />
+                <Select
+                  label="Shift"
+                  data={[
+                    { value: "simplex", label: "Simplex" },
+                    { value: "minus", label: "Minus" },
+                    { value: "plus", label: "Plus" },
+                  ]}
+                  value={link.values.remote_base_shift}
+                  onChange={(value) => link.setField("remote_base_shift", value || "simplex")}
+                  allowDeselect={false}
+                />
+                <NumberInput
+                  label={labeled("Offset", "Blank uses the band's usual offset.")}
+                  suffix=" MHz"
+                  min={0.001}
+                  max={100}
+                  step={0.001}
+                  decimalScale={3}
+                  value={remoteOffset === "" ? undefined : remoteOffset}
+                  onChange={(value) =>
+                    link.setField(
+                      "remote_base_offset_mhz",
+                      value === "" || value === undefined || value === null ? "" : Number(value),
+                    )
+                  }
+                  placeholder="band's usual"
+                />
+                <Select
+                  label="Transmit CTCSS tone"
+                  data={CTCSS_TONES.map((hz) => ({ value: String(hz), label: `${hz.toFixed(1)} Hz` }))}
+                  value={remoteTone}
+                  onChange={(value) =>
+                    link.setField("remote_base_tone_hz", value == null || value === "" ? "" : Number(value))
+                  }
+                  searchable
+                  clearable
+                  placeholder="off"
+                />
+                <Select
+                  label="Mode"
+                  data={[
+                    { value: "FM", label: "FM" },
+                    { value: "AM", label: "AM" },
+                    { value: "USB", label: "USB" },
+                    { value: "LSB", label: "LSB" },
+                  ]}
+                  value={link.values.remote_base_rig_mode}
+                  onChange={(value) => link.setField("remote_base_rig_mode", value || "FM")}
+                  allowDeselect={false}
+                />
+                <TextInput
+                  label={labeled("Allowed bands", "MHz ranges it may be tuned to. Keep them inside your license.")}
+                  placeholder="144-148, 222-225, 420-450"
+                  spellCheck={false}
+                  value={link.values.remote_base_ranges}
+                  onChange={(event) => link.setField("remote_base_ranges", event.currentTarget.value)}
+                />
+                <NumberInput
+                  label={labeled("Turn off after", 'Unused this long → "Remote base off". 0 = stays on.')}
+                  suffix=" min"
+                  min={0}
+                  max={1440}
+                  value={link.values.remote_base_idle_minutes}
+                  onChange={(value) => link.setField("remote_base_idle_minutes", Number(value) || 0)}
+                  required
+                />
+              </SimpleGrid>
+            </Stack>
+          ) : null}
+
+          <ConfigActions dirty={link.dirty} saving={link.saving} onReset={link.reset} />
         </Stack>
       </Card>
     </Page>

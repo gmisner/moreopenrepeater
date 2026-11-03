@@ -50,6 +50,7 @@ class StatusResponse(BaseModel):
     locked_out: bool = False
     net_active: bool = False
     gmrs_mode: bool = False
+    callsign: str = ""
 
 
 # GPIO3 is the PTT pin.
@@ -971,6 +972,11 @@ class AlertsResponse(BaseModel):
 
 class AlertTestResponse(BaseModel):
     results: dict[str, Optional[str]]  # channel -> error, or None if it went
+
+
+class RestartResponse(BaseModel):
+    available: bool  # installed with install-pi.sh, so the restart units exist
+    requested: bool = False
 
 
 class WeatherAlertResponse(BaseModel):

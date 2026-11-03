@@ -104,7 +104,7 @@ export function AppShell() {
               Station
             </Text>
             <Text ff="monospace" fw={700} size="md">
-              {(status?.callsign as string) || "(no callsign)"}
+              {status?.callsign || "(no callsign)"}
             </Text>
           </Box>
           <Box style={{ flex: 1, overflow: "auto" }}>{nav}</Box>

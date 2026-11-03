@@ -1235,18 +1235,28 @@ export function Audio() {
             <Select
               label={labeled(
                 "Use it as",
-                'A remote base is off until a "Link radio on" macro, tuned by DTMF, and turns off when idle.',
+                'A link to a far station stays on while connected: local users go out that radio, and what it hears is repeated here (fixed frequency on the radio). A remote base stays off until a "Link radio on" macro; users tune frequency, shift and tone by DTMF through Hamlib, and it turns itself off when idle.',
               )}
               data={[
                 { value: "link", label: "A link to a far station" },
                 { value: "remote_base", label: "A remote base (tuned by DTMF)" },
               ]}
+              renderOption={({ option }) => (
+                <Stack gap={2}>
+                  <Text size="sm">{option.label}</Text>
+                  <Text size="xs" c="dimmed" maw={280}>
+                    {option.value === "remote_base"
+                      ? 'Off until a "Link radio on" macro; users tune it by DTMF; turns off when idle.'
+                      : "Always-on cross-band path to a fixed far station or repeater."}
+                  </Text>
+                </Stack>
+              )}
               value={link.values.link_radio_mode}
               onChange={(value) => link.setField("link_radio_mode", value || "link")}
               allowDeselect={false}
             />
             <TextInput
-              label="Name"
+              label={labeled("Name", "Shown on the dashboard and in spoken prompts for this link radio.")}
               placeholder="Link to W1XYZ"
               maxLength={40}
               value={link.values.link_radio_name}

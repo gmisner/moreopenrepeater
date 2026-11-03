@@ -24,6 +24,13 @@ import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
 import { useSetupWizard } from "../wizard/SetupWizard";
 import { labeled } from "../components/FieldHint";
+import {
+  serialAssignments,
+  serialPortOptions,
+  serialSelectValue,
+  soundAssignments,
+  soundDeviceOptions,
+} from "../deviceUsage";
 
 type Asset = { id: string; kind: string; filename: string; uploaded_at: string };
 type AudioDevice = { name: string; inputs: number; outputs: number; default_samplerate: number };
@@ -368,13 +375,6 @@ function assetOptions(assets: Asset[], kind: string) {
   return assets.filter((asset) => asset.kind === kind).map((asset) => ({ value: asset.id, label: asset.filename }));
 }
 
-function deviceOptions(devices: AudioDevice[], side: "inputs" | "outputs", saved: string) {
-  const names = devices.filter((device) => device[side] > 0).map((device) => device.name);
-  const options = names.map((name) => ({ value: name, label: name }));
-  if (saved && !names.includes(saved)) options.push({ value: saved, label: `${saved} (not connected)` });
-  return options;
-}
-
 function soundLevelText(level: SoundLevel) {
   if (level.db == null) return `${Math.round((100 * (level.value - level.min)) / (level.max - level.min || 1))}%`;
   return `${level.db > 0 ? "+" : ""}${level.db.toFixed(1)} dB`;
@@ -461,6 +461,40 @@ export function Audio() {
     const parsed = parseCustomTone(sounds.values.courtesy_tone_custom);
     return Array.from({ length: 4 }, (_, i) => parsed[i] ?? (["", ""] as [string, string]));
   }, [sounds.values.courtesy_tone_custom]);
+
+  const soundUsage = useMemo(
+    () =>
+      soundAssignments({
+        audio_input_device: engine.values.audio_input_device,
+        audio_output_device: engine.values.audio_output_device,
+        link_radio_input_device: link.values.link_radio_input_device,
+        link_radio_output_device: link.values.link_radio_output_device,
+        monitor_input_device: typeof config?.monitor_input_device === "string" ? config.monitor_input_device : "",
+      }),
+    [
+      engine.values.audio_input_device,
+      engine.values.audio_output_device,
+      link.values.link_radio_input_device,
+      link.values.link_radio_output_device,
+      config?.monitor_input_device,
+    ],
+  );
+
+  const serialUsage = useMemo(
+    () =>
+      serialAssignments({
+        cos_serial_device: engine.values.cos_serial_device,
+        ptt_serial_device: engine.values.ptt_serial_device,
+        link_radio_cos_serial_device: link.values.link_radio_cos_serial_device,
+        link_radio_ptt_serial_device: link.values.link_radio_ptt_serial_device,
+      }),
+    [
+      engine.values.cos_serial_device,
+      engine.values.ptt_serial_device,
+      link.values.link_radio_cos_serial_device,
+      link.values.link_radio_ptt_serial_device,
+    ],
+  );
 
   const loadAssets = useCallback(async () => {
     setAssets(await api<Asset[]>("/api/assets"));
@@ -841,7 +875,7 @@ export function Audio() {
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <Select
                     label="Input (receiver)"
-                    data={deviceOptions(devices, "inputs", engine.values.audio_input_device)}
+                    data={soundDeviceOptions(devices, "inputs", engine.values.audio_input_device, soundUsage)}
                     value={engine.values.audio_input_device || null}
                     onChange={(value) => engine.setField("audio_input_device", value || "")}
                     searchable
@@ -850,7 +884,7 @@ export function Audio() {
                   />
                   <Select
                     label="Output (transmitter)"
-                    data={deviceOptions(devices, "outputs", engine.values.audio_output_device)}
+                    data={soundDeviceOptions(devices, "outputs", engine.values.audio_output_device, soundUsage)}
                     value={engine.values.audio_output_device || null}
                     onChange={(value) => engine.setField("audio_output_device", value || "")}
                     searchable
@@ -915,15 +949,17 @@ export function Audio() {
                   ) : null}
                   {engine.values.cos_source === "serial" ? (
                     <>
-                      <TextInput
-                        label={labeled("COS serial port", serialPorts.length
-                            ? `Known ports: ${serialPorts.map((p) => p.path).join(", ")}`
-                            : "A /dev/serial/by-id name stays the same when adapters are plugged in a different order.")}
-                        placeholder="/dev/ttyUSB0"
-                        spellCheck={false}
-                        autoComplete="off"
-                        value={engine.values.cos_serial_device}
-                        onChange={(event) => engine.setField("cos_serial_device", event.currentTarget.value)}
+                      <Select
+                        label={labeled(
+                          "COS serial port",
+                          "A /dev/serial/by-id name stays the same when adapters are plugged in a different order. Labels show if another role already uses the port.",
+                        )}
+                        data={serialPortOptions(serialPorts, engine.values.cos_serial_device, serialUsage)}
+                        value={serialSelectValue(serialPorts, engine.values.cos_serial_device)}
+                        onChange={(value) => engine.setField("cos_serial_device", value || "")}
+                        searchable
+                        clearable
+                        placeholder="/dev/serial/by-id/…"
                       />
                       <Select
                         label="COS line"
@@ -1011,15 +1047,17 @@ export function Audio() {
                   ) : null}
                   {engine.values.ptt_output === "serial" ? (
                     <>
-                      <TextInput
-                        label={labeled("PTT serial port", serialPorts.length
-                            ? `Known ports: ${serialPorts.map((p) => p.path).join(", ")}`
-                            : undefined)}
-                        placeholder="/dev/ttyUSB0"
-                        spellCheck={false}
-                        autoComplete="off"
-                        value={engine.values.ptt_serial_device}
-                        onChange={(event) => engine.setField("ptt_serial_device", event.currentTarget.value)}
+                      <Select
+                        label={labeled(
+                          "PTT serial port",
+                          "Labels show if another role already uses the port. PTT and COS can share one adapter on different lines.",
+                        )}
+                        data={serialPortOptions(serialPorts, engine.values.ptt_serial_device, serialUsage)}
+                        value={serialSelectValue(serialPorts, engine.values.ptt_serial_device)}
+                        onChange={(value) => engine.setField("ptt_serial_device", value || "")}
+                        searchable
+                        clearable
+                        placeholder="/dev/serial/by-id/…"
                       />
                       <Select
                         label="PTT line"
@@ -1307,7 +1345,7 @@ export function Audio() {
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <Select
                     label={labeled("Input (link receiver)", "Its own sound device, not the repeater's.")}
-                    data={deviceOptions(devices, "inputs", link.values.link_radio_input_device)}
+                    data={soundDeviceOptions(devices, "inputs", link.values.link_radio_input_device, soundUsage)}
                     value={link.values.link_radio_input_device || null}
                     onChange={(value) => link.setField("link_radio_input_device", value || "")}
                     searchable
@@ -1316,7 +1354,7 @@ export function Audio() {
                   />
                   <Select
                     label="Output (link transmitter)"
-                    data={deviceOptions(devices, "outputs", link.values.link_radio_output_device)}
+                    data={soundDeviceOptions(devices, "outputs", link.values.link_radio_output_device, soundUsage)}
                     value={link.values.link_radio_output_device || null}
                     onChange={(value) => link.setField("link_radio_output_device", value || "")}
                     searchable
@@ -1369,18 +1407,17 @@ export function Audio() {
                   ) : null}
                   {link.values.link_radio_cos === "serial" ? (
                     <>
-                      <TextInput
+                      <Select
                         label={labeled(
                           "COS serial port",
-                          serialPorts.length
-                            ? `Known ports: ${serialPorts.map((p) => p.path).join(", ")}`
-                            : "A /dev/serial/by-id name stays the same when adapters are plugged in a different order.",
+                          "A /dev/serial/by-id name stays the same when adapters are plugged in a different order. Labels show if another role already uses the port.",
                         )}
-                        placeholder="/dev/ttyUSB1"
-                        spellCheck={false}
-                        autoComplete="off"
-                        value={link.values.link_radio_cos_serial_device}
-                        onChange={(event) => link.setField("link_radio_cos_serial_device", event.currentTarget.value)}
+                        data={serialPortOptions(serialPorts, link.values.link_radio_cos_serial_device, serialUsage)}
+                        value={serialSelectValue(serialPorts, link.values.link_radio_cos_serial_device)}
+                        onChange={(value) => link.setField("link_radio_cos_serial_device", value || "")}
+                        searchable
+                        clearable
+                        placeholder="/dev/serial/by-id/…"
                       />
                       <Select
                         label="COS line"
@@ -1447,16 +1484,17 @@ export function Audio() {
                   ) : null}
                   {link.values.link_radio_ptt === "serial" ? (
                     <>
-                      <TextInput
+                      <Select
                         label={labeled(
                           "PTT serial port",
-                          serialPorts.length ? `Known ports: ${serialPorts.map((p) => p.path).join(", ")}` : undefined,
+                          "Labels show if another role already uses the port. PTT and COS can share one adapter on different lines.",
                         )}
-                        placeholder="/dev/ttyUSB1"
-                        spellCheck={false}
-                        autoComplete="off"
-                        value={link.values.link_radio_ptt_serial_device}
-                        onChange={(event) => link.setField("link_radio_ptt_serial_device", event.currentTarget.value)}
+                        data={serialPortOptions(serialPorts, link.values.link_radio_ptt_serial_device, serialUsage)}
+                        value={serialSelectValue(serialPorts, link.values.link_radio_ptt_serial_device)}
+                        onChange={(value) => link.setField("link_radio_ptt_serial_device", value || "")}
+                        searchable
+                        clearable
+                        placeholder="/dev/serial/by-id/…"
                       />
                       <Select
                         label="PTT line"

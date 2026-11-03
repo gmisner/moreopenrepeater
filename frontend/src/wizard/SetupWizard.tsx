@@ -24,6 +24,7 @@ import {
 } from "react";
 import { api } from "../api";
 import { notifyError, notifySuccess, useConfig, type Config } from "../config";
+import { soundAssignments, soundDeviceOptions } from "../deviceUsage";
 import { useSession } from "../session";
 
 const BY_HAND = "";
@@ -76,16 +77,16 @@ export function useSetupWizard() {
   return ctx;
 }
 
-function deviceOptions(devices: AudioDevice[], kind: "inputs" | "outputs", current: string) {
-  const names = devices.filter((d) => d[kind] > 0).map((d) => d.name);
-  const data = [
+function wizardDeviceOptions(
+  devices: AudioDevice[],
+  kind: "inputs" | "outputs",
+  current: string,
+  assignments: ReturnType<typeof soundAssignments>,
+) {
+  return [
     { value: "", label: "System default" },
-    ...names.map((name) => ({ value: name, label: name })),
+    ...soundDeviceOptions(devices, kind, current, assignments),
   ];
-  if (current && !names.includes(current)) {
-    data.push({ value: current, label: `${current} (not connected)` });
-  }
-  return data;
 }
 
 function pickDevice(
@@ -227,6 +228,18 @@ export function SetupWizardProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!selectedBoard?.two_port) setLinkOn(false);
   }, [selectedBoard]);
+
+  const deviceUsage = useMemo(
+    () =>
+      soundAssignments({
+        audio_input_device: inputDevice,
+        audio_output_device: outputDevice,
+        link_radio_input_device: linkOn ? linkInput : "",
+        link_radio_output_device: linkOn ? linkOutput : "",
+        monitor_input_device: typeof config?.monitor_input_device === "string" ? config.monitor_input_device : "",
+      }),
+    [inputDevice, outputDevice, linkOn, linkInput, linkOutput, config?.monitor_input_device],
+  );
 
   const finish = async () => {
     await save({ setup_wizard_done: true });
@@ -419,14 +432,14 @@ export function SetupWizardProvider({ children }: { children: ReactNode }) {
               <SimpleGrid cols={{ base: 1, sm: 2 }}>
                 <Select
                   label="Input (receiver)"
-                  data={deviceOptions(devices, "inputs", inputDevice)}
+                  data={wizardDeviceOptions(devices, "inputs", inputDevice, deviceUsage)}
                   value={inputDevice}
                   onChange={(value) => setInputDevice(value ?? "")}
                   searchable
                 />
                 <Select
                   label="Output (transmitter)"
-                  data={deviceOptions(devices, "outputs", outputDevice)}
+                  data={wizardDeviceOptions(devices, "outputs", outputDevice, deviceUsage)}
                   value={outputDevice}
                   onChange={(value) => setOutputDevice(value ?? "")}
                   searchable
@@ -443,14 +456,14 @@ export function SetupWizardProvider({ children }: { children: ReactNode }) {
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
                       <Select
                         label="Link radio input"
-                        data={deviceOptions(devices, "inputs", linkInput)}
+                        data={wizardDeviceOptions(devices, "inputs", linkInput, deviceUsage)}
                         value={linkInput}
                         onChange={(value) => setLinkInput(value ?? "")}
                         searchable
                       />
                       <Select
                         label="Link radio output"
-                        data={deviceOptions(devices, "outputs", linkOutput)}
+                        data={wizardDeviceOptions(devices, "outputs", linkOutput, deviceUsage)}
                         value={linkOutput}
                         onChange={(value) => setLinkOutput(value ?? "")}
                         searchable

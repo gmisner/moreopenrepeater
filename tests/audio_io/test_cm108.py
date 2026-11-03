@@ -1,3 +1,5 @@
+import errno
+
 import pytest
 
 from audio_io.cm108 import GPIO1, GPIO3, GPIO4, VOL_DN, VOL_UP, CM108Interface, _hidiocginput, gpio_bit
@@ -7,12 +9,16 @@ class FakeHidrawDevice:
     """In-memory stand-in for /dev/hidrawN so CM108Interface's bit-packing
     logic can be tested without real hardware."""
 
-    def __init__(self, buttons: int = 0, gpio: int = 0) -> None:
+    def __init__(self, buttons: int = 0, gpio: int = 0, write_error: OSError | None = None) -> None:
         self.written_reports: list[bytes] = []
         self.buttons = buttons
         self.gpio = gpio
+        self.write_error = write_error
+        self.path = "/dev/hidraw9"
 
     def write_report(self, report: bytes) -> None:
+        if self.write_error is not None:
+            raise self.write_error
         self.written_reports.append(report)
 
     def get_input_report(self, length: int) -> bytes:
@@ -90,3 +96,22 @@ def test_gpio_pins_1_to_8():
 
 def test_hidiocginput_matches_the_kernel_header():
     assert _hidiocginput(5) == 0xC005480A
+
+
+def test_writes_are_ignored_when_the_hidraw_device_is_gone():
+    """Unplug/reset leaves an open fd that returns ENODEV; unkey must not raise."""
+    device = FakeHidrawDevice(write_error=OSError(errno.ENODEV, "No such device"))
+    cm108 = CM108Interface(device)
+    cm108.set_ptt(True)
+    cm108.set_ptt(False)
+    cm108.set_gpio(1, True)
+    assert device.written_reports == []
+    assert cm108._gone is True
+    assert cm108.output_level(3) is False  # local state still tracks the last request
+
+
+def test_other_write_errors_still_raise():
+    device = FakeHidrawDevice(write_error=OSError(errno.EIO, "Input/output error"))
+    with pytest.raises(OSError) as raised:
+        CM108Interface(device).set_ptt(False)
+    assert raised.value.errno == errno.EIO

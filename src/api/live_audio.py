@@ -247,8 +247,13 @@ class LiveAudio:
     def release_ptt(self) -> None:
         """Unkey the transmitter directly, from any thread, without the
         engine: for when the service is about to be killed."""
-        if self._ptt_output is not None:
+        if self._ptt_output is None:
+            return
+        try:
             self._ptt_output(False)
+        except OSError as error:
+            # CM108 ENODEV is already swallowed; header/serial PTT can still fail.
+            _logger.warning("couldn't release PTT (interface may be gone): %s", error)
 
     def apply_config(self, config: RepeaterConfig) -> None:
         previous = self._applied

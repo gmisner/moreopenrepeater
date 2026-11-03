@@ -12,6 +12,7 @@ import {
   Stack,
   Switch,
   Text,
+  Textarea,
   TextInput,
   Title,
 } from "@mantine/core";
@@ -97,6 +98,9 @@ type LinkValues = {
   link_radio_enabled: boolean;
   link_radio_mode: string;
   link_radio_name: string;
+  link_radio_model: string;
+  link_radio_frequency: string;
+  link_radio_notes: string;
   link_radio_input_device: string;
   link_radio_output_device: string;
   link_radio_cos: string;
@@ -228,6 +232,9 @@ const LINK_KEYS = [
   "link_radio_enabled",
   "link_radio_mode",
   "link_radio_name",
+  "link_radio_model",
+  "link_radio_frequency",
+  "link_radio_notes",
   "link_radio_input_device",
   "link_radio_output_device",
   "link_radio_cos",
@@ -261,6 +268,9 @@ const LINK_DEFAULTS: LinkValues = {
   link_radio_enabled: false,
   link_radio_mode: "link",
   link_radio_name: "",
+  link_radio_model: "",
+  link_radio_frequency: "",
+  link_radio_notes: "",
   link_radio_input_device: "",
   link_radio_output_device: "",
   link_radio_cos: "vox",
@@ -1262,7 +1272,33 @@ export function Audio() {
               value={link.values.link_radio_name}
               onChange={(event) => link.setField("link_radio_name", event.currentTarget.value)}
             />
+            <TextInput
+              label={labeled("Radio model", "Operator note only — not used by the controller.")}
+              placeholder="Baofeng UV-5R"
+              maxLength={80}
+              value={link.values.link_radio_model}
+              onChange={(event) => link.setField("link_radio_model", event.currentTarget.value)}
+            />
+            <TextInput
+              label={labeled(
+                "Frequency",
+                "Operator note for the fixed link frequency (or pair). Remote base tune settings are below when that mode is selected.",
+              )}
+              placeholder="146.94 / 146.34"
+              maxLength={80}
+              value={link.values.link_radio_frequency}
+              onChange={(event) => link.setField("link_radio_frequency", event.currentTarget.value)}
+            />
           </SimpleGrid>
+          <Textarea
+            label={labeled("Notes", "Anything else operators should know about this link radio.")}
+            placeholder="Antenna on the south tower; Digirig Lite on USB3; keep the HT away from the Pi."
+            maxLength={500}
+            minRows={2}
+            autosize
+            value={link.values.link_radio_notes}
+            onChange={(event) => link.setField("link_radio_notes", event.currentTarget.value)}
+          />
 
           <Accordion multiple defaultValue={["devices"]} variant="separated" radius="md">
             <Accordion.Item value="devices">

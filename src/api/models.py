@@ -254,6 +254,9 @@ class ConfigResponse(BaseModel):
     monitor_record: bool = False
     link_radio_enabled: bool = False
     link_radio_name: str = ""
+    link_radio_model: str = ""
+    link_radio_frequency: str = ""
+    link_radio_notes: str = ""
     link_radio_input_device: str = ""
     link_radio_output_device: str = ""
     link_radio_cos: CosSource = "vox"
@@ -457,6 +460,9 @@ class ConfigUpdateRequest(BaseModel):
     monitor_record: Optional[bool] = None
     link_radio_enabled: Optional[bool] = None
     link_radio_name: Optional[str] = Field(default=None, max_length=40)
+    link_radio_model: Optional[str] = Field(default=None, max_length=80)
+    link_radio_frequency: Optional[str] = Field(default=None, max_length=80)
+    link_radio_notes: Optional[str] = Field(default=None, max_length=500)
     link_radio_input_device: Optional[str] = Field(default=None, max_length=200)
     link_radio_output_device: Optional[str] = Field(default=None, max_length=200)
     link_radio_cos: Optional[CosSource] = None

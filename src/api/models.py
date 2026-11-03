@@ -227,6 +227,9 @@ class ConfigResponse(BaseModel):
     setup_wizard_done: bool = False
     audio_input_device: str
     audio_output_device: str
+    radio_model: str = ""
+    radio_frequency: str = ""
+    radio_notes: str = ""
     audio_input_levels: dict[str, int] = {}
     audio_output_levels: dict[str, int] = {}
     link_radio_input_levels: dict[str, int] = {}
@@ -437,6 +440,9 @@ class ConfigUpdateRequest(BaseModel):
     setup_wizard_done: Optional[bool] = None
     audio_input_device: Optional[str] = None
     audio_output_device: Optional[str] = None
+    radio_model: Optional[str] = Field(default=None, max_length=80)
+    radio_frequency: Optional[str] = Field(default=None, max_length=80)
+    radio_notes: Optional[str] = Field(default=None, max_length=500)
     cos_source: Optional[CosSource] = None
     cos_polarity: Optional[Polarity] = None
     cos_gpio_pin: Optional[PiGpioPin] = None

@@ -78,6 +78,9 @@ type EngineValues = {
   audio_enabled: boolean;
   audio_input_device: string;
   audio_output_device: string;
+  radio_model: string;
+  radio_frequency: string;
+  radio_notes: string;
   rx_deemphasis: boolean;
   tx_preemphasis: boolean;
   cos_source: string;
@@ -185,6 +188,9 @@ const ENGINE_KEYS = [
   "audio_enabled",
   "audio_input_device",
   "audio_output_device",
+  "radio_model",
+  "radio_frequency",
+  "radio_notes",
   "rx_deemphasis",
   "tx_preemphasis",
   "cos_source",
@@ -212,6 +218,9 @@ const ENGINE_DEFAULTS: EngineValues = {
   audio_enabled: false,
   audio_input_device: "",
   audio_output_device: "",
+  radio_model: "",
+  radio_frequency: "",
+  radio_notes: "",
   rx_deemphasis: false,
   tx_preemphasis: false,
   cos_source: "vox",
@@ -877,6 +886,31 @@ export function Audio() {
             label="Enable live audio"
             checked={engine.values.audio_enabled}
             onChange={(event) => engine.setField("audio_enabled", event.currentTarget.checked)}
+          />
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            <TextInput
+              label={labeled("Radio model", "Operator note only — not used by the controller.")}
+              placeholder="Yaesu DR-1X / two mobiles + AIOC"
+              maxLength={80}
+              value={engine.values.radio_model}
+              onChange={(event) => engine.setField("radio_model", event.currentTarget.value)}
+            />
+            <TextInput
+              label={labeled("Frequency", "Operator note for the repeater pair or simplex frequency.")}
+              placeholder="146.94 / 146.34"
+              maxLength={80}
+              value={engine.values.radio_frequency}
+              onChange={(event) => engine.setField("radio_frequency", event.currentTarget.value)}
+            />
+          </SimpleGrid>
+          <Textarea
+            label={labeled("Notes", "Anything else operators should know about this radio interface.")}
+            placeholder="RX on AIOC #1, TX on AIOC #2; cavity on the south mast; Digirig on USB2."
+            maxLength={500}
+            minRows={2}
+            autosize
+            value={engine.values.radio_notes}
+            onChange={(event) => engine.setField("radio_notes", event.currentTarget.value)}
           />
 
           <Accordion multiple defaultValue={["devices"]} variant="separated" radius="md">

@@ -10,6 +10,7 @@ export type RepeaterStatus = {
   ctcss_hz?: number | null;
   transmitter_enabled?: boolean;
   locked_out?: boolean;
+  callsign?: string;
   [key: string]: unknown;
 };
 

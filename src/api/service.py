@@ -124,6 +124,7 @@ class StatusSnapshot:
     locked_out: bool = False
     net_active: bool = False
     gmrs_mode: bool = False
+    callsign: str = ""
 
 
 class RepeaterService:
@@ -253,6 +254,7 @@ class RepeaterService:
             locked_out=self.controller.locked_out,
             net_active=self.net_active,
             gmrs_mode=self._saved_config.gmrs_mode,
+            callsign=self._saved_config.callsign,
         )
 
     def subscribe(self) -> "asyncio.Queue[StatusSnapshot]":

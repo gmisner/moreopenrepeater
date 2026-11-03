@@ -33,6 +33,14 @@ def test_get_status_returns_idle_initially():
     body = response.json()
     assert body["state"] == "idle"
     assert body["ptt_active"] is False
+    assert body["callsign"] == ""
+
+
+def test_status_includes_the_configured_callsign():
+    client, service, clock = make_client()
+    service.update_config(callsign="W3VPJ")
+
+    assert client.get("/api/status").json()["callsign"] == "W3VPJ"
 
 
 def test_get_config_returns_defaults():

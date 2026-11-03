@@ -17,7 +17,6 @@ import {
 } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, apiBlob } from "../api";
-import { AudioHardwareCards, MonitorReceiverCard } from "../components/AudioMissingFeatures";
 import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
@@ -1136,8 +1135,6 @@ export function Audio() {
         </Stack>
       </Card>
 
-      <MonitorReceiverCard devices={devices} />
-
       <Card withBorder padding="lg" radius="md">
         <Stack gap="md">
           <Title order={2}>Sound card levels</Title>
@@ -1255,310 +1252,351 @@ export function Audio() {
               value={link.values.link_radio_name}
               onChange={(event) => link.setField("link_radio_name", event.currentTarget.value)}
             />
-            <Select
-              label={labeled("Input (link receiver)", "Its own sound device, not the repeater's.")}
-              data={deviceOptions(devices, "inputs", link.values.link_radio_input_device)}
-              value={link.values.link_radio_input_device || null}
-              onChange={(value) => link.setField("link_radio_input_device", value || "")}
-              searchable
-              clearable
-              placeholder="System default"
-            />
-            <Select
-              label="Output (link transmitter)"
-              data={deviceOptions(devices, "outputs", link.values.link_radio_output_device)}
-              value={link.values.link_radio_output_device || null}
-              onChange={(value) => link.setField("link_radio_output_device", value || "")}
-              searchable
-              clearable
-              placeholder="System default"
-            />
-            <Select
-              label="Detect the far end by"
-              data={[
-                { value: "vox", label: "Audio level (VOX)" },
-                { value: "ctcss", label: "CTCSS tone present" },
-                { value: "cm108", label: "A second CM108's COS input" },
-                { value: "gpio", label: "Raspberry Pi GPIO pin" },
-                { value: "serial", label: "Serial port (CTS, DSR or DCD)" },
-              ]}
-              value={link.values.link_radio_cos}
-              onChange={(value) => link.setField("link_radio_cos", value || "vox")}
-              allowDeselect={false}
-            />
-            {link.values.link_radio_cos === "vox" ? (
-              <NumberInput
-                label="VOX threshold"
-                suffix=" dBFS"
-                min={-90}
-                max={0}
-                value={link.values.link_radio_vox_threshold_db}
-                onChange={(value) => link.setField("link_radio_vox_threshold_db", Number(value) || 0)}
-                required
-              />
-            ) : null}
-            {link.values.link_radio_cos === "gpio" ? (
-              <NumberInput
-                label={labeled("COS pin", "BCM number; GPIO23 is header pin 16. 3.3 V only.")}
-                suffix=" GPIO"
-                min={2}
-                max={27}
-                value={link.values.link_radio_cos_gpio_pin}
-                onChange={(value) => link.setField("link_radio_cos_gpio_pin", Number(value) || 0)}
-                required
-              />
-            ) : null}
-            {link.values.link_radio_cos === "serial" ? (
-              <>
-                <TextInput
-                  label="COS serial port"
-                  placeholder="/dev/ttyUSB1"
-                  spellCheck={false}
-                  autoComplete="off"
-                  value={link.values.link_radio_cos_serial_device}
-                  onChange={(event) => link.setField("link_radio_cos_serial_device", event.currentTarget.value)}
-                />
-                <Select
-                  label="COS line"
-                  data={[
-                    { value: "cts", label: "CTS" },
-                    { value: "dsr", label: "DSR" },
-                    { value: "dcd", label: "DCD" },
-                  ]}
-                  value={link.values.link_radio_cos_serial_line}
-                  onChange={(value) => link.setField("link_radio_cos_serial_line", value || "cts")}
-                  allowDeselect={false}
-                />
-              </>
-            ) : null}
-            {linkCosHardware ? (
-              <Select
-                label="COS polarity"
-                data={[
-                  { value: "low", label: "Active low (pulled to ground on carrier)" },
-                  { value: "high", label: "Active high" },
-                ]}
-                value={link.values.link_radio_cos_polarity}
-                onChange={(value) => link.setField("link_radio_cos_polarity", value || "low")}
-                allowDeselect={false}
-              />
-            ) : null}
-            <Select
-              label="Key the link radio with"
-              data={[
-                { value: "cm108", label: "A second CM108's PTT" },
-                { value: "gpio", label: "Raspberry Pi GPIO pin" },
-                { value: "serial", label: "Serial port (RTS or DTR)" },
-                { value: "none", label: "Nothing (the radio's own VOX keys it)" },
-              ]}
-              value={link.values.link_radio_ptt}
-              onChange={(value) => link.setField("link_radio_ptt", value || "cm108")}
-              allowDeselect={false}
-            />
-            {link.values.link_radio_ptt === "gpio" ? (
-              <NumberInput
-                label={labeled("PTT pin", "BCM number; GPIO24 is header pin 18. Drive the radio through a transistor.")}
-                suffix=" GPIO"
-                min={2}
-                max={27}
-                value={link.values.link_radio_ptt_gpio_pin}
-                onChange={(value) => link.setField("link_radio_ptt_gpio_pin", Number(value) || 0)}
-                required
-              />
-            ) : null}
-            {link.values.link_radio_ptt === "serial" ? (
-              <>
-                <TextInput
-                  label="PTT serial port"
-                  placeholder="/dev/ttyUSB1"
-                  spellCheck={false}
-                  autoComplete="off"
-                  value={link.values.link_radio_ptt_serial_device}
-                  onChange={(event) => link.setField("link_radio_ptt_serial_device", event.currentTarget.value)}
-                />
-                <Select
-                  label="PTT line"
-                  data={[
-                    { value: "rts", label: "RTS" },
-                    { value: "dtr", label: "DTR" },
-                  ]}
-                  value={link.values.link_radio_ptt_serial_line}
-                  onChange={(value) => link.setField("link_radio_ptt_serial_line", value || "rts")}
-                  allowDeselect={false}
-                />
-              </>
-            ) : null}
-            {link.values.link_radio_ptt === "gpio" || link.values.link_radio_ptt === "serial" ? (
-              <Select
-                label="PTT polarity"
-                data={[
-                  { value: "high", label: "Active high (pin goes high to transmit)" },
-                  { value: "low", label: "Active low" },
-                ]}
-                value={link.values.link_radio_ptt_polarity}
-                onChange={(value) => link.setField("link_radio_ptt_polarity", value || "high")}
-                allowDeselect={false}
-              />
-            ) : null}
-            <NumberInput
-              label="Transmit gain"
-              suffix=" dB"
-              min={-40}
-              max={20}
-              step={0.5}
-              decimalScale={1}
-              value={link.values.link_radio_tx_gain_db}
-              onChange={(value) => link.setField("link_radio_tx_gain_db", Number(value) || 0)}
-              required
-            />
-            <Select
-              label={labeled("Transmit CTCSS tone", "For a far repeater that needs a tone to open.")}
-              data={CTCSS_TONES.map((hz) => ({ value: String(hz), label: `${hz.toFixed(1)} Hz` }))}
-              value={linkTxCtcss}
-              onChange={(value) =>
-                link.setField("link_radio_tx_ctcss_hz", value == null || value === "" ? "" : Number(value))
-              }
-              searchable
-              clearable
-              placeholder="off"
-            />
-            <NumberInput
-              label={labeled("Link timeout", "Longest one transmission out the link radio.")}
-              suffix=" s"
-              min={30}
-              max={1800}
-              value={link.values.link_radio_timeout}
-              onChange={(value) => link.setField("link_radio_timeout", Number(value) || 0)}
-              required
-            />
-            <NumberInput
-              label="Transmit delay"
-              suffix=" ms"
-              min={0}
-              max={500}
-              step={10}
-              value={link.values.link_radio_tx_delay_ms}
-              onChange={(value) => link.setField("link_radio_tx_delay_ms", Number(value) || 0)}
-              required
-            />
-            <NumberInput
-              label="Squelch-tail removal"
-              suffix=" ms"
-              min={0}
-              max={300}
-              step={10}
-              value={link.values.link_radio_squelch_tail_ms}
-              onChange={(value) => link.setField("link_radio_squelch_tail_ms", Number(value) || 0)}
-              required
-            />
           </SimpleGrid>
-          <Switch
-            label="Courtesy tone on the link when a local user unkeys"
-            checked={link.values.link_radio_courtesy_tone}
-            onChange={(event) => link.setField("link_radio_courtesy_tone", event.currentTarget.checked)}
-          />
 
-          {linkRemoteBase ? (
-            <Stack gap="md">
-              <Title order={3}>Remote base</Title>
-              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                <TextInput
-                  label={labeled(
-                    "Radio control (rigctld)",
-                    "Hamlib rigctld for the radio. Blank: no CAT, so DTMF tuning is off.",
-                  )}
-                  placeholder="localhost:4532"
-                  spellCheck={false}
-                  autoComplete="off"
-                  value={link.values.remote_base_rigctld}
-                  onChange={(event) => link.setField("remote_base_rigctld", event.currentTarget.value)}
+          <Accordion multiple defaultValue={["devices"]} variant="separated" radius="md">
+            <Accordion.Item value="devices">
+              <Accordion.Control>Sound devices</Accordion.Control>
+              <Accordion.Panel>
+                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                  <Select
+                    label={labeled("Input (link receiver)", "Its own sound device, not the repeater's.")}
+                    data={deviceOptions(devices, "inputs", link.values.link_radio_input_device)}
+                    value={link.values.link_radio_input_device || null}
+                    onChange={(value) => link.setField("link_radio_input_device", value || "")}
+                    searchable
+                    clearable
+                    placeholder="System default"
+                  />
+                  <Select
+                    label="Output (link transmitter)"
+                    data={deviceOptions(devices, "outputs", link.values.link_radio_output_device)}
+                    value={link.values.link_radio_output_device || null}
+                    onChange={(value) => link.setField("link_radio_output_device", value || "")}
+                    searchable
+                    clearable
+                    placeholder="System default"
+                  />
+                </SimpleGrid>
+              </Accordion.Panel>
+            </Accordion.Item>
+
+            <Accordion.Item value="cos">
+              <Accordion.Control>Carrier detect</Accordion.Control>
+              <Accordion.Panel>
+                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                  <Select
+                    label="Detect a carrier by"
+                    data={[
+                      { value: "vox", label: "Audio level (VOX)" },
+                      { value: "ctcss", label: "CTCSS tone present" },
+                      { value: "cm108", label: "A second CM108's COS input" },
+                      { value: "gpio", label: "Raspberry Pi GPIO pin" },
+                      { value: "serial", label: "Serial port (CTS, DSR or DCD)" },
+                    ]}
+                    value={link.values.link_radio_cos}
+                    onChange={(value) => link.setField("link_radio_cos", value || "vox")}
+                    allowDeselect={false}
+                  />
+                  {linkCosHardware ? (
+                    <Select
+                      label={labeled("COS polarity", "On a serial port, active high means the line is on (asserted) during a carrier.")}
+                      data={[
+                        { value: "low", label: "Active low (pulled to ground on carrier)" },
+                        { value: "high", label: "Active high" },
+                      ]}
+                      value={link.values.link_radio_cos_polarity}
+                      onChange={(value) => link.setField("link_radio_cos_polarity", value || "low")}
+                      allowDeselect={false}
+                    />
+                  ) : null}
+                  {link.values.link_radio_cos === "gpio" ? (
+                    <NumberInput
+                      label={labeled("COS pin", "BCM number; GPIO23 is header pin 16. 3.3 V only.")}
+                      suffix=" GPIO"
+                      min={2}
+                      max={27}
+                      value={link.values.link_radio_cos_gpio_pin}
+                      onChange={(value) => link.setField("link_radio_cos_gpio_pin", Number(value) || 0)}
+                      required
+                    />
+                  ) : null}
+                  {link.values.link_radio_cos === "serial" ? (
+                    <>
+                      <TextInput
+                        label={labeled(
+                          "COS serial port",
+                          serialPorts.length
+                            ? `Known ports: ${serialPorts.map((p) => p.path).join(", ")}`
+                            : "A /dev/serial/by-id name stays the same when adapters are plugged in a different order.",
+                        )}
+                        placeholder="/dev/ttyUSB1"
+                        spellCheck={false}
+                        autoComplete="off"
+                        value={link.values.link_radio_cos_serial_device}
+                        onChange={(event) => link.setField("link_radio_cos_serial_device", event.currentTarget.value)}
+                      />
+                      <Select
+                        label="COS line"
+                        data={[
+                          { value: "cts", label: "CTS" },
+                          { value: "dsr", label: "DSR" },
+                          { value: "dcd", label: "DCD" },
+                        ]}
+                        value={link.values.link_radio_cos_serial_line}
+                        onChange={(value) => link.setField("link_radio_cos_serial_line", value || "cts")}
+                        allowDeselect={false}
+                      />
+                    </>
+                  ) : null}
+                  <NumberInput
+                    label="VOX threshold"
+                    suffix=" dBFS"
+                    min={-90}
+                    max={0}
+                    value={link.values.link_radio_vox_threshold_db}
+                    onChange={(value) => link.setField("link_radio_vox_threshold_db", Number(value) || 0)}
+                    required
+                  />
+                  <NumberInput
+                    label={labeled("Squelch-tail removal", "Cut this much from the end of each transmission. 0 = off.")}
+                    suffix=" ms"
+                    min={0}
+                    max={300}
+                    step={10}
+                    value={link.values.link_radio_squelch_tail_ms}
+                    onChange={(value) => link.setField("link_radio_squelch_tail_ms", Number(value) || 0)}
+                    required
+                  />
+                </SimpleGrid>
+              </Accordion.Panel>
+            </Accordion.Item>
+
+            <Accordion.Item value="ptt">
+              <Accordion.Control>PTT</Accordion.Control>
+              <Accordion.Panel>
+                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                  <Select
+                    label="Key the transmitter with"
+                    data={[
+                      { value: "cm108", label: "A second CM108's PTT" },
+                      { value: "gpio", label: "Raspberry Pi GPIO pin" },
+                      { value: "serial", label: "Serial port (RTS or DTR)" },
+                      { value: "none", label: "Nothing (the radio's own VOX keys it)" },
+                    ]}
+                    value={link.values.link_radio_ptt}
+                    onChange={(value) => link.setField("link_radio_ptt", value || "cm108")}
+                    allowDeselect={false}
+                  />
+                  {link.values.link_radio_ptt === "gpio" ? (
+                    <NumberInput
+                      label={labeled("PTT pin", "BCM number; GPIO24 is header pin 18. Drive the radio through a transistor.")}
+                      suffix=" GPIO"
+                      min={2}
+                      max={27}
+                      value={link.values.link_radio_ptt_gpio_pin}
+                      onChange={(value) => link.setField("link_radio_ptt_gpio_pin", Number(value) || 0)}
+                      required
+                    />
+                  ) : null}
+                  {link.values.link_radio_ptt === "serial" ? (
+                    <>
+                      <TextInput
+                        label={labeled(
+                          "PTT serial port",
+                          serialPorts.length ? `Known ports: ${serialPorts.map((p) => p.path).join(", ")}` : undefined,
+                        )}
+                        placeholder="/dev/ttyUSB1"
+                        spellCheck={false}
+                        autoComplete="off"
+                        value={link.values.link_radio_ptt_serial_device}
+                        onChange={(event) => link.setField("link_radio_ptt_serial_device", event.currentTarget.value)}
+                      />
+                      <Select
+                        label="PTT line"
+                        data={[
+                          { value: "rts", label: "RTS" },
+                          { value: "dtr", label: "DTR" },
+                        ]}
+                        value={link.values.link_radio_ptt_serial_line}
+                        onChange={(value) => link.setField("link_radio_ptt_serial_line", value || "rts")}
+                        allowDeselect={false}
+                      />
+                    </>
+                  ) : null}
+                  {link.values.link_radio_ptt === "gpio" || link.values.link_radio_ptt === "serial" ? (
+                    <Select
+                      label={labeled("PTT polarity", "On a serial port, active high turns the line on (asserts it) to transmit.")}
+                      data={[
+                        { value: "high", label: "Active high (pin goes high to transmit)" },
+                        { value: "low", label: "Active low" },
+                      ]}
+                      value={link.values.link_radio_ptt_polarity}
+                      onChange={(value) => link.setField("link_radio_ptt_polarity", value || "high")}
+                      allowDeselect={false}
+                    />
+                  ) : null}
+                  <NumberInput
+                    label={labeled("Transmit delay", "Key up, then wait this long before any audio. 0 = off.")}
+                    suffix=" ms"
+                    min={0}
+                    max={500}
+                    step={10}
+                    value={link.values.link_radio_tx_delay_ms}
+                    onChange={(value) => link.setField("link_radio_tx_delay_ms", Number(value) || 0)}
+                    required
+                  />
+                </SimpleGrid>
+              </Accordion.Panel>
+            </Accordion.Item>
+
+            <Accordion.Item value="tx">
+              <Accordion.Control>Transmit audio</Accordion.Control>
+              <Accordion.Panel>
+                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                  <NumberInput
+                    label={labeled("Transmit gain", "Applied to audio sent out the link radio.")}
+                    suffix=" dB"
+                    min={-40}
+                    max={20}
+                    step={0.5}
+                    decimalScale={1}
+                    value={link.values.link_radio_tx_gain_db}
+                    onChange={(value) => link.setField("link_radio_tx_gain_db", Number(value) || 0)}
+                    required
+                  />
+                  <Select
+                    label={labeled("Transmit CTCSS tone", "For a far repeater that needs a tone to open.")}
+                    data={CTCSS_TONES.map((hz) => ({ value: String(hz), label: `${hz.toFixed(1)} Hz` }))}
+                    value={linkTxCtcss}
+                    onChange={(value) =>
+                      link.setField("link_radio_tx_ctcss_hz", value == null || value === "" ? "" : Number(value))
+                    }
+                    searchable
+                    clearable
+                    placeholder="off"
+                  />
+                  <NumberInput
+                    label={labeled("Link timeout", "Longest one transmission out the link radio.")}
+                    suffix=" s"
+                    min={30}
+                    max={1800}
+                    value={link.values.link_radio_timeout}
+                    onChange={(value) => link.setField("link_radio_timeout", Number(value) || 0)}
+                    required
+                  />
+                </SimpleGrid>
+                <Switch
+                  mt="md"
+                  label="Courtesy tone on the link when a local user unkeys"
+                  checked={link.values.link_radio_courtesy_tone}
+                  onChange={(event) => link.setField("link_radio_courtesy_tone", event.currentTarget.checked)}
                 />
-                <NumberInput
-                  label="Frequency"
-                  suffix=" MHz"
-                  min={1}
-                  max={10000}
-                  step={0.0001}
-                  decimalScale={4}
-                  value={link.values.remote_base_mhz}
-                  onChange={(value) => link.setField("remote_base_mhz", Number(value) || 0)}
-                  required
-                />
-                <Select
-                  label="Shift"
-                  data={[
-                    { value: "simplex", label: "Simplex" },
-                    { value: "minus", label: "Minus" },
-                    { value: "plus", label: "Plus" },
-                  ]}
-                  value={link.values.remote_base_shift}
-                  onChange={(value) => link.setField("remote_base_shift", value || "simplex")}
-                  allowDeselect={false}
-                />
-                <NumberInput
-                  label={labeled("Offset", "Blank uses the band's usual offset.")}
-                  suffix=" MHz"
-                  min={0.001}
-                  max={100}
-                  step={0.001}
-                  decimalScale={3}
-                  value={remoteOffset === "" ? undefined : remoteOffset}
-                  onChange={(value) =>
-                    link.setField(
-                      "remote_base_offset_mhz",
-                      value === "" || value === undefined || value === null ? "" : Number(value),
-                    )
-                  }
-                  placeholder="band's usual"
-                />
-                <Select
-                  label="Transmit CTCSS tone"
-                  data={CTCSS_TONES.map((hz) => ({ value: String(hz), label: `${hz.toFixed(1)} Hz` }))}
-                  value={remoteTone}
-                  onChange={(value) =>
-                    link.setField("remote_base_tone_hz", value == null || value === "" ? "" : Number(value))
-                  }
-                  searchable
-                  clearable
-                  placeholder="off"
-                />
-                <Select
-                  label="Mode"
-                  data={[
-                    { value: "FM", label: "FM" },
-                    { value: "AM", label: "AM" },
-                    { value: "USB", label: "USB" },
-                    { value: "LSB", label: "LSB" },
-                  ]}
-                  value={link.values.remote_base_rig_mode}
-                  onChange={(value) => link.setField("remote_base_rig_mode", value || "FM")}
-                  allowDeselect={false}
-                />
-                <TextInput
-                  label={labeled("Allowed bands", "MHz ranges it may be tuned to. Keep them inside your license.")}
-                  placeholder="144-148, 222-225, 420-450"
-                  spellCheck={false}
-                  value={link.values.remote_base_ranges}
-                  onChange={(event) => link.setField("remote_base_ranges", event.currentTarget.value)}
-                />
-                <NumberInput
-                  label={labeled("Turn off after", 'Unused this long → "Remote base off". 0 = stays on.')}
-                  suffix=" min"
-                  min={0}
-                  max={1440}
-                  value={link.values.remote_base_idle_minutes}
-                  onChange={(value) => link.setField("remote_base_idle_minutes", Number(value) || 0)}
-                  required
-                />
-              </SimpleGrid>
-            </Stack>
-          ) : null}
+              </Accordion.Panel>
+            </Accordion.Item>
+
+            {linkRemoteBase ? (
+              <Accordion.Item value="remote">
+                <Accordion.Control>Remote base</Accordion.Control>
+                <Accordion.Panel>
+                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                    <TextInput
+                      label={labeled(
+                        "Radio control (rigctld)",
+                        "Hamlib rigctld for the radio. Blank: no CAT, so DTMF tuning is off.",
+                      )}
+                      placeholder="localhost:4532"
+                      spellCheck={false}
+                      autoComplete="off"
+                      value={link.values.remote_base_rigctld}
+                      onChange={(event) => link.setField("remote_base_rigctld", event.currentTarget.value)}
+                    />
+                    <NumberInput
+                      label="Frequency"
+                      suffix=" MHz"
+                      min={1}
+                      max={10000}
+                      step={0.0001}
+                      decimalScale={4}
+                      value={link.values.remote_base_mhz}
+                      onChange={(value) => link.setField("remote_base_mhz", Number(value) || 0)}
+                      required
+                    />
+                    <Select
+                      label="Shift"
+                      data={[
+                        { value: "simplex", label: "Simplex" },
+                        { value: "minus", label: "Minus" },
+                        { value: "plus", label: "Plus" },
+                      ]}
+                      value={link.values.remote_base_shift}
+                      onChange={(value) => link.setField("remote_base_shift", value || "simplex")}
+                      allowDeselect={false}
+                    />
+                    <NumberInput
+                      label={labeled("Offset", "Blank uses the band's usual offset.")}
+                      suffix=" MHz"
+                      min={0.001}
+                      max={100}
+                      step={0.001}
+                      decimalScale={3}
+                      value={remoteOffset === "" ? undefined : remoteOffset}
+                      onChange={(value) =>
+                        link.setField(
+                          "remote_base_offset_mhz",
+                          value === "" || value === undefined || value === null ? "" : Number(value),
+                        )
+                      }
+                      placeholder="band's usual"
+                    />
+                    <Select
+                      label="Transmit CTCSS tone"
+                      data={CTCSS_TONES.map((hz) => ({ value: String(hz), label: `${hz.toFixed(1)} Hz` }))}
+                      value={remoteTone}
+                      onChange={(value) =>
+                        link.setField("remote_base_tone_hz", value == null || value === "" ? "" : Number(value))
+                      }
+                      searchable
+                      clearable
+                      placeholder="off"
+                    />
+                    <Select
+                      label="Mode"
+                      data={[
+                        { value: "FM", label: "FM" },
+                        { value: "AM", label: "AM" },
+                        { value: "USB", label: "USB" },
+                        { value: "LSB", label: "LSB" },
+                      ]}
+                      value={link.values.remote_base_rig_mode}
+                      onChange={(value) => link.setField("remote_base_rig_mode", value || "FM")}
+                      allowDeselect={false}
+                    />
+                    <TextInput
+                      label={labeled("Allowed bands", "MHz ranges it may be tuned to. Keep them inside your license.")}
+                      placeholder="144-148, 222-225, 420-450"
+                      spellCheck={false}
+                      value={link.values.remote_base_ranges}
+                      onChange={(event) => link.setField("remote_base_ranges", event.currentTarget.value)}
+                    />
+                    <NumberInput
+                      label={labeled("Turn off after", 'Unused this long → "Remote base off". 0 = stays on.')}
+                      suffix=" min"
+                      min={0}
+                      max={1440}
+                      value={link.values.remote_base_idle_minutes}
+                      onChange={(value) => link.setField("remote_base_idle_minutes", Number(value) || 0)}
+                      required
+                    />
+                  </SimpleGrid>
+                </Accordion.Panel>
+              </Accordion.Item>
+            ) : null}
+          </Accordion>
 
           <ConfigActions dirty={link.dirty} saving={link.saving} onReset={link.reset} />
         </Stack>
       </Card>
-
-      <AudioHardwareCards assets={assets} reloadAssets={loadAssets} canWrite={!isViewer} />
     </Page>
   );
 }

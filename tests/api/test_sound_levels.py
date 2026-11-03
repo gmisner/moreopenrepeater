@@ -268,3 +268,87 @@ def test_the_engine_sets_the_saved_levels_before_opening_the_card():
     assert events[:2] == ["sset Mic capture 20", "stream started"]
     assert card.value("Mic", "capture") == 20
     live.shutdown()
+
+
+LINK = "Link Digirig: - (hw:3,0)"
+
+
+class TwoCards:
+    """Two FakeCards keyed by ALSA card number."""
+
+    def __init__(self):
+        self.cards = {2: FakeCard(2), 3: FakeCard(3)}
+
+    def __call__(self, args):
+        return self.cards[int(args[args.index("-c") + 1])](args)
+
+
+def test_link_radio_levels_appear_when_its_devices_are_set():
+    cards = TwoCards()
+    client, service, _ = make_client(
+        config=RepeaterConfig(
+            callsign="W1AW",
+            audio_input_device=CM108,
+            audio_output_device=CM108,
+            link_radio_input_device=LINK,
+            link_radio_output_device=LINK,
+            link_radio_output_levels={"Speaker": 14},
+        ),
+        amixer=cards,
+    )
+
+    body = client.get("/api/audio/levels").json()
+
+    sides = {(level["side"], level["control"], level["card"], level["saved"]) for level in body["levels"]}
+    assert ("input", "Mic", 2, False) in sides
+    assert ("output", "Speaker", 2, False) in sides
+    assert ("link_input", "Mic", 3, False) in sides
+    assert ("link_output", "Speaker", 3, True) in sides
+
+
+def test_setting_a_link_level_saves_on_the_link_fields():
+    cards = TwoCards()
+    client, service, _ = make_client(
+        config=RepeaterConfig(
+            callsign="W1AW",
+            audio_input_device=CM108,
+            audio_output_device=CM108,
+            link_radio_input_device=LINK,
+            link_radio_output_device=LINK,
+        ),
+        amixer=cards,
+    )
+
+    response = client.put(
+        "/api/audio/levels", json={"side": "link_input", "control": "Mic", "value": 18}
+    )
+
+    assert response.status_code == 200
+    assert cards.cards[3].value("Mic", "capture") == 18
+    assert service.saved_config.link_radio_input_levels == {"Mic": 18}
+    assert service.saved_config.audio_input_levels == {}
+
+
+def test_link_levels_are_omitted_until_devices_are_chosen():
+    client, *_ = make_client()
+    sides = {level["side"] for level in client.get("/api/audio/levels").json()["levels"]}
+    assert sides == {"input", "output"}
+
+
+def test_apply_saved_levels_sets_the_link_radio_card():
+    cards = TwoCards()
+    config = RepeaterConfig(
+        audio_input_device=CM108,
+        audio_output_device=CM108,
+        link_radio_input_device=LINK,
+        link_radio_output_device=LINK,
+        audio_input_levels={"Mic": 10},
+        link_radio_input_levels={"Mic": 22},
+        link_radio_output_levels={"Speaker": 30},
+    )
+
+    apply_saved_levels(config, cards, sides=("link_input", "link_output"))
+
+    assert cards.cards[2].value("Mic", "capture") == 30  # untouched (FakeCard default)
+    assert cards.cards[3].value("Mic", "capture") == 22
+    assert cards.cards[3].value("Speaker", "playback") == 30

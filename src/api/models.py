@@ -229,6 +229,8 @@ class ConfigResponse(BaseModel):
     audio_output_device: str
     audio_input_levels: dict[str, int] = {}
     audio_output_levels: dict[str, int] = {}
+    link_radio_input_levels: dict[str, int] = {}
+    link_radio_output_levels: dict[str, int] = {}
     cos_source: CosSource
     cos_polarity: Polarity
     cos_gpio_pin: int
@@ -1090,7 +1092,7 @@ class BoardApplyResponse(BaseModel):
 
 
 class SoundLevelResponse(BaseModel):
-    side: Literal["input", "output"]
+    side: Literal["input", "output", "link_input", "link_output"]
     card: int
     control: str
     min: int
@@ -1107,7 +1109,7 @@ class SoundLevelsResponse(BaseModel):
 
 
 class SoundLevelUpdateRequest(BaseModel):
-    side: Literal["input", "output"]
+    side: Literal["input", "output", "link_input", "link_output"]
     control: str = Field(min_length=1, max_length=60)
     value: int = Field(ge=0, le=100000)
 

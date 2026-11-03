@@ -512,7 +512,7 @@ class LiveAudio:
             on_glitch=self._on_glitch,
         )
         self._ptt_output = ptt_output
-        apply_saved_levels(config, self._run_mixer)
+        apply_saved_levels(config, self._run_mixer, sides=("input", "output"))
         try:
             engine.start()
         except Exception as error:  # PortAudio raises its own error types

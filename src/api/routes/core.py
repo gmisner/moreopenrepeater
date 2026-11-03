@@ -10,7 +10,16 @@ from fastapi import FastAPI, HTTPException, Request
 
 from ..audit import describe_config_change
 from ..boards import WIRING_FIELDS, alsa_card, apply_mixer, load_boards, preset_changes
-from ..mixer import levels_on_card, read_volumes, set_volume, side_card, side_volumes
+from ..mixer import (
+    levels_on_card,
+    read_volumes,
+    set_volume,
+    side_card,
+    side_label,
+    side_levels,
+    side_levels_field,
+    side_volumes,
+)
 from ..models import (
     BoardApplyRequest,
     BoardApplyResponse,
@@ -98,28 +107,47 @@ def register(
             loop = asyncio.get_running_loop()
             results = await loop.run_in_executor(None, apply_mixer, cards, board.mixer, run_mixer)
             mixer = [dataclasses.asdict(result) for result in results]
-            output_card = side_card(config, "output")
-            if output_card is not None:
+            controls = {control for control, _ in board.mixer}
+            updates = {}
+            for side, input_key, output_key in (
+                ("output", "audio_input_levels", "audio_output_levels"),
+                ("link_output", "link_radio_input_levels", "link_radio_output_levels"),
+            ):
+                card = side_card(config, side)
+                if card is None:
+                    continue
+                if side == "link_output" and not config.link_radio_output_device:
+                    continue
                 try:
-                    inputs, outputs = await loop.run_in_executor(
-                        None, levels_on_card, output_card, {control for control, _ in board.mixer}, run_mixer
-                    )
+                    inputs, outputs = await loop.run_in_executor(None, levels_on_card, card, controls, run_mixer)
                 except OSError as error:
                     logging.getLogger("moreopenrepeater.mixer").warning("couldn't read back the board's levels: %s", error)
-                else:
-                    if side_card(config, "input") != output_card:
-                        inputs = {}
-                    service.update_config(audio_input_levels=inputs, audio_output_levels=outputs)
+                    continue
+                input_side = "input" if side == "output" else "link_input"
+                if side_card(config, input_side) != card:
+                    inputs = {}
+                updates[input_key] = inputs
+                updates[output_key] = outputs
+            if updates:
+                service.update_config(**updates)
         return BoardApplyResponse(config=config_response(service), mixer=mixer, mixer_skipped=skipped)
 
     def sound_levels() -> SoundLevelsResponse:
         config = service.saved_config
         levels, notes = [], []
         read: dict[int, list] = {}
-        for side, saved in (("input", config.audio_input_levels), ("output", config.audio_output_levels)):
+        for side in ("input", "output", "link_input", "link_output"):
+            # Link sides stay quiet until their devices are chosen.
+            if side.startswith("link_") and not (
+                config.link_radio_input_device if side == "link_input" else config.link_radio_output_device
+            ):
+                continue
+            saved = side_levels(config, side)
             card = side_card(config, side)
             if card is None:
-                notes.append(f"The {side} is the system default device; pick a specific sound card to set its levels.")
+                notes.append(
+                    f"The {side_label(side)} is the system default device; pick a specific sound card to set its levels."
+                )
                 continue
             if card not in read:
                 try:
@@ -143,7 +171,9 @@ def register(
         config = service.saved_config
         card = side_card(config, body.side)
         if card is None:
-            raise HTTPException(status_code=409, detail=f"Pick a specific {body.side} sound card first")
+            raise HTTPException(
+                status_code=409, detail=f"Pick a specific {side_label(body.side)} sound card first"
+            )
         loop = asyncio.get_running_loop()
         try:
             volumes = await loop.run_in_executor(None, read_volumes, card, run_mixer)
@@ -151,12 +181,14 @@ def register(
             raise HTTPException(status_code=503, detail=f"Couldn't read sound card {card}'s levels: {error}")
         volume = next((v for v in side_volumes(body.side, volumes) if v.control == body.control), None)
         if volume is None:
-            raise HTTPException(status_code=404, detail=f"Sound card {card} has no {body.control} {body.side} level")
+            raise HTTPException(
+                status_code=404, detail=f"Sound card {card} has no {body.control} {side_label(body.side)} level"
+            )
         value = min(max(body.value, volume.min), volume.max)
         error = await loop.run_in_executor(None, set_volume, card, volume.control, volume.direction, value, run_mixer)
         if error:
             raise HTTPException(status_code=503, detail=f"Couldn't set {volume.control}: {error}")
-        field_name = f"audio_{body.side}_levels"
+        field_name = side_levels_field(body.side)
         service.update_config(**{field_name: {**getattr(service.saved_config, field_name), volume.control: value}})
         request.state.audit_detail = f"{volume.control} {body.side} {value}"
         return await loop.run_in_executor(None, sound_levels)

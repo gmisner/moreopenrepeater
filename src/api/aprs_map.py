@@ -60,10 +60,11 @@ def compass_point(bearing: float) -> str:
 
 def map_center(config: RepeaterConfig) -> Optional[tuple[float, float]]:
     """The repeater's location: the APRS beacon position, else the weather one."""
-    if config.aprs_lat is not None and config.aprs_lon is not None:
-        return config.aprs_lat, config.aprs_lon
-    if config.wx_lat is not None and config.wx_lon is not None:
-        return config.wx_lat, config.wx_lon
+    aprs, wx = config.aprs, config.weather
+    if aprs.aprs_lat is not None and aprs.aprs_lon is not None:
+        return aprs.aprs_lat, aprs.aprs_lon
+    if wx.wx_lat is not None and wx.wx_lon is not None:
+        return wx.wx_lat, wx.wx_lon
     return None
 
 
@@ -238,12 +239,13 @@ class AprsReceiver:
         self._reconnect.set()
 
     def _session_key(self, config: RepeaterConfig) -> Optional[tuple]:
+        aprs = config.aprs
         center = map_center(config)
-        if not config.aprs_map_enabled or center is None:
+        if not aprs.aprs_map_enabled or center is None:
             return None
-        login = (config.aprs_callsign or config.callsign or FALLBACK_LOGIN).upper()
-        filter_ = f"r/{center[0]:.3f}/{center[1]:.3f}/{config.aprs_map_radius_km:g}"
-        return config.aprs_server, config.aprs_port, login, filter_
+        login = (aprs.aprs_callsign or config.callsign or FALLBACK_LOGIN).upper()
+        filter_ = f"r/{center[0]:.3f}/{center[1]:.3f}/{aprs.aprs_map_radius_km:g}"
+        return aprs.aprs_server, aprs.aprs_port, login, filter_
 
     async def run(self) -> None:
         failures = 0

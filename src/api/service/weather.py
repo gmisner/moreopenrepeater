@@ -27,8 +27,8 @@ class WeatherSupport:
         self.last_error: Optional[str] = None
 
     def summary_text(self) -> str:
-        config = self._host.controller.config
-        if config.wx_lat is None or config.wx_lon is None:
+        wx = self._host.controller.config.weather
+        if wx.wx_lat is None or wx.wx_lon is None:
             return "Weather alerts are not set up."
         if not self.alerts:
             return "There are no active weather alerts."
@@ -40,15 +40,15 @@ class WeatherSupport:
         """Record a successful NWS poll; return the clips to announce.
         With `announce=False` (a manual check while alerts are switched
         off) it only refreshes what the dashboard shows."""
-        config = self._host.controller.config
+        wx = self._host.controller.config.weather
         alerts = parse_alerts(geojson)
-        self.alerts = [a for a in alerts if meets_severity(a, config.wx_min_severity)]
+        self.alerts = [a for a in alerts if meets_severity(a, wx.wx_min_severity)]
         self.last_checked = self._host.wall_now()
         self.last_error = None
         if not announce:
             return []
-        repeat = timedelta(minutes=config.wx_repeat_minutes) if config.wx_repeat_minutes > 0 else None
-        to_announce = self.tracker.update(alerts, self._host.wall_now(), config.wx_min_severity, repeat)
+        repeat = timedelta(minutes=wx.wx_repeat_minutes) if wx.wx_repeat_minutes > 0 else None
+        to_announce = self.tracker.update(alerts, self._host.wall_now(), wx.wx_min_severity, repeat)
         for alert in to_announce:
             _logger.info("announcing weather alert: %s (%s)", alert.event, alert.id)
         return [self.alert_clip(a) for a in to_announce]

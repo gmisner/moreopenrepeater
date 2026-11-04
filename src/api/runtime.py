@@ -193,15 +193,16 @@ def link_settings_from_env() -> Optional[LinkSettings]:
 
 def aprs_beacon_packet(config: RepeaterConfig) -> str:
     """Info field for our beacon: a position report if located, else a status."""
-    comment = config.aprs_comment
-    if config.aprs_frequency_mhz is not None:
-        tone = config.aprs_tone_hz if config.aprs_tone_hz is not None else config.require_ctcss_hz
-        frequency = format_frequency_comment(config.aprs_frequency_mhz, tone, config.aprs_offset_mhz)
+    aprs = config.aprs
+    comment = aprs.aprs_comment
+    if aprs.aprs_frequency_mhz is not None:
+        tone = aprs.aprs_tone_hz if aprs.aprs_tone_hz is not None else config.require_ctcss_hz
+        frequency = format_frequency_comment(aprs.aprs_frequency_mhz, tone, aprs.aprs_offset_mhz)
         comment = f"{frequency} {comment}".rstrip()
-    if config.aprs_lat is None or config.aprs_lon is None:
+    if aprs.aprs_lat is None or aprs.aprs_lon is None:
         return format_status_report(comment)
-    table, code = config.aprs_symbol[0], config.aprs_symbol[1]
-    return format_position_report(config.aprs_lat, config.aprs_lon, comment, table, code)
+    table, code = aprs.aprs_symbol[0], aprs.aprs_symbol[1]
+    return format_position_report(aprs.aprs_lat, aprs.aprs_lon, comment, table, code)
 
 
 
@@ -362,7 +363,7 @@ class AppRuntime:
         service.add_config_listener(lambda _config: aprs_receiver.settings_changed())
 
         def aprs_window_start() -> float:
-            return time.time() - service.config.aprs_map_hours * 3600
+            return time.time() - service.config.aprs.aprs_map_hours * 3600
 
         service.aprs_summary = lambda: spoken_summary(aprs_stations.stations(aprs_window_start()), service.config, time.time())
         backups = backups or BackupFolder(None)
@@ -533,7 +534,8 @@ class AppRuntime:
 
         async def send_aprs_beacon() -> None:
             config = service.config
-            client = APRSClient(config.aprs_server, config.aprs_port, config.aprs_callsign)
+            aprs = config.aprs
+            client = APRSClient(aprs.aprs_server, aprs.aprs_port, aprs.aprs_callsign)
             await client.connect()
             try:
                 await client.send_packet(aprs_beacon_packet(config))
@@ -542,16 +544,16 @@ class AppRuntime:
 
         async def aprs_beacon_loop() -> None:
             while True:
-                config = service.config
-                if not (config.aprs_enabled and config.aprs_callsign):
+                aprs = service.config.aprs
+                if not (aprs.aprs_enabled and aprs.aprs_callsign):
                     await asyncio.sleep(APRS_DISABLED_POLL_SECONDS)
                     continue
                 try:
                     await send_aprs_beacon()
-                    _aprs_logger.info("APRS beacon sent to %s:%s", config.aprs_server, config.aprs_port)
+                    _aprs_logger.info("APRS beacon sent to %s:%s", aprs.aprs_server, aprs.aprs_port)
                 except OSError:
                     _aprs_logger.exception("APRS beacon failed")
-                await asyncio.sleep(config.aprs_beacon_interval)
+                await asyncio.sleep(aprs.aprs_beacon_interval)
 
         async def render_and_queue(clip: str) -> None:
             """Render off the event loop first, so the controller knows how long
@@ -576,11 +578,12 @@ class AppRuntime:
 
         async def check_weather(announce: bool) -> None:
             config = service.config
-            if config.wx_lat is None or config.wx_lon is None:
+            wx, aprs = config.weather, config.aprs
+            if wx.wx_lat is None or wx.wx_lon is None:
                 raise HTTPException(status_code=400, detail="Set the station location for weather alerts first")
             try:
                 data = await asyncio.get_running_loop().run_in_executor(
-                    None, fetch_weather, config.wx_lat, config.wx_lon, config.callsign
+                    None, fetch_weather, wx.wx_lat, wx.wx_lon, config.callsign
                 )
             except (OSError, ValueError) as error:  # URLError/timeouts are OSErrors; bad JSON is a ValueError
                 _weather_logger.warning("NWS alert check failed: %s", error)
@@ -591,7 +594,7 @@ class AppRuntime:
                     await render_and_queue(clip)
                 except (UnknownClipError, TTSError, HTTPException):
                     _weather_logger.exception("couldn't announce weather alert %s", clip)
-            if config.aprs_map_enabled:
+            if aprs.aprs_map_enabled:
                 await fetch_zone_shapes(config.callsign)
 
         zone_shapes: dict[str, dict] = {}
@@ -612,8 +615,8 @@ class AppRuntime:
 
         async def weather_loop() -> None:
             while True:
-                config = service.config
-                if not (config.wx_alerts_enabled and config.wx_lat is not None and config.wx_lon is not None):
+                wx = service.config.weather
+                if not (wx.wx_alerts_enabled and wx.wx_lat is not None and wx.wx_lon is not None):
                     await asyncio.sleep(WEATHER_DISABLED_POLL_SECONDS)
                     continue
                 try:
@@ -621,7 +624,7 @@ class AppRuntime:
                 except Exception:
                     # Keep polling: a missed severe-weather alert is worse than a noisy log.
                     _weather_logger.exception("unexpected error checking NWS alerts")
-                await asyncio.sleep(config.wx_poll_interval)
+                await asyncio.sleep(wx.wx_poll_interval)
 
         async def mailbox_loop() -> None:
             loop = asyncio.get_running_loop()

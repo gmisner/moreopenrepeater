@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 // Built assets land in web/dist so the Pi checkout can serve them with no Node.
 export default defineConfig({
@@ -18,5 +18,10 @@ export default defineConfig({
       "/login": "http://127.0.0.1:8000",
       "/listen": "http://127.0.0.1:8000",
     },
+  },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
   },
 });

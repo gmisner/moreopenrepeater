@@ -41,12 +41,19 @@ jobs:
         run: npm run check:activity-api
       - name: Clipboard fallback
         run: npm run check:clipboard
+      - name: Lint
+        run: npm run lint
       - name: Unit tests
         run: npm test
       - name: Build
         run: npm run build
-      - name: Dist index present
-        run: test -f ../web/dist/index.html
+      - name: Dist matches the build (Pi never runs npm)
+        run: |
+          test -f ../web/dist/index.html
+          if ! git diff --exit-code -- ../web/dist; then
+            echo "::error::web/dist is out of date; run npm run build in frontend/ and commit it."
+            exit 1
+          fi
 
   pytest:
     runs-on: ubuntu-latest

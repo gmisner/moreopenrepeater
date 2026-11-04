@@ -245,6 +245,8 @@ def register(
         "alerts",
         "updates",
         "remote",
+        "sites",
+        "sensors",
     ):
         app.add_api_route(f"/{spa_path}", spa_route, methods=["GET"], response_model=None)
 

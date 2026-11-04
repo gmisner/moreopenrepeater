@@ -2,14 +2,16 @@
 
 ## Status
 
-Accepted
+Accepted — cutover is live in-tree (`web/dist/.ready` is committed). Vanilla
+`web/` remains only as the fallback when that marker is absent; deleting it
+is a separate follow-up.
 
 ## Context
 
-The dashboard is a vanilla HTML/CSS/JS SPA in `web/` (~3k lines of
-markup, ~7k lines of JS, ~1k lines of CSS). Spacing and component
-consistency are hand-maintained against
-`design-system/moreopenrepeater/MASTER.md`. Contributors keep rediscovering
+Before cutover, the dashboard was a vanilla HTML/CSS/JS SPA in `web/` (~3k
+lines of markup, ~7k lines of JS, ~1k lines of CSS). Spacing and component
+consistency were hand-maintained against
+`design-system/moreopenrepeater/MASTER.md`. Contributors kept rediscovering
 the same density and form-layout bugs.
 
 The controller often runs offline on a Raspberry Pi. MASTER forbids CDN

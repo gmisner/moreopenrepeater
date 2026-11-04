@@ -25,6 +25,7 @@ const Net = lazyPage(() => import("./pages/Net"), "Net");
 const Mailbox = lazyPage(() => import("./pages/Mailbox"), "Mailbox");
 const Announcements = lazyPage(() => import("./pages/Announcements"), "Announcements");
 const Weather = lazyPage(() => import("./pages/Weather"), "Weather");
+const Sensors = lazyPage(() => import("./pages/Sensors"), "Sensors");
 const Autopatch = lazyPage(() => import("./pages/Autopatch"), "Autopatch");
 const AllStar = lazyPage(() => import("./pages/AllStar"), "AllStar");
 const Aprs = lazyPage(() => import("./pages/Aprs"), "Aprs");
@@ -76,6 +77,7 @@ function AuthedApp() {
                 <Route path="mailbox" element={<Mailbox />} />
                 <Route path="announcements" element={<Announcements />} />
                 <Route path="weather" element={<Weather />} />
+                <Route path="sensors" element={<Sensors />} />
                 <Route path="autopatch" element={<Autopatch />} />
                 <Route path="allstar" element={<AllStar />} />
                 <Route path="aprs" element={<Aprs />} />

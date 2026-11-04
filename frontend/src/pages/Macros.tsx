@@ -67,6 +67,7 @@ const ACTION_OPTIONS = [
   { value: "homeassistant", label: "Home Assistant" },
   { value: "help", label: "Spoken help (read out the commands)" },
   { value: "metar", label: "Airport weather" },
+  { value: "sensor", label: "Site sensor reading" },
 ];
 
 const ACTION_LABELS = Object.fromEntries(ACTION_OPTIONS.map((o) => [o.value, o.label]));
@@ -85,6 +86,7 @@ const EMPTY_FORM = {
   ha_target: "",
   help_page: "",
   metar_icao: "",
+  sensor_id: "",
   remote_shift: "minus",
   gpio_pin: "1",
   gpio_verb: "on",
@@ -98,6 +100,7 @@ function macroDetails(
   announcements: Announcement[],
   gpioPins: Record<string, { mode?: string; name?: string }>,
   airports: { icao: string; name?: string }[],
+  siteSensors: { id: string; name?: string }[],
 ): string {
   if (macro.action === "link") {
     return macro.node_id ? `${macro.command} → node ${macro.node_id}` : macro.command || "—";
@@ -113,6 +116,11 @@ function macroDetails(
     if (!macro.command) return "Every listed airport";
     const airport = airports.find((a) => a.icao === macro.command);
     return airport?.name ? `${macro.command} ${airport.name}` : macro.command;
+  }
+  if (macro.action === "sensor") {
+    if (!macro.command) return "Every configured sensor";
+    const sensor = siteSensors.find((s) => s.id === macro.command);
+    return sensor?.name ? `${macro.command} (${sensor.name})` : macro.command;
   }
   if (macro.action === "remote_shift") return macro.command || "—";
   if (macro.action === "remote_tune" || macro.action === "remote_tone") return "keyed, then #";
@@ -139,6 +147,7 @@ export function Macros() {
 
   const gpioPins = (config?.gpio_pins as Record<string, { mode?: string; name?: string }> | undefined) ?? {};
   const airports = (config?.metar_airports as { icao: string; name?: string }[] | undefined) ?? [];
+  const siteSensors = (config?.site_sensors as { id: string; name?: string }[] | undefined) ?? [];
 
   const load = useCallback(async () => {
     const [nextMacros, nextAnnouncements] = await Promise.all([
@@ -166,6 +175,20 @@ export function Macros() {
       label: pinLabel(pin, gpioPins[String(pin)]?.name),
     }));
   }, [gpioPins]);
+
+  const sensorOptions = useMemo(() => {
+    const options = [
+      { value: "", label: "Every configured sensor" },
+      ...siteSensors.map((s) => ({
+        value: s.id,
+        label: s.name ? `${s.name} (${s.id})` : s.id,
+      })),
+    ];
+    if (form.sensor_id && !siteSensors.some((s) => s.id === form.sensor_id)) {
+      options.push({ value: form.sensor_id, label: form.sensor_id });
+    }
+    return options;
+  }, [siteSensors, form.sensor_id]);
 
   const airportOptions = useMemo(() => {
     const options = [{ value: "", label: "Every listed airport" }, ...airports.map((a) => ({
@@ -211,6 +234,7 @@ export function Macros() {
     if (macro.action === "homeassistant") next.ha_target = macro.command;
     if (macro.action === "help") next.help_page = macro.command;
     if (macro.action === "metar") next.metar_icao = macro.command;
+    if (macro.action === "sensor") next.sensor_id = macro.command;
     if (macro.action === "remote_shift") next.remote_shift = macro.command || "minus";
     if (macro.action === "gpio") {
       const [pin, verb, seconds] = macro.command.split(/\s+/);
@@ -236,6 +260,7 @@ export function Macros() {
           homeassistant: form.ha_target,
           help: form.help_page,
           metar: form.metar_icao,
+          sensor: form.sensor_id,
           remote_shift: form.remote_shift,
         } as Record<string, string>
       )[action] ?? "";
@@ -321,7 +346,7 @@ export function Macros() {
                   <Table.Td>{ACTION_LABELS[macro.action] ?? macro.action}</Table.Td>
                   <Table.Td>
                     <Text size="sm" c={macro.action === "announcement" && !announcements.find((a) => a.id === macro.command) ? "amber" : undefined}>
-                      {macroDetails(macro, announcements, gpioPins, airports)}
+                      {macroDetails(macro, announcements, gpioPins, airports, siteSensors)}
                     </Text>
                   </Table.Td>
                   <Table.Td>
@@ -467,6 +492,14 @@ export function Macros() {
                 data={airportOptions}
                 value={form.metar_icao}
                 onChange={(value) => setField("metar_icao", value ?? "")}
+              />
+            ) : null}
+            {action === "sensor" ? (
+              <Select
+                label={labeled("Sensor", "Sensors are listed on the Site sensors page.")}
+                data={sensorOptions}
+                value={form.sensor_id}
+                onChange={(value) => setField("sensor_id", value ?? "")}
               />
             ) : null}
             {action === "remote_shift" ? (

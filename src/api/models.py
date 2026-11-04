@@ -84,6 +84,39 @@ class MetarAirport(BaseModel):
         return value.strip().upper() if isinstance(value, str) else value
 
 
+class SiteSensor(BaseModel):
+    """Named analog site sensor (DS18B20 or ADS1115 channel)."""
+
+    id: str = Field(min_length=1, max_length=32, pattern=r"^[a-z][a-z0-9_-]*$")
+    name: str = Field(min_length=1, max_length=40)
+    type: Literal["ds18b20", "ads1115"]
+    units: str = Field(default="", max_length=16)
+    scale: float = Field(default=1.0)
+    offset: float = Field(default=0.0)
+    # DS18B20: w1 device id (28-...); blank uses the first sensor found.
+    device: str = Field(default="", max_length=32, pattern=r"^$|^28-[0-9a-fA-F]+$")
+    # ADS1115:
+    bus: int = Field(default=1, ge=0, le=20)
+    address: int = Field(default=0x48, ge=0x48, le=0x4B)
+    channel: int = Field(default=0, ge=0, le=3)
+    high: Optional[float] = None
+    low: Optional[float] = None
+    hysteresis: float = Field(default=0.5, ge=0, le=1000)
+    alert: bool = True
+    speak_on_alert: bool = False
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _lower_id(cls, value: Any) -> Any:
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _thresholds(self) -> "SiteSensor":
+        if self.high is not None and self.low is not None and self.high <= self.low:
+            raise ValueError("high threshold must be greater than low")
+        return self
+
+
 class LinkFavorite(BaseModel):
     node: NodeNumber
     name: str = Field(default="", max_length=40)
@@ -368,6 +401,10 @@ class ConfigUpdateRequest(BaseModel):
     fan_run_on_minutes: Optional[float] = Field(default=None, ge=0, le=60)
     fan_temp_c: Optional[float] = Field(default=None, ge=40, le=90)
     clear_fan_temp_c: bool = False
+    # --- facet: sensors ---
+    sensors_enabled: Optional[bool] = None
+    sensors_poll_interval: Optional[float] = Field(default=None, ge=5, le=3600)
+    site_sensors: Optional[list[SiteSensor]] = Field(default=None, max_length=32)
     # --- facet: linking ---
     link_favorites: Optional[list[LinkFavorite]] = Field(default=None, max_length=50)
     link_schedules: Optional[list[LinkSchedule]] = Field(default=None, max_length=50)
@@ -427,6 +464,16 @@ class ConfigUpdateRequest(BaseModel):
         if pin == 3:
             raise ValueError("GPIO3 is the CM108's PTT pin")
         return pin
+
+    @field_validator("site_sensors")
+    @classmethod
+    def _unique_sensor_ids(cls, sensors: Optional[list[SiteSensor]]) -> Optional[list[SiteSensor]]:
+        if sensors is None:
+            return None
+        ids = [s.id for s in sensors]
+        if len(ids) != len(set(ids)):
+            raise ValueError("each site sensor needs a unique id")
+        return sensors
 
 
 class AutopatchDialRequest(BaseModel):
@@ -549,6 +596,10 @@ class MacroCreateRequest(BaseModel):
             self.command = self.command.strip().upper()
             if not re.fullmatch(r"[A-Z0-9]{4}|", self.command):
                 raise ValueError("an airport weather macro needs a 4-letter ICAO code, or none for every listed airport")
+        if self.action == "sensor":
+            self.command = self.command.strip().lower()
+            if not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}|", self.command):
+                raise ValueError("a sensor macro needs a sensor id, or none for every configured sensor")
         if self.action == "remote_shift" and self.command.strip() not in ("plus", "minus", "simplex"):
             raise ValueError("a remote base shift macro's command is plus, minus or simplex")
         if self.action in KEYED_ENTRY_ACTIONS and self.needs_code:
@@ -1036,6 +1087,36 @@ class FanStatus(BaseModel):
     run_on_left: Optional[float]  # seconds
     temperature_c: Optional[float]
     error: Optional[str]
+
+
+class SensorHistoryPoint(BaseModel):
+    at: float
+    value: float
+
+
+class SensorStatus(BaseModel):
+    id: str
+    name: str
+    type: str
+    units: str
+    scale: float = 1.0
+    offset: float = 0.0
+    high: Optional[float] = None
+    low: Optional[float] = None
+    hysteresis: float = 0.5
+    alert: bool = True
+    speak_on_alert: bool = False
+    value: Optional[float] = None
+    at: Optional[float] = None
+    alert_state: Optional[Literal["high", "low"]] = None
+    error: Optional[str] = None
+    history: list[SensorHistoryPoint] = []
+
+
+class SensorsStatusResponse(BaseModel):
+    enabled: bool
+    poll_interval: float
+    sensors: list[SensorStatus]
 
 
 class GpioStatusResponse(BaseModel):

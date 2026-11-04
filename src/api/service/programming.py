@@ -40,6 +40,7 @@ class Programming:
         self.codes_locked: Callable[[], bool] = lambda: False
         self.homeassistant_hook: Optional[Callable[[str, str, str], None]] = None  # (target, source, pattern)
         self.metar_hook: Optional[Callable[[str], None]] = None  # airport code, or "" for all
+        self.sensor_hook: Optional[Callable[[str], None]] = None  # sensor id, or "" for all
         self.remote_base_hook: Optional[Callable[[str, str], None]] = None  # (remote_* action, keyed argument)
         self.mailbox_hook: Optional[Callable[[MailboxCommand], None]] = None
 
@@ -153,6 +154,11 @@ class Programming:
                 host.speak(TTS_PREFIX + "Airport weather is not set up.")
             else:
                 self.metar_hook(action.argument)
+        elif action.action == "sensor":
+            if self.sensor_hook is None:
+                host.speak(TTS_PREFIX + "Site sensors are not set up.")
+            else:
+                self.sensor_hook(action.argument)
         elif action.action == "parrot":
             if host.audio_output is None:
                 _logger.warning("parrot needs live audio, which isn't running")

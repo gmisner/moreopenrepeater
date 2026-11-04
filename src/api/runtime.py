@@ -76,6 +76,9 @@ from .recordings import RecordingStore
 from .remote_base import RemoteBase
 from .service import RepeaterService
 from .sip_trunk import SipTrunk
+from .site_sensors import HISTORY_RETENTION_DAYS as SENSOR_HISTORY_DAYS
+from .site_sensors import POLL_SECONDS_DEFAULT as SENSOR_POLL_SECONDS
+from .site_sensors import SensorHistoryStore, SiteSensors
 from .stream import Streamer
 from .tokens import TokenStore
 from .transcripts import API_KEY_ENV as TRANSCRIPTION_KEY_ENV
@@ -122,6 +125,7 @@ DEFAULT_AUDIT_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "audit.db"
 DEFAULT_APRS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "aprs.db"
 DEFAULT_NODE_LIST_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "allstar-nodes.txt"
 DEFAULT_ALERTS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "alerts.json"
+DEFAULT_SENSORS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "sensors.db"
 DEFAULT_LOG_SHIPPING_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "log-shipping.json"
 DEFAULT_RUN_MARKER_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "run-state.json"
 DEFAULT_NETS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "nets.json"
@@ -255,6 +259,8 @@ class AppRuntime:
         control_codes: Optional[ControlCodes] = None,
         homeassistant: Optional[HomeAssistant] = None,
         airport_weather: Optional[AirportWeather] = None,
+        site_sensors: Optional[SiteSensors] = None,
+        sensor_history: Optional[SensorHistoryStore] = None,
         stream_store: Optional[StateStore] = None,
         streamer: Optional[Streamer] = None,
         mailbox_store: Optional[MailboxStore] = None,
@@ -355,6 +361,9 @@ class AppRuntime:
         hub_poller = hub_poller if hub_poller is not None else HubPoller()
         homeassistant = homeassistant or HomeAssistant(service, os.environ.get(HOMEASSISTANT_TOKEN_ENV))
         airport_weather = airport_weather or AirportWeather(service)
+        site_sensors = site_sensors or SiteSensors(
+            service, history=sensor_history or SensorHistoryStore()
+        )
         streamer = streamer or Streamer(live_audio.monitor, stream_store, lambda: renderer.sample_rate)
         mailbox = Mailbox(service, mailbox_store, renderer, net_active=lambda: nets.current is not None)
         mailbox.audit_hook = service.audit_hook
@@ -698,6 +707,27 @@ class AppRuntime:
                 except Exception:
                     logging.getLogger("moreopenrepeater.alerts").exception("unexpected error checking the system's health")
 
+        async def sensor_loop() -> None:
+            loop = asyncio.get_running_loop()
+            while True:
+                config = service.config
+                if not config.sensors_enabled or not config.site_sensors:
+                    await asyncio.sleep(SENSOR_POLL_SECONDS)
+                    continue
+                try:
+                    for alert in await loop.run_in_executor(None, site_sensors.poll):
+                        notifier.post(alert)
+                    await loop.run_in_executor(
+                        None,
+                        site_sensors.history.prune,
+                        time.time() - SENSOR_HISTORY_DAYS * 86400,
+                    )
+                except Exception:
+                    logging.getLogger("moreopenrepeater.sensors").exception(
+                        "unexpected error polling site sensors"
+                    )
+                await asyncio.sleep(float(config.sensors_poll_interval or SENSOR_POLL_SECONDS))
+
         @asynccontextmanager
         async def lifespan(_app: FastAPI):
             tasks: list[asyncio.Task] = []
@@ -729,6 +759,7 @@ class AppRuntime:
                 tasks.append(asyncio.create_task(mailbox_loop()))
                 tasks.append(asyncio.create_task(transcribe_loop()))
                 tasks.append(asyncio.create_task(health_loop()))
+                tasks.append(asyncio.create_task(sensor_loop()))
                 tasks.append(asyncio.create_task(activity_flush_loop()))
                 tasks.append(asyncio.create_task(long_id_loop()))
                 if link_settings is not None:
@@ -762,6 +793,7 @@ class AppRuntime:
             monitor_receiver.shutdown()
             link_radio.shutdown()
             activity_store.flush()
+            site_sensors.history.flush()
             if start_background_tick:
                 health.stopping()
 
@@ -799,6 +831,7 @@ class AppRuntime:
         self.hub_poller = hub_poller
         self.homeassistant = homeassistant
         self.airport_weather = airport_weather
+        self.site_sensors = site_sensors
         self.streamer = streamer
         self.transcriber = transcriber
         self.public_listeners = public_listeners

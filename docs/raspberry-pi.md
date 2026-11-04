@@ -166,6 +166,28 @@ interface brings out to its connector.
 The pins come straight from the chip and can't power a relay coil: drive
 one through a transistor.
 
+### Site sensors
+
+**Features → Site sensors** reads analog values the digital GPIO pins can't:
+cabinet temperature, battery voltage, generator fuel, supply voltage.
+
+- A **DS18B20** on the Pi's 1-wire bus (`dtoverlay=w1-gpio` in
+  `/boot/firmware/config.txt`, then reboot). Leave the device id blank to
+  use the first `28-*` sensor that shows up under `/sys/bus/w1/devices`.
+- An **ADS1115** on I2C (`dtparam=i2c_arm=on`). Each channel (0–3) is a
+  sensor; set **scale** and **offset** so a voltage divider reads in real
+  units (for example scale 11 for a 10:1 divider into the ±4.096 V range).
+
+Each sensor has a name, units, optional high and low thresholds, and
+**hysteresis** so a reading near the limit doesn't alert repeatedly. Crossed
+thresholds go out through the same **Alerts & health** phone channels; tick
+**Speak on air** to also announce the crossing. Turn on **Poll sensors in
+the background** so readings update on the dashboard and history accumulates
+in `data/sensors.db`. A DTMF macro with the **Site sensor reading** action
+speaks one sensor (by id) or every configured sensor when the argument is
+blank ("Battery thirteen point two volts"). Missing hardware is skipped —
+the service keeps running without the chip attached.
+
 ### Transmitter fan
 
 **Audio & tones → Transmitter fan** runs a cooling fan while the repeater
@@ -884,7 +906,9 @@ the repeater needs attention:
 - an update failed or was rolled back (and when one succeeded);
 - the CPU passed the temperature limit (80 °C unless you change it), or the Pi
   reported under-voltage or throttling;
-- live audio stopped for more than a minute, or the CM108 interface was unplugged.
+- live audio stopped for more than a minute, or the CM108 interface was unplugged;
+- a **site sensor** (battery, cabinet temperature, and so on) crossed its high
+  or low threshold — see **Site sensors** below.
 
 It sends by [ntfy](https://ntfy.sh) (free push notifications to a phone app),
 a Telegram bot, email, or a webhook (Slack and Discord webhook URLs work as

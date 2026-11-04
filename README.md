@@ -360,11 +360,12 @@ several phases (see the plan file for the full breakdown):
   See [docs/allstar.md](docs/allstar.md).
 - **Parrot / echo test**: after the parrot macro, the next transmission is recorded
   instead of repeated, then played back.
-- **Recordings**: optionally save every repeated transmission, with playback on the
-  Activity page and automatic deletion after a set number of days.
+- **Recordings**: optionally save every repeated transmission, with playback,
+  filters and stats on the Recordings page and automatic deletion after a set
+  number of days.
 - **Transcripts**: recordings and mailbox messages turned into text, with the
-  callsigns heard picked out (even said phonetically) and a search box on the
-  Activity page. Transcribe on the controller with Vosk, or send the audio to a
+  callsigns heard picked out (even said phonetically) and search on the
+  Recordings page. Transcribe on the controller with Vosk, or send the audio to a
   Whisper server on your network or OpenAI. See
   [docs/transcripts.md](docs/transcripts.md).
 - **Voice mailbox**: leave a short message for another station over the air (`*7`,
@@ -497,11 +498,12 @@ The dashboard is the **Mantine** app in `frontend/`, built into `web/dist/`
 and served by FastAPI (ADR 0001; `web/dist` only — no vanilla fallback, no
 `.ready` marker). It is a sidebar app with separate views for Dashboard (live
 state, linked nodes, and a recent-activity feed), Activity (airtime charts),
-Timing, Identification, Audio & tones (sounds, clip library and the live radio
-interface), DTMF macros (add/edit/rename/delete), Announcements, Weather
-alerts, APRS, APRS map, Sites, Site sensors, Simulator, Logs
-(filter/level/pause), Backup & restore, and for admins Users, Audit log,
-Alerts & health and Updates. Each settings view saves only its own fields
+Recordings (playback, filters, transcripts), Timing, Identification, Audio &
+tones (sounds, clip library and the live radio interface), DTMF macros
+(add/edit/rename/delete), Announcements, Weather alerts, APRS, APRS map,
+Sites, Site sensors, Simulator, Logs (filter/level/pause), Backup & restore,
+and for admins Users, Audit log, Alerts & health and Updates. Each settings
+view saves only its own fields
 through `PUT /api/config`, with unsaved-change tracking. It has light and dark
 themes (following the system setting unless you pick one in the sidebar). On a
 phone the header keeps TX/RX lit on every page and a bottom tab bar reaches the

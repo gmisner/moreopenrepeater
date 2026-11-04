@@ -5,7 +5,7 @@ are picked out as tags, whether written out ("W1AW") or said phonetically ("whis
 one alpha whiskey"), and the Activity page can search transcripts by word or callsign.
 
 Transcripts are off until you pick an engine under **Activity → Transcripts**.
-Recordings have to be turned on too (Activity → Recordings). Once an engine is picked,
+Recordings have to be turned on too (Recordings page). Once an engine is picked,
 new clips are transcribed in the background within about 15 seconds, one at a time,
 newest first. The 50 most recent recordings without a transcript are picked up as well.
 

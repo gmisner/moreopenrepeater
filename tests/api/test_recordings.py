@@ -181,3 +181,47 @@ def test_recording_endpoints(tmp_path):
     assert client.delete(f"/api/recordings/{saved.id}").status_code == 200
     assert client.get("/api/recordings").json() == []
     assert client.delete(f"/api/recordings/{saved.id}").status_code == 404
+
+
+def test_store_filters_by_date_window_and_offset(tmp_path):
+    store = RecordingStore(tmp_path, sample_rate=RATE)
+    early = store.save(np.zeros(RATE, dtype=np.float32), started_at=1_800_000_000.0)
+    mid = store.save(np.zeros(RATE * 2, dtype=np.float32), started_at=1_800_000_100.0)
+    late = store.save(np.zeros(RATE * 3, dtype=np.float32), started_at=1_800_000_200.0)
+
+    assert [r.id for r in store.list(10, after_ms=1_800_000_100_000)] == [late.id, mid.id]
+    assert [r.id for r in store.list(10, before_ms=1_800_000_150_000)] == [mid.id, early.id]
+    assert [r.id for r in store.list(1, offset=1)] == [mid.id]
+    assert store.summarize(after_ms=1_800_000_100_000) == (2, 5.0)
+
+
+def test_recording_filters_and_summary(tmp_path):
+    recordings = RecordingStore(tmp_path / "recordings", sample_rate=RATE)
+    older = recordings.save(np.zeros(RATE, dtype=np.float32), started_at=1_800_000_000.0)
+    newer = recordings.save(np.zeros(RATE * 2, dtype=np.float32), started_at=1_800_000_100.0)
+    recordings.transcript_path(older.id).write_text("weather report from W1AW", encoding="utf-8")
+    recordings.transcript_path(newer.id).write_text("kerchunk from K1ABC", encoding="utf-8")
+    client = TestClient(create_app(start_background_tick=False, log_path=tmp_path / "t.log", recordings=recordings))
+
+    summary = client.get("/api/recordings/summary").json()
+    assert summary == {"count": 2, "total_duration": 3.0, "transcribed": 2}
+
+    assert [r["id"] for r in client.get("/api/recordings", params={"callsign": "W1AW"}).json()] == [older.id]
+    assert [r["id"] for r in client.get("/api/recordings", params={"q": "kerchunk"}).json()] == [newer.id]
+    assert [
+        r["id"]
+        for r in client.get(
+            "/api/recordings",
+            params={"after": "2027-01-15T08:01:00Z", "before": "2027-01-15T08:02:00Z"},
+        ).json()
+    ] == [newer.id]
+    assert client.get("/api/recordings", params={"offset": 1, "limit": 1}).json()[0]["id"] == older.id
+    assert client.get("/api/recordings/summary", params={"callsign": "W1AW"}).json() == {
+        "count": 1,
+        "total_duration": 1.0,
+        "transcribed": 1,
+    }
+    assert client.get(
+        "/api/recordings",
+        params={"after": "2027-01-16T00:00:00Z", "before": "2027-01-15T00:00:00Z"},
+    ).status_code == 400

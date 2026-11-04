@@ -63,16 +63,49 @@ class RecordingStore:
         tmp.replace(path)
         return self._info(path)
 
-    def list(self, limit: int = 50) -> list[RecordingInfo]:
+    def list(
+        self,
+        limit: int = 50,
+        *,
+        offset: int = 0,
+        after_ms: Optional[int] = None,
+        before_ms: Optional[int] = None,
+    ) -> list[RecordingInfo]:
+        paths = self._filtered_paths(after_ms=after_ms, before_ms=before_ms)
+        if offset:
+            paths = paths[offset:]
+        return [self._info(p) for p in paths[:limit]]
+
+    def summarize(
+        self,
+        *,
+        after_ms: Optional[int] = None,
+        before_ms: Optional[int] = None,
+    ) -> tuple[int, float]:
+        """Count and total duration for recordings in the date window."""
+        paths = self._filtered_paths(after_ms=after_ms, before_ms=before_ms)
+        total_duration = 0.0
+        for path in paths:
+            total_duration += self._info(path).duration
+        return len(paths), total_duration
+
+    def paths(self) -> list[Path]:
+        return self._filtered_paths()
+
+    def _filtered_paths(
+        self,
+        *,
+        after_ms: Optional[int] = None,
+        before_ms: Optional[int] = None,
+    ) -> list[Path]:
         if self.directory is None:
             return []
         paths = sorted((p for p in self.directory.glob("*.wav") if _ID.match(p.stem)), reverse=True)
-        return [self._info(p) for p in paths[:limit]]
-
-    def paths(self) -> list[Path]:
-        if self.directory is None:
-            return []
-        return sorted(p for p in self.directory.glob("*.wav") if _ID.match(p.stem))
+        if after_ms is not None:
+            paths = [p for p in paths if int(p.stem) >= after_ms]
+        if before_ms is not None:
+            paths = [p for p in paths if int(p.stem) < before_ms]
+        return paths
 
     def import_file(self, source: Path) -> bool:
         """Adds a recording file (e.g. from a backup) unless it's already here."""

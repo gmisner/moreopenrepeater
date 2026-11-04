@@ -14,13 +14,14 @@ from ..models import (
     AssetResponse,
     RecordingResponse,
     RecordingSource,
+    RecordingSummaryResponse,
     TranscriptionStatus,
 )
 from ..recordings import RecordingInfo, RecordingStore
 from ..service import RepeaterService
 from ..transcripts import Transcriber, callsigns, read_transcript
 
-RECORDING_SEARCH_LIMIT = 500
+RECORDING_SEARCH_LIMIT = 5000
 
 
 def _asset_response(asset) -> AssetResponse:
@@ -35,6 +36,20 @@ def _recording_response(recording: RecordingInfo, transcript: Optional[str]) -> 
         transcript=transcript,
         callsigns=callsigns(transcript or ""),
     )
+
+
+def _ms_bound(value: Optional[datetime]) -> Optional[int]:
+    if value is None:
+        return None
+    return int(value.timestamp() * 1000)
+
+
+def _matches(response: RecordingResponse, q: str, callsign: str) -> bool:
+    if callsign and callsign.upper() not in response.callsigns:
+        return False
+    if not q:
+        return True
+    return q.upper() in response.callsigns or q.lower() in (response.transcript or "").lower()
 
 
 def register(
@@ -84,24 +99,98 @@ def register(
             raise HTTPException(status_code=404, detail=f"No recording with id {recording_id!r}")
         return path
 
+    def recording_filters(
+        after: Optional[datetime],
+        before: Optional[datetime],
+        q: str,
+        callsign: str,
+    ) -> tuple[Optional[int], Optional[int], str, str]:
+        if after is not None and before is not None and after >= before:
+            raise HTTPException(status_code=400, detail="after must be earlier than before")
+        return _ms_bound(after), _ms_bound(before), q.strip(), callsign.strip().upper()
+
+    def matching_recordings(
+        store: RecordingStore,
+        *,
+        after_ms: Optional[int],
+        before_ms: Optional[int],
+        q: str,
+        callsign: str,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> list[RecordingResponse]:
+        found: list[RecordingResponse] = []
+        skipped = 0
+        for recording in store.list(RECORDING_SEARCH_LIMIT, after_ms=after_ms, before_ms=before_ms):
+            response = _recording_response(recording, read_transcript(store, recording.id))
+            if not _matches(response, q, callsign):
+                continue
+            if skipped < offset:
+                skipped += 1
+                continue
+            found.append(response)
+            if limit is not None and len(found) >= limit:
+                break
+        return found
+
     @app.get("/api/recordings", response_model=list[RecordingResponse], dependencies=auth_dependencies)
     def list_recordings(
         limit: int = Query(default=50, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
         q: str = Query(default="", max_length=100),
+        callsign: str = Query(default="", max_length=20),
+        after: Optional[datetime] = None,
+        before: Optional[datetime] = None,
         source: RecordingSource = "repeater",
     ) -> list[RecordingResponse]:
-        """`q` searches the transcripts (words, or a callsign however it was said)."""
-        q = q.strip()
+        """`q` searches transcripts; `callsign` matches extracted callsigns exactly."""
+        after_ms, before_ms, q, callsign = recording_filters(after, before, q, callsign)
         store = recording_store(source)
-        found = []
-        for recording in store.list(RECORDING_SEARCH_LIMIT if q else limit):
-            response = _recording_response(recording, read_transcript(store, recording.id))
-            if q and q.upper() not in response.callsigns and q.lower() not in (response.transcript or "").lower():
-                continue
-            found.append(response)
-            if len(found) >= limit:
-                break
-        return found
+        if not q and not callsign:
+            return [
+                _recording_response(recording, read_transcript(store, recording.id))
+                for recording in store.list(limit, offset=offset, after_ms=after_ms, before_ms=before_ms)
+            ]
+        return matching_recordings(
+            store,
+            after_ms=after_ms,
+            before_ms=before_ms,
+            q=q,
+            callsign=callsign,
+            limit=limit,
+            offset=offset,
+        )
+
+    @app.get("/api/recordings/summary", response_model=RecordingSummaryResponse, dependencies=auth_dependencies)
+    def recordings_summary(
+        q: str = Query(default="", max_length=100),
+        callsign: str = Query(default="", max_length=20),
+        after: Optional[datetime] = None,
+        before: Optional[datetime] = None,
+        source: RecordingSource = "repeater",
+    ) -> RecordingSummaryResponse:
+        after_ms, before_ms, q, callsign = recording_filters(after, before, q, callsign)
+        store = recording_store(source)
+        if not q and not callsign:
+            count, total_duration = store.summarize(after_ms=after_ms, before_ms=before_ms)
+            transcribed = 0
+            for recording in store.list(RECORDING_SEARCH_LIMIT, after_ms=after_ms, before_ms=before_ms):
+                if read_transcript(store, recording.id) is not None:
+                    transcribed += 1
+            return RecordingSummaryResponse(count=count, total_duration=total_duration, transcribed=transcribed)
+
+        matched = matching_recordings(
+            store,
+            after_ms=after_ms,
+            before_ms=before_ms,
+            q=q,
+            callsign=callsign,
+        )
+        return RecordingSummaryResponse(
+            count=len(matched),
+            total_duration=sum(item.duration for item in matched),
+            transcribed=sum(1 for item in matched if item.transcript is not None),
+        )
 
     @app.get("/api/transcription", response_model=TranscriptionStatus, dependencies=auth_dependencies)
     def get_transcription_status() -> TranscriptionStatus:

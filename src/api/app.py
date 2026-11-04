@@ -33,6 +33,7 @@ from .control_codes import ControlCodes
 from .gpio import GpioControl
 from .health import RunMarker, SystemProbe
 from .homeassistant import HomeAssistant
+from .hub import HubPoller, HubSiteStore
 from .link_radio import LinkRadio
 from .links import LinkControl
 from .live_audio import LiveAudio, list_audio_devices
@@ -52,6 +53,7 @@ from .routes import audio_tools as audio_tools_routes
 from .routes import autopatch as autopatch_routes
 from .routes import control_codes as control_codes_routes
 from .routes import core as core_routes
+from .routes import hub as hub_routes
 from .routes import linking as linking_routes
 from .routes import mailbox as mailbox_routes
 from .routes import media as media_routes
@@ -70,6 +72,7 @@ from .runtime import (
     DEFAULT_AUTO_UPDATE_PATH,
     DEFAULT_BACKUP_DIR,
     DEFAULT_CONTROL_CODES_PATH,
+    DEFAULT_HUB_SITES_PATH,
     DEFAULT_LOG_SHIPPING_PATH,
     DEFAULT_MAILBOX_DIR,
     DEFAULT_MONITOR_RECORDINGS_DIR,
@@ -215,6 +218,8 @@ def create_app(
     monitor_receiver: Optional[MonitorReceiverService] = None,
     link_radio: Optional[LinkRadio] = None,
     remote_base: Optional[RemoteBase] = None,
+    hub_sites: Optional[HubSiteStore] = None,
+    hub_poller: Optional[HubPoller] = None,
     run_mixer: Callable[[list[str]], object] = run_amixer,
     serial_ports: Callable[[], list[dict]] = find_serial_ports,
 ) -> FastAPI:
@@ -273,6 +278,8 @@ def create_app(
         monitor_receiver=monitor_receiver,
         link_radio=link_radio,
         remote_base=remote_base,
+        hub_sites=hub_sites,
+        hub_poller=hub_poller,
         run_mixer=run_mixer,
         serial_ports=serial_ports,
     )
@@ -494,6 +501,13 @@ def create_app(
         account_dependencies=runtime.account_dependencies,
     )
 
+    hub_routes.register(
+        app,
+        hub_sites=runtime.hub_sites,
+        hub_poller=runtime.hub_poller,
+        admin_dependencies=runtime.admin_dependencies,
+    )
+
     control_codes_routes.register(
         app,
         service=runtime.service,
@@ -542,6 +556,7 @@ app = create_app(
     auto_update_store=StateStore(DEFAULT_AUTO_UPDATE_PATH),
     control_codes=ControlCodes(StateStore(DEFAULT_CONTROL_CODES_PATH)),
     stream_store=StateStore(DEFAULT_STREAM_PATH),
+    hub_sites=HubSiteStore(StateStore(DEFAULT_HUB_SITES_PATH)),
 )
 
 

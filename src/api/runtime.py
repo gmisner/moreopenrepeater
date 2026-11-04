@@ -58,6 +58,7 @@ from .health import CHECK_SECONDS as HEALTH_CHECK_SECONDS
 from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
 from .homeassistant import TOKEN_ENV as HOMEASSISTANT_TOKEN_ENV
 from .homeassistant import HomeAssistant
+from .hub import HubPoller, HubSiteStore
 from .link_radio import LinkRadio
 from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkScheduler
 from .links import LinkControl, LinkError
@@ -127,6 +128,7 @@ DEFAULT_NETS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "nets.json"
 DEFAULT_AUTO_UPDATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "auto-update.json"
 DEFAULT_CONTROL_CODES_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "control-codes.json"
 DEFAULT_STREAM_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "stream.json"
+DEFAULT_HUB_SITES_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "hub-sites.json"
 DEFAULT_BACKUP_DIR = Path(
     os.environ.get("MOREOPENREPEATER_BACKUP_DIR") or _resolve_data_root(os.environ, _REPO_DATA_DIR) / "backups"
 )
@@ -260,6 +262,8 @@ class AppRuntime:
         monitor_receiver: Optional[MonitorReceiverService] = None,
         link_radio: Optional[LinkRadio] = None,
         remote_base: Optional[RemoteBase] = None,
+        hub_sites: Optional[HubSiteStore] = None,
+        hub_poller: Optional[HubPoller] = None,
         run_mixer: Callable[[list[str]], object] = run_amixer,
         serial_ports: Callable[[], list[dict]] = find_serial_ports,
     ) -> None:
@@ -346,6 +350,8 @@ class AppRuntime:
         control_codes = control_codes or ControlCodes(None)
         service.code_checker = control_codes.check
         service.codes_locked = control_codes.locked
+        hub_sites = hub_sites if hub_sites is not None else HubSiteStore()
+        hub_poller = hub_poller if hub_poller is not None else HubPoller()
         homeassistant = homeassistant or HomeAssistant(service, os.environ.get(HOMEASSISTANT_TOKEN_ENV))
         airport_weather = airport_weather or AirportWeather(service)
         streamer = streamer or Streamer(live_audio.monitor, stream_store, lambda: renderer.sample_rate)
@@ -786,6 +792,8 @@ class AppRuntime:
         self.agent_access = agent_access
         self.audit = audit
         self.control_codes = control_codes
+        self.hub_sites = hub_sites
+        self.hub_poller = hub_poller
         self.homeassistant = homeassistant
         self.airport_weather = airport_weather
         self.streamer = streamer

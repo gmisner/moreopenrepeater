@@ -105,3 +105,15 @@ Serving prefers `web/dist/` when both `web/dist/index.html` and the marker
 the Pi never runs `npm`. Removing `.ready` falls back to the vanilla files
 under `web/` until that fallback is deleted.
 _Avoid_: no-build frontend, dashboard in `web/` as the editable source
+
+### Multi-site
+
+**Hub**:
+A moreopenrepeater instance that lists other remotes on the **Sites** view by
+polling each site's API with a per-site token (`data/hub-sites.json`). Remotes
+do not call home.
+_Avoid_: multi-site controller, central command server
+
+**Site** (hub):
+One configured remote repeater entry (name, base URL, API token) shown on Sites.
+_Avoid_: node (AllStar), link (unless meaning AllStar/RF link)

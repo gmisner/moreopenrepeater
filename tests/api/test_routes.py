@@ -322,5 +322,43 @@ def test_logs_endpoint_respects_the_lines_query_param():
 def test_static_files_are_served_with_no_cache_so_upgrades_take_effect():
     client, service, clock = make_client()
 
-    assert client.get("/style.css").headers["cache-control"] == "no-cache"
+    assert client.get("/manifest.webmanifest").headers["cache-control"] == "no-cache"
     assert client.get("/").headers["cache-control"] == "no-cache"
+
+
+def test_dashboard_is_mantine_dist_only():
+    """SPA shell comes from web/dist; vanilla HTML/JS fallback is gone."""
+    client, service, clock = make_client()
+
+    index = client.get("/")
+    assert index.status_code == 200
+    assert 'id="root"' in index.text
+    assert "/assets/" in index.text
+    assert client.get("/style.css").status_code == 404
+    assert client.get("/js/app.js").status_code == 404
+
+
+def test_missing_dist_index_fails_clearly(tmp_path):
+    import collections
+
+    import pytest
+    from fastapi import FastAPI
+
+    from api.routes import realtime as realtime_routes
+
+    app = FastAPI()
+    service = RepeaterService(config=RepeaterConfig())
+    with pytest.raises(RuntimeError, match="Mantine dashboard missing"):
+        realtime_routes.register(
+            app,
+            service=service,
+            nets=None,
+            live_audio=None,
+            monitor_receiver=None,
+            renderer=None,
+            public_listeners=collections.Counter(),
+            identify=lambda _conn: None,
+            auth_enabled=lambda: False,
+            status_response=lambda snapshot: snapshot,
+            web_dir=tmp_path / "web",
+        )

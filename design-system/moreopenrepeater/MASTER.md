@@ -6,11 +6,10 @@ site, and change settings at a desk. The design follows from that: status has to
 be readable at a glance and at a distance, controls must be hard to hit by
 accident, and nothing decorative competes with live state.
 
-The dashboard is moving to React + Mantine (`frontend/`, see
-`docs/adr/0001-mantine-dashboard.md`). Until cutover (`web/dist/.ready`), the
-vanilla UI in `web/` still ships. Theme tokens below are the source of truth for
-both; Mantine maps them in `frontend/src/theme.ts`. Legacy components live in
-`web/style.css` and use only token names.
+The dashboard is React + Mantine (`frontend/`, see
+`docs/adr/0001-mantine-dashboard.md`). FastAPI serves the committed build in
+`web/dist/` only. Theme tokens below are the source of truth; Mantine maps
+them in `frontend/src/theme.ts`.
 
 ## Principles
 
@@ -73,7 +72,7 @@ tint over `--panel-2`). Re-run the check when changing any color value.
 ### Map palette
 
 The APRS map draws markers and alert areas over OpenStreetMap tiles, which look
-the same in both themes, so `web/js/map.js` keeps a fixed palette: repeater
+the same in both themes, so the map keeps a fixed palette: repeater
 `#4f9dff`, digipeater `#b58cff`, mobile `#35d07f`, fixed `#c9ced6`, weather
 `#ffb020`, and alert severity Extreme `#d946ef`, Severe `#ff5c5c`, Moderate
 `#ffb020`, Minor `#facc15`. Markers are a white disc with a border in the
@@ -191,10 +190,9 @@ Transitions use `--speed` (0.15s) and animate only color, opacity and transform.
 
 One hand-drawn set, never emoji (emoji look different on every system and
 can't take the theme's colors). Every icon is a `<symbol id="i-name">` in the
-sprite at the top of `index.html`, drawn on a 24×24 grid with 2px round-capped
-strokes and no fill, and colored by `currentColor`. Use them with
-`<svg class="icon"><use href="#i-name" /></svg>`, or `svgIcon("name")` from
-`web/js/ui.js` in scripts.
+sprite (see `frontend/src/icons/`), drawn on a 24×24 grid with 2px round-capped
+strokes and no fill, and colored by `currentColor`. Use them through the
+Mantine icon helpers in `frontend/src/icons/`.
 
 - Navigation: every sidebar and tab bar item has an icon *and* a label. Sidebar
   icons are 18px and `--muted` until the item is active; tab bar icons are 24px.
@@ -207,11 +205,10 @@ and check it at 16px.
 
 ## Themes
 
-`web/theme.js` runs in `<head>` before the stylesheet paints and sets
-`data-theme="light"` or `"dark"` on `<html>`. The choice is saved in
-`localStorage` under `theme` (missing means Auto, which follows
-`prefers-color-scheme` and updates live when the system setting changes). The
-Auto/Light/Dark control is in the sidebar footer.
+The Mantine app sets `data-theme="light"` or `"dark"` on `<html>` before paint.
+The choice is saved in `localStorage` under `theme` (missing means Auto, which
+follows `prefers-color-scheme` and updates live when the system setting changes).
+The Auto/Light/Dark control is in the sidebar footer.
 
 To add a color: add it to both the dark `:root` block and the
 `:root[data-theme="light"]` block, check its contrast in both, then use the token.

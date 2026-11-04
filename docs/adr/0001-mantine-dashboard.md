@@ -2,14 +2,12 @@
 
 ## Status
 
-Accepted — cutover is live in-tree (`web/dist/.ready` is committed). Vanilla
-`web/` remains only as the fallback when that marker is absent; deleting it
-is a separate follow-up.
+Accepted (vanilla deletion done)
 
 ## Context
 
-Before cutover, the dashboard was a vanilla HTML/CSS/JS SPA in `web/` (~3k
-lines of markup, ~7k lines of JS, ~1k lines of CSS). Spacing and component
+The dashboard was a vanilla HTML/CSS/JS SPA in `web/` (~3k lines of
+markup, ~7k lines of JS, ~1k lines of CSS). Spacing and component
 consistency were hand-maintained against
 `design-system/moreopenrepeater/MASTER.md`. Contributors kept rediscovering
 the same density and form-layout bugs.
@@ -24,24 +22,27 @@ Replace the vanilla dashboard with a **React + Mantine** app in a big-bang
 cutover (login, listen, and all authenticated views land together).
 
 - Source lives in `frontend/` (Vite + TypeScript + Mantine).
-- `npm run build` writes into `web/dist/` (and related static entrypoints).
+- `npm run build` writes into `web/dist/`.
 - **CI and developers build the UI; the Pi only receives prebuilt files**
   from git. Install/update never runs `npm`.
 - Theme tokens map 1:1 to MASTER (system fonts, semantic status colors,
   light/dark/auto). No Google Fonts / CDN.
 - High-frequency WebSocket status updates go through a narrow store so
   TX/RX indicators do not re-render the whole tree.
+- FastAPI serves **`web/dist` only**. Presence of `web/dist/index.html` is
+  the gate; if it is missing, app startup fails with a clear error. There
+  is no fallback to vanilla `web/index.html` / `listen.html` / `login.html`.
+- The former cutover marker `web/dist/.ready` is obsolete and removed.
+  Dist presence alone is enough.
 
 ## Consequences
 
-- First-load JS is larger than today's static files; LAN use stays fine;
+- First-load JS is larger than the old static files; LAN use stays fine;
   weak uplinks will notice.
 - Runtime cost depends on careful subscription boundaries around live
   status; done poorly, TX/RX can feel worse than imperative DOM updates.
 - Contributors need Node locally (or CI) to change the UI.
-- Vanilla `web/index.html`, `web/js/*`, and most of `web/style.css` remain
-  in the tree as fallback/reference until deleted in a follow-up; Leaflet
-  stays vendored under `frontend/public/vendor` and is copied into dist.
-- Cutover is gated on `web/dist/.ready`. `npm run build` writes that marker
-  with the hashed assets; both are committed so Pi installs serve Mantine
-  with no Node. Removing `.ready` falls back to the vanilla dashboard.
+- Vanilla sources (`web/js/*`, root HTML/CSS/JS entrypoints) are deleted.
+  Leaflet stays vendored under `frontend/public/vendor` and is copied into
+  dist. Icons, manifest, and other static assets required by the SPA live
+  under `web/dist/` (and mirrored at `web/` / `frontend/public` as needed).

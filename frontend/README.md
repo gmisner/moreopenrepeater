@@ -14,8 +14,8 @@ npm run dev
 
 ## Build (required before commit / release)
 
-Writes into `../web/dist` and creates `web/dist/.ready` so FastAPI serves
-this SPA (no Node on the Pi):
+Writes into `../web/dist`. FastAPI serves that directory only (no Node on
+the Pi; no vanilla fallback):
 
 ```bash
 npm install

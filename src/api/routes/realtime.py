@@ -177,78 +177,79 @@ def register(
         finally:
             service.unsubscribe(queue)
 
-    if web_dir.is_dir():
-        # Prefer the Mantine build when web/dist/index.html and web/dist/.ready
-        # both exist (ADR 0001). Until cutover, the vanilla dashboard stays.
-        # Pi installs never run npm — dist is committed from CI / developers.
-        dist_dir = web_dir / "dist"
-        spa = (dist_dir / "index.html").is_file() and (dist_dir / ".ready").is_file()
-        static_root = dist_dir if spa else web_dir
+    # Mantine-only (ADR 0001): serve web/dist. Pi installs never run npm —
+    # dist is committed from CI / developers. No vanilla HTML/JS fallback.
+    dist_dir = web_dir / "dist"
+    index_html = dist_dir / "index.html"
+    if not index_html.is_file():
+        raise RuntimeError(
+            f"Mantine dashboard missing: expected {index_html}. "
+            "Build with `npm run build` in frontend/ and commit web/dist/."
+        )
+    static_root = dist_dir
 
-        def is_signed_in(request: Request) -> bool:
-            return identify(request) is not None
+    def is_signed_in(request: Request) -> bool:
+        return identify(request) is not None
 
-        def page(name: str) -> FileResponse:
-            return FileResponse(static_root / name)
+    def page(name: str) -> FileResponse:
+        return FileResponse(static_root / name)
 
-        @app.get("/", response_model=None)
-        def index(request: Request) -> Response:
-            identity = identify(request)
-            if identity is None:
-                return RedirectResponse("/login", status_code=303)
-            if identity.role == "listener":
-                return RedirectResponse("/listen", status_code=303)
-            return page("index.html")
+    @app.get("/", response_model=None)
+    def index(request: Request) -> Response:
+        identity = identify(request)
+        if identity is None:
+            return RedirectResponse("/login", status_code=303)
+        if identity.role == "listener":
+            return RedirectResponse("/listen", status_code=303)
+        return page("index.html")
 
-        @app.get("/listen", response_model=None)
-        def listen_page(request: Request) -> Response:
-            if public_page_mode() == "off":
-                raise HTTPException(status_code=404, detail="Not found")
-            if not may_open_listen_page(request):
-                return RedirectResponse("/login?next=/listen", status_code=303)
-            return page("index.html" if spa else "listen.html")
+    @app.get("/listen", response_model=None)
+    def listen_page(request: Request) -> Response:
+        if public_page_mode() == "off":
+            raise HTTPException(status_code=404, detail="Not found")
+        if not may_open_listen_page(request):
+            return RedirectResponse("/login?next=/listen", status_code=303)
+        return page("index.html")
 
-        @app.get("/login", response_model=None)
-        def login_page(request: Request) -> Response:
-            if not auth_enabled() or is_signed_in(request):
-                return RedirectResponse("/", status_code=303)
-            return page("index.html" if spa else "login.html")
+    @app.get("/login", response_model=None)
+    def login_page(request: Request) -> Response:
+        if not auth_enabled() or is_signed_in(request):
+            return RedirectResponse("/", status_code=303)
+        return page("index.html")
 
-        # SPA deep links (e.g. /dashboard) must return index.html.
-        if spa:
+    # SPA deep links (e.g. /dashboard) must return index.html.
+    def spa_route() -> Response:
+        return page("index.html")
 
-            def spa_route() -> Response:
-                return page("index.html")
+    for spa_path in (
+        "dashboard",
+        "activity",
+        "timing",
+        "identification",
+        "audio",
+        "macros",
+        "net",
+        "mailbox",
+        "announcements",
+        "weather",
+        "autopatch",
+        "allstar",
+        "aprs",
+        "map",
+        "public",
+        "simulator",
+        "logs",
+        "backup",
+        "users",
+        "audit",
+        "alerts",
+        "updates",
+        "remote",
+    ):
+        app.add_api_route(f"/{spa_path}", spa_route, methods=["GET"], response_model=None)
 
-            for spa_path in (
-                "dashboard",
-                "activity",
-                "timing",
-                "identification",
-                "audio",
-                "macros",
-                "net",
-                "mailbox",
-                "announcements",
-                "weather",
-                "autopatch",
-                "allstar",
-                "aprs",
-                "map",
-                "public",
-                "simulator",
-                "logs",
-                "backup",
-                "users",
-                "audit",
-                "alerts",
-                "updates",
-                "remote",
-            ):
-                app.add_api_route(f"/{spa_path}", spa_route, methods=["GET"], response_model=None)
-
-        # Left unauthenticated: the JS/CSS hold no secrets (every piece of
-        # repeater data comes from the authenticated API), and a Mount is a
-        # raw ASGI sub-application that can't take route-level
-        # `dependencies=` anyway.
-        app.mount("/", StaticFiles(directory=static_root), name="web")
+    # Left unauthenticated: the JS/CSS hold no secrets (every piece of
+    # repeater data comes from the authenticated API), and a Mount is a
+    # raw ASGI sub-application that can't take route-level
+    # `dependencies=` anyway.
+    app.mount("/", StaticFiles(directory=static_root), name="web")

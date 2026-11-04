@@ -24,6 +24,9 @@ class FakeHidrawDevice:
     def get_input_report(self, length: int) -> bytes:
         return bytes([self.buttons, self.gpio, 0, 0])[:length]
 
+    def close(self) -> None:
+        pass
+
 
 def test_set_ptt_active_writes_data_before_mask_with_pin_bit_set():
     device = FakeHidrawDevice()
@@ -98,16 +101,75 @@ def test_hidiocginput_matches_the_kernel_header():
     assert _hidiocginput(5) == 0xC005480A
 
 
-def test_writes_are_ignored_when_the_hidraw_device_is_gone():
-    """Unplug/reset leaves an open fd that returns ENODEV; unkey must not raise."""
+def test_writes_are_ignored_when_the_hidraw_device_stays_gone():
+    """Unplug with no replacement: unkey must not raise, and local state still tracks."""
     device = FakeHidrawDevice(write_error=OSError(errno.ENODEV, "No such device"))
-    cm108 = CM108Interface(device)
+
+    def still_gone(path: str) -> FakeHidrawDevice:
+        raise OSError(errno.ENOENT, "No such file or directory")
+
+    cm108 = CM108Interface(device, find=lambda: [], open_device=still_gone)
     cm108.set_ptt(True)
     cm108.set_ptt(False)
     cm108.set_gpio(1, True)
     assert device.written_reports == []
     assert cm108._gone is True
-    assert cm108.output_level(3) is False  # local state still tracks the last request
+    assert cm108.output_level(3) is False
+    assert cm108.output_level(1) is True
+
+
+def test_next_ptt_reopens_hidraw_and_rewrites_gpio_state():
+    """After a simulated disconnect, the next PTT write finds the interface again."""
+    original = FakeHidrawDevice()
+    original.path = "/dev/hidraw3"
+    replacement = FakeHidrawDevice()
+    replacement.path = "/dev/hidraw4"
+
+    cm108 = CM108Interface(
+        original,
+        find=lambda: [{"path": "/dev/hidraw4", "vendor": 0x0D8C, "product": 0x013C, "name": "AIOC"}],
+        open_device=lambda path: replacement,
+    )
+    cm108.set_gpio(1, True)
+    cm108.set_ptt(True)
+    # Simulate USB drop: same object the engine still holds, but the fd is dead.
+    original.write_error = OSError(errno.ENODEV, "No such device")
+    cm108.set_ptt(False)
+
+    assert cm108.device is replacement
+    assert cm108.device.path == "/dev/hidraw4"
+    assert cm108._gone is False
+    assert replacement.written_reports == [bytes([0x00, 0x00, GPIO1, GPIO1 | GPIO3, 0x00])]
+
+
+def test_epipe_also_triggers_hidraw_reopen():
+    dead = FakeHidrawDevice(write_error=OSError(errno.EPIPE, "Broken pipe"))
+    alive = FakeHidrawDevice()
+    cm108 = CM108Interface(
+        dead,
+        find=lambda: [{"path": "/dev/hidraw2", "vendor": 0x0D8C, "product": 0x000C, "name": "x"}],
+        open_device=lambda path: alive,
+    )
+    cm108.set_ptt(False)
+    assert cm108.device is alive
+    assert alive.written_reports == [bytes([0x00, 0x00, 0x00, GPIO3, 0x00])]
+
+
+def test_cos_read_reopens_hidraw_after_disconnect():
+    dead = FakeHidrawDevice()
+    alive = FakeHidrawDevice(buttons=VOL_DN)
+
+    def boom(length: int) -> bytes:
+        raise OSError(errno.ENODEV, "No such device")
+
+    dead.get_input_report = boom  # type: ignore[method-assign]
+    cm108 = CM108Interface(
+        dead,
+        find=lambda: [{"path": "/dev/hidraw1", "vendor": 0x0D8C, "product": 0x013C, "name": "x"}],
+        open_device=lambda path: alive,
+    )
+    assert cm108.read_cos() is True
+    assert cm108.device is alive
 
 
 def test_other_write_errors_still_raise():

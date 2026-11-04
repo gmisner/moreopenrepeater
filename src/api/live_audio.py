@@ -66,6 +66,7 @@ MIN_RECORDING_SECONDS = 1.0  # shorter captures are kerchunks, not worth keeping
 MAX_RECORDING_SECONDS = 300.0
 MAX_PARROT_SECONDS = 30.0
 PARROT_ARMED_SECONDS = 60.0  # give up waiting for the parrot transmission after this
+STREAM_RECOVER_COOLDOWN = 5.0  # avoid tight restart loops while the USB device is still gone
 _RESTART_FIELDS = (
     "audio_enabled",
     "audio_input_device",
@@ -218,6 +219,7 @@ class LiveAudio:
         self.openings: collections.deque[dict] = collections.deque(maxlen=OPENINGS_KEPT)
         # Audio glitches with what the repeater was doing, newest last.
         self.glitches: collections.deque[dict] = collections.deque(maxlen=GLITCHES_KEPT)
+        self._last_stream_recover = 0.0
 
     @property
     def cm108(self) -> Optional[CM108Interface]:
@@ -446,6 +448,27 @@ class LiveAudio:
         self.openings.append(entry)
         _receiver_logger.info("receiver opened: %s", describe_opening(opening))
 
+    def _on_stream_dead(self) -> None:
+        """PortAudio stream went inactive (USB audio drop). Restart on the loop thread."""
+        if self._loop is None:
+            return
+        self._loop.call_soon_threadsafe(self._recover_engine)
+
+    def _recover_engine(self) -> None:
+        """Same path as toggling audio_enabled: stop, then start and re-resolve devices."""
+        config = self._applied
+        self._stop_engine()
+        if config is None or not config.audio_enabled:
+            return
+        now = time.monotonic()
+        if now - self._last_stream_recover < STREAM_RECOVER_COOLDOWN:
+            self.error = "audio stream died (USB unplug or device reset)"
+            _logger.warning("audio stream died again too soon; not restarting yet")
+            return
+        self._last_stream_recover = now
+        _logger.info("restarting live audio after the stream died")
+        self._start_engine(config)
+
     def _start_engine(self, config: RepeaterConfig) -> None:
         cos_source = config.cos_source
         if cos_source == "cm108" and self._cm108 is None:
@@ -510,6 +533,7 @@ class LiveAudio:
             cos_input=cos_input,
             on_audio=self.monitor.feed,
             on_glitch=self._on_glitch,
+            on_stream_dead=self._on_stream_dead,
         )
         self._ptt_output = ptt_output
         apply_saved_levels(config, self._run_mixer, sides=("input", "output"))

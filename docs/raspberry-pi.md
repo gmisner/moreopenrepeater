@@ -103,9 +103,12 @@ access to.) Plug in the interface and confirm with
 `crw-rw----`.
 
 The service finds the interface itself when it starts, so after plugging
-one in, restart it (`sudo systemctl restart moreopenrepeater`). The N in
-`/dev/hidrawN` depends on what else is plugged in, so it's looked up by
-USB ID rather than configured. With more than one CM108, pick one with
+one in for the first time, restart it (`sudo systemctl restart moreopenrepeater`).
+If the interface drops later (USB glitch, reseat), the next PTT or COS I/O
+reopens it by USB ID without a service restart, and the live audio engine
+restarts itself if the ALSA stream died. The N in `/dev/hidrawN` depends on
+what else is plugged in, so it's looked up by USB ID rather than configured.
+With more than one CM108, pick one with
 `MOREOPENREPEATER_CM108_HIDRAW=/dev/hidrawN` in the env file (next
 section), or set it to `off` to ignore the interface.
 
@@ -906,7 +909,8 @@ the repeater needs attention:
 - an update failed or was rolled back (and when one succeeded);
 - the CPU passed the temperature limit (80 °C unless you change it), or the Pi
   reported under-voltage or throttling;
-- live audio stopped for more than a minute, or the CM108 interface was unplugged;
+- live audio stopped for more than a minute, or the CM108 interface was unplugged
+  (when it reappears, auto-recovery reopens it — no service restart needed);
 - a **site sensor** (battery, cabinet temperature, and so on) crossed its high
   or low threshold — see **Site sensors** below.
 

@@ -347,12 +347,17 @@ class HealthMonitor:
                 "cm108",
                 "The USB radio interface disappeared",
                 f"{path} is gone: the CM108 interface was unplugged or reset, so PTT and COS don't work. "
-                "Plug it back in, then restart moreopenrepeater.",
+                "Plug it back in; the next PTT or COS I/O will reopen it automatically.",
                 "critical",
             )]
         if present and self._cm108_gone:
             self._cm108_gone = False
-            return [Alert("cm108", "The USB radio interface is back", "Restart moreopenrepeater to use it again.", "info")]
+            return [Alert(
+                "cm108",
+                "The USB radio interface is back",
+                "Auto-recovery will reopen it on the next PTT or COS I/O; no service restart needed.",
+                "info",
+            )]
         return []
 
     def _update(self) -> list[Alert]:

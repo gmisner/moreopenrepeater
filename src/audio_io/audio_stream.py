@@ -101,6 +101,7 @@ class AudioStream:
         self.sample_rate = pick_stream_rate(device, sample_rate, channels)
         self.block_size = round(block_size * self.sample_rate / sample_rate)
         self._pump = AudioBlockPump(input_queue, output_queue, self.block_size)
+        self._active = False
         self._stream = sd.Stream(
             samplerate=self.sample_rate,
             blocksize=self.block_size,
@@ -108,14 +109,25 @@ class AudioStream:
             dtype="float32",
             device=device,
             callback=self._pump.process,
+            finished_callback=self._on_finished,
         )
+
+    def _on_finished(self) -> None:
+        self._active = False
 
     def start(self) -> None:
         self._stream.start()
+        self._active = True
 
     def stop(self) -> None:
+        self._active = False
         self._stream.stop()
         self._stream.close()
+
+    @property
+    def active(self) -> bool:
+        """False once PortAudio stops the stream (USB unplug, abort, stop)."""
+        return self._active and bool(self._stream.active)
 
     @property
     def dropped_input_blocks(self) -> int:

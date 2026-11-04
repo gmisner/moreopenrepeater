@@ -30,7 +30,7 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Callable, Optional, Protocol
 
 GPIO1 = 0x01
 GPIO2 = 0x02
@@ -42,8 +42,9 @@ VOL_DN = 0x02
 
 INPUT_REPORT_LENGTH = 4
 
-# USB unplug/reset: the hidraw node is gone, or the open fd's device vanished.
-_GONE_ERRNOS = frozenset({errno.ENODEV, errno.ENOENT})
+# USB unplug/reset: the hidraw node is gone, the open fd's device vanished,
+# or the pipe to it broke mid-write.
+_GONE_ERRNOS = frozenset({errno.ENODEV, errno.ENOENT, errno.EPIPE})
 
 _logger = logging.getLogger("moreopenrepeater.cm108")
 
@@ -110,32 +111,98 @@ class CM108Interface:
     Called from the audio worker (PTT), the COS poller and the event loop
     (spare pins), so every access holds a lock and every write carries all
     the pins that are outputs.
+
+    After a USB drop (ENODEV/EPIPE), the next PTT/COS I/O closes the dead
+    fd, finds the interface again by USB ID (hidrawN can change), opens it,
+    and rewrites the remembered GPIO output state -- no process restart.
     """
 
-    def __init__(self, device: HidrawDevice, ptt_pin: int = 3, cos_input: int = VOL_DN, cos_active_low: bool = True) -> None:
+    def __init__(
+        self,
+        device: HidrawDevice,
+        ptt_pin: int = 3,
+        cos_input: int = VOL_DN,
+        cos_active_low: bool = True,
+        find: Callable[[], list[dict]] = find_interfaces,
+        open_device: Callable[[str], HidrawDevice] = LinuxHidrawDevice,
+    ) -> None:
         self.device = device
         self.ptt_pin = ptt_pin
         self.cos_input = cos_input
         self.cos_active_low = cos_active_low
+        self._find = find
+        self._open_device = open_device
+        self._preferred_path = getattr(device, "path", None)
         self._outputs = 0  # mask
         self._levels = 0  # data
         self._lock = threading.Lock()
         self.last_inputs: Optional[tuple[int, int]] = None  # (buttons, GPIO levels)
-        self._gone = False  # hidraw disappeared; further writes are no-ops
+        self._gone = False  # last I/O found no interface; next I/O still retries
+
+    def _report(self) -> bytes:
+        return bytes([0x00, 0x00, self._levels, self._outputs, 0x00])
+
+    def _close_device(self) -> None:
+        close = getattr(self.device, "close", None)
+        if close is None:
+            return
+        try:
+            close()
+        except OSError:
+            pass
+
+    def _candidate_paths(self) -> list[str]:
+        paths: list[str] = []
+        if self._preferred_path:
+            paths.append(self._preferred_path)
+        for found in self._find():
+            path = found["path"]
+            if path not in paths:
+                paths.append(path)
+        return paths
+
+    def _reopen(self) -> bool:
+        """Close the dead fd and open a CM108 by preferred path or USB ID."""
+        self._close_device()
+        for path in self._candidate_paths():
+            try:
+                device = self._open_device(path)
+            except OSError as error:
+                _logger.debug("couldn't reopen CM108 at %s: %s", path, error)
+                continue
+            try:
+                device.write_report(self._report())
+            except OSError as error:
+                close = getattr(device, "close", None)
+                if close is not None:
+                    try:
+                        close()
+                    except OSError:
+                        pass
+                if error.errno in _GONE_ERRNOS:
+                    _logger.debug("reopened %s but it is already gone: %s", path, error)
+                    continue
+                raise
+            self.device = device
+            self._preferred_path = path
+            self._gone = False
+            _logger.info("reopened CM108 at %s after USB drop", path)
+            return True
+        if not self._gone:
+            path = self._preferred_path or "CM108"
+            _logger.warning("%s is gone; GPIO writes ignored until it reappears", path)
+            self._gone = True
+        return False
 
     def _write(self) -> None:
         try:
-            self.device.write_report(bytes([0x00, 0x00, self._levels, self._outputs, 0x00]))
+            self.device.write_report(self._report())
+            self._gone = False
+            return
         except OSError as error:
-            if error.errno in _GONE_ERRNOS:
-                # Unplugged or reset: PTT/COS are unreachable. Treat as done so
-                # unkey/cleanup (watchdog restart) doesn't explode on a dead fd.
-                if not self._gone:
-                    path = getattr(self.device, "path", "CM108")
-                    _logger.warning("%s is gone (%s); GPIO writes ignored until restart", path, error)
-                    self._gone = True
-                return
-            raise
+            if error.errno not in _GONE_ERRNOS:
+                raise
+        self._reopen()  # swallows failure so unkey/cleanup doesn't explode on a dead fd
 
     def set_gpio(self, pin: int, active: bool) -> None:
         """Make GPIO<pin> an output and drive it high (`active`) or low."""
@@ -164,7 +231,15 @@ class CM108Interface:
     def read_inputs(self) -> tuple[int, int]:
         """(button inputs, GPIO levels), read from the chip now."""
         with self._lock:
-            report = self.device.get_input_report(INPUT_REPORT_LENGTH)
+            try:
+                report = self.device.get_input_report(INPUT_REPORT_LENGTH)
+                self._gone = False
+            except OSError as error:
+                if error.errno not in _GONE_ERRNOS:
+                    raise
+                if not self._reopen():
+                    raise
+                report = self.device.get_input_report(INPUT_REPORT_LENGTH)
         self.last_inputs = (report[0], report[1])
         return self.last_inputs
 

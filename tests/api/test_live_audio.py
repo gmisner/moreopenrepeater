@@ -1,5 +1,6 @@
 import errno
 import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -23,14 +24,15 @@ class FakeStream:
         self.sample_rate = sample_rate
         self.block_size = block_size
         self.device = device
+        self.active = False
         self.dropped_input_blocks = 0
         self.starved_output_blocks = 0
 
     def start(self):
-        pass
+        self.active = True
 
     def stop(self):
-        pass
+        self.active = False
 
 
 class BrokenStream(FakeStream):
@@ -180,6 +182,20 @@ def test_device_change_restarts_and_disable_stops():
 
     service.update_config(audio_enabled=False)
     assert live.engine is None and engines[1].running is False
+
+
+def test_dead_alsa_stream_restarts_the_engine():
+    live, _service, _clock, engines = make_live()
+    first = live.engine
+    assert first is engines[0] and first.running
+    first._stream.active = False
+    deadline = time.monotonic() + 2
+    while live.engine is first and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert live.engine is engines[1]
+    assert engines[0].running is False
+    assert live.engine.running is True
+    assert live.status()["error"] is None
 
 
 def test_stopping_mid_transmission_releases_carrier():

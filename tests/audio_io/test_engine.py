@@ -20,14 +20,17 @@ class FakeStream:
         self.output_queue = output_queue
         self.device = device
         self.started = False
+        self.active = False
         self.dropped_input_blocks = 0
         self.starved_output_blocks = 0
 
     def start(self):
         self.started = True
+        self.active = True
 
     def stop(self):
         self.started = False
+        self.active = False
 
 
 class FakeStream48k(FakeStream):
@@ -139,3 +142,16 @@ def test_each_new_glitch_is_reported_once():
     engine.stop()
 
     assert glitches == [("starved_output_blocks", 2), ("input_overflows", 1), ("starved_output_blocks", 1)]
+
+
+def test_stream_death_callback_fires_when_stream_goes_inactive():
+    deaths = []
+    engine, _, _, streams = make_engine(on_stream_dead=lambda: deaths.append(True))
+    engine.start()
+    streams[0].active = False
+    deadline = time.monotonic() + 2
+    while not deaths and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert deaths == [True]
+    assert not engine.running
+    engine.stop()

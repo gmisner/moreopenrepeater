@@ -23,7 +23,7 @@ class AirportWeather:
         self._service = service
         self._cache = cache or MetarCache()
         self._wall_clock = wall_clock
-        service.metar_hook = self._dtmf
+        service.programming.metar_hook = self._dtmf
 
     def _name(self, icao: str) -> str:
         airport = next((a for a in self._service.config.metar_airports if a.get("icao") == icao), None)

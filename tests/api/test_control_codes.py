@@ -137,10 +137,10 @@ def make_service(clock):
         wall_clock=lambda: datetime(2026, 9, 28, 21, 5),
     )
     codes = ControlCodes(None, clock)
-    service.code_checker = codes.check
-    service.codes_locked = codes.locked
+    service.programming.code_checker = codes.check
+    service.programming.codes_locked = codes.locked
     audits = []
-    service.audit_hook = lambda actor, action, detail: audits.append((actor, action, detail))
+    service.programming.audit_hook = lambda actor, action, detail: audits.append((actor, action, detail))
     return service, codes, audits
 
 

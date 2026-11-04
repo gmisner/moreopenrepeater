@@ -55,7 +55,7 @@ class HomeAssistant:
         self._clock = clock
         self._wall_clock = wall_clock
         self._last_sent: dict[str, float] = {}
-        service.homeassistant_hook = self._dtmf
+        service.programming.homeassistant_hook = self._dtmf
 
     @property
     def token_set(self) -> bool:

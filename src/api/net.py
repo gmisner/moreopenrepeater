@@ -71,7 +71,7 @@ class NetMode:
         data = (store.load() if store is not None else None) or {}
         self.current: Optional[dict] = data.get("current")
         self.past: list[dict] = data.get("past", [])
-        service.net_hook = self._dtmf
+        service.programming.net_hook = self._dtmf
         if self.current is not None:  # a net that was running when the service stopped
             service.set_net_active(True)
 

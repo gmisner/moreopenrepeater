@@ -24,7 +24,8 @@ _logger = logging.getLogger("moreopenrepeater.service")
 class Programming:
     """Macros, scheduled announcements, speak queueing, and RunAction dispatch.
 
-    Feature hooks that macros invoke live here rather than on the facade.
+    Feature hooks that macros invoke live here (the facade no longer forwards them).
+    Wire call sites through ``service.programming.<hook>``.
     """
 
     def __init__(self, host: "RepeaterService", scheduler: AnnouncementScheduler) -> None:

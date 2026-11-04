@@ -195,7 +195,7 @@ class Mailbox:
         self._last_reminder = clock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self.audit_hook: Optional[Callable[[str, str, str], None]] = None
-        service.mailbox_hook = self.handle
+        service.programming.mailbox_hook = self.handle
 
     def _say(self, text: str) -> None:
         self._service.speak(TTS_PREFIX + text)

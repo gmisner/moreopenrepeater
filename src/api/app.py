@@ -58,6 +58,7 @@ from .routes import media as media_routes
 from .routes import nets as nets_routes
 from .routes import programming as programming_routes
 from .routes import realtime as realtime_routes
+from .routes import sensors as sensors_routes
 from .routes import session as session_routes
 from .routes import simulate as simulate_routes
 from .routes import site as site_routes
@@ -77,6 +78,7 @@ from .runtime import (
     DEFAULT_NODE_LIST_PATH,
     DEFAULT_RECORDINGS_DIR,
     DEFAULT_RUN_MARKER_PATH,
+    DEFAULT_SENSORS_PATH,
     DEFAULT_STATE_PATH,
     DEFAULT_STREAM_PATH,
     DEFAULT_TOKENS_PATH,
@@ -97,6 +99,7 @@ from .runtime import (
 )
 from .service import RepeaterService, StatusSnapshot
 from .sip_trunk import SipTrunk
+from .site_sensors import SensorHistoryStore, SiteSensors
 from .stream import Streamer
 from .tokens import TokenStore
 from .transcripts import Transcriber
@@ -207,6 +210,8 @@ def create_app(
     control_codes: Optional[ControlCodes] = None,
     homeassistant: Optional[HomeAssistant] = None,
     airport_weather: Optional[AirportWeather] = None,
+    site_sensors: Optional[SiteSensors] = None,
+    sensor_history: Optional[SensorHistoryStore] = None,
     stream_store: Optional[StateStore] = None,
     streamer: Optional[Streamer] = None,
     mailbox_store: Optional[MailboxStore] = None,
@@ -265,6 +270,8 @@ def create_app(
         control_codes=control_codes,
         homeassistant=homeassistant,
         airport_weather=airport_weather,
+        site_sensors=site_sensors,
+        sensor_history=sensor_history,
         stream_store=stream_store,
         streamer=streamer,
         mailbox_store=mailbox_store,
@@ -482,6 +489,12 @@ def create_app(
         admin_dependencies=runtime.admin_dependencies,
     )
 
+    sensors_routes.register(
+        app,
+        site_sensors=runtime.site_sensors,
+        auth_dependencies=runtime.auth_dependencies,
+    )
+
     accounts_routes.register(
         app,
         users=runtime.users,
@@ -535,6 +548,7 @@ app = create_app(
     backups=BackupFolder(DEFAULT_BACKUP_DIR),
     node_directory=NodeDirectory(DEFAULT_NODE_LIST_PATH),
     notifier=Notifier(StateStore(DEFAULT_ALERTS_PATH)),
+    sensor_history=SensorHistoryStore(DEFAULT_SENSORS_PATH),
     log_hub=_LOG_HUB,
     log_shipper=LogShipper(_LOG_HUB, StateStore(DEFAULT_LOG_SHIPPING_PATH)),
     run_marker=RunMarker(StateStore(DEFAULT_RUN_MARKER_PATH)),

@@ -92,6 +92,14 @@ The station running a net while **net mode** is active (longer TOT, net
 courtesy tone, held announcements/patch, check-in log).
 _Avoid_: net operator, NCS in code/docs unless quoting operators
 
+**Site sensor**:
+A named analog reading at the repeater site (temperature, battery voltage,
+fuel, supply) from a DS18B20 1-wire probe or an ADS1115 I2C ADC channel,
+with scale/offset, high/low thresholds (hysteresis), dashboard display, and
+optional phone / on-air alerts. Configured on the `sensors` facet of
+`RepeaterConfig` (`site_sensors`).
+_Avoid_: SiteStatus (OpenRepeater module name); GPIO input for analog values
+
 ### Dashboard cutover
 
 **Mantine dashboard**:

@@ -41,6 +41,7 @@ ACTION_WORDS = {
     "link_radio_off": "link radio off",
     "help": "this help",
     "metar": "airport weather",
+    "sensor": "site sensor readings",
     "remote_tune": "tune the remote base, then the frequency and pound",
     "remote_tone": "set the remote base tone, then the tone and pound",
     "remote_shift": "remote base shift",

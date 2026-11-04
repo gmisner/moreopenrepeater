@@ -26,6 +26,7 @@ from controller.config.facets import (
     BackupConfig,
     TranscriptionConfig,
     PublicPageConfig,
+    SensorsConfig,
 )
 from controller.config.types import CourtesyStyle, CourtesyVariant
 
@@ -46,6 +47,7 @@ FACET_FIELD_NAMES: dict[str, tuple[str, ...]] = {
     'backup': ('backup_enabled', 'backup_interval_hours', 'backup_keep', 'backup_include_recordings'),
     'transcription': ('transcription_engine', 'transcription_url', 'transcription_model'),
     'public_page': ('public_page_mode', 'public_page_text', 'public_page_audio', 'public_page_max_listeners'),
+    'sensors': ('sensors_enabled', 'sensors_poll_interval', 'site_sensors'),
 }
 
 _FIELD_TO_FACET = {
@@ -267,6 +269,10 @@ class RepeaterConfig:
     public_page_text: str = ''
     public_page_audio: bool = True
     public_page_max_listeners: int = 20
+    # --- sensors ---
+    sensors_enabled: bool = False
+    sensors_poll_interval: float = 30.0
+    site_sensors: list = field(default_factory=list)
 
     @property
     def identity_timing(self) -> IdentityTimingConfig:
@@ -331,6 +337,10 @@ class RepeaterConfig:
     @property
     def public_page(self) -> PublicPageConfig:
         return PublicPageConfig(public_page_mode=self.public_page_mode, public_page_text=self.public_page_text, public_page_audio=self.public_page_audio, public_page_max_listeners=self.public_page_max_listeners)
+
+    @property
+    def sensors(self) -> SensorsConfig:
+        return SensorsConfig(sensors_enabled=self.sensors_enabled, sensors_poll_interval=self.sensors_poll_interval, site_sensors=self.site_sensors)
 
 
     def to_flat_dict(self) -> dict[str, Any]:

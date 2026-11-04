@@ -37,8 +37,9 @@ def test_facet_counts_match_inventory():
         "backup": 4,
         "transcription": 3,
         "public_page": 4,
+        "sensors": 3,
     }
-    assert sum(counts.values()) == 195
+    assert sum(counts.values()) == 198
 
 
 def test_flat_dict_round_trip_preserves_values():

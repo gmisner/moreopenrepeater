@@ -146,6 +146,9 @@ export function Dashboard() {
   const [listenNote, setListenNote] = useState("Streams the repeater's audio to this browser (needs live audio running).");
   const [gpio, setGpio] = useState<GpioStatus | null>(null);
   const [gpioBusy, setGpioBusy] = useState<number | null>(null);
+  const [sensors, setSensors] = useState<
+    { id: string; name: string; units: string; value: number | null; error: string | null }[] | null
+  >(null);
 
   const refreshLinks = useCallback(async () => {
     try {
@@ -176,6 +179,25 @@ export function Dashboard() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [refreshGpio]);
+
+  const refreshSensors = useCallback(async () => {
+    try {
+      const data = await api<{ sensors: { id: string; name: string; units: string; value: number | null; error: string | null }[] }>(
+        "/api/sensors",
+      );
+      setSensors(data.sensors);
+    } catch {
+      /* keep last */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSensors();
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void refreshSensors();
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [refreshSensors]);
 
   useEffect(() => {
     if (!status?.locked_out) return;
@@ -339,6 +361,35 @@ export function Dashboard() {
           </SimpleGrid>
         </Grid.Col>
       </Grid>
+
+      {sensors && sensors.length > 0 ? (
+        <Card withBorder padding="lg" radius="md">
+          <Stack gap="md">
+            <Group justify="space-between">
+              <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
+                Site sensors
+              </Text>
+              <Button component={Link} to="/sensors" variant="subtle" size="xs">
+                Manage
+              </Button>
+            </Group>
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
+              {sensors.map((sensor) => (
+                <Indicator
+                  key={sensor.id}
+                  name={sensor.name || sensor.id}
+                  on={sensor.value != null}
+                  value={
+                    sensor.value == null
+                      ? sensor.error || "unavailable"
+                      : `${Number.isInteger(sensor.value) ? sensor.value : sensor.value.toFixed(2)}${sensor.units ? ` ${sensor.units}` : ""}`
+                  }
+                />
+              ))}
+            </SimpleGrid>
+          </Stack>
+        </Card>
+      ) : null}
 
       {gpio && (gpio.pins.some((pin) => pin.mode === "input" || pin.mode === "output") || gpio.fan?.output !== "none") ? (
         <Card withBorder padding="lg" radius="md">

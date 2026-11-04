@@ -253,6 +253,14 @@ class RepeaterService:
         self._programming.metar_hook = value
 
     @property
+    def sensor_hook(self) -> Optional[Callable[[str], None]]:
+        return self._programming.sensor_hook
+
+    @sensor_hook.setter
+    def sensor_hook(self, value: Optional[Callable[[str], None]]) -> None:
+        self._programming.sensor_hook = value
+
+    @property
     def remote_base_hook(self) -> Optional[Callable[[str, str], None]]:
         return self._programming.remote_base_hook
 

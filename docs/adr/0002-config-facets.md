@@ -19,7 +19,8 @@ Split domain config into **frozen dataclass facets** under
 
 - `identity_timing`, `radio_audio`, `link_radio`, `remote_base`, `aprs`,
   `weather`, `monitor`, `autopatch`, `mailbox`, `net`, `gpio_fan`,
-  `homeassistant`, `linking`, `backup`, `transcription`, `public_page`
+  `homeassistant`, `linking`, `backup`, `transcription`, `public_page`,
+  `sensors`
 
 `RepeaterConfig` keeps **flat public attributes** (so existing
 `config.callsign` call sites and `dataclasses.replace`-style updates keep

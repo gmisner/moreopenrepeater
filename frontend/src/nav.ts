@@ -24,6 +24,7 @@ export const NAV: NavGroup[] = [
       { id: "mailbox", label: "Mailbox", icon: "mail" },
       { id: "announcements", label: "Announcements", icon: "announce" },
       { id: "weather", label: "Weather", icon: "weather" },
+      { id: "sensors", label: "Site sensors", icon: "thermometer" },
       { id: "autopatch", label: "Autopatch", icon: "phone" },
       { id: "allstar", label: "AllStarLink", icon: "links" },
       { id: "aprs", label: "APRS", icon: "radio" },

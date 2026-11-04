@@ -32,6 +32,7 @@ ENTRY_MAX_DIGITS = 10
 #   homeassistant call a Home Assistant webhook `<id>`, or fire `event:<type>` (api.homeassistant)
 #   help          read out the macros (controller.spoken_help); `<page>` is optional
 #   metar         speak an airport's weather `<ICAO>`, or every listed airport when blank (api.airport_weather)
+#   sensor        speak a site sensor `<id>`, or every configured sensor when blank (api.site_sensors)
 #   remote_tune / remote_tone   tune the remote base: the frequency or tone is keyed after the
 #                 pattern, then # (controller.remote_base)
 #   remote_shift  set the remote base's repeater shift: `plus`, `minus` or `simplex`
@@ -39,7 +40,7 @@ ENTRY_MAX_DIGITS = 10
 MacroAction = Literal[
     "link", "time", "weather", "id", "announcement", "say", "parrot", "tx_disable", "tx_enable", "aprs", "gpio",
     "lockout_clear", "net_start", "net_end", "homeassistant", "link_radio_on", "link_radio_off", "help",
-    "metar", "remote_tune", "remote_tone", "remote_shift", "remote_status",
+    "metar", "sensor", "remote_tune", "remote_tone", "remote_shift", "remote_status",
 ]
 MACRO_ACTIONS: tuple[str, ...] = get_args(MacroAction)
 ACTIONS_NEEDING_ARGUMENT = frozenset({"link", "announcement", "say", "gpio", "homeassistant", "remote_shift"})

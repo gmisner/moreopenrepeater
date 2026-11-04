@@ -17,6 +17,7 @@ function lazyPage(loader: () => Promise<{ [key: string]: ComponentType }>, name:
 
 const Dashboard = lazyPage(() => import("./pages/Dashboard"), "Dashboard");
 const Activity = lazyPage(() => import("./pages/Activity"), "Activity");
+const Recordings = lazyPage(() => import("./pages/Recordings"), "Recordings");
 const Timing = lazyPage(() => import("./pages/Timing"), "Timing");
 const Identification = lazyPage(() => import("./pages/Identification"), "Identification");
 const Audio = lazyPage(() => import("./pages/Audio"), "Audio");
@@ -69,6 +70,7 @@ function AuthedApp() {
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="activity" element={<Activity />} />
+                <Route path="recordings" element={<Recordings />} />
                 <Route path="timing" element={<Timing />} />
                 <Route path="identification" element={<Identification />} />
                 <Route path="audio" element={<Audio />} />

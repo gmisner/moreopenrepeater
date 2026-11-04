@@ -444,7 +444,7 @@ choose a squelch:
 
 Listen to it with the **Monitor** button (it shows the name you give it) on
 the dashboard's Listen live card. With recording on, each transmission it hears
-is saved under **Activity → Recordings → Monitor receiver**, kept as long as
+is saved under **Recordings → Monitor receiver**, kept as long as
 the repeater's recordings, and transcribed if transcripts are on.
 
 The monitor is receive-only by construction. It opens an input-only audio

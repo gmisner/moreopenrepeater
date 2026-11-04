@@ -224,6 +224,7 @@ def register(
     for spa_path in (
         "dashboard",
         "activity",
+        "recordings",
         "timing",
         "identification",
         "audio",

@@ -312,7 +312,7 @@ export function MonitorReceiverCard({ devices }: { devices: AudioDevice[] }) {
         <Switch
           label={labeled(
             "Record what it hears",
-            "Shown on the Activity page and kept as long as the repeater's recordings.",
+            "Shown on the Recordings page and kept as long as the repeater's recordings.",
           )}
           checked={monitor.values.monitor_record}
           onChange={(event) => monitor.setField("monitor_record", event.currentTarget.checked)}

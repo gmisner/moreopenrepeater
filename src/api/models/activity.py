@@ -21,6 +21,12 @@ class RecordingResponse(BaseModel):
     callsigns: list[str] = []
 
 
+class RecordingSummaryResponse(BaseModel):
+    count: int
+    total_duration: float
+    transcribed: int = 0
+
+
 class ActivitySummaryResponse(BaseModel):
     since: datetime
     until: datetime

@@ -1,6 +1,5 @@
 import errno
 import tempfile
-import time
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from api.app import create_app
 from api.assets import AudioAssetStore
-from api.live_audio import LiveAudio, cm108_from_env
+from api.live_audio import STREAM_RECOVER_COOLDOWN, LiveAudio, cm108_from_env
 from api.service import RepeaterService
 from audio_io.engine import AudioEngine
 from controller.state_machine import COURTESY_TONE, RECEIVING, RepeaterConfig
@@ -97,7 +96,7 @@ class FakeHeader:
 def make_live(config=None, stream=FakeStream, cm108=None, header=None):
     tmp = Path(tempfile.mkdtemp())
     renderer = ClipRenderer(AudioAssetStore(tmp / "audio").path_for, tts=None, sample_rate=RATE)
-    clock = {"now": 0.0}
+    clock = {"now": 0.0, "mono": 100.0}
     service = RepeaterService(
         config=config or RepeaterConfig(callsign="W1AW", audio_enabled=True, vox_threshold_db=-30, vox_hold=0.1),
         clock=lambda: clock["now"],
@@ -110,7 +109,12 @@ def make_live(config=None, stream=FakeStream, cm108=None, header=None):
         return engines[-1]
 
     live = LiveAudio(
-        service, renderer, cm108=cm108, engine_factory=engine_factory, open_pin=(header or FakeHeader()).open
+        service,
+        renderer,
+        cm108=cm108,
+        engine_factory=engine_factory,
+        open_pin=(header or FakeHeader()).open,
+        monotonic=lambda: clock["mono"],
     )
     live.attach(ImmediateLoop())
     return live, service, clock, engines
@@ -188,17 +192,38 @@ def test_dead_alsa_stream_restarts_the_engine():
     live, _service, _clock, engines = make_live()
     first = live.engine
     assert first is engines[0] and first.running
-    first._stream.active = False
-    # Recover stops then starts; wait until the replacement is running, not
-    # merely until engine is no longer `first` (that is briefly None mid-restart).
-    deadline = time.monotonic() + 2
-    while time.monotonic() < deadline:
-        engine = live.engine
-        if engine is not None and engine is not first and engine.running:
-            break
-        time.sleep(0.01)
+    # Call recover directly so the restart is deterministic (no worker-thread race).
+    live._recover_engine()
     assert live.engine is engines[1]
     assert engines[0].running is False
+    assert live.engine.running is True
+    assert live.status()["error"] is None
+
+
+def test_stream_recover_cooldown_stops_without_restarting():
+    live, _service, clock, engines = make_live()
+    live._recover_engine()
+    assert live.engine is engines[1] and live.status()["error"] is None
+
+    clock["mono"] += 1.0  # still inside STREAM_RECOVER_COOLDOWN
+    live._recover_engine()
+    assert live.engine is None
+    assert engines[1].running is False
+    assert live.status()["error"] == "audio stream died (USB unplug or device reset)"
+
+
+def test_stream_recover_after_cooldown_restarts():
+    live, _service, clock, engines = make_live()
+    live._recover_engine()
+    assert live.engine is engines[1]
+
+    clock["mono"] += 1.0
+    live._recover_engine()
+    assert live.engine is None
+
+    clock["mono"] += STREAM_RECOVER_COOLDOWN
+    live._recover_engine()
+    assert live.engine is engines[2]
     assert live.engine.running is True
     assert live.status()["error"] is None
 

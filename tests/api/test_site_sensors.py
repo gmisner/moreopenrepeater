@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from api.app import create_app
 from api.notify import Notifier
 from api.service import RepeaterService
-from api.site_sensors import SiteSensors
+from api.site_sensors import HISTORY_FLUSH_SECONDS, SensorHistoryStore, SiteSensors
 from controller.macros import Macro
 from controller.state_machine import RepeaterConfig
 
@@ -182,3 +182,70 @@ def test_config_and_api_with_fake_reader():
     assert macros[-1]["command"] == "battery"
     assert client.post("/api/macros", json={"pattern": "*90", "action": "sensor", "command": ""}).status_code == 200
     assert reader.calls  # speech path may add more reads via separate tests
+
+
+def test_history_store_add_flush_history_prune():
+    clock = {"now": 0.0}
+    store = SensorHistoryStore(clock=lambda: clock["now"])
+
+    store.add("battery", at=100.0, value=12.1)
+    store.add("battery", at=150.0, value=12.2)
+    # history() flushes the pending buffer
+    assert store.history("battery", since=0, until=200) == [
+        {"at": 100.0, "value": 12.1},
+        {"at": 150.0, "value": 12.2},
+    ]
+
+    store.add("cabinet", at=160.0, value=22.0)
+    clock["now"] = HISTORY_FLUSH_SECONDS
+    store.add("battery", at=200.0, value=12.3)  # age since first pending triggers auto-flush
+    store.flush()  # no-op when already flushed
+
+    assert store.history("battery", since=0, until=300) == [
+        {"at": 100.0, "value": 12.1},
+        {"at": 150.0, "value": 12.2},
+        {"at": 200.0, "value": 12.3},
+    ]
+    assert store.history("battery", since=140, until=190) == [{"at": 150.0, "value": 12.2}]
+    assert store.history("cabinet", since=0, until=300) == [{"at": 160.0, "value": 22.0}]
+
+    store.prune(before=161.0)  # deletes at < before, so cabinet@160 and battery@100/150 go
+    assert [r["at"] for r in store.history("battery", since=0, until=300)] == [200.0]
+    assert store.history("cabinet", since=0, until=300) == []
+
+
+def test_api_returns_history_after_polls():
+    clock = {"now": 1_700_000_000.0}
+    reader = FakeReader({"battery": 13.2, "cabinet": 22.0})
+    service = RepeaterService(
+        config=RepeaterConfig(callsign="W1AW", sensors_enabled=True, site_sensors=[BATTERY, CABINET]),
+        clock=lambda: clock["now"],
+    )
+    history = SensorHistoryStore(clock=lambda: 0.0)
+    sensors = SiteSensors(service, reader=reader, history=history, clock=lambda: clock["now"])
+    tmp = Path(tempfile.mkdtemp())
+    client = TestClient(
+        create_app(
+            service=service,
+            site_sensors=sensors,
+            start_background_tick=False,
+            log_path=tmp / "t.log",
+            notifier=Notifier(),
+        )
+    )
+
+    sensors.poll()
+    clock["now"] += 60
+    reader.values["battery"] = 13.0
+    sensors.poll()
+
+    body = client.get("/api/sensors?history_hours=1").json()
+    battery = next(s for s in body["sensors"] if s["id"] == "battery")
+    assert battery["value"] == 13.0
+    assert battery["history"] == [
+        {"at": 1_700_000_000.0, "value": 13.2},
+        {"at": 1_700_000_060.0, "value": 13.0},
+    ]
+
+    bare = client.get("/api/sensors").json()
+    assert bare["sensors"][0].get("history", []) == []

@@ -13,6 +13,7 @@ from ..assets import AssetKind, AudioAssetStore
 from ..models import (
     AssetResponse,
     RecordingResponse,
+    RecordingSort,
     RecordingSource,
     RecordingSummaryResponse,
     TranscriptionStatus,
@@ -50,6 +51,23 @@ def _matches(response: RecordingResponse, q: str, callsign: str) -> bool:
     if not q:
         return True
     return q.upper() in response.callsigns or q.lower() in (response.transcript or "").lower()
+
+
+def _sort_recordings(items: list[RecordingResponse], sort: RecordingSort) -> list[RecordingResponse]:
+    """Sort recordings. Callsign sorts put clips with no heard callsign last —
+    transcripts only catch what was said, and many radios never ID into the mic."""
+    if sort == "newest":
+        return sorted(items, key=lambda item: item.id, reverse=True)
+    if sort == "oldest":
+        return sorted(items, key=lambda item: item.id)
+    known = [item for item in items if item.callsigns]
+    unknown = [item for item in items if not item.callsigns]
+    known.sort(
+        key=lambda item: (item.callsigns[0], item.id),
+        reverse=(sort == "callsign_desc"),
+    )
+    unknown.sort(key=lambda item: item.id, reverse=True)
+    return known + unknown
 
 
 def register(
@@ -116,22 +134,27 @@ def register(
         before_ms: Optional[int],
         q: str,
         callsign: str,
-        limit: Optional[int] = None,
-        offset: int = 0,
     ) -> list[RecordingResponse]:
         found: list[RecordingResponse] = []
-        skipped = 0
         for recording in store.list(RECORDING_SEARCH_LIMIT, after_ms=after_ms, before_ms=before_ms):
             response = _recording_response(recording, read_transcript(store, recording.id))
-            if not _matches(response, q, callsign):
-                continue
-            if skipped < offset:
-                skipped += 1
-                continue
-            found.append(response)
-            if limit is not None and len(found) >= limit:
-                break
+            if _matches(response, q, callsign):
+                found.append(response)
         return found
+
+    def page_recordings(
+        items: list[RecordingResponse],
+        *,
+        sort: RecordingSort,
+        limit: Optional[int],
+        offset: int,
+    ) -> list[RecordingResponse]:
+        ordered = _sort_recordings(items, sort)
+        if offset:
+            ordered = ordered[offset:]
+        if limit is not None:
+            ordered = ordered[:limit]
+        return ordered
 
     @app.get("/api/recordings", response_model=list[RecordingResponse], dependencies=auth_dependencies)
     def list_recordings(
@@ -141,22 +164,31 @@ def register(
         callsign: str = Query(default="", max_length=20),
         after: Optional[datetime] = None,
         before: Optional[datetime] = None,
+        sort: RecordingSort = "newest",
         source: RecordingSource = "repeater",
     ) -> list[RecordingResponse]:
-        """`q` searches transcripts; `callsign` matches extracted callsigns exactly."""
+        """`q` searches transcripts; `callsign` matches extracted callsigns exactly.
+
+        Callsign sorts use the first callsign heard in the transcript. Clips with
+        none (common without a radio that IDs into the mic) sort last.
+        """
         after_ms, before_ms, q, callsign = recording_filters(after, before, q, callsign)
         store = recording_store(source)
-        if not q and not callsign:
+        # Newest-first with no text filter can page off the directory order.
+        if sort == "newest" and not q and not callsign:
             return [
                 _recording_response(recording, read_transcript(store, recording.id))
                 for recording in store.list(limit, offset=offset, after_ms=after_ms, before_ms=before_ms)
             ]
-        return matching_recordings(
-            store,
-            after_ms=after_ms,
-            before_ms=before_ms,
-            q=q,
-            callsign=callsign,
+        return page_recordings(
+            matching_recordings(
+                store,
+                after_ms=after_ms,
+                before_ms=before_ms,
+                q=q,
+                callsign=callsign,
+            ),
+            sort=sort,
             limit=limit,
             offset=offset,
         )

@@ -23,6 +23,7 @@ PublicPageMode = Literal["off", "signed_in", "anyone"]
 MonitorSquelch = Literal["vox", "gpio", "open"]
 ListenSource = Literal["tx", "rx", "monitor"]  # on air, the repeater's receiver, the monitor receiver
 RecordingSource = Literal["repeater", "monitor"]
+RecordingSort = Literal["newest", "oldest", "callsign", "callsign_desc"]
 TranscriptionEngine = Literal["off", "vosk", "openai"]
 
 # A hostname, or an IPv4/IPv6 address with an optional /prefix, as PJSIP's identify `match` takes.

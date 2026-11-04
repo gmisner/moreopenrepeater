@@ -45,8 +45,8 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
-      - name: Cutover marker present
-        run: test -f ../web/dist/.ready
+      - name: Dist index present
+        run: test -f ../web/dist/index.html
 
   pytest:
     runs-on: ubuntu-latest

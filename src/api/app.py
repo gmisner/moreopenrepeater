@@ -817,7 +817,7 @@ def create_app(
 
     @app.middleware("http")
     async def revalidate_static_files(request: Request, call_next):
-        # Without this, browsers heuristically cache app.js/style.css and
+        # Without this, browsers heuristically cache hashed SPA assets and
         # keep running the old dashboard after an upgrade. "no-cache" still
         # allows caching -- it just forces a cheap ETag revalidation (304).
         response = await call_next(request)

@@ -41,7 +41,7 @@ proxy in front that passes only what the public page needs. With Caddy:
 
 ```
 listen.example.org {
-	@public path /listen /api/public/* /ws/public/* /style.css /theme.js /icon.svg /js/public_listen.js
+	@public path /listen /api/public/* /ws/public/* /assets/* /icon.svg /manifest.webmanifest
 	handle @public {
 		reverse_proxy 127.0.0.1:8000
 	}
@@ -53,7 +53,8 @@ listen.example.org {
 
 Behind a proxy, the per-address limit uses the `X-Forwarded-For` header, which
 Caddy and nginx set. For **Signed-in accounts only**, also pass `/login`,
-`/js/login.js`, `/api/login` and `/api/logout`, so listeners can sign in and out.
+`/api/login` and `/api/logout`, so listeners can sign in and out. The listen
+UI is the Mantine SPA (`web/dist`); hashed bundles live under `/assets/`.
 
 ## Broadcastify or another Icecast server
 

@@ -140,17 +140,16 @@ The dashboard, with a station transmitting while a net is running:
   commands (a CM108 plugged in at startup adds hardware PTT/COS).
   The `simulate_*` controls keep working alongside it.
   The operator UI is a **Mantine** React app in `frontend/` (Vite + TypeScript).
-  `npm run build` writes into `web/dist/`; FastAPI serves that tree when
-  `web/dist/.ready` is present (ADR 0001). Developers and CI build the UI;
-  Pi installs never run `npm` — they receive committed dist from git. Driven
-  by the same WebSocket. Manually verified live: COS key-up correctly drives
-  the state machine through `receiving` with a real-time push to the
+  `npm run build` writes into `web/dist/`, which FastAPI serves (ADR 0001; no
+  Node on the Pi, no vanilla fallback). Developers and CI build the UI; Pi
+  installs never run `npm` — they receive committed dist from git. Driven by
+  the same WebSocket. Manually verified live: COS key-up correctly drives the
+  state machine through `receiving` with a real-time push to the
   dashboard, config load/save round-trips through the REST API, and -- against
   the real Lima VM -- a real AMI connect/disconnect updated the dashboard's
   linked-nodes indicator live over the WebSocket in both directions, and a
   real DTMF macro reconnected two live app_rpt nodes (confirmed via the VM's
   own `rpt stats` DTMF counter and `Nodes currently connected to us` field).
-
 
 ## Feature parity with OpenRepeater
 
@@ -488,25 +487,24 @@ page; viewers are refused any change server-side, and every change lands in
 the audit log (`api/audit.py`).
 
 The dashboard is the **Mantine** app in `frontend/`, built into `web/dist/`
-and served when `web/dist/.ready` is present (still the cutover marker for
-now; ADR 0001). It is a sidebar app with separate views for Dashboard (live
-state, linked nodes, and a recent-activity feed), Activity (airtime charts),
-Timing, Identification, Audio & tones (sounds, clip library and the live
-radio interface), DTMF macros (add/edit/rename/delete), Announcements,
-Weather alerts, APRS, APRS map, Simulator, Logs (filter/level/pause),
-Backup & restore, and for admins Users, Audit log, Alerts & health and
-Updates. Each settings view saves only its own fields through
-`PUT /api/config`, with unsaved-change tracking. It has light and dark
-themes (following the system setting unless you pick one in the sidebar).
-On a phone the header keeps TX/RX lit on every page and a bottom tab bar
-reaches the main pages with one thumb. It can be added to a phone's home
-screen with its own icon. Colors, type sizes and layout rules are written
-down in `design-system/moreopenrepeater/MASTER.md`. Change the UI in
-`frontend/`, then `npm run build` there (or let CI do it); do not edit
-served files under `web/dist/` by hand. Verified live in a real browser:
-login rejection/acceptance, WebSocket via session cookie, every view's save
-round-tripping through the API, the phone-width layout, and sign-out
-revoking API access.
+and served by FastAPI (ADR 0001; no vanilla fallback). It is a sidebar app
+with separate views for Dashboard (live state, linked nodes, and a
+recent-activity feed), Activity (airtime charts), Timing, Identification,
+Audio & tones (sounds, clip library and the live radio interface), DTMF macros
+(add/edit/rename/delete), Announcements, Weather alerts, APRS, APRS map,
+Simulator, Logs (filter/level/pause), Backup & restore, and for admins Users,
+Audit log, Alerts & health and Updates. Each settings view saves only its own
+fields through `PUT /api/config`, with unsaved-change tracking. It has light
+and dark themes (following the system setting unless you pick one in the
+sidebar). On a phone the header keeps TX/RX lit on every page and a bottom tab
+bar reaches the main pages with one thumb. It can be added to a phone's home
+screen with its own icon. Colors, type sizes and layout rules are written down
+in `design-system/moreopenrepeater/MASTER.md`. Change the UI in `frontend/`,
+then `npm run build` there (or let CI do it); do not edit served files under
+`web/dist/` by hand. Verified live in a real browser: login
+rejection/acceptance, WebSocket via session cookie, every view's save
+round-tripping through the API, the phone-width layout, and sign-out revoking
+API access.
 
 ## Installing on a Raspberry Pi
 

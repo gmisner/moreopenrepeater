@@ -7,45 +7,29 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 
-from audio_io.serial_lines import find_serial_ports
 from controller.state_machine import RepeaterConfig
-from playout.renderer import ClipRenderer
-from wx.nws import fetch_active_alerts, fetch_zone_geometry
 
 from .activity import ActivityStore
 from .agents import AgentAccess
-from .airport_weather import AirportWeather
-from .allstar_node import AllStarNode
 from .aprs_map import StationStore
-from .assets import AudioAssetStore
 from .audit import AuditEntry, AuditLog
-from .auth import AuthSettings
-from .autopatch import Autopatch
 from .backup import BackupError, BackupFolder, open_backup, restore_backup
-from .boards import run_amixer
 from .control_codes import ControlCodes
-from .gpio import GpioControl
-from .health import RunMarker, SystemProbe
-from .homeassistant import HomeAssistant
-from .hub import HubPoller, HubSiteStore
-from .link_radio import LinkRadio
-from .links import LinkControl
-from .live_audio import LiveAudio, list_audio_devices
+from .health import RunMarker
+from .hub import HubSiteStore
 from .log_hub import LogHub, LogShipper
 from .mailbox import MailboxStore
 from .models import AuditEntryResponse, ConfigResponse, SessionResponse, SnapshotImportRequest, StatusResponse
-from .monitor_receiver import MonitorReceiverService
 from .node_directory import NodeDirectory
 from .notify import Notifier
 from .persistence import StateStore
 from .recordings import RecordingStore
-from .remote_base import RemoteBase
 from .routes import accounts as accounts_routes
 from .routes import activity as activity_routes
 from .routes import admin_ops as admin_ops_routes
@@ -90,33 +74,41 @@ from .runtime import (
     REPO_DIR,
     SAFE_METHODS,
     WEB_DIR,
+    AdminOpsBundle,
     AppRuntime,
+    AuthBundle,
+    CoreBundle,
     Identity,
     LinkSettings,
+    LinkingBundle,
+    MediaBundle,
+    RuntimeBuilder,
+    SiteOpsBundle,
     _LOCAL,
     _UNAUDITED_PATHS,
     _resolve_data_dir,
     _resolve_log_path,
     aprs_beacon_packet,
+    bundles_from_overrides,
     link_settings_from_env,
 )
 from .service import RepeaterService, StatusSnapshot
-from .sip_trunk import SipTrunk
-from .site_sensors import SensorHistoryStore, SiteSensors
-from .stream import Streamer
+from .site_sensors import SensorHistoryStore
 from .tokens import TokenStore
-from .transcripts import Transcriber
-from .tx_fan import TxFan
-from .tailscale import TailscaleControl
-from .updates import UpdateChecker, Updater
 from .users import UserError, UserStore
-from .watchdog import Watchdog
 
 # Re-exports used by tests and callers that historically imported from api.app.
 __all__ = [
+    "AdminOpsBundle",
     "AppRuntime",
+    "AuthBundle",
+    "CoreBundle",
     "Identity",
     "LinkSettings",
+    "LinkingBundle",
+    "MediaBundle",
+    "RuntimeBuilder",
+    "SiteOpsBundle",
     "aprs_beacon_packet",
     "create_app",
     "link_settings_from_env",
@@ -171,125 +163,40 @@ def _apply_overrides(base: RepeaterConfig, overrides: dict) -> RepeaterConfig:
 
 
 def create_app(
-    service: Optional[RepeaterService] = None,
-    start_background_tick: bool = True,
-    assets_store: Optional[AudioAssetStore] = None,
-    log_path: Optional[Path] = None,
-    link_settings: Optional[LinkSettings] = None,
-    auth_settings: Optional[AuthSettings] = None,
-    state_store: Optional[StateStore] = None,
-    renderer: Optional[ClipRenderer] = None,
-    fetch_weather: Callable[..., dict] = fetch_active_alerts,
-    fetch_zone: Callable[..., Optional[dict]] = fetch_zone_geometry,
-    activity_store: Optional[ActivityStore] = None,
-    live_audio: Optional[LiveAudio] = None,
-    audio_devices: Callable[[], list[dict]] = list_audio_devices,
-    recordings: Optional[RecordingStore] = None,
-    users: Optional[UserStore] = None,
-    tokens: Optional[TokenStore] = None,
-    agent_access: Optional[AgentAccess] = None,
-    audit: Optional[AuditLog] = None,
-    aprs_stations: Optional[StationStore] = None,
-    autopatch: Optional[Autopatch] = None,
-    sip_trunk: Optional[SipTrunk] = None,
-    backups: Optional[BackupFolder] = None,
-    allstar_node: Optional[AllStarNode] = None,
-    gpio: Optional[GpioControl] = None,
-    tx_fan: Optional[TxFan] = None,
-    node_directory: Optional[NodeDirectory] = None,
-    links: Optional[LinkControl] = None,
-    updater: Optional[Updater] = None,
-    update_checker: Optional[UpdateChecker] = None,
-    update_channel: Optional[str] = None,
-    tailscale: Optional[TailscaleControl] = None,
-    notifier: Optional[Notifier] = None,
-    log_hub: Optional[LogHub] = None,
-    log_shipper: Optional[LogShipper] = None,
-    run_marker: Optional[RunMarker] = None,
-    system_probe: Optional[SystemProbe] = None,
-    watchdog: Optional[Watchdog] = None,
-    net_store: Optional[StateStore] = None,
-    auto_update_store: Optional[StateStore] = None,
-    control_codes: Optional[ControlCodes] = None,
-    homeassistant: Optional[HomeAssistant] = None,
-    airport_weather: Optional[AirportWeather] = None,
-    site_sensors: Optional[SiteSensors] = None,
-    sensor_history: Optional[SensorHistoryStore] = None,
-    stream_store: Optional[StateStore] = None,
-    streamer: Optional[Streamer] = None,
-    mailbox_store: Optional[MailboxStore] = None,
-    transcriber: Optional[Transcriber] = None,
-    monitor_recordings: Optional[RecordingStore] = None,
-    monitor_receiver: Optional[MonitorReceiverService] = None,
-    link_radio: Optional[LinkRadio] = None,
-    remote_base: Optional[RemoteBase] = None,
-    hub_sites: Optional[HubSiteStore] = None,
-    hub_poller: Optional[HubPoller] = None,
-    run_mixer: Callable[[list[str]], object] = run_amixer,
-    serial_ports: Callable[[], list[dict]] = find_serial_ports,
+    runtime: Optional[AppRuntime | RuntimeBuilder] = None,
+    *,
+    core: Optional[CoreBundle] = None,
+    auth: Optional[AuthBundle] = None,
+    linking: Optional[LinkingBundle] = None,
+    media: Optional[MediaBundle] = None,
+    site_ops: Optional[SiteOpsBundle] = None,
+    admin: Optional[AdminOpsBundle] = None,
+    **overrides: object,
 ) -> FastAPI:
-    """`state_store`, `activity_store` and `recordings` default to in-memory
-    (or off) so tests never touch the real files under `data/`; the
-    module-level `app` below opts in.
-    `fetch_weather(lat, lon, contact)` and `fetch_zone(url, contact)` are swappable so tests stay offline."""
-    runtime = AppRuntime(
-        service=service,
-        start_background_tick=start_background_tick,
-        assets_store=assets_store,
-        log_path=log_path,
-        link_settings=link_settings,
-        auth_settings=auth_settings,
-        state_store=state_store,
-        renderer=renderer,
-        fetch_weather=fetch_weather,
-        fetch_zone=fetch_zone,
-        activity_store=activity_store,
-        live_audio=live_audio,
-        audio_devices=audio_devices,
-        recordings=recordings,
-        users=users,
-        tokens=tokens,
-        agent_access=agent_access,
-        audit=audit,
-        aprs_stations=aprs_stations,
-        autopatch=autopatch,
-        sip_trunk=sip_trunk,
-        backups=backups,
-        allstar_node=allstar_node,
-        gpio=gpio,
-        tx_fan=tx_fan,
-        node_directory=node_directory,
-        links=links,
-        updater=updater,
-        update_checker=update_checker,
-        update_channel=update_channel,
-        tailscale=tailscale,
-        notifier=notifier,
-        log_hub=log_hub,
-        log_shipper=log_shipper,
-        run_marker=run_marker,
-        system_probe=system_probe,
-        watchdog=watchdog,
-        net_store=net_store,
-        auto_update_store=auto_update_store,
-        control_codes=control_codes,
-        homeassistant=homeassistant,
-        airport_weather=airport_weather,
-        site_sensors=site_sensors,
-        sensor_history=sensor_history,
-        stream_store=stream_store,
-        streamer=streamer,
-        mailbox_store=mailbox_store,
-        transcriber=transcriber,
-        monitor_recordings=monitor_recordings,
-        monitor_receiver=monitor_receiver,
-        link_radio=link_radio,
-        remote_base=remote_base,
-        hub_sites=hub_sites,
-        hub_poller=hub_poller,
-        run_mixer=run_mixer,
-        serial_ports=serial_ports,
-    )
+    """Compose the FastAPI shell around an ``AppRuntime``.
+
+    Prefer ``create_app(runtime=...)`` or typed bags (``auth=AuthBundle(...)``, …).
+    Flat ``**overrides`` are packed by ``RuntimeBuilder`` so tests keep a short
+    call site without duplicating the wide param list on both surfaces.
+    """
+    bags = (core, auth, linking, media, site_ops, admin)
+    if runtime is not None and (any(b is not None for b in bags) or overrides):
+        raise TypeError("pass runtime=, bags, or flat overrides — not a mix")
+    if isinstance(runtime, RuntimeBuilder):
+        runtime = runtime.build()
+    elif runtime is None:
+        if overrides:
+            if any(b is not None for b in bags):
+                raise TypeError("pass bags or flat overrides — not both")
+            core, auth, linking, media, site_ops, admin = bundles_from_overrides(**overrides)
+        runtime = AppRuntime(
+            core=core,
+            auth=auth,
+            linking=linking,
+            media=media,
+            site_ops=site_ops,
+            admin=admin,
+        )
     app = FastAPI(title="moreopenrepeater API", lifespan=runtime.lifespan)
     app.state.service = runtime.service
     agent_endpoint = runtime.attach_agent(app)
@@ -549,28 +456,40 @@ def create_app(
 
 _LOG_HUB = LogHub()
 app = create_app(
-    state_store=StateStore(DEFAULT_STATE_PATH),
-    activity_store=ActivityStore(DEFAULT_ACTIVITY_PATH),
-    recordings=RecordingStore(DEFAULT_RECORDINGS_DIR),
-    monitor_recordings=RecordingStore(DEFAULT_MONITOR_RECORDINGS_DIR),
-    mailbox_store=MailboxStore(DEFAULT_MAILBOX_DIR, StateStore(DEFAULT_MAILBOX_DIR / "boxes.json")),
-    users=UserStore(StateStore(DEFAULT_USERS_PATH)),
-    tokens=TokenStore(StateStore(DEFAULT_TOKENS_PATH)),
-    agent_access=AgentAccess(StateStore(DEFAULT_AGENT_ACCESS_PATH)),
-    audit=AuditLog(DEFAULT_AUDIT_PATH),
-    aprs_stations=StationStore(DEFAULT_APRS_PATH),
-    backups=BackupFolder(DEFAULT_BACKUP_DIR),
-    node_directory=NodeDirectory(DEFAULT_NODE_LIST_PATH),
-    notifier=Notifier(StateStore(DEFAULT_ALERTS_PATH)),
-    sensor_history=SensorHistoryStore(DEFAULT_SENSORS_PATH),
-    log_hub=_LOG_HUB,
-    log_shipper=LogShipper(_LOG_HUB, StateStore(DEFAULT_LOG_SHIPPING_PATH)),
-    run_marker=RunMarker(StateStore(DEFAULT_RUN_MARKER_PATH)),
-    net_store=StateStore(DEFAULT_NETS_PATH),
-    auto_update_store=StateStore(DEFAULT_AUTO_UPDATE_PATH),
-    control_codes=ControlCodes(StateStore(DEFAULT_CONTROL_CODES_PATH)),
-    stream_store=StateStore(DEFAULT_STREAM_PATH),
-    hub_sites=HubSiteStore(StateStore(DEFAULT_HUB_SITES_PATH)),
+    core=CoreBundle(
+        state_store=StateStore(DEFAULT_STATE_PATH),
+        activity_store=ActivityStore(DEFAULT_ACTIVITY_PATH),
+    ),
+    auth=AuthBundle(
+        users=UserStore(StateStore(DEFAULT_USERS_PATH)),
+        tokens=TokenStore(StateStore(DEFAULT_TOKENS_PATH)),
+        agent_access=AgentAccess(StateStore(DEFAULT_AGENT_ACCESS_PATH)),
+        audit=AuditLog(DEFAULT_AUDIT_PATH),
+        control_codes=ControlCodes(StateStore(DEFAULT_CONTROL_CODES_PATH)),
+    ),
+    linking=LinkingBundle(
+        node_directory=NodeDirectory(DEFAULT_NODE_LIST_PATH),
+        monitor_recordings=RecordingStore(DEFAULT_MONITOR_RECORDINGS_DIR),
+    ),
+    media=MediaBundle(
+        recordings=RecordingStore(DEFAULT_RECORDINGS_DIR),
+        mailbox_store=MailboxStore(DEFAULT_MAILBOX_DIR, StateStore(DEFAULT_MAILBOX_DIR / "boxes.json")),
+        stream_store=StateStore(DEFAULT_STREAM_PATH),
+    ),
+    site_ops=SiteOpsBundle(
+        aprs_stations=StationStore(DEFAULT_APRS_PATH),
+        sensor_history=SensorHistoryStore(DEFAULT_SENSORS_PATH),
+        hub_sites=HubSiteStore(StateStore(DEFAULT_HUB_SITES_PATH)),
+        net_store=StateStore(DEFAULT_NETS_PATH),
+    ),
+    admin=AdminOpsBundle(
+        backups=BackupFolder(DEFAULT_BACKUP_DIR),
+        notifier=Notifier(StateStore(DEFAULT_ALERTS_PATH)),
+        log_hub=_LOG_HUB,
+        log_shipper=LogShipper(_LOG_HUB, StateStore(DEFAULT_LOG_SHIPPING_PATH)),
+        run_marker=RunMarker(StateStore(DEFAULT_RUN_MARKER_PATH)),
+        auto_update_store=StateStore(DEFAULT_AUTO_UPDATE_PATH),
+    ),
 )
 
 

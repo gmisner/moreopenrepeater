@@ -118,6 +118,7 @@ def register(
     @app.get("/api/aprs/stations", response_model=AprsMapResponse, dependencies=auth_dependencies)
     def get_aprs_stations() -> AprsMapResponse:
         config = service.config
+        aprs = config.aprs
         center = map_center(config)
         status = aprs_receiver.status
         stations = []
@@ -129,12 +130,12 @@ def register(
                 fields["bearing"] = round(bearing_degrees(*center, s.lat, s.lon))
             stations.append(AprsStationResponse(**fields))
         return AprsMapResponse(
-            enabled=config.aprs_map_enabled,
+            enabled=aprs.aprs_map_enabled,
             center=list(center) if center else None,
-            radius_km=config.aprs_map_radius_km,
-            hours=config.aprs_map_hours,
-            tiles=config.aprs_map_tiles,
-            distance_units=config.distance_units,
+            radius_km=aprs.aprs_map_radius_km,
+            hours=aprs.aprs_map_hours,
+            tiles=aprs.aprs_map_tiles,
+            distance_units=aprs.distance_units,
             connected=status.connected,
             server=status.server,
             error=status.error,

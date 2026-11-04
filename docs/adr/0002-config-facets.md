@@ -42,6 +42,13 @@ facet for locality.
   for domain defaults; response shape follows automatically.
 - Call sites may use flat or nested access; new code should prefer the facet
   view when touching a whole group.
+- Remaining flat access is intentional and legacy-compatible: facets project
+  the same fields, so `config.wx_lat` and `config.weather.wx_lat` stay
+  equivalent. Prefer facet views when a change already touches a whole group.
+- Hottest weather/APRS call sites (`api/service/weather.py`, `api/aprs_map.py`,
+  APRS beacon + weather poll in `api/runtime.py`, APRS map fields in
+  `api/routes/site.py`) were deepened to nested access. `identity_timing`,
+  `link_radio`, and `state_machine` remain mostly flat for a later pass.
 - A nested JSON API would need an intentional version bump and a Mantine
   client change in the same PR — out of scope here.
 - `ConfigUpdateRequest` Field constraints remain hand-tuned next to the

@@ -219,7 +219,7 @@ class LiveAudio:
         self.openings: collections.deque[dict] = collections.deque(maxlen=OPENINGS_KEPT)
         # Audio glitches with what the repeater was doing, newest last.
         self.glitches: collections.deque[dict] = collections.deque(maxlen=GLITCHES_KEPT)
-        self._last_stream_recover = 0.0
+        self._last_stream_recover = float("-inf")  # so the first recover is never cooldown-blocked
 
     @property
     def cm108(self) -> Optional[CM108Interface]:
@@ -457,16 +457,18 @@ class LiveAudio:
     def _recover_engine(self) -> None:
         """Same path as toggling audio_enabled: stop, then start and re-resolve devices."""
         config = self._applied
-        self._stop_engine()
         if config is None or not config.audio_enabled:
+            self._stop_engine()
             return
         now = time.monotonic()
         if now - self._last_stream_recover < STREAM_RECOVER_COOLDOWN:
+            self._stop_engine()
             self.error = "audio stream died (USB unplug or device reset)"
             _logger.warning("audio stream died again too soon; not restarting yet")
             return
         self._last_stream_recover = now
         _logger.info("restarting live audio after the stream died")
+        self._stop_engine()
         self._start_engine(config)
 
     def _start_engine(self, config: RepeaterConfig) -> None:

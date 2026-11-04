@@ -10,7 +10,7 @@ def test_startup_messages_reach_the_log_file(tmp_path, monkeypatch):
         logging.getLogger("moreopenrepeater.audio").info("using the CM108 interface at /dev/hidraw3")
         return None
 
-    monkeypatch.setattr(sys.modules["api.app"], "cm108_from_env", find_cm108)
+    monkeypatch.setattr(sys.modules["api.runtime"], "cm108_from_env", find_cm108)
     log_path = tmp_path / "app.log"
     create_app(start_background_tick=False, log_path=log_path)
     assert "using the CM108 interface at /dev/hidraw3" in log_path.read_text()

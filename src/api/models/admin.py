@@ -29,6 +29,7 @@ class BackupRestoreResponse(BaseModel):
     audio_clips: int
     history: bool
     recordings: int
+    hub_sites: Optional[int] = None  # None: backup had no hub-sites.json (or hub not persisted)
 
 class CommitSummary(BaseModel):
     sha: str

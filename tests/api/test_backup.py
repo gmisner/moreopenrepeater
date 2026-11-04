@@ -19,6 +19,7 @@ from api.assets import AudioAssetStore
 from api.audit import AuditLog
 from api.auth import AuthSettings
 from api.backup import BackupFolder, BackupSources, backup_name
+from api.hub import HubSiteStore, hub_sites_state_store
 from api.persistence import StateStore
 from api.recordings import RecordingStore
 from api.service import RepeaterService
@@ -35,7 +36,7 @@ def no_login_failure_delay(monkeypatch):
 class Repeater:
     """An app with every store on disk in its own directory."""
 
-    def __init__(self, auth: bool = False, backup_dir: bool = False) -> None:
+    def __init__(self, auth: bool = False, backup_dir: bool = False, hub: bool = False) -> None:
         self.dir = Path(tempfile.mkdtemp())
         self.service = RepeaterService(state_store=StateStore(self.dir / "state.json"))
         self.users = UserStore(StateStore(self.dir / "users.json"))
@@ -44,6 +45,7 @@ class Repeater:
         self.activity = ActivityStore(self.dir / "activity.db")
         self.audit = AuditLog(self.dir / "audit.db")
         self.folder = BackupFolder(self.dir / "backups" if backup_dir else None)
+        self.hub_sites = HubSiteStore(hub_sites_state_store(self.dir / "hub-sites.json")) if hub else None
         app = create_app(
             service=self.service,
             start_background_tick=False,
@@ -55,6 +57,7 @@ class Repeater:
             activity_store=self.activity,
             recordings=self.recordings,
             backups=self.folder,
+            hub_sites=self.hub_sites,
         )
         self.client = TestClient(app)
         if auth:
@@ -62,7 +65,15 @@ class Repeater:
 
     @property
     def sources(self) -> BackupSources:
-        return BackupSources(self.service, self.users, self.assets, self.recordings, self.activity, self.audit)
+        return BackupSources(
+            self.service,
+            self.users,
+            self.assets,
+            self.recordings,
+            self.activity,
+            self.audit,
+            hub_sites=self.hub_sites,
+        )
 
 
 def login_alice(r: Repeater) -> None:
@@ -99,7 +110,15 @@ def test_full_backup_restores_everything_onto_a_fresh_install():
     result = restore(target, response.content)
 
     assert result.status_code == 200, result.text
-    assert result.json() == {"macros": 1, "announcements": 1, "users": 1, "audio_clips": 1, "history": True, "recordings": 1}
+    assert result.json() == {
+        "macros": 1,
+        "announcements": 1,
+        "users": 1,
+        "audio_clips": 1,
+        "history": True,
+        "recordings": 1,
+        "hub_sites": None,
+    }
     login_alice(target)
     config = target.client.get("/api/config").json()
     assert (config["callsign"], config["hang_time"]) == ("W1AW", 4.5)
@@ -119,6 +138,31 @@ def test_recordings_are_left_out_unless_asked_for():
     archive = zipfile.ZipFile(io.BytesIO(source.client.get("/api/backup").content))
     assert not [n for n in archive.namelist() if n.startswith("recordings/")]
     assert json.loads(archive.read("manifest.json"))["contents"]["recordings"] == 0
+
+
+def test_hub_sites_are_backed_up_and_restored():
+    source = Repeater(hub=True)
+    source.hub_sites.add("Remote Pi", "https://remote.example.com", "mor_secret_token")
+    archive = source.client.get("/api/backup").content
+    zf = zipfile.ZipFile(io.BytesIO(archive))
+    assert "hub-sites.json" in zf.namelist()
+    assert json.loads(zf.read("manifest.json"))["contents"]["hub_sites"] == 1
+    payload = json.loads(zf.read("hub-sites.json"))
+    assert payload["sites"][0]["api_token"] == "mor_secret_token"
+
+    target = Repeater(hub=True)
+    target.hub_sites.add("Stale", "https://stale.example.com", "mor_old")
+    result = restore(target, archive)
+    assert result.status_code == 200, result.text
+    assert result.json()["hub_sites"] == 1
+    [site] = target.hub_sites.list()
+    assert (site.name, site.base_url, site.api_token) == (
+        "Remote Pi",
+        "https://remote.example.com",
+        "mor_secret_token",
+    )
+    on_disk = json.loads((target.dir / "hub-sites.json").read_text())
+    assert on_disk["sites"][0]["name"] == "Remote Pi"
 
 
 def test_restore_replaces_clips_but_adds_recordings():

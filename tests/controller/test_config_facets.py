@@ -8,6 +8,7 @@ from api.models import ConfigResponse, ConfigUpdateRequest
 from controller.config import CONFIG_FIELDS, RepeaterConfig, facet_for_field
 from controller.config.clear_fields import ALL_CLEAR_FIELDS, FACET_CLEAR_FIELDS
 from controller.config.facets import FACET_CLASSES
+from controller.config.facets.sensors import SiteSensorDef, coerce_site_sensors
 from controller.config.facets.weather import WeatherConfig
 from controller.config.repeater import FACET_FIELD_NAMES
 
@@ -113,3 +114,28 @@ def test_facet_classes_defaults_match_repeater_config():
         assert dataclasses.asdict(facet) == {
             f.name: getattr(composed, f.name) for f in dataclasses.fields(cls)
         }
+
+
+def test_site_sensors_are_typed_on_the_facet():
+    wire = [
+        {
+            "id": "battery",
+            "name": "Battery",
+            "type": "ads1115",
+            "units": "V",
+            "scale": 11.0,
+            "channel": 0,
+            "high": 14.5,
+            "low": 11.5,
+        }
+    ]
+    config = RepeaterConfig.from_flat_dict({"site_sensors": wire})
+    assert isinstance(config.site_sensors[0], SiteSensorDef)
+    assert config.sensors.site_sensors[0].id == "battery"
+    assert config.sensors.site_sensors[0].scale == 11.0
+    flat = config.to_flat_dict()
+    assert flat["site_sensors"][0]["id"] == "battery"
+    assert flat["site_sensors"][0]["type"] == "ads1115"
+    # Direct construction with dicts is coerced the same way.
+    again = RepeaterConfig(site_sensors=wire)
+    assert again.sensors.site_sensors == coerce_site_sensors(wire)

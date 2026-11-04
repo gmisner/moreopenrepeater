@@ -70,8 +70,10 @@ def database_has_table(path: Path, table: str) -> bool:
 
 
 class StateStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, mode: Optional[int] = None) -> None:
         self.path = path
+        # When set (e.g. 0o600 for hub-sites.json), applied to every write.
+        self.mode = mode
 
     def load(self) -> Optional[dict]:
         if not self.path.exists():
@@ -94,6 +96,8 @@ class StateStore:
                 json.dump(data, f, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
+            if self.mode is not None:
+                os.chmod(tmp_name, self.mode)
             os.replace(tmp_name, self.path)
         except BaseException:
             Path(tmp_name).unlink(missing_ok=True)

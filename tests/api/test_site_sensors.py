@@ -44,9 +44,10 @@ class FakeReader:
         self.values = values
         self.calls: list[str] = []
 
-    def __call__(self, sensor: dict) -> float | None:
-        self.calls.append(sensor["id"])
-        return self.values.get(sensor["id"])
+    def __call__(self, sensor) -> float | None:
+        sensor_id = sensor.id if hasattr(sensor, "id") else sensor["id"]
+        self.calls.append(sensor_id)
+        return self.values.get(sensor_id)
 
 
 def make(values=None, **config):

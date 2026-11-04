@@ -683,7 +683,9 @@ class AppRuntime:
             update_status=updater.status,
         )
         tx_fan = tx_fan or TxFan(service, cm108, temperature=health.probe.temperature_c)
-        backup_sources = BackupSources(service, users, assets_store, recordings, activity_store, audit)
+        backup_sources = BackupSources(
+            service, users, assets_store, recordings, activity_store, audit, hub_sites=hub_sites
+        )
         watchdog = watchdog or Watchdog()
         last_tick: list[Optional[float]] = [None]
         watchdog.watch("controller", lambda: last_tick[0])

@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Optional
 
-from controller.config import CourtesyStyle, CourtesyVariant, RepeaterConfig
+from controller.config import RepeaterConfig
 
 from .events import (
     AssertPTT,

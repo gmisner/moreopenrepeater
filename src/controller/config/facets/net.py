@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Literal, Optional
-from controller.config.types import CourtesyStyle, CourtesyVariant
+from controller.config.types import CourtesyVariant
 """NetConfig: config facet (flat wire field names)."""
 
 

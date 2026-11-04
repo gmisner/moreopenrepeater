@@ -26,7 +26,6 @@ from controller.config.facets import (
     BackupConfig,
     TranscriptionConfig,
     PublicPageConfig,
-    FACET_CLASSES,
 )
 from controller.config.types import CourtesyStyle, CourtesyVariant
 

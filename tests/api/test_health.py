@@ -208,10 +208,16 @@ def test_cm108_unplugged():
 
     assert monitor.check() == []
     present["yes"] = False
-    assert titles(monitor.check()) == ["The USB radio interface disappeared"]
+    alerts = monitor.check()
+    assert titles(alerts) == ["The USB radio interface disappeared"]
+    assert "restart moreopenrepeater" not in alerts[0].message.lower()
+    assert "automatically" in alerts[0].message.lower()
     assert monitor.check() == []
     present["yes"] = True
-    assert titles(monitor.check()) == ["The USB radio interface is back"]
+    alerts = monitor.check()
+    assert titles(alerts) == ["The USB radio interface is back"]
+    assert "restart moreopenrepeater" not in alerts[0].message.lower()
+    assert "auto-recovery" in alerts[0].message.lower()
 
 
 def test_update_results_alert_once_and_old_ones_never(tmp_path):

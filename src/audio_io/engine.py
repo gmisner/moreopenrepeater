@@ -48,11 +48,16 @@ class AudioEngine:
         stream_factory: Callable[..., AudioStream] = AudioStream,
         on_audio: Optional[Callable[[np.ndarray, np.ndarray], None]] = None,
         on_glitch: Optional[Callable[[str, int], None]] = None,
+        on_stream_dead: Optional[Callable[[], None]] = None,
     ) -> None:
         """`on_audio(received, transmitted)` sees every processing block, on
         the worker thread -- it must be quick. `on_glitch(counter, count)`
-        too: a GLITCH_COUNTERS name and how much it just went up."""
+        too: a GLITCH_COUNTERS name and how much it just went up.
+        `on_stream_dead` runs once when the PortAudio stream goes inactive
+        (USB unplug / device reset), still on the worker thread."""
         self._on_glitch = on_glitch
+        self._on_stream_dead = on_stream_dead
+        self._stream_dead_reported = False
         self._glitches_seen = dict.fromkeys(GLITCH_COUNTERS, 0)
         self.processor = processor
         self._on_audio = on_audio
@@ -83,7 +88,8 @@ class AudioEngine:
 
     @property
     def running(self) -> bool:
-        return self._stream is not None
+        stream = self._stream
+        return stream is not None and getattr(stream, "active", True)
 
     @property
     def dropped_input_blocks(self) -> int:
@@ -106,6 +112,7 @@ class AudioEngine:
 
     def start(self) -> None:
         self._stop.clear()
+        self._stream_dead_reported = False
         rate = self.processor.settings.sample_rate
         self._stream = self._stream_factory(
             sample_rate=rate,
@@ -120,12 +127,14 @@ class AudioEngine:
         for _ in range(PRIME_BLOCKS):
             self._output.put_nowait(silence)
         self.last_block_at = time.monotonic()
+        # Start the stream before the worker so `active` is true before the
+        # first `_stream_went_away` check (otherwise a fresh start looks dead).
+        self._stream.start()
         self._threads = [threading.Thread(target=self._work, name="audio-worker", daemon=True)]
         if self._cos_input is not None:
             self._threads.append(threading.Thread(target=self._poll_cos, name="audio-cos", daemon=True))
         for thread in self._threads:
             thread.start()
-        self._stream.start()
         _logger.info(
             "audio engine started (in=%s, out=%s, device %d Hz, processing %d Hz)",
             self._input_device or "default", self._output_device or "default", self.device_sample_rate, rate,
@@ -138,8 +147,10 @@ class AudioEngine:
                 self._stream.stop()
             finally:
                 self._stream = None
+        current = threading.current_thread()
         for thread in self._threads:
-            thread.join(timeout=1.0)
+            if thread is not current:
+                thread.join(timeout=1.0)
         self._threads = []
         self._set_transmitting(False)
         _logger.info("audio engine stopped")
@@ -170,6 +181,8 @@ class AudioEngine:
 
     def _work(self) -> None:
         while not self._stop.is_set():
+            if self._stream_went_away():
+                return
             try:
                 block = self._input.get(timeout=0.2)
             except queue.Empty:
@@ -181,9 +194,27 @@ class AudioEngine:
                 _logger.exception("audio processing failed for one block")
             self.last_block_at = time.monotonic()
 
+    def _stream_went_away(self) -> bool:
+        stream = self._stream
+        if stream is None or getattr(stream, "active", True):
+            return False
+        if self._stream_dead_reported:
+            return True
+        self._stream_dead_reported = True
+        _logger.error("audio stream died (USB unplug or device reset)")
+        callback = self._on_stream_dead
+        if callback is not None:
+            try:
+                callback()
+            except Exception:
+                _logger.exception("audio stream-death handler failed")
+        return True
+
     def _poll_cos(self) -> None:
         assert self._cos_input is not None
         while not self._stop.wait(COS_POLL_SECONDS):
+            if self._stream_went_away():
+                return
             try:
                 self.processor.set_external_cos(self._cos_input())
             except OSError:

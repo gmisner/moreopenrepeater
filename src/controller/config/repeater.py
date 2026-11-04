@@ -27,6 +27,7 @@ from controller.config.facets import (
     TranscriptionConfig,
     PublicPageConfig,
     SensorsConfig,
+    SiteSensorDef,
 )
 from controller.config.types import CourtesyStyle, CourtesyVariant
 
@@ -272,7 +273,12 @@ class RepeaterConfig:
     # --- sensors ---
     sensors_enabled: bool = False
     sensors_poll_interval: float = 30.0
-    site_sensors: list = field(default_factory=list)
+    site_sensors: list[SiteSensorDef] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        from controller.config.facets.sensors import coerce_site_sensors
+
+        object.__setattr__(self, "site_sensors", coerce_site_sensors(self.site_sensors))
 
     @property
     def identity_timing(self) -> IdentityTimingConfig:
@@ -349,8 +355,13 @@ class RepeaterConfig:
 
     @classmethod
     def from_flat_dict(cls, data: Mapping[str, Any]) -> "RepeaterConfig":
+        from controller.config.facets.sensors import coerce_site_sensors
+
         known = {f.name for f in fields(cls)}
-        return cls(**{k: v for k, v in data.items() if k in known})
+        cleaned = {k: v for k, v in data.items() if k in known}
+        if "site_sensors" in cleaned:
+            cleaned["site_sensors"] = coerce_site_sensors(cleaned["site_sensors"])
+        return cls(**cleaned)
 
     def replace_flat(self, **overrides: Any) -> "RepeaterConfig":
         """Like dataclasses.replace, for flat field names (or a whole facet)."""

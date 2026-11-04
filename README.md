@@ -226,6 +226,10 @@ several phases (see the plan file for the full breakdown):
 - **Sites hub**: one admin view that polls other moreopenrepeater instances with
   per-site API tokens (status, version/channel, last activity, alerts, dashboard
   link). Remotes stay independent if the hub is down. See [docs/hub.md](docs/hub.md).
+- **Site sensors**: named DS18B20 (1-wire) and ADS1115 (I2C ADC) readings with
+  scale/offset, high/low thresholds and hysteresis, dashboard display, optional
+  phone / on-air alerts, and a DTMF macro. See [docs/raspberry-pi.md](docs/raspberry-pi.md#site-sensors)
+  and ADR 0003.
 - **Persistent settings**: config, DTMF macros and announcements save to
   `data/state.json` on every change and load at startup.
 - **Real transmit audio**: every clip the controller plays renders to real samples,
@@ -490,20 +494,21 @@ page; viewers are refused any change server-side, and every change lands in
 the audit log (`api/audit.py`).
 
 The dashboard is the **Mantine** app in `frontend/`, built into `web/dist/`
-and served by FastAPI (ADR 0001; no vanilla fallback). It is a sidebar app
-with separate views for Dashboard (live state, linked nodes, and a
-recent-activity feed), Activity (airtime charts), Timing, Identification,
-Audio & tones (sounds, clip library and the live radio interface), DTMF macros
-(add/edit/rename/delete), Announcements, Weather alerts, APRS, APRS map,
-Simulator, Logs (filter/level/pause), Backup & restore, and for admins Users,
-Audit log, Alerts & health and Updates. Each settings view saves only its own
-fields through `PUT /api/config`, with unsaved-change tracking. It has light
-and dark themes (following the system setting unless you pick one in the
-sidebar). On a phone the header keeps TX/RX lit on every page and a bottom tab
-bar reaches the main pages with one thumb. It can be added to a phone's home
-screen with its own icon. Colors, type sizes and layout rules are written down
-in `design-system/moreopenrepeater/MASTER.md`. Change the UI in `frontend/`,
-then `npm run build` there (or let CI do it); do not edit served files under
+and served by FastAPI (ADR 0001; `web/dist` only — no vanilla fallback, no
+`.ready` marker). It is a sidebar app with separate views for Dashboard (live
+state, linked nodes, and a recent-activity feed), Activity (airtime charts),
+Timing, Identification, Audio & tones (sounds, clip library and the live radio
+interface), DTMF macros (add/edit/rename/delete), Announcements, Weather
+alerts, APRS, APRS map, Sites, Site sensors, Simulator, Logs
+(filter/level/pause), Backup & restore, and for admins Users, Audit log,
+Alerts & health and Updates. Each settings view saves only its own fields
+through `PUT /api/config`, with unsaved-change tracking. It has light and dark
+themes (following the system setting unless you pick one in the sidebar). On a
+phone the header keeps TX/RX lit on every page and a bottom tab bar reaches the
+main pages with one thumb. It can be added to a phone's home screen with its
+own icon. Colors, type sizes and layout rules are written down in
+`design-system/moreopenrepeater/MASTER.md`. Change the UI in `frontend/`, then
+`npm run build` there (or let CI do it); do not edit served files under
 `web/dist/` by hand. Verified live in a real browser: login
 rejection/acceptance, WebSocket via session cookie, every view's save
 round-tripping through the API, the phone-width layout, and sign-out revoking
@@ -539,7 +544,7 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest
 
-# Run the API + dashboard (serves web/dist when .ready is present):
+# Run the API + dashboard (serves web/dist; requires web/dist/index.html):
 PYTHONPATH=src .venv/bin/python3 -m uvicorn api.app:app --reload
 # then open http://127.0.0.1:8000
 

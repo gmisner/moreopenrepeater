@@ -100,19 +100,16 @@ optional phone / on-air alerts. Configured on the `sensors` facet of
 `RepeaterConfig` (`site_sensors`).
 _Avoid_: SiteStatus (OpenRepeater module name); GPIO input for analog values
 
-### Dashboard cutover
+### Dashboard
 
 **Mantine dashboard**:
 The React + Mantine operator UI whose source lives in `frontend/` (Vite +
-TypeScript). Built assets are written to `web/dist/` and served by FastAPI.
-_Avoid_: plain HTML dashboard, SPA without naming Mantine when meaning this UI
-
-**web/dist cutover**:
-Serving prefers `web/dist/` when both `web/dist/index.html` and the marker
-`web/dist/.ready` exist (ADR 0001). Developers and CI run `npm run build`;
-the Pi never runs `npm`. Removing `.ready` falls back to the vanilla files
-under `web/` until that fallback is deleted.
-_Avoid_: no-build frontend, dashboard in `web/` as the editable source
+TypeScript). Built assets are written to `web/dist/` and served by FastAPI
+(ADR 0001). Presence of `web/dist/index.html` is the gate; there is no
+vanilla `web/` HTML/JS fallback and no `.ready` marker. Developers and CI
+run `npm run build`; the Pi never runs `npm` — it receives committed dist
+from git.
+_Avoid_: plain HTML dashboard, vanilla SPA, `.ready` cutover marker
 
 ### Multi-site
 

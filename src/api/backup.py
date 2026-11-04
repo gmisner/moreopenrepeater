@@ -8,6 +8,7 @@ repeater on a fresh install.
     audio/               uploaded clips, with their index.json
     history/activity.db  airtime statistics
     history/audit.db     the audit log
+    hub-sites.json       multi-site hub registry (tokens), when configured
     recordings/          saved transmissions, only when asked for (they add up)
 
 Not included: the environment file (the built-in admin and the Asterisk
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     from .activity import ActivityStore
     from .assets import AudioAssetStore
     from .audit import AuditLog
+    from .hub import HubSiteStore
     from .recordings import RecordingStore
     from .service import RepeaterService
     from .users import UserStore
@@ -50,6 +52,7 @@ VERSION = 1
 _RECORDING = re.compile(r"^recordings/(\d{13,})\.wav$")
 _NAME = re.compile(r"^moreopenrepeater-[a-z0-9-]+-\d{8}-\d{6}\.zip$")
 _HISTORY = {"activity": ("activity", "airtime statistics"), "audit": ("audit", "audit log")}
+_HUB_SITES_MEMBER = "hub-sites.json"
 
 _logger = logging.getLogger("moreopenrepeater.backup")
 
@@ -68,11 +71,29 @@ class BackupSources:
     recordings: RecordingStore
     activity: ActivityStore
     audit: AuditLog
+    hub_sites: Optional["HubSiteStore"] = None
 
 
 def backup_name(callsign: str, now: float) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", callsign.lower()).strip("-") or "repeater"
     return f"moreopenrepeater-{slug}-{time.strftime('%Y%m%d-%H%M%S', time.localtime(now))}.zip"
+
+
+def _hub_sites_payload(sources: BackupSources) -> Optional[dict]:
+    store = sources.hub_sites
+    if store is None or not store.persists:
+        return None
+    return {
+        "sites": [
+            {
+                "id": s.id,
+                "name": s.name,
+                "base_url": s.base_url,
+                "api_token": s.api_token,
+            }
+            for s in store.list()
+        ]
+    }
 
 
 def write_backup(path: Path, sources: BackupSources, include_recordings: bool, now: float) -> dict:
@@ -81,6 +102,7 @@ def write_backup(path: Path, sources: BackupSources, include_recordings: bool, n
     users = sources.users.export()
     assets = [a for a in sources.assets.list_assets() if sources.assets.has(a.id)]
     recordings = sources.recordings.paths() if include_recordings else []
+    hub_sites = _hub_sites_payload(sources)
     added_recordings = 0
     with tempfile.TemporaryDirectory() as tmp, zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("settings.json", json.dumps(settings, indent=2))
@@ -92,24 +114,29 @@ def write_backup(path: Path, sources: BackupSources, include_recordings: bool, n
             copy = Path(tmp) / f"{name}.db"
             store.copy_to(copy)
             archive.write(copy, f"history/{name}.db")
+        if hub_sites is not None:
+            archive.writestr(_HUB_SITES_MEMBER, json.dumps(hub_sites, indent=2))
         for source in recordings:
             try:
                 archive.write(source, f"recordings/{source.name}", compress_type=zipfile.ZIP_STORED)
             except FileNotFoundError:  # pruned while we were writing
                 continue
             added_recordings += 1
+        contents = {
+            "macros": len(settings["macros"]),
+            "announcements": len(settings["announcements"]),
+            "users": len(users["users"]),
+            "audio_clips": len(assets),
+            "recordings": added_recordings,
+        }
+        if hub_sites is not None:
+            contents["hub_sites"] = len(hub_sites["sites"])
         manifest = {
             "format": FORMAT,
             "version": VERSION,
             "created_at": now,
             "callsign": settings["config"].get("callsign", ""),
-            "contents": {
-                "macros": len(settings["macros"]),
-                "announcements": len(settings["announcements"]),
-                "users": len(users["users"]),
-                "audio_clips": len(assets),
-                "recordings": added_recordings,
-            },
+            "contents": contents,
         }
         archive.writestr("manifest.json", json.dumps(manifest, indent=2))
     return manifest
@@ -126,6 +153,7 @@ class OpenedBackup:
     history: dict[str, Path]  # "activity"/"audit" -> an intact database file
     recordings: list[Path]
     directory: Path
+    hub_sites: Optional[dict] = None
 
 
 @contextmanager
@@ -195,7 +223,12 @@ def _unpack(path: Path, directory: Path) -> OpenedBackup:
         recordings = [
             extract(member, directory / member) for member in sorted(names) if _RECORDING.match(member)
         ]
-    return OpenedBackup(manifest, settings, users, assets, history, recordings, directory)
+        hub_sites = None
+        if _HUB_SITES_MEMBER in names:
+            hub_sites = read_json(_HUB_SITES_MEMBER)
+            if not isinstance(hub_sites, dict) or not isinstance(hub_sites.get("sites"), list):
+                raise BackupError("The hub sites list in the backup is damaged.")
+    return OpenedBackup(manifest, settings, users, assets, history, recordings, directory, hub_sites)
 
 
 def restore_backup(
@@ -217,9 +250,13 @@ def restore_backup(
         sources.users.replace(users)
     for name, path in backup.history.items():
         getattr(sources, name).replace_from(path)
+    hub_count = None
+    if backup.hub_sites is not None and sources.hub_sites is not None:
+        sources.hub_sites.replace_from(backup.hub_sites)
+        hub_count = len(backup.hub_sites.get("sites") or [])
     added = sum(sources.recordings.import_file(p) for p in backup.recordings) if sources.recordings.enabled else 0
     _logger.info("restored a backup from %s", time.ctime(backup.manifest.get("created_at", 0)))
-    return {
+    result = {
         "macros": len(settings.get("macros", [])),
         "announcements": len(settings.get("announcements", [])),
         "users": len(users) if users else None,
@@ -227,6 +264,9 @@ def restore_backup(
         "history": bool(backup.history),
         "recordings": added,
     }
+    if hub_count is not None:
+        result["hub_sites"] = hub_count
+    return result
 
 
 @dataclass(frozen=True)

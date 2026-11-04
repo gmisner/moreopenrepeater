@@ -17,7 +17,7 @@ from .linking import LinkingConfig
 from .backup import BackupConfig
 from .transcription import TranscriptionConfig
 from .public_page import PublicPageConfig
-from .sensors import SensorsConfig
+from .sensors import SensorsConfig, SiteSensorDef
 
 FACET_CLASSES = (
     ('identity_timing', IdentityTimingConfig),
@@ -57,5 +57,6 @@ __all__ = [
     'TranscriptionConfig',
     'PublicPageConfig',
     'SensorsConfig',
+    'SiteSensorDef',
     'FACET_CLASSES',
 ]

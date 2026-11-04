@@ -12,7 +12,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
-from typing import Callable, Optional
+from pathlib import Path
+from typing import Callable, Optional, Union
 from urllib.parse import urlparse
 
 import httpx
@@ -21,6 +22,13 @@ from .persistence import StateStore
 
 DEFAULT_TIMEOUT = 5.0
 _MAX_WORKERS = 8
+# Per-site API tokens live in hub-sites.json — keep the file owner-readable only.
+HUB_SITES_FILE_MODE = 0o600
+
+
+def hub_sites_state_store(path: Union[str, Path]) -> StateStore:
+    """StateStore for ``data/hub-sites.json`` with restrictive file mode."""
+    return StateStore(Path(path), mode=HUB_SITES_FILE_MODE)
 
 
 class HubError(ValueError):
@@ -86,6 +94,11 @@ class HubSiteStore:
                 continue
             self._sites[site.id] = site
 
+    @property
+    def persists(self) -> bool:
+        """True when sites are saved to disk (include in full backups)."""
+        return self._store is not None
+
     def list(self) -> list[HubSite]:
         return sorted(self._sites.values(), key=lambda s: (s.name.lower(), s.id))
 
@@ -141,6 +154,28 @@ class HubSiteStore:
             site = self._sites.pop(site_id)
             self._save()
         return site
+
+    def replace_from(self, data: dict) -> None:
+        """Replace the registry from a backup payload (``{"sites": [...]}``)."""
+        sites: dict[str, HubSite] = {}
+        for entry in data.get("sites") or []:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                site = HubSite(
+                    id=str(entry["id"]),
+                    name=str(entry["name"]),
+                    base_url=normalize_base_url(str(entry["base_url"])),
+                    api_token=str(entry.get("api_token") or ""),
+                )
+            except (KeyError, TypeError, HubError):
+                continue
+            if not site.api_token:
+                continue
+            sites[site.id] = site
+        with self._lock:
+            self._sites = sites
+            self._save()
 
     def _save(self) -> None:
         if self._store is not None:

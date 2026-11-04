@@ -22,7 +22,7 @@ from .audit import AuditEntry, AuditLog
 from .backup import BackupError, BackupFolder, open_backup, restore_backup
 from .control_codes import ControlCodes
 from .health import RunMarker
-from .hub import HubSiteStore
+from .hub import HubSiteStore, hub_sites_state_store
 from .log_hub import LogHub, LogShipper
 from .mailbox import MailboxStore
 from .models import AuditEntryResponse, ConfigResponse, SessionResponse, SnapshotImportRequest, StatusResponse
@@ -479,7 +479,7 @@ app = create_app(
     site_ops=SiteOpsBundle(
         aprs_stations=StationStore(DEFAULT_APRS_PATH),
         sensor_history=SensorHistoryStore(DEFAULT_SENSORS_PATH),
-        hub_sites=HubSiteStore(StateStore(DEFAULT_HUB_SITES_PATH)),
+        hub_sites=HubSiteStore(hub_sites_state_store(DEFAULT_HUB_SITES_PATH)),
         net_store=StateStore(DEFAULT_NETS_PATH),
     ),
     admin=AdminOpsBundle(

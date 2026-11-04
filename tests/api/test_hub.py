@@ -12,8 +12,13 @@ from fastapi.testclient import TestClient
 
 from api.app import create_app
 from api.auth import AuthSettings
-from api.hub import HubPoller, HubSiteStore, normalize_base_url
-from api.persistence import StateStore
+from api.hub import (
+    HUB_SITES_FILE_MODE,
+    HubPoller,
+    HubSiteStore,
+    hub_sites_state_store,
+    normalize_base_url,
+)
 from api.service import RepeaterService
 from api.users import UserStore
 
@@ -50,7 +55,7 @@ def test_normalize_base_url():
 
 def test_store_persists_and_hides_token_from_api():
     path = Path(tempfile.mkdtemp()) / "hub-sites.json"
-    store = HubSiteStore(StateStore(path))
+    store = HubSiteStore(hub_sites_state_store(path))
     site = store.add("Production", "https://prod.example.com", "mor_abcd_secret")
     listed = make_client(hub_sites=store).get("/api/hub/sites", headers=basic()).json()
     assert listed == [
@@ -65,6 +70,7 @@ def test_store_persists_and_hides_token_from_api():
     assert "api_token" not in listed[0]
     on_disk = json.loads(path.read_text())
     assert on_disk["sites"][0]["api_token"] == "mor_abcd_secret"
+    assert path.stat().st_mode & 0o777 == HUB_SITES_FILE_MODE
 
 
 def test_crud_and_auth():

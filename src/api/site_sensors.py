@@ -1,9 +1,10 @@
 """Named analog site sensors: poll, threshold alerts with hysteresis, speech.
 
-Definitions live on ``RepeaterConfig.site_sensors`` (config facet). Live
-readings and alert latch state stay in memory; optional history is SQLite
-(``data/sensors.db``), same pattern as activity. Hardware adapters return
-``None`` when the device is absent so CI and non-Pi hosts skip gracefully.
+Definitions live on the ``sensors`` config facet (``config.sensors.site_sensors``,
+ADR 0002 / 0003). Live readings and alert latch state stay in memory; optional
+history is SQLite (``data/sensors.db``), same pattern as activity. Hardware
+adapters return ``None`` when the device is absent so CI and non-Pi hosts skip
+gracefully.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal, Optional
 
+from controller.config.facets.sensors import SiteSensorDef
 from playout.renderer import TTS_PREFIX
 from sensors.ads1115 import read_ads1115_volts
 from sensors.ds18b20 import read_ds18b20_celsius
@@ -32,7 +34,7 @@ HISTORY_FLUSH_SECONDS = 60.0
 SensorType = Literal["ds18b20", "ads1115"]
 ThresholdSide = Literal["high", "low"]
 
-Reader = Callable[[dict], Optional[float]]
+Reader = Callable[[SiteSensorDef], Optional[float]]
 
 
 @dataclass(frozen=True)
@@ -110,32 +112,20 @@ class SensorHistoryStore:
             self._conn.execute("DELETE FROM readings WHERE at < ?", (before,))
 
 
-def default_reader(sensor: dict) -> Optional[float]:
-    kind = sensor.get("type")
-    if kind == "ds18b20":
-        raw = read_ds18b20_celsius(str(sensor.get("device") or ""))
-    elif kind == "ads1115":
+def default_reader(sensor: SiteSensorDef) -> Optional[float]:
+    if sensor.type == "ds18b20":
+        raw = read_ds18b20_celsius(sensor.device or "")
+    elif sensor.type == "ads1115":
         raw = read_ads1115_volts(
-            int(sensor.get("channel") or 0),
-            bus=int(sensor.get("bus") or 1),
-            address=int(sensor.get("address") or 0x48),
+            sensor.channel,
+            bus=sensor.bus,
+            address=sensor.address,
         )
     else:
         return None
     if raw is None:
         return None
-    scale = float(sensor.get("scale", 1.0) or 1.0)
-    offset = float(sensor.get("offset", 0.0) or 0.0)
-    return raw * scale + offset
-
-
-def _float_or_none(value: object) -> Optional[float]:
-    if value is None or value == "":
-        return None
-    try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
+    return raw * float(sensor.scale) + float(sensor.offset)
 
 
 class SiteSensors:
@@ -155,27 +145,27 @@ class SiteSensors:
         self._alert_state: dict[str, Optional[ThresholdSide]] = {}
         service.programming.sensor_hook = self._dtmf
 
-    def definitions(self) -> list[dict]:
-        return list(self._service.config.site_sensors or [])
+    def definitions(self) -> list[SiteSensorDef]:
+        return list(self._service.config.sensors.site_sensors)
 
     def status(self, *, history_hours: float = 0.0) -> dict:
         sensors = []
         now = self._clock()
         for definition in self.definitions():
-            sensor_id = str(definition.get("id") or "")
+            sensor_id = definition.id
             reading = self._latest.get(sensor_id)
             row = {
                 "id": sensor_id,
-                "name": str(definition.get("name") or sensor_id),
-                "type": str(definition.get("type") or ""),
-                "units": str(definition.get("units") or ""),
-                "scale": float(definition.get("scale", 1.0) or 1.0),
-                "offset": float(definition.get("offset", 0.0) or 0.0),
-                "high": _float_or_none(definition.get("high")),
-                "low": _float_or_none(definition.get("low")),
-                "hysteresis": float(definition.get("hysteresis", 0.5) or 0.5),
-                "alert": bool(definition.get("alert", True)),
-                "speak_on_alert": bool(definition.get("speak_on_alert", False)),
+                "name": definition.name or sensor_id,
+                "type": definition.type,
+                "units": definition.units or "",
+                "scale": float(definition.scale),
+                "offset": float(definition.offset),
+                "high": definition.high,
+                "low": definition.low,
+                "hysteresis": float(definition.hysteresis),
+                "alert": bool(definition.alert),
+                "speak_on_alert": bool(definition.speak_on_alert),
                 "value": None if reading is None else reading.value,
                 "at": None if reading is None else reading.at,
                 "alert_state": None if reading is None else reading.alert_state,
@@ -186,9 +176,10 @@ class SiteSensors:
                     sensor_id, now - history_hours * 3600, now + 1
                 )
             sensors.append(row)
+        facet = self._service.config.sensors
         return {
-            "enabled": bool(self._service.config.sensors_enabled),
-            "poll_interval": float(self._service.config.sensors_poll_interval or POLL_SECONDS_DEFAULT),
+            "enabled": bool(facet.sensors_enabled),
+            "poll_interval": float(facet.sensors_poll_interval or POLL_SECONDS_DEFAULT),
             "sensors": sensors,
         }
 
@@ -198,17 +189,17 @@ class SiteSensors:
         alerts: list[Alert] = []
         seen: set[str] = set()
         for definition in self.definitions():
-            sensor_id = str(definition.get("id") or "").strip()
+            sensor_id = (definition.id or "").strip()
             if not sensor_id or sensor_id in seen:
                 continue
             seen.add(sensor_id)
-            name = str(definition.get("name") or sensor_id).strip() or sensor_id
-            units = str(definition.get("units") or "")
-            high = _float_or_none(definition.get("high"))
-            low = _float_or_none(definition.get("low"))
-            hysteresis = float(definition.get("hysteresis", 0.5) or 0.5)
-            alert_on = bool(definition.get("alert", True))
-            speak_on = bool(definition.get("speak_on_alert", False))
+            name = (definition.name or sensor_id).strip() or sensor_id
+            units = definition.units or ""
+            high = definition.high
+            low = definition.low
+            hysteresis = float(definition.hysteresis)
+            alert_on = bool(definition.alert)
+            speak_on = bool(definition.speak_on_alert)
             error: Optional[str] = None
             try:
                 value = self._reader(definition)
@@ -233,7 +224,7 @@ class SiteSensors:
             self._latest[sensor_id] = SensorReading(
                 id=sensor_id,
                 name=name,
-                type=str(definition.get("type") or ""),
+                type=definition.type,
                 units=units,
                 value=value,
                 at=now if value is not None else None,
@@ -318,7 +309,7 @@ class SiteSensors:
             return "No site sensors are set up."
         wanted = sensor_id.strip().lower()
         if wanted:
-            matches = [d for d in definitions if str(d.get("id") or "").lower() == wanted]
+            matches = [d for d in definitions if d.id.lower() == wanted]
             if not matches:
                 return "That sensor is not set up."
             targets = matches
@@ -326,12 +317,12 @@ class SiteSensors:
             targets = definitions
         parts = []
         for definition in targets:
-            name = str(definition.get("name") or definition.get("id") or "Sensor")
-            units = str(definition.get("units") or "")
+            name = definition.name or definition.id or "Sensor"
+            units = definition.units or ""
             try:
                 value = self._reader(definition)
             except Exception:
-                _logger.exception("sensor %s read failed during speech", definition.get("id"))
+                _logger.exception("sensor %s read failed during speech", definition.id)
                 value = None
             parts.append(speak_reading(name, value, units))
         return " ".join(parts)

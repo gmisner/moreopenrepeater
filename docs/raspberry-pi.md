@@ -271,11 +271,14 @@ the service user's `audio` group membership gives it access):
 | SVXLink Basic Board | GPIO24; port 2: GPIO18 | GPIO23, active high; port 2: GPIO25 | Speaker 75%, Mic 69% |
 
 On the two-port boards, port 2 becomes the [link radio](#link-radio) when
-its sound devices are chosen. The ICS Pi Repeater boards are listed but
-can't be selected yet: their PTT is on an I/O expander rather than a header
-pin, and each port is one channel of a stereo codec. The presets are in
-`src/api/boards.json`. Changing the wiring by hand afterwards marks the
-station as set up by hand.
+its sound devices are chosen. Digirig Lite has no USB-serial port (CM108
+audio + GPIO3 PTT only); if USB drops when an HT transmits near the Pi, see
+[Digirig Lite + HT: USB drops on TX](#digirig-lite--ht-usb-drops-on-tx) —
+that is usually RFI, not a missing RTS/DTR line. The ICS Pi Repeater boards
+are listed but can't be selected yet: their PTT is on an I/O expander rather
+than a header pin, and each port is one channel of a stereo codec. The
+presets are in `src/api/boards.json`. Changing the wiring by hand afterwards
+marks the station as set up by hand.
 
 ### Sound card levels
 
@@ -476,6 +479,40 @@ link transmitter for a far repeater that needs one to open.
 To connect and disconnect the link over the air, add DTMF macros with the
 "Link radio on" and "Link radio off" actions (put a secret code in the
 pattern). They save the setting and say what they did.
+
+#### Digirig Lite + HT: USB drops on TX
+
+A Digirig Lite on a Pi USB port feeding a Baofeng-class HT (BF-F8HP Pro /
+similar) as the link radio may disconnect or reset around transmit: `dmesg`
+shows a USB drop, CM108/hidraw writes fail with `ENODEV`, and PTT or audio
+looks dead until unplug/replug or a service restart. That is usually **RFI /
+layout**, not a missing RTS/DTR serial PTT. Digirig Lite has **no** USB-serial
+device (CM108 audio + GPIO3 PTT only); serial RTS/DTR is Digirig **Mobile**
+(CP2102), not Lite. Controller board preset: Digirig Lite → PTT **CM108**,
+COS **VOX** (unless the COS pad is wired).
+
+When the bus still dies mid-key, software can soften the failure:
+[#96](https://github.com/gmisner/moreopenrepeater/issues/96) recovers
+CM108/AIOC hidraw after a USB drop without a full service restart;
+[#111](https://github.com/gmisner/moreopenrepeater/issues/111) ignores a
+vanished CM108 during watchdog unkey (`ENODEV`). Field notes for this
+layout: [#119](https://github.com/gmisner/moreopenrepeater/issues/119).
+Lasting recovery still needs the interface to stay attached — ferrites on
+the Digirig USB cable, HT antenna away from the Pi/USB run, and low HT power
+for bring-up are the durable fix.
+
+Operator checklist (link radio + Digirig Lite):
+
+- [ ] Live audio on; link radio enabled as **link** (fixed frequency), not
+  remote base (unless CAT + Mobile/other radio).
+- [ ] Digirig chosen as **link** input/output only.
+- [ ] PTT = CM108; COS = VOX (or wired CM108 COS).
+- [ ] HT on the **other band** from the repeater; low power; antenna clear
+  of the Pi/USB.
+- [ ] Ferrites on USB (and cable dress) if TX correlates with USB
+  disconnects.
+- [ ] Optional: note model / frequency / notes on the Link radio page for
+  the next operator.
 
 ### Remote base
 

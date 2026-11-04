@@ -34,7 +34,8 @@ type ConfigContextValue = {
   save: (patch: Config) => Promise<Config>;
 };
 
-const ConfigContext = createContext<ConfigContextValue | null>(null);
+// Exported so tests can inject a provider without mounting the live /api/config fetch.
+export const ConfigContext = createContext<ConfigContextValue | null>(null);
 
 export function notifyError(error: unknown) {
   notifications.show({

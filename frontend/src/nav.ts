@@ -38,6 +38,7 @@ export const NAV: NavGroup[] = [
       { id: "logs", label: "Logs", icon: "logs" },
       { id: "backup", label: "Backup & restore", icon: "backup" },
       { id: "users", label: "Users", icon: "users", adminOnly: true },
+      { id: "sites", label: "Sites", icon: "tower", adminOnly: true },
       { id: "audit", label: "Audit log", icon: "audit", adminOnly: true },
       { id: "alerts", label: "Alerts & health", icon: "bell", adminOnly: true },
       { id: "updates", label: "Updates", icon: "update", adminOnly: true },

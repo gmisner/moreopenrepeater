@@ -1472,3 +1472,42 @@ class MonitorReceiverStatus(BaseModel):
     sample_rate: int
     dropped_input_blocks: int
     listeners: int
+
+
+# --- multi-repeater hub (Sites view) -----------------------------------------
+
+
+class HubSiteResponse(BaseModel):
+    id: str
+    name: str
+    base_url: str
+    dashboard_url: str
+    token_set: bool
+
+
+class HubSiteCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    base_url: str = Field(min_length=1, max_length=300)
+    api_token: str = Field(min_length=1, max_length=200)
+
+
+class HubSiteUpdateRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    base_url: Optional[str] = Field(default=None, min_length=1, max_length=300)
+    api_token: Optional[str] = Field(default=None, min_length=1, max_length=200)
+
+
+class HubSiteStatusResponse(BaseModel):
+    id: str
+    name: str
+    base_url: str
+    dashboard_url: str
+    reachable: bool
+    polled_at: float
+    error: Optional[str] = None
+    callsign: Optional[str] = None
+    state: Optional[str] = None
+    version: Optional[str] = None
+    channel: Optional[str] = None
+    last_activity: Optional[float] = None
+    alerts_summary: Optional[str] = None

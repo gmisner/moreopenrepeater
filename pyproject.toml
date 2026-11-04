@@ -14,6 +14,7 @@ dependencies = [
     "segno>=1.6",  # QR codes for setting up one-time codes
     "python-multipart>=0.0.9",
     "mcp>=2.3,<3",  # the /mcp endpoint for AI agents (api.agents)
+    "httpx>=0.27",  # multi-repeater hub polls remotes; also used by TestClient
 ]
 
 [project.optional-dependencies]
@@ -22,7 +23,6 @@ transcribe = [
 ]
 dev = [
     "pytest>=8.0",
-    "httpx>=0.27",
 ]
 
 [project.scripts]

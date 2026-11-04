@@ -223,6 +223,9 @@ several phases (see the plan file for the full breakdown):
 
 ## Beyond OpenRepeater
 
+- **Sites hub**: one admin view that polls other moreopenrepeater instances with
+  per-site API tokens (status, version/channel, last activity, alerts, dashboard
+  link). Remotes stay independent if the hub is down. See [docs/hub.md](docs/hub.md).
 - **Persistent settings**: config, DTMF macros and announcements save to
   `data/state.json` on every change and load at startup.
 - **Real transmit audio**: every clip the controller plays renders to real samples,

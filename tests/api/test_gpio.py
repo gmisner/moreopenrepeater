@@ -194,7 +194,7 @@ def test_inverted_inputs_and_missing_macros():
         now = [0.0]
         service = RepeaterService(config=RepeaterConfig(gpio_pins={"2": {**DOOR["2"], "invert": True}}))
         audit = []
-        service.audit_hook = lambda actor, action, detail: audit.append(actor)
+        service.programming.audit_hook = lambda actor, action, detail: audit.append(actor)
         spoken = []
         service.speak = spoken.append
         device = FakeHidraw()

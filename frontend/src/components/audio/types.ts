@@ -1,0 +1,116 @@
+export type Asset = { id: string; kind: string; filename: string; uploaded_at: string };
+export type AudioDevice = { name: string; inputs: number; outputs: number; default_samplerate: number };
+export type SerialPort = { path: string; target: string };
+export type SoundLevel = {
+  side: "input" | "output" | "link_input" | "link_output";
+  card: number;
+  control: string;
+  min: number;
+  max: number;
+  value: number;
+  db: number | null;
+  saved: boolean;
+};
+export type EngineStatus = {
+  enabled: boolean;
+  running: boolean;
+  error: string | null;
+  sample_rate: number;
+  device_sample_rate: number | null;
+  rx_level_db: number;
+  cos_open: boolean;
+  ctcss_hz: number | null;
+  transmitting: boolean;
+  dropped_input_blocks: number;
+  starved_output_blocks: number;
+  input_overflows: number;
+  output_underflows: number;
+  hardware_ptt: string | null;
+};
+
+export type SoundValues = {
+  courtesy_tone_style: string;
+  courtesy_tone_asset_id: string;
+  id_asset_id: string;
+  timeout_tone_asset_id: string;
+  courtesy_tone_link_style: string;
+  courtesy_tone_link_asset_id: string;
+  courtesy_tone_patch_style: string;
+  courtesy_tone_patch_asset_id: string;
+  courtesy_tone_custom: string;
+};
+
+export type EngineValues = {
+  audio_enabled: boolean;
+  audio_input_device: string;
+  audio_output_device: string;
+  radio_model: string;
+  radio_frequency: string;
+  radio_notes: string;
+  rx_deemphasis: boolean;
+  tx_preemphasis: boolean;
+  cos_source: string;
+  cos_polarity: string;
+  cos_gpio_pin: number;
+  cos_serial_device: string;
+  cos_serial_line: string;
+  vox_threshold_db: number;
+  vox_hold: number;
+  vox_dtmf_hold: number;
+  squelch_tail_ms: number;
+  ptt_output: string;
+  ptt_gpio_pin: number;
+  ptt_serial_device: string;
+  ptt_serial_line: string;
+  ptt_polarity: string;
+  tx_delay_ms: number;
+  tx_gain_db: number;
+  tx_ctcss_hz: number | "";
+  tx_ctcss_level_db: number;
+  dtmf_mute: boolean;
+};
+
+export type LinkValues = {
+  link_radio_enabled: boolean;
+  link_radio_mode: string;
+  link_radio_name: string;
+  link_radio_model: string;
+  link_radio_frequency: string;
+  link_radio_notes: string;
+  link_radio_input_device: string;
+  link_radio_output_device: string;
+  link_radio_cos: string;
+  link_radio_cos_polarity: string;
+  link_radio_cos_gpio_pin: number;
+  link_radio_cos_serial_device: string;
+  link_radio_cos_serial_line: string;
+  link_radio_vox_threshold_db: number;
+  link_radio_ptt: string;
+  link_radio_ptt_gpio_pin: number;
+  link_radio_ptt_serial_device: string;
+  link_radio_ptt_serial_line: string;
+  link_radio_ptt_polarity: string;
+  link_radio_tx_gain_db: number;
+  link_radio_tx_ctcss_hz: number | "";
+  link_radio_timeout: number;
+  link_radio_tx_delay_ms: number;
+  link_radio_squelch_tail_ms: number;
+  link_radio_courtesy_tone: boolean;
+  remote_base_rigctld: string;
+  remote_base_mhz: number;
+  remote_base_shift: string;
+  remote_base_offset_mhz: number | "";
+  remote_base_tone_hz: number | "";
+  remote_base_rig_mode: string;
+  remote_base_ranges: string;
+  remote_base_idle_minutes: number;
+};
+
+export type ConfigSlice<T> = {
+  values: T;
+  setField: <K extends keyof T & string>(name: K, value: T[K]) => void;
+  dirty: boolean;
+  reset: () => void;
+  submit: () => Promise<void>;
+  saving: boolean;
+};

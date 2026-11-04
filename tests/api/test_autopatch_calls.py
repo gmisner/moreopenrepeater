@@ -457,7 +457,7 @@ CALLER = "+16025550100"
 def make_incoming(**config):
     service, patch, ami, audio = make(autopatch_incoming_enabled=True, autopatch_incoming_pin="1234", **config)
     audits = []
-    service.audit_hook = lambda actor, action, detail: audits.append((actor, action, detail))
+    service.programming.audit_hook = lambda actor, action, detail: audits.append((actor, action, detail))
     return service, patch, ami, audio, audits
 
 

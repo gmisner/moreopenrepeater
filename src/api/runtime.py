@@ -580,7 +580,7 @@ class AppRuntime:
         )
         remote_base = remote_base or RemoteBase(service)
         gpio = gpio or GpioControl(service, cm108)
-        service.gpio_command = gpio.run_command
+        service.programming.gpio_command = gpio.run_command
         autopatch = autopatch or Autopatch(service, patch_settings_from_env(os.environ))
         sip_trunk = sip_trunk or SipTrunk(autopatch.settings)
         allstar_node = allstar_node or AllStarNode(
@@ -620,11 +620,12 @@ class AppRuntime:
         tokens = tokens if tokens is not None else TokenStore()
         agent_access = agent_access if agent_access is not None else AgentAccess()
         audit = audit or AuditLog()
-        service.audit_hook = lambda actor, action, detail: audit.record(time.time(), actor, action, detail)
-        nets.audit_hook = service.audit_hook
+        audit_hook = lambda actor, action, detail: audit.record(time.time(), actor, action, detail)
+        service.programming.audit_hook = audit_hook
+        nets.audit_hook = audit_hook
         control_codes = control_codes or ControlCodes(None)
-        service.code_checker = control_codes.check
-        service.codes_locked = control_codes.locked
+        service.programming.code_checker = control_codes.check
+        service.programming.codes_locked = control_codes.locked
         hub_sites = hub_sites if hub_sites is not None else HubSiteStore()
         hub_poller = hub_poller if hub_poller is not None else HubPoller()
         homeassistant = homeassistant or HomeAssistant(service, os.environ.get(HOMEASSISTANT_TOKEN_ENV))
@@ -634,7 +635,7 @@ class AppRuntime:
         )
         streamer = streamer or Streamer(live_audio.monitor, stream_store, lambda: renderer.sample_rate)
         mailbox = Mailbox(service, mailbox_store, renderer, net_active=lambda: nets.current is not None)
-        mailbox.audit_hook = service.audit_hook
+        mailbox.audit_hook = audit_hook
         transcriber = transcriber or Transcriber(
             service, [recordings, mailbox_store, monitor_recordings],
             VoskEngine(Path(os.environ.get(VOSK_MODEL_ENV) or DEFAULT_VOSK_MODEL_DIR)),
@@ -648,7 +649,9 @@ class AppRuntime:
         def aprs_window_start() -> float:
             return time.time() - service.config.aprs.aprs_map_hours * 3600
 
-        service.aprs_summary = lambda: spoken_summary(aprs_stations.stations(aprs_window_start()), service.config, time.time())
+        service.programming.aprs_summary = lambda: spoken_summary(
+            aprs_stations.stations(aprs_window_start()), service.config, time.time()
+        )
         backups = backups or BackupFolder(None)
         updater = updater or Updater(updater_settings_from_env(os.environ))
         update_checker = update_checker or UpdateChecker(repo_from_checkout(REPO_DIR))
@@ -662,7 +665,7 @@ class AppRuntime:
         auto_updater = AutoUpdater(
             auto_update_store, updater, update_checker, lambda: update_channel, installed_sha, service.idle_seconds
         )
-        auto_updater.audit_hook = service.audit_hook
+        auto_updater.audit_hook = audit_hook
         notifier = notifier or Notifier()
         notifier.station = lambda: service.config.callsign
         notifier.audit_hook = lambda at, action, detail: audit.record(at, "alerts", action, detail)

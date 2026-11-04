@@ -153,7 +153,7 @@ class SiteSensors:
         self._clock = clock
         self._latest: dict[str, SensorReading] = {}
         self._alert_state: dict[str, Optional[ThresholdSide]] = {}
-        service.sensor_hook = self._dtmf
+        service.programming.sensor_hook = self._dtmf
 
     def definitions(self) -> list[dict]:
         return list(self._service.config.site_sensors or [])

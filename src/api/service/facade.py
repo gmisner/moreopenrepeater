@@ -2,8 +2,10 @@
 
 Owns the controller tick loop, status snapshot/pubsub, and wiring. Feature
 clusters (programming, weather, patch, config, links) live in sibling modules.
-External call sites keep using this class; hooks that macros invoke are stored
-on Programming (and patch calls on PatchSupport) with attribute forwarders here.
+
+Prefer collaborators for feature work: ``programming`` holds macro/DTMF hooks,
+``patch.calls`` is the live autopatch, and config/weather/links own their state.
+This class stays the public surface for tick, snapshot, simulate, and config.
 """
 from __future__ import annotations
 
@@ -42,7 +44,7 @@ from .config_persist import ConfigPersistence
 from .links import LinkSupport
 from .patch import PatchSupport
 from .programming import Programming
-from .protocols import AudioOutput, PatchCalls
+from .protocols import AudioOutput
 from .snapshot import (
     StatusSnapshot,
     announcements_from_snapshot,
@@ -177,104 +179,6 @@ class RepeaterService:
     @link_audio.setter
     def link_audio(self, value: bool) -> None:
         self._links.audio = value
-
-    # --- hooks forwarded onto the cluster that invokes them ---
-
-    @property
-    def autopatch(self) -> Optional[PatchCalls]:
-        return self._patch.calls
-
-    @autopatch.setter
-    def autopatch(self, value: Optional[PatchCalls]) -> None:
-        self._patch.calls = value
-
-    @property
-    def audit_hook(self) -> Optional[Callable[[str, str, str], None]]:
-        return self._programming.audit_hook
-
-    @audit_hook.setter
-    def audit_hook(self, value: Optional[Callable[[str, str, str], None]]) -> None:
-        self._programming.audit_hook = value
-
-    @property
-    def aprs_summary(self) -> Optional[Callable[[], str]]:
-        return self._programming.aprs_summary
-
-    @aprs_summary.setter
-    def aprs_summary(self, value: Optional[Callable[[], str]]) -> None:
-        self._programming.aprs_summary = value
-
-    @property
-    def gpio_command(self) -> Optional[Callable[[str], str]]:
-        return self._programming.gpio_command
-
-    @gpio_command.setter
-    def gpio_command(self, value: Optional[Callable[[str], str]]) -> None:
-        self._programming.gpio_command = value
-
-    @property
-    def net_hook(self) -> Optional[Callable[[str, str], None]]:
-        return self._programming.net_hook
-
-    @net_hook.setter
-    def net_hook(self, value: Optional[Callable[[str, str], None]]) -> None:
-        self._programming.net_hook = value
-
-    @property
-    def code_checker(self) -> Optional[Callable[[str], Optional[str]]]:
-        return self._programming.code_checker
-
-    @code_checker.setter
-    def code_checker(self, value: Optional[Callable[[str], Optional[str]]]) -> None:
-        self._programming.code_checker = value
-
-    @property
-    def codes_locked(self) -> Callable[[], bool]:
-        return self._programming.codes_locked
-
-    @codes_locked.setter
-    def codes_locked(self, value: Callable[[], bool]) -> None:
-        self._programming.codes_locked = value
-
-    @property
-    def homeassistant_hook(self) -> Optional[Callable[[str, str, str], None]]:
-        return self._programming.homeassistant_hook
-
-    @homeassistant_hook.setter
-    def homeassistant_hook(self, value: Optional[Callable[[str, str, str], None]]) -> None:
-        self._programming.homeassistant_hook = value
-
-    @property
-    def metar_hook(self) -> Optional[Callable[[str], None]]:
-        return self._programming.metar_hook
-
-    @metar_hook.setter
-    def metar_hook(self, value: Optional[Callable[[str], None]]) -> None:
-        self._programming.metar_hook = value
-
-    @property
-    def sensor_hook(self) -> Optional[Callable[[str], None]]:
-        return self._programming.sensor_hook
-
-    @sensor_hook.setter
-    def sensor_hook(self, value: Optional[Callable[[str], None]]) -> None:
-        self._programming.sensor_hook = value
-
-    @property
-    def remote_base_hook(self) -> Optional[Callable[[str, str], None]]:
-        return self._programming.remote_base_hook
-
-    @remote_base_hook.setter
-    def remote_base_hook(self, value: Optional[Callable[[str, str], None]]) -> None:
-        self._programming.remote_base_hook = value
-
-    @property
-    def mailbox_hook(self) -> Optional[Callable[[MailboxCommand], None]]:
-        return self._programming.mailbox_hook
-
-    @mailbox_hook.setter
-    def mailbox_hook(self, value: Optional[Callable[[MailboxCommand], None]]) -> None:
-        self._programming.mailbox_hook = value
 
     # --- config / mode ---
 

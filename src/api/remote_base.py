@@ -43,7 +43,7 @@ class RemoteBase:
         self._sent: Optional[Tuning] = None  # what the radio was last set to
         self._announce = False  # say the result of the next send on the air
         self.error: Optional[str] = None
-        service.remote_base_hook = self._dtmf
+        service.programming.remote_base_hook = self._dtmf
 
     def attach(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop

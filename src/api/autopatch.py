@@ -322,7 +322,7 @@ class Autopatch:
         self.error: Optional[str] = None
         self.call: Optional[CallRecord] = None
         self.last_call: Optional[CallRecord] = None
-        service.autopatch = self
+        service.patch.calls = self
         service.add_config_listener(self._config_changed)
 
     @property
@@ -807,5 +807,6 @@ class Autopatch:
             self.hangup("calls in were turned off")
 
     def _audit(self, actor: str, action: str, detail: str) -> None:
-        if self._service.audit_hook is not None:
-            self._service.audit_hook(actor, action, detail)
+        hook = self._service.programming.audit_hook
+        if hook is not None:
+            hook(actor, action, detail)

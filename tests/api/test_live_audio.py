@@ -189,8 +189,13 @@ def test_dead_alsa_stream_restarts_the_engine():
     first = live.engine
     assert first is engines[0] and first.running
     first._stream.active = False
+    # Recover stops then starts; wait until the replacement is running, not
+    # merely until engine is no longer `first` (that is briefly None mid-restart).
     deadline = time.monotonic() + 2
-    while live.engine is first and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        engine = live.engine
+        if engine is not None and engine is not first and engine.running:
+            break
         time.sleep(0.01)
     assert live.engine is engines[1]
     assert engines[0].running is False

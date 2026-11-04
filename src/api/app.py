@@ -124,7 +124,7 @@ def _status_response(snapshot: StatusSnapshot) -> StatusResponse:
 
 
 def _config_response(service: RepeaterService) -> ConfigResponse:
-    return ConfigResponse(**dataclasses.asdict(service.saved_config))
+    return ConfigResponse.model_validate(service.saved_config.to_flat_dict())
 
 
 def _audit_response(entry: AuditEntry) -> AuditEntryResponse:
@@ -140,13 +140,13 @@ def _validated_config(values: dict) -> RepeaterConfig:
         validated = ConfigResponse.model_validate({k: v for k, v in values.items() if k in ConfigResponse.model_fields})
     except ValidationError as error:
         raise RequestValidationError(error.errors()) from error
-    return RepeaterConfig(**validated.model_dump())
+    return RepeaterConfig.from_flat_dict(validated.model_dump())
 
 
 def _snapshot_to_import(snapshot: SnapshotImportRequest) -> dict:
-    config = _validated_config({**dataclasses.asdict(RepeaterConfig()), **snapshot.config})
+    config = _validated_config({**RepeaterConfig().to_flat_dict(), **snapshot.config})
     return {
-        "config": dataclasses.asdict(config),
+        "config": config.to_flat_dict(),
         "macros": [m.model_dump() for m in snapshot.macros],
         "announcements": [a.model_dump() for a in snapshot.announcements],
     }
@@ -154,7 +154,7 @@ def _snapshot_to_import(snapshot: SnapshotImportRequest) -> dict:
 
 def _apply_overrides(base: RepeaterConfig, overrides: dict) -> RepeaterConfig:
     """Layer dashboard form values (including `clear_<field>` flags) over a config."""
-    merged = dataclasses.asdict(base)
+    merged = base.to_flat_dict()
     for key, value in overrides.items():
         if key.startswith("clear_"):
             if value:

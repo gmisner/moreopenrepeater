@@ -6,9 +6,7 @@ a net puts everything back without anyone having to remember what it was.
 """
 from __future__ import annotations
 
-import dataclasses
-
-from .state_machine import RepeaterConfig
+from controller.config import RepeaterConfig
 
 # 47 CFR 95.1751: a GMRS station identifies at least every 15 minutes while
 # transmitting, and at the end of a series of transmissions.
@@ -45,7 +43,7 @@ def effective_config(saved: RepeaterConfig, net_active: bool = False) -> Repeate
             aprs_enabled=False,
             aprs_map_enabled=False,
         )
-    return dataclasses.replace(saved, **changes) if changes else saved
+    return saved.replace_flat(**changes) if changes else saved
 
 
 def held_reason(saved: RepeaterConfig, net_active: bool, feature: str) -> str:

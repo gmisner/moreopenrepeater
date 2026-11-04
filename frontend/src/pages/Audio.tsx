@@ -18,6 +18,7 @@ import {
 } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, apiBlob } from "../api";
+import { AudioHardwareCards, MonitorReceiverCard } from "../components/AudioHardware";
 import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
@@ -1234,6 +1235,8 @@ export function Audio() {
         </Stack>
       </Card>
 
+      <MonitorReceiverCard devices={devices} />
+
       <Card withBorder padding="lg" radius="md">
         <Stack gap="md">
           <Title order={2}>Sound card levels</Title>
@@ -1741,6 +1744,7 @@ export function Audio() {
           <ConfigActions dirty={link.dirty} saving={link.saving} onReset={link.reset} />
         </Stack>
       </Card>
+      <AudioHardwareCards assets={assets} reloadAssets={loadAssets} canWrite={!isViewer} />
     </Page>
   );
 }

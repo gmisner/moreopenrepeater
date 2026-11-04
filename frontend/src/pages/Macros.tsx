@@ -17,7 +17,7 @@ import {
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
-import { ControlCodesCard, HomeAssistantTest } from "../components/MacroMissingFeatures";
+import { ControlCodesCard, HomeAssistantTest } from "../components/MacroExtras";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { pinLabel, SPARE_PINS } from "../gpio";
 import { Page } from "../layout/AppShell";

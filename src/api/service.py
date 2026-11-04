@@ -40,7 +40,8 @@ from controller.macros import Macro
 from controller.modes import effective_config, held_reason
 from controller.remote_base import summary as remote_base_summary
 from controller.spoken_help import help_text
-from controller.state_machine import IDLE, PATCH, RECEIVING, RepeaterConfig, RepeaterController
+from controller.config import CONFIG_FIELDS, RepeaterConfig
+from controller.state_machine import IDLE, PATCH, RECEIVING, RepeaterController
 from audio_io.patch import LinkAudio, PatchAudio
 
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, ClipRenderer
@@ -62,7 +63,7 @@ MAX_HELD_ANNOUNCEMENTS = 10
 def talking_clock_text(now: datetime) -> str:
     return f"The time is {spoken_time(now)}."
 
-_CONFIG_FIELDS = {f.name for f in dataclasses.fields(RepeaterConfig)}
+_CONFIG_FIELDS = CONFIG_FIELDS
 _MACRO_FIELDS = {f.name for f in dataclasses.fields(Macro)}
 
 
@@ -80,7 +81,7 @@ def config_from_snapshot(data: dict) -> RepeaterConfig:
     config = dict(data.get("config", {}))
     if "public_page_enabled" in config:  # saved before public_page_mode
         config.setdefault("public_page_mode", "anyone" if config.pop("public_page_enabled") else "off")
-    return RepeaterConfig(**_known_fields(config, _CONFIG_FIELDS, "config"))
+    return RepeaterConfig.from_flat_dict(_known_fields(config, _CONFIG_FIELDS, "config"))
 
 
 def macros_from_snapshot(data: dict) -> list[Macro]:
@@ -555,7 +556,7 @@ class RepeaterService:
     def update_config(self, **overrides: object) -> RepeaterConfig:
         """Change saved settings; returns the new saved settings."""
         _logger.info("update_config(%s)", overrides)
-        self._apply_config(dataclasses.replace(self._saved_config, **overrides), persist=True)
+        self._apply_config(self._saved_config.replace_flat(**overrides), persist=True)
         return self._saved_config
 
     def _apply_config(self, saved: RepeaterConfig, persist: bool = False) -> None:
@@ -652,7 +653,7 @@ class RepeaterService:
 
     def export_snapshot(self) -> dict:
         return {
-            "config": dataclasses.asdict(self._saved_config),
+            "config": self._saved_config.to_flat_dict(),
             "macros": [dataclasses.asdict(m) for m in self.controller.list_macros()],
             "announcements": [dataclasses.asdict(a) for a in self.scheduler.list()],
         }

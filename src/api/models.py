@@ -9,10 +9,11 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from controller.macros import ACTIONS_NEEDING_ARGUMENT, KEYED_ENTRY_ACTIONS, MacroAction
 from controller.remote_base import CTCSS_TONES, parse_ranges
-from controller.state_machine import CourtesyStyle as CourtesyToneStyle
-from controller.state_machine import CourtesyVariant as CourtesyToneVariant
+from controller.config import CourtesyStyle as CourtesyToneStyle
+from controller.config import CourtesyVariant as CourtesyToneVariant
 from playout.tones import parse_custom_tone
 
+from .config_schema import ConfigResponse as _GeneratedConfigResponse
 from .gpio import parse_gpio_command
 
 NetLinks = Literal["leave", "disconnect", "connect"]
@@ -157,205 +158,12 @@ class GpioSchedule(BaseModel):
         return weekdays(days)
 
 
-class ConfigResponse(BaseModel):
-    courtesy_tone_duration: float
-    hang_time: float
-    tot_duration: float
-    id_interval: float
-    idle_id: bool
-    id_audio_duration: float
-    node_mode: Literal["repeater", "simplex"] = "repeater"
-    simplex_courtesy_tone: bool = True
-    id_skip_short_seconds: float = 0.0
-    long_id_mode: Literal["off", "voice", "both"] = "off"
-    long_id_interval: float = 3600.0
-    long_id_text: str = ""
-    long_id_asset_id: Optional[str] = None
-    require_ctcss_hz: Optional[float]
-    access_mode: Literal["carrier", "ctcss_open", "tone_burst"] = "carrier"
-    tone_burst_ms: float = 300.0
-    rx_deemphasis: bool = False
-    tx_preemphasis: bool = False
-    kerchunk_delay: float
-    lockout_timeouts: int
-    lockout_window: float
-    lockout_clear_after: float
-    transmitter_enabled: bool
-    callsign: str
-    id_mode: Literal["voice", "cw", "both"]
-    cw_wpm: float
-    cw_tone_hz: float
-    cw_id_suffix: str = ""
-    courtesy_tone_asset_id: Optional[str]
-    id_asset_id: Optional[str]
-    timeout_tone_asset_id: Optional[str]
-    courtesy_tone_style: CourtesyToneStyle
-    courtesy_tone_link_style: CourtesyToneVariant = "same"
-    courtesy_tone_link_asset_id: Optional[str] = None
-    courtesy_tone_patch_style: CourtesyToneVariant = "same"
-    courtesy_tone_patch_asset_id: Optional[str] = None
-    courtesy_tone_custom: str = "880:100 0:40 1320:100"
-    voice_id_text: str
-    id_phonetic: bool
-    tts_voice: str
-    aprs_enabled: bool
-    aprs_server: str
-    aprs_port: int
-    aprs_callsign: str
-    aprs_lat: Optional[float]
-    aprs_lon: Optional[float]
-    aprs_comment: str
-    aprs_beacon_interval: float
-    aprs_symbol: str
-    aprs_frequency_mhz: Optional[float]
-    aprs_offset_mhz: Optional[float]
-    aprs_tone_hz: Optional[float]
-    aprs_map_enabled: bool
-    aprs_map_radius_km: float
-    aprs_map_hours: float
-    aprs_map_tiles: str
-    distance_units: Literal["mi", "km"]
-    wx_alerts_enabled: bool
-    wx_lat: Optional[float]
-    wx_lon: Optional[float]
-    wx_min_severity: WeatherSeverity
-    wx_poll_interval: float
-    wx_repeat_minutes: float
-    metar_airports: list[MetarAirport] = []
-    audio_enabled: bool
-    board_preset: str = ""
-    setup_wizard_done: bool = False
-    audio_input_device: str
-    audio_output_device: str
-    radio_model: str = ""
-    radio_frequency: str = ""
-    radio_notes: str = ""
-    audio_input_levels: dict[str, int] = {}
-    audio_output_levels: dict[str, int] = {}
-    link_radio_input_levels: dict[str, int] = {}
-    link_radio_output_levels: dict[str, int] = {}
-    cos_source: CosSource
-    cos_polarity: Polarity
-    cos_gpio_pin: int
-    cos_serial_device: str = ""
-    cos_serial_line: SerialInputLine = "cts"
-    ptt_output: PttOutput
-    ptt_gpio_pin: int
-    ptt_serial_device: str = ""
-    ptt_serial_line: SerialOutputLine = "rts"
-    ptt_polarity: Polarity
-    vox_threshold_db: float
-    squelch_tail_ms: float = 0.0
-    tx_delay_ms: float = 0.0
-    dtmf_mute: bool = True
-    monitor_enabled: bool = False
-    monitor_name: str = ""
-    monitor_input_device: str = ""
-    monitor_squelch: MonitorSquelch = "vox"
-    monitor_vox_threshold_db: float = -40.0
-    monitor_gpio_pin: int = 22
-    monitor_gpio_polarity: Polarity = "low"
-    monitor_gain_db: float = 0.0
-    monitor_record: bool = False
-    link_radio_enabled: bool = False
-    link_radio_name: str = ""
-    link_radio_model: str = ""
-    link_radio_frequency: str = ""
-    link_radio_notes: str = ""
-    link_radio_input_device: str = ""
-    link_radio_output_device: str = ""
-    link_radio_cos: CosSource = "vox"
-    link_radio_cos_polarity: Polarity = "low"
-    link_radio_cos_gpio_pin: int = 23
-    link_radio_cos_serial_device: str = ""
-    link_radio_cos_serial_line: SerialInputLine = "cts"
-    link_radio_vox_threshold_db: float = -40.0
-    link_radio_ptt: LinkRadioPtt = "gpio"
-    link_radio_ptt_gpio_pin: int = 24
-    link_radio_ptt_serial_device: str = ""
-    link_radio_ptt_serial_line: SerialOutputLine = "rts"
-    link_radio_ptt_polarity: Polarity = "high"
-    link_radio_tx_gain_db: float = 0.0
-    link_radio_tx_ctcss_hz: Optional[float] = None
-    link_radio_timeout: float = 180.0
-    link_radio_courtesy_tone: bool = True
-    link_radio_mode: Literal["link", "remote_base"] = "link"
-    remote_base_rigctld: str = "localhost:4532"
-    remote_base_rig_mode: Literal["FM", "AM", "USB", "LSB"] = "FM"
-    remote_base_mhz: float = 146.52
-    remote_base_shift: Literal["simplex", "plus", "minus"] = "simplex"
-    remote_base_offset_mhz: Optional[float] = None
-    remote_base_tone_hz: Optional[float] = None
-    remote_base_ranges: str = "144-148, 222-225, 420-450"
-    remote_base_idle_minutes: float = 10.0
-    link_radio_squelch_tail_ms: float = 0.0
-    link_radio_tx_delay_ms: float = 0.0
-    vox_hold: float
-    vox_dtmf_hold: float
-    tx_gain_db: float
-    tx_ctcss_hz: Optional[float]
-    tx_ctcss_level_db: float
-    record_transmissions: bool
-    recording_retention_days: float
-    autopatch_enabled: bool
-    autopatch_access_code: str
-    autopatch_hangup_code: str
-    autopatch_dial_string: str
-    autopatch_ten_digit_prefix: str
-    autopatch_caller_id: str
-    autopatch_allowed: str
-    autopatch_blocked: str
-    autopatch_max_call_seconds: float
-    autopatch_ring_seconds: float
-    autopatch_incoming_enabled: bool
-    autopatch_incoming_pin: str
-    backup_enabled: bool
-    backup_interval_hours: float
-    backup_keep: int
-    backup_include_recordings: bool
-    gpio_pins: dict[GpioPinNumber, GpioPinConfig] = {}
-    gpio_schedules: list[GpioSchedule] = []
-    fan_output: FanOutput = "none"
-    fan_cm108_pin: int = 1
-    fan_gpio_pin: int = 26
-    fan_polarity: Polarity = "high"
-    fan_run_on_minutes: float = 3.0
-    fan_temp_c: Optional[float] = None
-    link_favorites: list[LinkFavorite] = []
-    link_schedules: list[LinkSchedule] = []
-    gmrs_mode: bool = False
-    net_name: str = "Net"
-    net_tot_duration: float = 600.0
-    net_hang_time: float = 1.0
-    net_courtesy_tone_style: CourtesyToneVariant = "same"
-    net_courtesy_tone_asset_id: Optional[str] = None
-    net_hold_autopatch: bool = True
-    net_hold_announcements: bool = True
-    net_links: NetLinks = "leave"
-    net_link_node: str = ""
-    net_start_say: str = ""
-    net_end_say: str = ""
-    net_max_minutes: float = 120.0
-    net_schedules: list[NetSchedule] = []
-    homeassistant_url: str = ""
-    homeassistant_say_result: bool = True
-    public_page_mode: PublicPageMode = "off"
-    public_page_text: str = ""
-    public_page_audio: bool = True
-    public_page_max_listeners: int = 20
-    mailbox_enabled: bool = False
-    mailbox_leave_code: str = "*7"
-    mailbox_play_code: str = "*8"
-    mailbox_delete_code: str = "*9"
-    mailbox_max_seconds: float = 60.0
-    mailbox_retention_days: float = 14.0
-    mailbox_reminder_minutes: float = 60.0
-    transcription_engine: TranscriptionEngine = "off"
-    transcription_url: str = "https://api.openai.com/v1/audio/transcriptions"
-    transcription_model: str = "whisper-1"
+# Generated from controller.config.RepeaterConfig facets — do not hand-edit field lists.
+ConfigResponse = _GeneratedConfigResponse
 
 
 class ConfigUpdateRequest(BaseModel):
+    # --- facet: identity_timing ---
     courtesy_tone_duration: Optional[float] = Field(default=None, gt=0)
     hang_time: Optional[float] = Field(default=None, gt=0)
     tot_duration: Optional[float] = Field(default=None, gt=0)
@@ -374,6 +182,7 @@ class ConfigUpdateRequest(BaseModel):
     clear_require_ctcss_hz: bool = False
     access_mode: Optional[Literal["carrier", "ctcss_open", "tone_burst"]] = None
     tone_burst_ms: Optional[float] = Field(default=None, ge=100, le=2000)
+    # --- facet: radio_audio ---
     rx_deemphasis: Optional[bool] = None
     tx_preemphasis: Optional[bool] = None
     kerchunk_delay: Optional[float] = Field(default=None, ge=0, le=3)
@@ -403,6 +212,7 @@ class ConfigUpdateRequest(BaseModel):
     voice_id_text: Optional[str] = None
     id_phonetic: Optional[bool] = None
     tts_voice: Optional[str] = None
+    # --- facet: aprs ---
     aprs_enabled: Optional[bool] = None
     aprs_server: Optional[str] = None
     aprs_port: Optional[int] = Field(default=None, gt=0)
@@ -427,6 +237,7 @@ class ConfigUpdateRequest(BaseModel):
     distance_units: Optional[Literal["mi", "km"]] = None
     clear_aprs_lat: bool = False
     clear_aprs_lon: bool = False
+    # --- facet: weather ---
     wx_alerts_enabled: Optional[bool] = None
     wx_lat: Optional[float] = Field(default=None, ge=-90, le=90)
     wx_lon: Optional[float] = Field(default=None, ge=-180, le=180)
@@ -457,6 +268,7 @@ class ConfigUpdateRequest(BaseModel):
     squelch_tail_ms: Optional[float] = Field(default=None, ge=0, le=300)
     tx_delay_ms: Optional[float] = Field(default=None, ge=0, le=500)
     dtmf_mute: Optional[bool] = None
+    # --- facet: monitor ---
     monitor_enabled: Optional[bool] = None
     monitor_name: Optional[str] = Field(default=None, max_length=40)
     monitor_input_device: Optional[str] = Field(default=None, max_length=200)
@@ -466,6 +278,7 @@ class ConfigUpdateRequest(BaseModel):
     monitor_gpio_polarity: Optional[Polarity] = None
     monitor_gain_db: Optional[float] = Field(default=None, ge=-20, le=20)
     monitor_record: Optional[bool] = None
+    # --- facet: link_radio ---
     link_radio_enabled: Optional[bool] = None
     link_radio_name: Optional[str] = Field(default=None, max_length=40)
     link_radio_model: Optional[str] = Field(default=None, max_length=80)
@@ -490,6 +303,7 @@ class ConfigUpdateRequest(BaseModel):
     link_radio_timeout: Optional[float] = Field(default=None, ge=30, le=1800)
     link_radio_courtesy_tone: Optional[bool] = None
     link_radio_mode: Optional[Literal["link", "remote_base"]] = None
+    # --- facet: remote_base ---
     remote_base_rigctld: Optional[str] = Field(default=None, max_length=100, pattern=r"^$|^[A-Za-z0-9.\-]+(:[0-9]{1,5})?$|^\[[0-9A-Fa-f:]+\](:[0-9]{1,5})?$")
     remote_base_rig_mode: Optional[Literal["FM", "AM", "USB", "LSB"]] = None
     remote_base_mhz: Optional[float] = Field(default=None, ge=1, le=10000)
@@ -524,6 +338,7 @@ class ConfigUpdateRequest(BaseModel):
     tx_ctcss_level_db: Optional[float] = Field(default=None, ge=-40, le=-6)
     record_transmissions: Optional[bool] = None
     recording_retention_days: Optional[float] = Field(default=None, ge=0.1, le=365)
+    # --- facet: autopatch ---
     autopatch_enabled: Optional[bool] = None
     # "#" ends the phone number, so it can't be part of the access code.
     autopatch_access_code: Optional[str] = Field(default=None, pattern=r"^[0-9A-D*]{1,8}$")
@@ -538,10 +353,12 @@ class ConfigUpdateRequest(BaseModel):
     autopatch_ring_seconds: Optional[float] = Field(default=None, ge=5, le=120)
     autopatch_incoming_enabled: Optional[bool] = None
     autopatch_incoming_pin: Optional[str] = Field(default=None, pattern=r"^(?:[0-9]{4,8})?$")
+    # --- facet: backup ---
     backup_enabled: Optional[bool] = None
     backup_interval_hours: Optional[float] = Field(default=None, ge=1, le=720)
     backup_keep: Optional[int] = Field(default=None, ge=1, le=100)
     backup_include_recordings: Optional[bool] = None
+    # --- facet: gpio_fan ---
     gpio_pins: Optional[dict[GpioPinNumber, GpioPinConfig]] = None
     gpio_schedules: Optional[list[GpioSchedule]] = Field(default=None, max_length=50)
     fan_output: Optional[FanOutput] = None
@@ -551,9 +368,11 @@ class ConfigUpdateRequest(BaseModel):
     fan_run_on_minutes: Optional[float] = Field(default=None, ge=0, le=60)
     fan_temp_c: Optional[float] = Field(default=None, ge=40, le=90)
     clear_fan_temp_c: bool = False
+    # --- facet: linking ---
     link_favorites: Optional[list[LinkFavorite]] = Field(default=None, max_length=50)
     link_schedules: Optional[list[LinkSchedule]] = Field(default=None, max_length=50)
     gmrs_mode: Optional[bool] = None
+    # --- facet: net ---
     net_name: Optional[str] = Field(default=None, min_length=1, max_length=60)
     net_tot_duration: Optional[float] = Field(default=None, ge=30, le=3600)
     net_hang_time: Optional[float] = Field(default=None, gt=0, le=30)
@@ -568,12 +387,15 @@ class ConfigUpdateRequest(BaseModel):
     net_end_say: Optional[str] = Field(default=None, max_length=500)
     net_max_minutes: Optional[float] = Field(default=None, ge=10, le=24 * 60)
     net_schedules: Optional[list[NetSchedule]] = Field(default=None, max_length=20)
+    # --- facet: homeassistant ---
     homeassistant_url: Optional[str] = Field(default=None, max_length=300, pattern=r"^$|^https?://[^\s]+$")
     homeassistant_say_result: Optional[bool] = None
+    # --- facet: public_page ---
     public_page_mode: Optional[PublicPageMode] = None
     public_page_text: Optional[str] = Field(default=None, max_length=500)
     public_page_audio: Optional[bool] = None
     public_page_max_listeners: Optional[int] = Field(default=None, ge=1, le=200)
+    # --- facet: mailbox ---
     mailbox_enabled: Optional[bool] = None
     mailbox_leave_code: Optional[str] = Field(default=None, pattern=r"^[0-9A-D*]{1,8}$")
     mailbox_play_code: Optional[str] = Field(default=None, pattern=r"^[0-9A-D*]{1,8}$")
@@ -581,6 +403,7 @@ class ConfigUpdateRequest(BaseModel):
     mailbox_max_seconds: Optional[float] = Field(default=None, ge=5, le=180)
     mailbox_retention_days: Optional[float] = Field(default=None, ge=1, le=365)
     mailbox_reminder_minutes: Optional[float] = Field(default=None, ge=0, le=24 * 60)
+    # --- facet: transcription ---
     transcription_engine: Optional[TranscriptionEngine] = None
     transcription_url: Optional[str] = Field(default=None, max_length=300, pattern=r"^(https?://\S+)?$")
     transcription_model: Optional[str] = Field(default=None, min_length=1, max_length=100)

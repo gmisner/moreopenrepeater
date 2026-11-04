@@ -48,6 +48,8 @@ function StatusProbe() {
       <span data-testid="connected">{String(connected)}</span>
       <span data-testid="callsign">{status?.callsign ?? ""}</span>
       <span data-testid="ptt">{String(Boolean(status?.ptt_active))}</span>
+      <span data-testid="cos">{String(status?.cos_active ?? "")}</span>
+      <span data-testid="raw">{JSON.stringify(status)}</span>
     </div>
   );
 }
@@ -138,5 +140,81 @@ describe("StatusProvider", () => {
       </StatusProvider>,
     );
     expect(MockWebSocket.instances[0].url).toBe("wss://example.ts.net/ws/status");
+  });
+
+  it("cancels reconnect when unmounted before the retry fires", async () => {
+    const view = render(
+      <StatusProvider>
+        <StatusProbe />
+      </StatusProvider>,
+    );
+
+    await act(async () => {
+      MockWebSocket.instances[0].open();
+      MockWebSocket.instances[0].close();
+    });
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    view.unmount();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it("replaces status wholesale on each frame", async () => {
+    render(
+      <StatusProvider>
+        <StatusProbe />
+      </StatusProvider>,
+    );
+
+    await act(async () => {
+      MockWebSocket.instances[0].open();
+      MockWebSocket.instances[0].push({ callsign: "N0CALL", ptt_active: true, cos_active: true });
+    });
+    expect(screen.getByTestId("callsign")).toHaveTextContent("N0CALL");
+    expect(screen.getByTestId("ptt")).toHaveTextContent("true");
+    expect(screen.getByTestId("cos")).toHaveTextContent("true");
+
+    await act(async () => {
+      MockWebSocket.instances[0].push({ callsign: "W1AW", ptt_active: false });
+    });
+    expect(screen.getByTestId("callsign")).toHaveTextContent("W1AW");
+    expect(screen.getByTestId("ptt")).toHaveTextContent("false");
+    // Second frame omitted cos_active — must not keep the old value.
+    expect(screen.getByTestId("cos")).toHaveTextContent("");
+    expect(screen.getByTestId("raw")).toHaveTextContent(
+      JSON.stringify({ callsign: "W1AW", ptt_active: false }),
+    );
+  });
+
+  it("accepts frames on the socket opened after reconnect", async () => {
+    render(
+      <StatusProvider>
+        <StatusProbe />
+      </StatusProvider>,
+    );
+
+    await act(async () => {
+      MockWebSocket.instances[0].open();
+      MockWebSocket.instances[0].close();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(2));
+
+    await act(async () => {
+      MockWebSocket.instances[1].open();
+      MockWebSocket.instances[1].push({ callsign: "K1ABC", ptt_active: true });
+    });
+
+    expect(screen.getByTestId("connected")).toHaveTextContent("true");
+    expect(screen.getByTestId("callsign")).toHaveTextContent("K1ABC");
+    expect(screen.getByTestId("ptt")).toHaveTextContent("true");
   });
 });

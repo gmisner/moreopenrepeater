@@ -186,6 +186,7 @@ class LiveAudio:
         engine_factory: Callable[..., AudioEngine] = AudioEngine,
         recordings: Optional[RecordingStore] = None,
         clock: Callable[[], float] = time.time,
+        monotonic: Callable[[], float] = time.monotonic,
         open_pin: Callable[..., GpioLine] = open_header_pin,
         open_serial: Callable[..., GpioLine] = open_serial_line,
         run_mixer: Callable[[list[str]], subprocess.CompletedProcess] = run_amixer,
@@ -200,6 +201,7 @@ class LiveAudio:
         self._pins: list[GpioLine] = []
         self._recordings = recordings
         self._clock = clock
+        self._monotonic = monotonic
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._applied: Optional[RepeaterConfig] = None
         self.engine: Optional[AudioEngine] = None
@@ -460,7 +462,7 @@ class LiveAudio:
         if config is None or not config.audio_enabled:
             self._stop_engine()
             return
-        now = time.monotonic()
+        now = self._monotonic()
         if now - self._last_stream_recover < STREAM_RECOVER_COOLDOWN:
             self._stop_engine()
             self.error = "audio stream died (USB unplug or device reset)"

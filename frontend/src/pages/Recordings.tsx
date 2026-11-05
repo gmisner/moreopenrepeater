@@ -141,6 +141,7 @@ export function Recordings() {
   const [callsignInput, setCallsignInput] = useState("");
   const [afterDate, setAfterDate] = useState("");
   const [beforeDate, setBeforeDate] = useState("");
+  const [sort, setSort] = useState("newest");
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
@@ -156,13 +157,13 @@ export function Recordings() {
   const effectiveSource = showMonitorSource ? source : "repeater";
 
   const filterQuery = useMemo(() => {
-    const params = new URLSearchParams({ source: effectiveSource });
+    const params = new URLSearchParams({ source: effectiveSource, sort });
     if (search) params.set("q", search);
     if (callsign) params.set("callsign", callsign);
     if (afterDate) params.set("after", dayStartIso(afterDate));
     if (beforeDate) params.set("before", dayAfterIso(beforeDate));
     return params;
-  }, [afterDate, beforeDate, callsign, effectiveSource, search]);
+  }, [afterDate, beforeDate, callsign, effectiveSource, search, sort]);
 
   const loadSummary = useCallback(async () => {
     setSummary(await api<RecordingSummary>(`/api/recordings/summary?${filterQuery}`));
@@ -323,6 +324,22 @@ export function Recordings() {
               onChange={(event) => setSearchInput(event.currentTarget.value)}
               style={{ flex: "1 1 240px", maxWidth: 440 }}
             />
+            <Select
+              label={labeled(
+                "Sort by",
+                "Callsigns come from the transcript when someone says one. Many clips won't have any — those sort last, and without a radio serial hookup there's no other ID source.",
+              )}
+              data={[
+                { value: "newest", label: "Newest first" },
+                { value: "oldest", label: "Oldest first" },
+                { value: "callsign", label: "Callsign A–Z" },
+                { value: "callsign_desc", label: "Callsign Z–A" },
+              ]}
+              value={sort}
+              onChange={(value) => setSort(value || "newest")}
+              allowDeselect={false}
+              maw={220}
+            />
             {filtersActive ? (
               <Button
                 variant="subtle"
@@ -338,7 +355,7 @@ export function Recordings() {
             ) : null}
           </Group>
 
-          <Table.ScrollContainer minWidth={720}>
+          <Table.ScrollContainer minWidth={780}>
             <Table striped highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
@@ -359,6 +376,7 @@ export function Recordings() {
                     </Table.Th>
                   ) : null}
                   <Table.Th>When</Table.Th>
+                  <Table.Th>Callsign</Table.Th>
                   <Table.Th>Length</Table.Th>
                   <Table.Th>Listen</Table.Th>
                   <Table.Th />
@@ -385,6 +403,24 @@ export function Recordings() {
                         </Table.Td>
                       ) : null}
                       <Table.Td>{new Date(recording.started_at).toLocaleString()}</Table.Td>
+                      <Table.Td>
+                        {recording.callsigns.length ? (
+                          <Group gap="xs">
+                            {recording.callsigns.map((value) => (
+                              <Badge
+                                key={value}
+                                variant="light"
+                                style={{ cursor: "pointer" }}
+                                onClick={() => setCallsignInput(value)}
+                              >
+                                {value}
+                              </Badge>
+                            ))}
+                          </Group>
+                        ) : (
+                          <Text size="sm" c="dimmed">—</Text>
+                        )}
+                      </Table.Td>
                       <Table.Td>{formatAirtime(recording.duration)}</Table.Td>
                       <Table.Td>
                         <audio
@@ -403,22 +439,10 @@ export function Recordings() {
                     </Table.Tr>
                     {recording.transcript != null ? (
                       <Table.Tr>
-                        <Table.Td colSpan={canWrite ? 5 : 4}>
-                          <Group gap="xs">
-                            {recording.callsigns.map((value) => (
-                              <Badge
-                                key={value}
-                                variant="light"
-                                style={{ cursor: "pointer" }}
-                                onClick={() => setCallsignInput(value)}
-                              >
-                                {value}
-                              </Badge>
-                            ))}
-                            <Text size="sm" c={recording.transcript ? undefined : "dimmed"}>
-                              {recording.transcript || "Nothing understood."}
-                            </Text>
-                          </Group>
+                        <Table.Td colSpan={canWrite ? 6 : 5}>
+                          <Text size="sm" c={recording.transcript ? undefined : "dimmed"}>
+                            {recording.transcript || "Nothing understood."}
+                          </Text>
                         </Table.Td>
                       </Table.Tr>
                     ) : null}

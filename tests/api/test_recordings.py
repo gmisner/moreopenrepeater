@@ -225,3 +225,30 @@ def test_recording_filters_and_summary(tmp_path):
         "/api/recordings",
         params={"after": "2027-01-16T00:00:00Z", "before": "2027-01-15T00:00:00Z"},
     ).status_code == 400
+
+
+def test_recording_sort_by_callsign_puts_unknown_last(tmp_path):
+    recordings = RecordingStore(tmp_path / "recordings", sample_rate=RATE)
+    bare = recordings.save(np.zeros(RATE, dtype=np.float32), started_at=1_800_000_200.0)
+    w1aw = recordings.save(np.zeros(RATE, dtype=np.float32), started_at=1_800_000_000.0)
+    k1abc = recordings.save(np.zeros(RATE, dtype=np.float32), started_at=1_800_000_100.0)
+    recordings.transcript_path(w1aw.id).write_text("this is W1AW", encoding="utf-8")
+    recordings.transcript_path(k1abc.id).write_text("K1ABC listening", encoding="utf-8")
+    # bare: no transcript / no callsign
+    client = TestClient(create_app(start_background_tick=False, log_path=tmp_path / "t.log", recordings=recordings))
+
+    assert [r["id"] for r in client.get("/api/recordings", params={"sort": "callsign"}).json()] == [
+        k1abc.id,
+        w1aw.id,
+        bare.id,
+    ]
+    assert [r["id"] for r in client.get("/api/recordings", params={"sort": "callsign_desc"}).json()] == [
+        w1aw.id,
+        k1abc.id,
+        bare.id,
+    ]
+    assert [r["id"] for r in client.get("/api/recordings", params={"sort": "oldest"}).json()] == [
+        w1aw.id,
+        k1abc.id,
+        bare.id,
+    ]

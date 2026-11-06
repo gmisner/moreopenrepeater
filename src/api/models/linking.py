@@ -16,6 +16,12 @@ class AllStarNodeInfo(BaseModel):
     controlled: bool
 
 
+class AllStarIdentityInfo(BaseModel):
+    node: str
+    callsign: str
+    has_password: bool
+
+
 class AllStarStatusResponse(BaseModel):
     available: bool
     manual: bool
@@ -24,6 +30,7 @@ class AllStarStatusResponse(BaseModel):
     error: Optional[str]
     nodes: list[AllStarNodeInfo]
     node: Optional[str]
+    identity: Optional[AllStarIdentityInfo] = None
     audio: LinkAudioResponse
 
 
@@ -128,6 +135,14 @@ class LinkConnectRequest(BaseModel):
 
 class AllStarNodeRequest(BaseModel):
     node: str = Field(pattern=r"^[0-9]{1,10}$")
+
+
+class AllStarIdentityRequest(BaseModel):
+    from_node: str = Field(pattern=r"^[0-9]{1,10}$")
+    node: str = Field(pattern=r"^[0-9]{1,10}$")
+    callsign: str = Field(min_length=3, max_length=10, pattern=r"^[A-Za-z0-9]{3,10}$")
+    password: str = Field(default="", max_length=64, pattern=r"^[0-9A-Za-z_-]*$")
+
 
 class EchoLinkRequest(BaseModel):
     callsign: str = Field(pattern=r"^[A-Z0-9]{3,8}(-[LR])?$")

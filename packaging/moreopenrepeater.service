@@ -25,6 +25,7 @@ Environment=MOREOPENREPEATER_UPDATER=/var/lib/moreopenrepeater-update
 Environment=MOREOPENREPEATER_UPDATE_REQUEST=/opt/moreopenrepeater/data/update-request
 Environment=MOREOPENREPEATER_TAILSCALE=/var/lib/moreopenrepeater-tailscale
 Environment=MOREOPENREPEATER_TAILSCALE_REQUEST=/opt/moreopenrepeater/data/tailscale-request
+Environment=MOREOPENREPEATER_RESTART_REQUEST=/opt/moreopenrepeater/data/restart-request
 EnvironmentFile=/etc/moreopenrepeater/env
 # /run/moreopenrepeater (in memory) holds the log when the SD card is
 # protected (install-pi.sh --protect-sd); kept across restarts until reboot.

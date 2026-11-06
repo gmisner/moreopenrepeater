@@ -329,6 +329,7 @@ def create_app(
         repo_dir=REPO_DIR,
         admin_dependencies=runtime.admin_dependencies,
         tailscale=runtime.tailscale,
+        restarter=runtime.restarter,
     )
 
     audio_tools_routes.register(

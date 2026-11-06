@@ -24,10 +24,19 @@ from link.asl_config import (
     control_node,
     controller_settings,
     module_state,
+    node_callsign,
     nodes,
+    registration_password,
     release_node,
+    rename_node_stanza,
+    rename_section,
     restore_module,
+    set_http_registration,
+    set_iax_registration,
+    set_idrecording,
     set_module,
+    update_extensions_node,
+    update_savenode,
 )
 from link.asterisk_files import AsteriskFiles, AsteriskFilesError
 
@@ -101,6 +110,7 @@ class AllStarNode:
             "error": None,
             "nodes": [],
             "node": None,
+            "identity": None,
             "audio": self.audio.status(),
         }
         if not result["available"]:
@@ -115,31 +125,140 @@ class AllStarNode:
             {"number": n.number, "rxchannel": n.rxchannel, "duplex": n.duplex, "controlled": n.controlled} for n in found
         ]
         result["node"] = self.node = next((n.number for n in found if n.controlled), None)
+        focus = result["node"] or (found[0].number if found else None)
+        if focus:
+            has_password = False
+            try:
+                reg = await self._read("rpt_http_registrations.conf")
+                has_password = bool(registration_password(reg, focus))
+            except AllStarSetupError:
+                pass
+            result["identity"] = {
+                "node": focus,
+                "callsign": node_callsign(text, focus),
+                "has_password": has_password,
+            }
         return result
 
     async def use(self, number: str) -> dict:
         async with self._lock:
-            self._require_files()
-            rpt = await self._read("rpt.conf")
-            modules = await self._read("modules.conf")
-            found = {n.number: n for n in nodes(rpt)}
-            if number not in found:
-                raise AllStarSetupError(f"rpt.conf has no node {number}.")
-            for other in found.values():
-                if other.controlled and other.number != number:
-                    rpt = release_node(rpt, other.number)
-            node_port = self._node_port(rpt, number)
-            rxchannel = f"USRP/{self._address}:{self._listen[1]}:{node_port}"
-            rpt = control_node(rpt, number, controller_settings(rxchannel))
-            modules = self._usb_drivers(rpt, set_module(modules, "chan_usrp.so", True))
-            await self._write("modules.conf", modules)
-            await self._write("rpt.conf", rpt)
-            await self._retarget_echolink(number)
-            _logger.info("node %s: radio is now the controller (%s)", number, rxchannel)
-            self.node = number
-            await self._restart()
-            await self.audio.configure(self._settings_for(rpt))
+            await self._use_unlocked(number)
         return await self.status()
+
+    async def configure_identity(
+        self,
+        from_node: str,
+        number: str,
+        callsign: str,
+        password: Optional[str] = None,
+    ) -> dict:
+        """Rename `from_node` to the portal number, set callsign/password, and bind the radio."""
+        async with self._lock:
+            self._require_files()
+            if not re.fullmatch(r"[0-9]{1,10}", number):
+                raise AllStarSetupError("Node number must be digits.")
+            callsign = callsign.strip().upper()
+            if not callsign:
+                raise AllStarSetupError("Enter the station callsign for the AllStar ID.")
+            if password is not None and not re.fullmatch(r"[0-9A-Za-z_-]{6,}", password):
+                raise AllStarSetupError(
+                    "The node password may only contain letters, numbers, underscore and dash, "
+                    "and must be at least 6 characters."
+                )
+
+            rpt = await self._read("rpt.conf")
+            found = {n.number: n for n in nodes(rpt)}
+            if from_node not in found:
+                raise AllStarSetupError(f"rpt.conf has no node {from_node}.")
+            if number != from_node and number in found:
+                raise AllStarSetupError(f"rpt.conf already has node {number}.")
+            was_controlled = found[from_node].controlled or self.node == from_node
+
+            if number != from_node:
+                if was_controlled:
+                    rpt = release_node(rpt, from_node)
+                rpt = rename_node_stanza(rpt, from_node, number)
+                for name in ("simpleusb.conf", "usbradio.conf", "voter.conf"):
+                    try:
+                        other = await self._read(name)
+                    except AllStarSetupError:
+                        continue
+                    updated = rename_section(other, from_node, number)
+                    if updated != other:
+                        await self._write(name, updated)
+                try:
+                    extensions = await self._read("extensions.conf")
+                    await self._write("extensions.conf", update_extensions_node(extensions, from_node, number))
+                except AllStarSetupError:
+                    pass
+                try:
+                    savenode = await self._read("savenode.conf")
+                    await self._write("savenode.conf", update_savenode(savenode, from_node, number, password))
+                except AllStarSetupError:
+                    pass
+
+            rpt = set_idrecording(rpt, number, callsign)
+            await self._write("rpt.conf", rpt)
+
+            try:
+                reg = await self._read("rpt_http_registrations.conf")
+            except AllStarSetupError as error:
+                raise AllStarSetupError(
+                    f"{error} The installer needs write access to rpt_http_registrations.conf."
+                )
+            current_password = registration_password(reg, from_node) or registration_password(reg, number)
+            secret = password if password is not None else current_password
+            if int(number) >= 2000 and not secret:
+                raise AllStarSetupError("Enter the node password from the AllStarLink portal.")
+            if secret:
+                await self._write(
+                    "rpt_http_registrations.conf",
+                    set_http_registration(reg, number, secret, old_node=from_node),
+                )
+                try:
+                    iax = await self._read("iax.conf")
+                    await self._write("iax.conf", set_iax_registration(iax, number, secret, old_node=from_node))
+                except AllStarSetupError:
+                    pass
+                if number == from_node:
+                    try:
+                        savenode = await self._read("savenode.conf")
+                        await self._write("savenode.conf", update_savenode(savenode, from_node, number, secret))
+                    except AllStarSetupError:
+                        pass
+            elif int(number) < 2000:
+                await self._write(
+                    "rpt_http_registrations.conf",
+                    set_http_registration(reg, number, "", old_node=from_node),
+                )
+
+            if number != from_node:
+                await self._retarget_echolink(number)
+            _logger.info("node identity: %s -> %s (%s)", from_node, number, callsign)
+            await self._use_unlocked(number)
+        return await self.status()
+
+    async def _use_unlocked(self, number: str) -> None:
+        self._require_files()
+        rpt = await self._read("rpt.conf")
+        modules = await self._read("modules.conf")
+        found = {n.number: n for n in nodes(rpt)}
+        if number not in found:
+            raise AllStarSetupError(f"rpt.conf has no node {number}.")
+        for other in found.values():
+            if other.controlled and other.number != number:
+                rpt = release_node(rpt, other.number)
+        node_port = self._node_port(rpt, number)
+        rxchannel = f"USRP/{self._address}:{self._listen[1]}:{node_port}"
+        rpt = control_node(rpt, number, controller_settings(rxchannel))
+        modules = self._usb_drivers(rpt, set_module(modules, "chan_usrp.so", True))
+        await self._write("modules.conf", modules)
+        await self._write("rpt.conf", rpt)
+        await self._retarget_echolink(number)
+        _logger.info("node %s: radio is now the controller (%s)", number, rxchannel)
+        self.node = number
+        await self._restart()
+        await self.audio.configure(self._settings_for(rpt))
 
     async def release(self) -> dict:
         async with self._lock:

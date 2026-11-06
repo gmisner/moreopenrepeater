@@ -36,17 +36,25 @@ Set up both for a complete AllStar node.
 
 ## Setup
 
-Tested with ASL3 (Asterisk 22.10.1, app_rpt 3.10.5). Set up the node itself
-first (node number, callsign, password) with `sudo asl-menu`, as for any
-ASL3 node. `scripts/install-pi.sh --allstar` installs ASL3 beside the
-controller, and sets up the file permissions and AMI login below. On a new
-ASL3 it also turns off `chan_simpleusb` and `chan_usbradio` right away: the
-placeholder node 1999 that ASL3 comes with would open the controller's sound
-card.
+Tested with ASL3 (Asterisk 22.10.1, app_rpt 3.10.5).
+`scripts/install-pi.sh --allstar` installs ASL3 beside the controller, and
+sets up the file permissions and AMI login below. On a new ASL3 it also turns
+off `chan_simpleusb` and `chan_usbradio` right away: the placeholder node
+1999 that ASL3 comes with would open the controller's sound card.
+
+You can set the portal node number, password and callsign from the dashboard
+(below), or with `sudo asl-menu` as for any ASL3 node. Use `asl-menu` for
+USB tuning, duplex options, and adding a second local node.
 
 ### From the dashboard
 
-On the **AllStarLink** page, choose the node and click **Use this node**.
+On the **AllStarLink** page, under **Set node number**, enter the node
+number, password and callsign from the AllStarLink portal and click **Save
+and use this node**. That renames the ASL3 placeholder (usually 1999) in
+`rpt.conf`, updates HTTP registration in `rpt_http_registrations.conf`, sets
+`idrecording`, and then binds the controller as that node's radio.
+
+If the node stanza already exists, choose it and click **Use this node**.
 The controller:
 
 - puts these lines at the top of the node's stanza in `rpt.conf`, keeping
@@ -80,7 +88,10 @@ service needs write access to them, and the installer sets that up:
 
 ```sh
 sudo usermod -aG asterisk moreopenrepeater
-sudo chmod g+w /etc/asterisk/rpt.conf /etc/asterisk/modules.conf /etc/asterisk/echolink.conf
+sudo chmod g+w /etc/asterisk/rpt.conf /etc/asterisk/modules.conf /etc/asterisk/echolink.conf \
+  /etc/asterisk/rpt_http_registrations.conf /etc/asterisk/extensions.conf \
+  /etc/asterisk/simpleusb.conf /etc/asterisk/usbradio.conf /etc/asterisk/voter.conf \
+  /etc/asterisk/savenode.conf /etc/asterisk/iax.conf
 sudo systemctl restart moreopenrepeater
 ```
 

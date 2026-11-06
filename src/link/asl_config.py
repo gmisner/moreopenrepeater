@@ -233,3 +233,225 @@ def restore_module(text: str, module: str) -> str:
         restored_match = _MODULE.match(restored) if restored is not None else None
         out.append(restored if restored_match and restored_match["module"] == module else line)
     return _rejoin(out, text)
+
+
+# -- node identity (number, callsign, HTTP registration) ----------------------
+
+_REGISTER = re.compile(
+    r"^(?P<prefix>\s*;*\s*register\s*=>\s*)(?P<node>[0-9]+):(?P<password>[^@\s]*)@(?P<rest>\S+)(?P<tail>.*)$",
+    re.IGNORECASE,
+)
+_IDRECORDING = re.compile(r"^idrecording\s*=\s*(?P<value>.*)$", re.IGNORECASE)
+_NODE_VAR = re.compile(r"^(?P<prefix>\s*NODE\s*=\s*)(?P<node>[0-9]+)(?P<tail>.*)$")
+_SAVENODE_PASSWORD = re.compile(r"^(?P<prefix>\s*PASSWORD\s*=\s*).*$")
+_SAVENODE_ENABLE = re.compile(r"^(?P<prefix>\s*ENABLE\s*=\s*).*$")
+PUBLIC_NODE_MIN = 2000
+REGISTER_HOST = "register.allstarlink.org"
+
+
+def rename_node_stanza(text: str, old: str, new: str) -> str:
+    """Rename a node section and node-keyed radio channels in rpt.conf."""
+    if old == new:
+        return text
+    if not any(n.number == old for n in nodes(text)):
+        raise ValueError(f"rpt.conf has no node {old}")
+    if any(n.number == new for n in nodes(text)):
+        raise ValueError(f"rpt.conf already has node {new}")
+    lines = text.splitlines()
+    out = []
+    for line in lines:
+        header = _HEADER.match(line)
+        if header and header["name"].strip() == old:
+            templates = f"({header['templates']})" if header["templates"] is not None else ""
+            out.append(f"[{new}]{templates}")
+            continue
+        setting = None if line.lstrip().startswith(";") else _SETTING.match(line)
+        if setting and setting["key"].lower() == "rxchannel":
+            value = setting["value"]
+            for prefix in ("SimpleUSB/", "Radio/", "Voter/", "USBRadio/"):
+                if re.match(rf"^{re.escape(prefix)}{re.escape(old)}(\b|$)", value, re.IGNORECASE):
+                    line = re.sub(
+                        rf"^(\s*{re.escape(setting['key'])}\s*=>?\s*{re.escape(prefix)}){re.escape(old)}",
+                        rf"\g<1>{new}",
+                        line,
+                        count=1,
+                        flags=re.IGNORECASE,
+                    )
+                    break
+        # Node map lines like `1999 = radio@127.0.0.1/...` in older configs.
+        if re.match(rf"^\s*{re.escape(old)}\s*=", line):
+            line = re.sub(rf"^(\s*){re.escape(old)}(\s*=)", rf"\g<1>{new}\2", line, count=1)
+        out.append(line)
+    return _rejoin(out, text)
+
+
+def rename_section(text: str, old: str, new: str) -> str:
+    """Rename `[old]` to `[new]` when present (simpleusb/usbradio/voter)."""
+    if old == new or not text.strip():
+        return text
+    lines = text.splitlines()
+    out = []
+    changed = False
+    for line in lines:
+        header = _HEADER.match(line)
+        if header and header["name"].strip() == old:
+            templates = f"({header['templates']})" if header["templates"] is not None else ""
+            out.append(f"[{new}]{templates}")
+            changed = True
+        else:
+            out.append(line)
+    return _rejoin(out, text) if changed else text
+
+
+def set_idrecording(text: str, node: str, callsign: str) -> str:
+    """Set `idrecording = |iCALLSIGN` in the node's stanza."""
+    section = _section(text, node)
+    lines = text.splitlines()
+    body = []
+    found = False
+    value = f"|i{callsign}" if callsign else ""
+    for line in lines[section.start + 1 : section.end]:
+        if not line.lstrip().startswith(";") and _IDRECORDING.match(line):
+            found = True
+            if value:
+                body.append(f"idrecording = {value}")
+            continue
+        body.append(line)
+    if value and not found:
+        body.insert(0, f"idrecording = {value}")
+    return _rejoin(lines[: section.start + 1] + body + lines[section.end :], text)
+
+
+def node_callsign(text: str, node: str) -> str:
+    """Callsign from the node's `idrecording`, without the `|i` CW prefix."""
+    try:
+        value = _effective(parse_sections(text), node, "idrecording") or ""
+    except ValueError:
+        return ""
+    value = value.strip()
+    if value.startswith("|i"):
+        value = value[2:]
+    if value.upper() in ("", "NOTSET", "NONE"):
+        return ""
+    return value
+
+
+def update_extensions_node(text: str, old: str, new: str) -> str:
+    if old == new or not text.strip():
+        return text
+    lines = []
+    for line in text.splitlines():
+        match = _NODE_VAR.match(line)
+        if match and match["node"] == old:
+            lines.append(f"{match['prefix']}{new}{match['tail']}")
+        else:
+            lines.append(line)
+    return _rejoin(lines, text)
+
+
+def registration_password(text: str, node: str) -> Optional[str]:
+    """Password on an active (uncommented) register line for `node`, if any."""
+    for line in text.splitlines():
+        if line.lstrip().startswith(";"):
+            continue
+        match = _REGISTER.match(line)
+        if match and match["node"] == node:
+            return match["password"] or None
+    return None
+
+
+def set_http_registration(text: str, node: str, password: str, old_node: Optional[str] = None) -> str:
+    """Point HTTP registration at `node:password`. Private nodes are cleared."""
+    if int(node) < PUBLIC_NODE_MIN:
+        return remove_http_registration(text, old_node or node)
+    lines = text.splitlines()
+    target = old_node or node
+    placeholders = {target, "1234", "1999", "1998"}
+    out = []
+    replaced = False
+    for line in lines:
+        match = _REGISTER.match(line)
+        if match and match["node"] in placeholders | {node}:
+            if replaced:
+                # Drop extra placeholder/old lines so we don't stack registers.
+                continue
+            out.append(f"register => {node}:{password}@{REGISTER_HOST}")
+            replaced = True
+            continue
+        out.append(line)
+    if not replaced:
+        insert_at = len(out)
+        for index, line in enumerate(out):
+            header = _HEADER.match(line)
+            if header and header["name"].strip().lower() == "registrations":
+                insert_at = index + 1
+                break
+        out.insert(insert_at, f"register => {node}:{password}@{REGISTER_HOST}")
+    return _rejoin(out, text)
+
+
+def remove_http_registration(text: str, node: str) -> str:
+    if not text.strip():
+        return text
+    lines = [
+        line
+        for line in text.splitlines()
+        if not ((match := _REGISTER.match(line)) and match["node"] == node and not line.lstrip().startswith(";"))
+    ]
+    return _rejoin(lines, text)
+
+
+def set_iax_registration(text: str, node: str, password: str, old_node: Optional[str] = None) -> str:
+    """Update commented or active IAX register lines the way asl-menu does."""
+    if not text.strip():
+        return text
+    if int(node) < PUBLIC_NODE_MIN:
+        return remove_iax_registration(text, old_node or node)
+    lines = text.splitlines()
+    target = old_node or node
+    out = []
+    replaced = False
+    for line in lines:
+        match = _REGISTER.match(line)
+        if match and match["node"] in {target, node, "1998", "1999", "1234"}:
+            prefix = match["prefix"]
+            # Keep whatever leading `;` style the line had.
+            out.append(f"{prefix}{node}:{password}@{match['rest']}{match['tail']}")
+            replaced = True
+            continue
+        out.append(line)
+    if not replaced:
+        return text
+    return _rejoin(out, text)
+
+
+def remove_iax_registration(text: str, node: str) -> str:
+    if not text.strip():
+        return text
+    lines = []
+    for line in text.splitlines():
+        match = _REGISTER.match(line)
+        if match and match["node"] == node:
+            continue
+        lines.append(line)
+    return _rejoin(lines, text)
+
+
+def update_savenode(text: str, old: str, new: str, password: Optional[str] = None) -> str:
+    if not text.strip():
+        return text
+    lines = text.splitlines()
+    out = []
+    for line in lines:
+        match = _NODE_VAR.match(line)
+        if match and match["node"] == old:
+            out.append(f"{match['prefix']}{new}{match['tail']}")
+            continue
+        if password is not None and _SAVENODE_PASSWORD.match(line):
+            out.append(f"{_SAVENODE_PASSWORD.match(line)['prefix']}{password}")
+            continue
+        if password is not None and _SAVENODE_ENABLE.match(line):
+            out.append(f"{_SAVENODE_ENABLE.match(line)['prefix']}1")
+            continue
+        out.append(line)
+    return _rejoin(out, text)

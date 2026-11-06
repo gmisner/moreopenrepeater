@@ -38,6 +38,24 @@ noload = chan_usbradio.so               ; USB Console Channel Driver
 noload = chan_usrp.so                   ; USRP Channel Module
 """
 
+REG = """\
+[general]
+register_interval = 180
+
+[registrations]
+;register => 1999:password@register.allstarlink.org
+"""
+
+EXTENSIONS = """\
+[general]
+NODE = 1999
+"""
+
+SIMPLEUSB = """\
+[1999]
+eeprom = 0
+"""
+
 
 class FakeAMI:
     """Asterisk going down as soon as it's told to restart."""
@@ -74,6 +92,9 @@ def make(tmp_path, rpt=RPT, ami=AMI, manual=None):
     etc.mkdir()
     (etc / "rpt.conf").write_text(rpt)
     (etc / "modules.conf").write_text(MODULES)
+    (etc / "rpt_http_registrations.conf").write_text(REG)
+    (etc / "extensions.conf").write_text(EXTENSIONS)
+    (etc / "simpleusb.conf").write_text(SIMPLEUSB)
     service = RepeaterService(config=RepeaterConfig())
     service.audio_output = FakeAudio()
     fake = FakeAMI()
@@ -195,6 +216,31 @@ def test_link_keyups_from_ami_dont_key_the_repeater_while_the_node_sends_audio()
     assert service.controller.state == RECEIVING
 
 
+def test_configure_identity_renames_registers_and_binds(tmp_path):
+    async def scenario():
+        node, etc, fake, *_ = make(tmp_path)
+        status = await node.configure_identity("1999", "531870", "W1AW", password="s3cret1")
+        rpt = (etc / "rpt.conf").read_text()
+        assert "[531870](node-main)" in rpt
+        assert "idrecording = |iW1AW" in rpt
+        assert "rxchannel = USRP/127.0.0.1:0:32001  ; set by moreopenrepeater" in rpt
+        assert "register => 531870:s3cret1@register.allstarlink.org" in (etc / "rpt_http_registrations.conf").read_text()
+        assert "NODE = 531870" in (etc / "extensions.conf").read_text()
+        assert "[531870]" in (etc / "simpleusb.conf").read_text()
+        assert status["node"] == "531870"
+        assert status["identity"] == {"node": "531870", "callsign": "W1AW", "has_password": True}
+        assert fake.commands == ["core restart now"]
+        await node.stop()
+
+    asyncio.run(scenario())
+
+
+def test_configure_identity_requires_password_for_public_nodes(tmp_path):
+    node, *_ = make(tmp_path)
+    with pytest.raises(AllStarSetupError, match="password"):
+        asyncio.run(node.configure_identity("1999", "531870", "W1AW"))
+
+
 def test_routes(tmp_path):
     node, etc, fake, service = make(tmp_path)
     app = create_app(
@@ -210,4 +256,10 @@ def test_routes(tmp_path):
         body = client.put("/api/allstar", json={"node": "1999"}).json()
         assert body["node"] == "1999"
         assert client.delete("/api/allstar").json()["node"] is None
-    assert (etc / "rpt.conf").read_text() == RPT
+        identity = client.put(
+            "/api/allstar/identity",
+            json={"from_node": "1999", "node": "531870", "callsign": "W1AW", "password": "s3cret1"},
+        ).json()
+        assert identity["node"] == "531870"
+        assert identity["identity"]["callsign"] == "W1AW"
+    assert "[531870](node-main)" in (etc / "rpt.conf").read_text()

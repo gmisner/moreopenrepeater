@@ -106,6 +106,8 @@ export function Updates() {
   const [check, setCheck] = useState<CheckResult | null>(null);
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartAvailable, setRestartAvailable] = useState(false);
   const [savingAuto, setSavingAuto] = useState(false);
   const [logLines, setLogLines] = useState<string[]>([]);
   const [autoForm, setAutoForm] = useState({
@@ -191,6 +193,8 @@ export function Updates() {
         if (next.status) await renderProgressLog();
         if (isBusy(next.status)) startPolling();
         await runCheck(false, next.channel);
+        const restart = await api<{ available: boolean; requested: boolean }>("/api/restart").catch(() => null);
+        if (!cancelled && restart) setRestartAvailable(restart.available);
       } catch (error) {
         if (!cancelled) notifyError(error);
       }
@@ -200,6 +204,36 @@ export function Updates() {
       stopPolling();
     };
   }, [isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps -- mount load for admins
+
+  const restartService = async () => {
+    if (!window.confirm("Restart moreopenrepeater now? The repeater goes off the air for a few seconds, and you may have to sign in again.")) {
+      return;
+    }
+    setRestarting(true);
+    try {
+      await api("/api/restart", { method: "POST" });
+      notifySuccess("Restarting… the dashboard will reload when it's back");
+      const started = Date.now();
+      const wait = window.setInterval(() => {
+        void (async () => {
+          try {
+            await api("/api/session");
+            window.clearInterval(wait);
+            location.reload();
+          } catch {
+            if (Date.now() - started > 90_000) {
+              window.clearInterval(wait);
+              setRestarting(false);
+              notifyError(new Error("The service didn't come back. Check systemctl status moreopenrepeater."));
+            }
+          }
+        })();
+      }, 1500);
+    } catch (error) {
+      notifyError(error);
+      setRestarting(false);
+    }
+  };
 
   useEffect(() => {
     const el = logRef.current;
@@ -397,6 +431,34 @@ export function Updates() {
           </Text>
         </Card>
       </SimpleGrid>
+
+      <Card withBorder padding="lg" radius="md">
+        <Group justify="space-between" mb="sm" wrap="wrap">
+          <div>
+            <Title order={2} style={{ margin: 0, fontSize: "1.1rem" }}>
+              Restart service
+            </Title>
+            <Text size="sm" c="dimmed" maw="60ch" mt={4}>
+              Restarts moreopenrepeater the same way as{" "}
+              <Code>sudo systemctl restart moreopenrepeater</Code>. Use this after editing{" "}
+              <Code>/etc/moreopenrepeater/env</Code> or when the controller needs a clean start.
+            </Text>
+          </div>
+          <Button
+            variant="default"
+            loading={restarting}
+            disabled={!restartAvailable || restarting || isBusy(info?.status)}
+            onClick={() => void restartService()}
+          >
+            Restart now
+          </Button>
+        </Group>
+        {!restartAvailable ? (
+          <Text size="sm" c="dimmed">
+            Needs an install made with <Code>scripts/install-pi.sh</Code> (the restart path unit).
+          </Text>
+        ) : null}
+      </Card>
 
       <Card withBorder padding="lg" radius="md">
         <Group justify="space-between" mb="sm">

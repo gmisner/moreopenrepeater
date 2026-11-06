@@ -743,7 +743,8 @@ address in the env file.
 ```
 sudo cp packaging/moreopenrepeater.service packaging/moreopenrepeater-update.* packaging/moreopenrepeater-tailscale.* /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now moreopenrepeater moreopenrepeater-update.path moreopenrepeater-tailscale.path
+sudo systemctl enable --now moreopenrepeater moreopenrepeater-update.path \
+  moreopenrepeater-tailscale.path moreopenrepeater-restart.path
 sudo systemctl status moreopenrepeater
 ```
 

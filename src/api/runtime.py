@@ -86,6 +86,7 @@ from .transcripts import API_KEY_ENV as TRANSCRIPTION_KEY_ENV
 from .transcripts import VOSK_MODEL_ENV, Transcriber, VoskEngine
 from .tx_fan import TxFan
 from .tailscale import TailscaleControl, tailscale_settings_from_env
+from .restart import RestartControl, restart_settings_from_env
 from .updates import UpdateChecker, Updater, channel_from_env, installed_version, repo_from_checkout, updater_settings_from_env
 from .users import Role, UserStore
 from .watchdog import Watchdog, ping_interval, sd_notify
@@ -301,6 +302,7 @@ class AdminOpsBundle:
     update_channel: Optional[str] = None
     auto_update_store: Optional[StateStore] = None
     tailscale: Optional[TailscaleControl] = None
+    restarter: Optional[RestartControl] = None
     notifier: Optional[Notifier] = None
     log_hub: Optional[LogHub] = None
     log_shipper: Optional[LogShipper] = None
@@ -351,6 +353,7 @@ class RuntimeBuilder:
     update_checker: Optional[UpdateChecker] = None
     update_channel: Optional[str] = None
     tailscale: Optional[TailscaleControl] = None
+    restarter: Optional[RestartControl] = None
     notifier: Optional[Notifier] = None
     log_hub: Optional[LogHub] = None
     log_shipper: Optional[LogShipper] = None
@@ -440,6 +443,7 @@ class RuntimeBuilder:
                 update_channel=self.update_channel,
                 auto_update_store=self.auto_update_store,
                 tailscale=self.tailscale,
+                restarter=self.restarter,
                 notifier=self.notifier,
                 log_hub=self.log_hub,
                 log_shipper=self.log_shipper,
@@ -540,6 +544,7 @@ class AppRuntime:
         update_channel = admin.update_channel
         auto_update_store = admin.auto_update_store
         tailscale = admin.tailscale
+        restarter = admin.restarter
         notifier = admin.notifier
         log_hub = admin.log_hub
         log_shipper = admin.log_shipper
@@ -658,6 +663,7 @@ class AppRuntime:
         update_checker = update_checker or UpdateChecker(repo_from_checkout(REPO_DIR))
         update_channel = update_channel or channel_from_env(os.environ)
         tailscale = tailscale or TailscaleControl(tailscale_settings_from_env(os.environ))
+        restarter = restarter or RestartControl(restart_settings_from_env(os.environ))
 
         def installed_sha() -> str:
             version = installed_version(REPO_DIR)
@@ -1132,6 +1138,7 @@ class AppRuntime:
         self.update_checker = update_checker
         self.update_channel = update_channel
         self.tailscale = tailscale
+        self.restarter = restarter
         self.auto_updater = auto_updater
         self.notifier = notifier
         self.log_shipper = log_shipper

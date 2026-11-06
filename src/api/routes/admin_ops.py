@@ -36,6 +36,7 @@ from ..models import (
     LogShippingSettingsRequest,
     LogShippingSettingsResponse,
     LogShippingTestResponse,
+    RestartResponse,
     SavedBackupResponse,
     TailscaleResponse,
     TailscaleServeRequest,
@@ -46,6 +47,7 @@ from ..models import (
     UpdatesResponse,
 )
 from ..notify import SECRET_FIELDS, Notifier
+from ..restart import RestartControl
 from ..service import RepeaterService
 from ..auto_update import AutoUpdater
 from ..support_bundle import support_bundle_name, write_support_bundle
@@ -73,6 +75,7 @@ def register(
     repo_dir: Path,
     admin_dependencies: Sequence,
     tailscale: TailscaleControl,
+    restarter: RestartControl,
 ) -> None:
     @app.get("/api/backup", dependencies=admin_dependencies)
     def download_backup(request: Request, recordings: bool = False) -> FileResponse:
@@ -230,6 +233,23 @@ def register(
         except OSError as error:
             raise HTTPException(status_code=500, detail=f"Couldn't ask the updater: {error.strerror or error}") from None
         return get_updates()
+
+    @app.get("/api/restart", response_model=RestartResponse, dependencies=admin_dependencies)
+    def get_restart() -> dict:
+        return restarter.status()
+
+    @app.post("/api/restart", response_model=RestartResponse, dependencies=admin_dependencies)
+    def request_restart(request: Request) -> dict:
+        request.state.audit_detail = "service"
+        if not restarter.available:
+            raise HTTPException(status_code=409, detail="Restart is only available on installs made with install-pi.sh")
+        if restarter.status()["requested"]:
+            raise HTTPException(status_code=409, detail="A restart is already in progress")
+        try:
+            restarter.request()
+        except OSError as error:
+            raise HTTPException(status_code=500, detail=f"Couldn't ask for a restart: {error.strerror or error}") from None
+        return restarter.status()
 
     def alerts_response() -> dict:
         settings = notifier.settings

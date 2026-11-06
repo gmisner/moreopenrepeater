@@ -1,0 +1,8 @@
+[Unit]
+Description=Restart moreopenrepeater when the dashboard asks
+# Started by moreopenrepeater-restart.path; see scripts/restart.sh.
+
+[Service]
+Type=oneshot
+ExecStart=/opt/moreopenrepeater/scripts/restart.sh
+TimeoutStartSec=2min

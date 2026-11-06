@@ -318,7 +318,8 @@ fi
 
 step "Installing and (re)starting the service"
 for unit in moreopenrepeater.service moreopenrepeater-update.service moreopenrepeater-update.path \
-            moreopenrepeater-tailscale.service moreopenrepeater-tailscale.path; do
+            moreopenrepeater-tailscale.service moreopenrepeater-tailscale.path \
+            moreopenrepeater-restart.service moreopenrepeater-restart.path; do
   install -m 644 "$INSTALL_DIR/packaging/$unit" "/etc/systemd/system/$unit"
 done
 systemctl daemon-reload
@@ -326,6 +327,7 @@ enable_hardware_watchdog
 systemctl enable -q moreopenrepeater
 systemctl enable -q --now moreopenrepeater-update.path
 systemctl enable -q --now moreopenrepeater-tailscale.path
+systemctl enable -q --now moreopenrepeater-restart.path
 systemctl restart moreopenrepeater
 
 PORT="$(env_value MOREOPENREPEATER_PORT)"

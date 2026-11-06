@@ -1,4 +1,5 @@
-import { Card, NumberInput, Select, SimpleGrid, Stack, Switch, Text, Title } from "@mantine/core";
+import { Alert, Card, NumberInput, Select, SimpleGrid, Stack, Switch, Text, Title } from "@mantine/core";
+import { Link } from "react-router-dom";
 import { ConfigActions } from "../components/ConfigActions";
 import { useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
@@ -153,6 +154,16 @@ export function Timing() {
             value={values.node_mode}
             onChange={(value) => setField("node_mode", value || "repeater")}
           />
+          {values.node_mode === "repeater" ? (
+            <Alert color="gray" title="Half-duplex radios">
+              A single Digirig + HT cannot hear while it transmits. For that hardware use Simplex node (locals go to
+              the link without keying the HT), or separate RX and TX radios. See{" "}
+              <Text span component={Link} to="/audio" fw={600} style={{ color: "inherit" }}>
+                Audio &amp; tones
+              </Text>
+              .
+            </Alert>
+          ) : null}
           <Switch
             label={labeled("Courtesy tone after a local user", "Simplex node only; tells them the node heard them")}
             checked={values.simplex_courtesy_tone}

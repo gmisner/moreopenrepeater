@@ -63,10 +63,16 @@ export function rolesForDevice(
   return roles;
 }
 
+/** PortAudio names bury the ALSA card at the end (`… (hw:3,0)`); two CM108s
+ * then look identical when the dropdown truncates. Lead with the card. */
+const HW_CARD = /\(hw:(\d+),\d+\)/;
+
 export function formatDeviceLabel(name: string, roles: string[], missing = false): string {
+  const card = name.match(HW_CARD)?.[1];
+  const base = card ? `Card ${card} — ${name.replace(HW_CARD, "").replace(/:\s*-\s*$/, "").trim() || name}` : name;
   const bits = [...roles];
   if (missing) bits.push("not connected");
-  return bits.length ? `${name} (${bits.join(", ")})` : name;
+  return bits.length ? `${base} (${bits.join(", ")})` : base;
 }
 
 export function soundDeviceOptions(

@@ -185,7 +185,10 @@ def register(
                 status_code=404, detail=f"Sound card {card} has no {body.control} {side_label(body.side)} level"
             )
         value = min(max(body.value, volume.min), volume.max)
-        error = await loop.run_in_executor(None, set_volume, card, volume.control, volume.direction, value, run_mixer)
+        error = await loop.run_in_executor(
+            None,
+            lambda: set_volume(card, volume.control, volume.direction, value, run_mixer, kind=volume.kind),
+        )
         if error:
             raise HTTPException(status_code=503, detail=f"Couldn't set {volume.control}: {error}")
         field_name = side_levels_field(body.side)

@@ -81,7 +81,8 @@ export function SoundsCard({
             />
           </SimpleGrid>
           <Text c="dimmed" size="sm" maw="75ch">
-            The courtesy tone above follows local users. A different one after a linked station or a phone call tells listeners who just spoke.
+            The courtesy tone above follows local users. Choose Off to silence it. A different one after a linked station
+            or a phone call tells listeners who just spoke — those can be Off independently, or Same as local users.
           </Text>
 
           <Accordion variant="separated" radius="md">

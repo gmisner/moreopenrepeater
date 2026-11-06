@@ -10,6 +10,7 @@ export type SoundLevel = {
   value: number;
   db: number | null;
   saved: boolean;
+  kind?: "volume" | "switch";
 };
 export type EngineStatus = {
   enabled: boolean;

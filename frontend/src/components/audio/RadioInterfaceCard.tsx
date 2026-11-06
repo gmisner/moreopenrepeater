@@ -1,5 +1,6 @@
 import {
   Accordion,
+  Alert,
   Badge,
   Button,
   Card,
@@ -14,6 +15,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import { Link } from "react-router-dom";
 import { ConfigActions } from "../ConfigActions";
 import { labeled } from "../FieldHint";
 import {
@@ -26,15 +28,20 @@ import { BOARD_NAMES, CTCSS_TONES, METER_FLOOR_DB } from "./constants";
 import { LevelMeter } from "./helpers";
 import type { AudioDevice, ConfigSlice, EngineStatus, EngineValues, SerialPort } from "./types";
 
+const HALF_DUPLEX_BOARDS = new Set(["digirig-lite", "aioc"]);
+
 export function RadioInterfaceCard({
   engine,
   devices,
+  devicesError,
+  onReloadDevices,
   serialPorts,
   soundUsage,
   serialUsage,
   engineStatus,
   state,
   boardPreset,
+  nodeMode,
   cosHardware,
   health,
   showSilenceHint,
@@ -43,18 +50,26 @@ export function RadioInterfaceCard({
 }: {
   engine: ConfigSlice<EngineValues>;
   devices: AudioDevice[];
+  devicesError?: string | null;
+  onReloadDevices?: () => void;
   serialPorts: SerialPort[];
   soundUsage: DeviceAssignment[];
   serialUsage: DeviceAssignment[];
   engineStatus: EngineStatus | null;
   state: { label: string; color: string };
   boardPreset: string;
+  nodeMode: string;
   cosHardware: boolean;
   health: string;
   showSilenceHint: boolean;
   isViewer: boolean;
   openWizard: () => void;
 }) {
+  const halfDuplexWarn =
+    nodeMode !== "simplex" &&
+    (HALF_DUPLEX_BOARDS.has(boardPreset) ||
+      (engine.values.ptt_output === "cm108" && engine.values.cos_source === "vox"));
+
   return (
       <Card
         withBorder
@@ -76,6 +91,16 @@ export function RadioInterfaceCard({
           <Text c="dimmed" size="sm" maw="75ch">
             Run the repeater on this computer&apos;s sound devices: receive audio comes in on the input, and repeated audio, tones and IDs go out on the output. Without a carrier-detect wire, the repeater can open on audio level or on a CTCSS tone.
           </Text>
+          {halfDuplexWarn ? (
+            <Alert color="yellow" title="One radio can’t live-repeat">
+              Digirig Lite / HT-style interfaces are half-duplex: when this radio keys PTT it stops receiving, so
+              voice collapses after the first moment. Use{" "}
+              <Text span fw={600} component={Link} to="/timing" style={{ color: "inherit" }}>
+                Timing → Simplex node
+              </Text>{" "}
+              to send locals to the link without keying this HT, or wire separate RX and TX radios.
+            </Alert>
+          ) : null}
           <Group justify="space-between" align="center">
             <Text size="sm" c="dimmed">
               Interface board: <Text span fw={600}>{BOARD_NAMES[boardPreset] ?? (boardPreset || "set up by hand")}</Text>
@@ -121,24 +146,52 @@ export function RadioInterfaceCard({
             <Accordion.Item value="devices">
               <Accordion.Control>Sound devices</Accordion.Control>
               <Accordion.Panel>
+                {devicesError ? (
+                  <Text c="red" size="sm" mb="sm">
+                    Couldn&apos;t list sound devices: {devicesError}
+                    {onReloadDevices ? (
+                      <>
+                        {" "}
+                        <Button variant="subtle" size="compact-xs" onClick={onReloadDevices}>
+                          Retry
+                        </Button>
+                      </>
+                    ) : null}
+                  </Text>
+                ) : null}
+                {!devicesError && soundDeviceOptions(devices, "inputs", "", []).length === 0 ? (
+                  <Text c="dimmed" size="sm" mb="sm">
+                    No capture devices yet. Plug in the USB interface, then{" "}
+                    {onReloadDevices ? (
+                      <Button variant="subtle" size="compact-xs" onClick={onReloadDevices}>
+                        refresh the list
+                      </Button>
+                    ) : (
+                      "refresh this page"
+                    )}
+                    .
+                  </Text>
+                ) : null}
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <Select
                     label="Input (receiver)"
                     data={soundDeviceOptions(devices, "inputs", engine.values.audio_input_device, soundUsage)}
                     value={engine.values.audio_input_device || null}
                     onChange={(value) => engine.setField("audio_input_device", value || "")}
-                    searchable
                     clearable
                     placeholder="System default"
+                    nothingFoundMessage="No input devices"
+                    comboboxProps={{ withinPortal: true, zIndex: 400 }}
                   />
                   <Select
                     label="Output (transmitter)"
                     data={soundDeviceOptions(devices, "outputs", engine.values.audio_output_device, soundUsage)}
                     value={engine.values.audio_output_device || null}
                     onChange={(value) => engine.setField("audio_output_device", value || "")}
-                    searchable
                     clearable
                     placeholder="System default"
+                    nothingFoundMessage="No output devices"
+                    comboboxProps={{ withinPortal: true, zIndex: 400 }}
                   />
                 </SimpleGrid>
                 <Stack gap="sm" mt="md">

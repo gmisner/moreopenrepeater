@@ -75,6 +75,7 @@ const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const TONE_STYLES = [
   { value: "same", label: "Same as usual" },
+  { value: "none", label: "Off" },
   { value: "beep", label: "Beep" },
   { value: "high_low", label: "High–low" },
   { value: "low_high", label: "Low–high" },

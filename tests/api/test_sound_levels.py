@@ -50,6 +50,7 @@ class FakeCard:
             "Speaker": {"playback": [0, 37, 14, -37]},
             "Mic": {"playback": [0, 31, 16, -23], "capture": [0, 35, 30, -12]},
         }
+        self.switches = {"Auto Gain Control": 1}
         self.sets = []
 
     def __call__(self, args):
@@ -58,6 +59,10 @@ class FakeCard:
         if args[-1] == "scontents":
             return subprocess.CompletedProcess(args, 0, self.scontents(), "")
         control, *rest = args[args.index("sset") + 1:]
+        if control in self.switches and rest and rest[0] in ("on", "off"):
+            self.switches[control] = 1 if rest[0] == "on" else 0
+            self.sets.append(args)
+            return subprocess.CompletedProcess(args, 0, "", "")
         if control not in self.volumes:
             return subprocess.CompletedProcess(args, 1, "", f"amixer: Unable to find simple control '{control}',0\n")
         directions = [rest.pop(0)] if rest[0] in ("playback", "capture") else list(self.volumes[control])
@@ -83,12 +88,14 @@ class FakeCard:
 
     def scontents(self):
         speaker = self.reading("Speaker", "playback")
+        agc = "on" if self.switches.get("Auto Gain Control", 1) else "off"
         return (
             PI_CM108
             .replace("Front Left: Playback 14 [38%] [-23.00dB]", f"Front Left: {speaker}")
             .replace("Front Right: Playback 14 [38%] [-23.00dB]", f"Front Right: {speaker}")
             .replace("Playback 16 [52%] [-7.00dB]", self.reading("Mic", "playback"))
             .replace("Capture 30 [86%] [18.00dB]", self.reading("Mic", "capture"))
+            .replace("Mono: Playback [on]", f"Mono: Playback [{agc}]")
         )
 
 
@@ -117,6 +124,7 @@ def test_parses_each_control_and_direction_from_scontents():
         Volume("Speaker", "playback", 0, 37, 14, -23.0),
         Volume("Mic", "playback", 0, 31, 16, -7.0),
         Volume("Mic", "capture", 0, 35, 30, 18.0),
+        Volume("Auto Gain Control", "playback", 0, 1, 1, None, kind="switch"),
     ]
 
 
@@ -127,7 +135,10 @@ def test_parses_a_volume_without_db():
 
 def test_input_side_is_capture_and_output_side_leaves_out_the_mic_monitor():
     volumes = parse_volumes(PI_CM108)
-    assert [(v.control, v.direction) for v in side_volumes("input", volumes)] == [("Mic", "capture")]
+    assert [(v.control, v.direction, v.kind) for v in side_volumes("input", volumes)] == [
+        ("Mic", "capture", "volume"),
+        ("Auto Gain Control", "playback", "switch"),
+    ]
     assert [(v.control, v.direction) for v in side_volumes("output", volumes)] == [("Speaker", "playback")]
 
 
@@ -147,13 +158,18 @@ def test_saved_levels_are_set_by_direction_on_each_sides_card():
     card = FakeCard()
     config = RepeaterConfig(
         audio_input_device=CM108, audio_output_device=CM108,
-        audio_input_levels={"Mic": 22}, audio_output_levels={"Speaker": 30},
+        audio_input_levels={"Mic": 22, "Auto Gain Control": 0}, audio_output_levels={"Speaker": 30},
     )
 
     apply_saved_levels(config, card)
 
-    assert [s[4:] for s in card.sets] == [["sset", "Mic", "capture", "22"], ["sset", "Speaker", "playback", "30"]]
+    assert [s[4:] for s in card.sets] == [
+        ["sset", "Mic", "capture", "22"],
+        ["sset", "Auto Gain Control", "off"],
+        ["sset", "Speaker", "playback", "30"],
+    ]
     assert card.value("Mic", "playback") == 16  # the monitor path is left alone
+    assert card.switches["Auto Gain Control"] == 0
 
 
 def test_saved_levels_skip_the_system_default_device():
@@ -170,8 +186,18 @@ def test_levels_route_lists_each_sides_volumes_and_whether_theyre_saved():
 
     assert body["notes"] == []
     assert body["levels"] == [
-        {"side": "input", "card": 2, "control": "Mic", "min": 0, "max": 35, "value": 30, "db": 18.0, "saved": False},
-        {"side": "output", "card": 2, "control": "Speaker", "min": 0, "max": 37, "value": 14, "db": -23.0, "saved": True},
+        {
+            "side": "input", "card": 2, "control": "Mic", "min": 0, "max": 35,
+            "value": 30, "db": 18.0, "saved": False, "kind": "volume",
+        },
+        {
+            "side": "input", "card": 2, "control": "Auto Gain Control", "min": 0, "max": 1,
+            "value": 1, "db": None, "saved": False, "kind": "switch",
+        },
+        {
+            "side": "output", "card": 2, "control": "Speaker", "min": 0, "max": 37,
+            "value": 14, "db": -23.0, "saved": True, "kind": "volume",
+        },
     ]
 
 
@@ -184,7 +210,19 @@ def test_setting_a_level_changes_the_card_and_saves_it():
     assert card.value("Mic", "capture") == 25 and card.value("Mic", "playback") == 16
     assert service.saved_config.audio_input_levels == {"Mic": 25}
     mic = next(level for level in response.json()["levels"] if level["control"] == "Mic")
-    assert (mic["value"], mic["db"], mic["saved"]) == (25, 13.0, True)
+    assert (mic["value"], mic["db"], mic["saved"], mic["kind"]) == (25, 13.0, True, "volume")
+
+
+def test_auto_gain_control_is_a_saved_switch():
+    client, service, card = make_client()
+
+    response = client.put("/api/audio/levels", json={"side": "input", "control": "Auto Gain Control", "value": 0})
+
+    assert response.status_code == 200
+    assert card.switches["Auto Gain Control"] == 0
+    assert service.saved_config.audio_input_levels == {"Auto Gain Control": 0}
+    agc = next(level for level in response.json()["levels"] if level["control"] == "Auto Gain Control")
+    assert (agc["value"], agc["kind"], agc["saved"]) == (0, "switch", True)
 
 
 def test_a_level_past_the_controls_range_is_clamped():
@@ -265,7 +303,8 @@ def test_the_engine_sets_the_saved_levels_before_opening_the_card():
     )
     live.apply_config(service.config)
 
-    assert events[:2] == ["sset Mic capture 20", "stream started"]
+    # apply_saved_levels reads scontents first (empty join of args[4:]), then sset.
+    assert [e for e in events if e][:2] == ["sset Mic capture 20", "stream started"]
     assert card.value("Mic", "capture") == 20
     live.shutdown()
 

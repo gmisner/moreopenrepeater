@@ -1,6 +1,7 @@
 import {
   Accordion,
   Badge,
+  Button,
   Card,
   Group,
   NumberInput,
@@ -28,6 +29,8 @@ import type { AudioDevice, ConfigSlice, LinkValues, SerialPort } from "./types";
 export function LinkRadioCard({
   link,
   devices,
+  devicesError,
+  onReloadDevices,
   serialPorts,
   soundUsage,
   serialUsage,
@@ -39,6 +42,8 @@ export function LinkRadioCard({
 }: {
   link: ConfigSlice<LinkValues>;
   devices: AudioDevice[];
+  devicesError?: string | null;
+  onReloadDevices?: () => void;
   serialPorts: SerialPort[];
   soundUsage: DeviceAssignment[];
   serialUsage: DeviceAssignment[];
@@ -139,24 +144,52 @@ export function LinkRadioCard({
             <Accordion.Item value="devices">
               <Accordion.Control>Sound devices</Accordion.Control>
               <Accordion.Panel>
+                {devicesError ? (
+                  <Text c="red" size="sm" mb="sm">
+                    Couldn&apos;t list sound devices: {devicesError}
+                    {onReloadDevices ? (
+                      <>
+                        {" "}
+                        <Button variant="subtle" size="compact-xs" onClick={onReloadDevices}>
+                          Retry
+                        </Button>
+                      </>
+                    ) : null}
+                  </Text>
+                ) : null}
+                {!devicesError && soundDeviceOptions(devices, "inputs", "", []).length === 0 ? (
+                  <Text c="dimmed" size="sm" mb="sm">
+                    No capture devices yet. Plug in the link radio&apos;s USB interface, then{" "}
+                    {onReloadDevices ? (
+                      <Button variant="subtle" size="compact-xs" onClick={onReloadDevices}>
+                        refresh the list
+                      </Button>
+                    ) : (
+                      "refresh this page"
+                    )}
+                    .
+                  </Text>
+                ) : null}
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <Select
-                    label={labeled("Input (link receiver)", "Its own sound device, not the repeater's.")}
+                    label={labeled("Input (link receiver)", "Its own sound device, not the repeater's. Look for Card 3 vs Card 4 when two Digirigs are plugged in.")}
                     data={soundDeviceOptions(devices, "inputs", link.values.link_radio_input_device, soundUsage)}
                     value={link.values.link_radio_input_device || null}
                     onChange={(value) => link.setField("link_radio_input_device", value || "")}
-                    searchable
                     clearable
                     placeholder="System default"
+                    nothingFoundMessage="No input devices"
+                    comboboxProps={{ withinPortal: true, zIndex: 400 }}
                   />
                   <Select
                     label="Output (link transmitter)"
                     data={soundDeviceOptions(devices, "outputs", link.values.link_radio_output_device, soundUsage)}
                     value={link.values.link_radio_output_device || null}
                     onChange={(value) => link.setField("link_radio_output_device", value || "")}
-                    searchable
                     clearable
                     placeholder="System default"
+                    nothingFoundMessage="No output devices"
+                    comboboxProps={{ withinPortal: true, zIndex: 400 }}
                   />
                 </SimpleGrid>
               </Accordion.Panel>

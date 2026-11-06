@@ -289,7 +289,7 @@ the service user's `audio` group membership gives it access):
 |---|---|---|---|
 | Generic CM108/CM119 USB interface | CM108 GPIO3 | CM108 VOL_DN, active low | (left alone) |
 | DMK URI | CM108 GPIO3 | CM108 VOL_DN, active low | Speaker 75%, Mic 18 dB |
-| Digirig Lite | CM108 GPIO3 | Audio level (VOX); wire the COS pad for CM108 COS | (left alone) |
+| Digirig Lite | CM108 GPIO3 | Audio level (VOX); wire the COS pad for CM108 COS | Speaker 75%, Mic 18 dB, Auto Gain off |
 | USB-RIM Lite | CM108 GPIO3 | CM108 VOL_DN, active low | Speaker 75%, Mic 18 dB |
 | AIOC | CM108 GPIO3 | virtual COS on VOL_DN | (left alone) |
 | SVXLink Card (F5UII/F8ASB) | GPIO16; port 2: GPIO17 | GPIO19, active low; port 2: GPIO18 | Speaker 75%, Mic 69% |
@@ -516,6 +516,16 @@ device (CM108 audio + GPIO3 PTT only); serial RTS/DTR is Digirig **Mobile**
 (CP2102), not Lite. Controller board preset: Digirig Lite → PTT **CM108**,
 COS **VOX** (unless the COS pad is wired).
 
+The same RFI often shows up as **choppy audio** before a hard disconnect:
+`rx_db` swings from hot (e.g. −5) to near silence (−60…−80) every half-second
+while the link HT is keyed, and `dmesg` logs `error -32` / `error -71` on the
+C-Media device. One Digirig + one HT is also **half-duplex**: in repeater
+mode the controller keys that HT on COS, so receive audio dies as soon as
+PTT asserts — use **Timing → Simplex node** for a single-HT local radio, or
+separate RX and TX radios for a live local repeater. Longer bring-up notes
+(Mic levels, simplex poll commands, RFI checklist):
+[troubleshooting Digirig + HT](troubleshooting-digirig-ht.md).
+
 When the bus still dies mid-key, software can soften the failure:
 [#96](https://github.com/gmisner/moreopenrepeater/issues/96) recovers
 CM108/AIOC hidraw after a USB drop without a full service restart;
@@ -538,6 +548,9 @@ Operator checklist (link radio + Digirig Lite):
   disconnects.
 - [ ] Optional: note model / frequency / notes on the Link radio page for
   the next operator.
+- [ ] If the *local* radio is also a single Digirig + HT, use **simplex node**
+  (or separate RX/TX HTs) — see
+  [troubleshooting Digirig + HT](troubleshooting-digirig-ht.md).
 
 ### Remote base
 

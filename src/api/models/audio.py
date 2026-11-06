@@ -74,6 +74,7 @@ class SoundLevelResponse(BaseModel):
     value: int
     db: Optional[float]
     saved: bool  # set again whenever the engine opens the card
+    kind: Literal["volume", "switch"] = "volume"  # ALSA switch (e.g. Auto Gain Control)
 
 
 class SoundLevelsResponse(BaseModel):

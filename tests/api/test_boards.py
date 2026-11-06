@@ -115,6 +115,9 @@ def test_boards_route_lists_presets_with_unsupported_ones_marked():
     client, *_ = make_client()
     listed = {b["id"]: b for b in client.get("/api/boards").json()}
     assert listed["dmk-uri"]["mixer"] == [["Speaker", "75%"], ["Mic", "18dB"]]
+    assert listed["digirig-lite"]["mixer"] == [
+        ["Speaker", "75%"], ["Mic", "18dB"], ["Auto Gain Control", "off"],
+    ]
     assert listed["svxlink-basic"]["two_port"] is True
     assert listed["aioc"]["two_port"] is False
     assert listed["ics-2x"]["unsupported"]

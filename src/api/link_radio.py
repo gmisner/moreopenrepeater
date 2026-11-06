@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from typing import Callable, Optional
 
 from audio_io.cm108 import CM108Interface
@@ -34,7 +35,9 @@ from controller.state_machine import RepeaterConfig
 from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
+from .audio_devices import resolve_audio_device
 from .boards import run_amixer
+from .live_audio import STREAM_RECOVER_COOLDOWN
 from .mixer import apply_saved_levels
 from .service import RepeaterService
 
@@ -58,15 +61,15 @@ def _serial_key(device: str, line: str) -> tuple[str, str]:
 
 
 def setup_problem(config: RepeaterConfig, cm108: Optional[CM108Interface]) -> Optional[str]:
-    """Why these settings can't run the link radio, or None."""
+    """Why these settings can't run the linked radio, or None."""
     if not config.audio_enabled:
-        return "The link radio needs the repeater's live audio turned on."
+        return "The linked radio needs the repeater's live audio turned on."
     if config.link_radio_input_device == config.audio_input_device:
-        return "The link radio needs its own input device, not the repeater's receiver."
+        return "The linked radio needs its own input device, not the repeater's receiver."
     if config.link_radio_output_device == config.audio_output_device:
-        return "The link radio needs its own output device, not the repeater's transmitter."
+        return "The linked radio needs its own output device, not the repeater's transmitter."
     if config.monitor_enabled and config.link_radio_input_device == config.monitor_input_device:
-        return "The link radio's input device is the monitor receiver's."
+        return "The linked radio's input device is the monitor receiver's."
     taken = {}
     if config.cos_source == "gpio":
         taken[config.cos_gpio_pin] = "the repeater's COS pin"
@@ -80,7 +83,7 @@ def setup_problem(config: RepeaterConfig, cm108: Optional[CM108Interface]) -> Op
     if config.link_radio_ptt == "gpio":
         pins.append(config.link_radio_ptt_gpio_pin)
     if len(pins) == 2 and pins[0] == pins[1]:
-        return f"The link radio's PTT and COS can't both use GPIO{pins[0]}."
+        return f"The linked radio's PTT and COS can't both use GPIO{pins[0]}."
     for pin in pins:
         if pin in taken:
             return f"GPIO{pin} is already {taken[pin]}."
@@ -96,11 +99,11 @@ def setup_problem(config: RepeaterConfig, cm108: Optional[CM108Interface]) -> Op
         if kind != "serial":
             continue
         if not device:
-            return f"The link radio's {role} is set to a serial port, but no serial port is chosen."
+            return f"The linked radio's {role} is set to a serial port, but no serial port is chosen."
         if _serial_key(device, line) in taken_lines:
             return f"{line.upper()} on {device} is already {taken_lines[_serial_key(device, line)]}."
     if cm108 is None and "cm108" in (config.link_radio_cos, config.link_radio_ptt):
-        return "The link radio is set to use a CM108, but no second CM108 interface was found."
+        return "The linked radio is set to use a CM108, but no second CM108 interface was found."
     return None
 
 

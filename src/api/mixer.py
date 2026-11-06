@@ -8,6 +8,10 @@ itself: capture volumes on each radio's input card, and playback volumes
 on each radio's output card. They're saved by control name, not card
 number, so they follow the interface if ALSA numbers the cards differently
 after a reboot.
+
+CM108-style cards also expose on/off switches (notably Auto Gain Control).
+Those are saved with the input-side levels as 0/1 and applied with
+`amixer sset … on|off`.
 """
 from __future__ import annotations
 
@@ -24,10 +28,12 @@ _logger = logging.getLogger("moreopenrepeater.mixer")
 # "input"/"output" = repeater; "link_input"/"link_output" = link radio.
 Side = Literal["input", "output", "link_input", "link_output"]
 Run = Callable[[list[str]], subprocess.CompletedProcess]
+Kind = Literal["volume", "switch"]
 
 _CONTROL = re.compile(r"^Simple mixer control '(.+)',(\d+)$")
 _LIMITS = re.compile(r"(Playback|Capture) (-?\d+) - (-?\d+)")
 _READING = re.compile(r"(Playback|Capture) (-?\d+) \[\d+%\](?: \[(-?[\d.]+)dB\])?")
+_SWITCH = re.compile(r"(Playback|Capture) \[(on|off)\]")
 
 _SIDE_DEVICE = {
     "input": "audio_input_device",
@@ -57,14 +63,16 @@ class Volume:
     max: int
     value: int
     db: Optional[float]
+    kind: Kind = "volume"
 
 
 def parse_volumes(text: str) -> list[Volume]:
-    """The volumes in `amixer scontents`, one per control and direction."""
+    """The volumes and on/off switches in `amixer scontents`."""
     volumes: list[Volume] = []
     name: Optional[str] = None
     limits: dict[str, tuple[int, int]] = {}
     readings: dict[str, tuple[int, Optional[float]]] = {}
+    switches: dict[str, int] = {}
 
     def finish() -> None:
         if name is None:
@@ -74,13 +82,17 @@ def parse_volumes(text: str) -> list[Volume]:
                 low, high = limits[direction]
                 value, db = readings[direction]
                 volumes.append(Volume(name, direction.lower(), low, high, value, db))  # type: ignore[arg-type]
+            elif direction in switches and direction not in limits:
+                volumes.append(
+                    Volume(name, direction.lower(), 0, 1, switches[direction], None, kind="switch")  # type: ignore[arg-type]
+                )
 
     for line in text.splitlines():
         header = _CONTROL.match(line)
         if header:
             finish()
             name = header.group(1) if header.group(2) == "0" else None
-            limits, readings = {}, {}
+            limits, readings, switches = {}, {}, {}
             continue
         stripped = line.strip()
         if stripped.startswith("Limits:"):
@@ -88,6 +100,11 @@ def parse_volumes(text: str) -> list[Volume]:
         elif ":" in stripped and not stripped.startswith(("Capabilities:", "Playback channels:", "Capture channels:")):
             for m in _READING.finditer(stripped):
                 readings.setdefault(m.group(1), (int(m.group(2)), float(m.group(3)) if m.group(3) else None))
+            for m in _SWITCH.finditer(stripped):
+                # Volume lines also contain [on]/[off] after the dB; only count
+                # pure switches (no step reading for that direction).
+                if m.group(1) not in readings:
+                    switches.setdefault(m.group(1), 1 if m.group(2) == "on" else 0)
     finish()
     return volumes
 
@@ -111,19 +128,34 @@ def io_side(side: Side) -> Literal["input", "output"]:
 
 
 def side_volumes(side: Side, volumes: list[Volume]) -> list[Volume]:
-    """What each side's sliders adjust: capture on the input card; playback
-    on the output card, leaving out a mic's monitor path (a control that
-    also captures), which only loops receive audio back out."""
+    """What each side's controls adjust: capture (+ switches like Auto Gain)
+    on the input card; playback on the output card, leaving out a mic's
+    monitor path (a control that also captures), which only loops receive
+    audio back out. Switches are listed on the input side only so a card
+    used for both RX and TX doesn't show Auto Gain twice."""
     if io_side(side) == "input":
-        return [v for v in volumes if v.direction == "capture"]
-    capturing = {v.control for v in volumes if v.direction == "capture"}
-    return [v for v in volumes if v.direction == "playback" and v.control not in capturing]
+        capture = [v for v in volumes if v.direction == "capture" and v.kind == "volume"]
+        switches = [v for v in volumes if v.kind == "switch"]
+        return capture + switches
+    capturing = {v.control for v in volumes if v.direction == "capture" and v.kind == "volume"}
+    return [v for v in volumes if v.direction == "playback" and v.kind == "volume" and v.control not in capturing]
 
 
-def set_volume(card: int, control: str, direction: str, value: int, run: Run = run_amixer) -> Optional[str]:
-    """Set one volume; an error message, or None."""
+def set_volume(
+    card: int,
+    control: str,
+    direction: str,
+    value: int,
+    run: Run = run_amixer,
+    *,
+    kind: Kind = "volume",
+) -> Optional[str]:
+    """Set one volume or switch; an error message, or None."""
     try:
-        done = run(["amixer", "-q", "-c", str(card), "sset", control, direction, str(value)])
+        if kind == "switch":
+            done = run(["amixer", "-q", "-c", str(card), "sset", control, "on" if value else "off"])
+        else:
+            done = run(["amixer", "-q", "-c", str(card), "sset", control, direction, str(value)])
     except FileNotFoundError:
         return "amixer isn't installed (sudo apt install alsa-utils)"
     except subprocess.TimeoutExpired:
@@ -156,9 +188,18 @@ def apply_saved_levels(config, run: Run = run_amixer, *, sides: Optional[tuple[S
         card = side_card(config, side)
         if card is None:
             continue
-        direction = "capture" if io_side(side) == "input" else "playback"
+        try:
+            known = {v.control: v for v in side_volumes(side, read_volumes(card, run))}
+        except OSError as error:
+            _logger.warning("couldn't read sound card %d before applying levels: %s", card, error)
+            known = {}
+        fallback_direction = "capture" if io_side(side) == "input" else "playback"
         for control, value in levels.items():
-            error = set_volume(card, control, direction, int(value), run)
+            volume = known.get(control)
+            if volume is None:
+                error = set_volume(card, control, fallback_direction, int(value), run)
+            else:
+                error = set_volume(card, control, volume.direction, int(value), run, kind=volume.kind)
             if error:
                 _logger.warning("couldn't set %s on sound card %d: %s", control, card, error)
 

@@ -11,12 +11,16 @@ def test_every_scaled_courtesy_style_matches_the_configured_duration(style):
     assert np.max(np.abs(samples)) <= 0.31
 
 
-@pytest.mark.parametrize("style", COURTESY_TONE_STYLES)
+@pytest.mark.parametrize("style", [s for s in COURTESY_TONE_STYLES if s != "none"])
 def test_courtesy_tones_fade_in_and_out_to_avoid_clicks(style):
     samples = courtesy_tone(style, 0.3, 8000)
     assert abs(samples[0]) < 0.01
     assert abs(samples[-1]) < 0.01
     assert 0 < np.max(np.abs(samples)) <= 0.31
+
+
+def test_none_courtesy_tone_is_silent():
+    assert len(courtesy_tone("none", 0.5, 8000)) == 0
 
 
 def test_new_styles_sound_different():

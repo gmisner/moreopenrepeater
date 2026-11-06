@@ -177,3 +177,34 @@ def test_other_write_errors_still_raise():
     with pytest.raises(OSError) as raised:
         CM108Interface(device).set_ptt(False)
     assert raised.value.errno == errno.EIO
+
+
+def test_ensure_open_reopens_without_waiting_for_ptt(tmp_path):
+    dead = FakeHidrawDevice(write_error=OSError(errno.ENODEV, "No such device"))
+    dead.path = str(tmp_path / "missing-hidraw")
+    alive = FakeHidrawDevice()
+    alive.path = str(tmp_path / "hidraw-new")
+    (tmp_path / "hidraw-new").write_text("")
+
+    cm108 = CM108Interface(
+        dead,
+        find=lambda: [{"path": alive.path, "vendor": 0x0D8C, "product": 0x013C, "name": "x", "stable_id": "usb-a"}],
+        open_device=lambda path: alive,
+        stable_id="usb-a",
+    )
+    cm108._gone = True
+    assert cm108.ensure_open() is True
+    assert cm108.device is alive
+    assert cm108.gone is False
+    assert alive.written_reports  # GPIO state rewritten on reopen
+
+
+def test_candidate_paths_prefer_matching_stable_id():
+    device = FakeHidrawDevice()
+    device.path = "/dev/hidraw1"
+    found = [
+        {"path": "/dev/hidraw9", "vendor": 0x0D8C, "product": 0x013C, "name": "other", "stable_id": "usb-other"},
+        {"path": "/dev/hidraw4", "vendor": 0x0D8C, "product": 0x013C, "name": "mine", "stable_id": "usb-mine"},
+    ]
+    cm108 = CM108Interface(device, find=lambda: found, stable_id="usb-mine")
+    assert cm108._candidate_paths() == ["/dev/hidraw1", "/dev/hidraw4", "/dev/hidraw9"]

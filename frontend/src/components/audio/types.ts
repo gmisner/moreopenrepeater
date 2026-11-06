@@ -1,5 +1,12 @@
 export type Asset = { id: string; kind: string; filename: string; uploaded_at: string };
-export type AudioDevice = { name: string; inputs: number; outputs: number; default_samplerate: number };
+export type AudioDevice = {
+  name: string;
+  inputs: number;
+  outputs: number;
+  default_samplerate: number;
+  card?: number | null;
+  stable_id?: string | null;
+};
 export type SerialPort = { path: string; target: string };
 export type SoundLevel = {
   side: "input" | "output" | "link_input" | "link_output";
@@ -10,6 +17,7 @@ export type SoundLevel = {
   value: number;
   db: number | null;
   saved: boolean;
+  kind?: "volume" | "switch";
 };
 export type EngineStatus = {
   enabled: boolean;

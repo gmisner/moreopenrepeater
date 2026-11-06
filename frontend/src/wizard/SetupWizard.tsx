@@ -258,7 +258,7 @@ export function SetupWizardProvider({ children }: { children: ReactNode }) {
     if (id === "devices") {
       const linkEnabled = Boolean(selectedBoard?.two_port && linkOn);
       if (linkEnabled && (!linkInput || !linkOutput)) {
-        throw new Error("Pick the link radio's input and output.");
+        throw new Error("Pick the linked radio's input and output.");
       }
       if (!selectedBoard) {
         await save({
@@ -448,21 +448,21 @@ export function SetupWizardProvider({ children }: { children: ReactNode }) {
               {selectedBoard?.two_port ? (
                 <Stack gap="sm">
                   <Switch
-                    label="Port 2 has a link radio"
+                    label="Port 2 has a linked radio"
                     checked={linkOn}
                     onChange={(event) => setLinkOn(event.currentTarget.checked)}
                   />
                   {linkOn ? (
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
                       <Select
-                        label="Link radio input"
+                        label="Linked Radio input"
                         data={wizardDeviceOptions(devices, "inputs", linkInput, deviceUsage)}
                         value={linkInput}
                         onChange={(value) => setLinkInput(value ?? "")}
                         searchable
                       />
                       <Select
-                        label="Link radio output"
+                        label="Linked Radio output"
                         data={wizardDeviceOptions(devices, "outputs", linkOutput, deviceUsage)}
                         value={linkOutput}
                         onChange={(value) => setLinkOutput(value ?? "")}

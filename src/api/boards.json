@@ -24,10 +24,10 @@
     "name": "Digirig Lite",
     "maker": "Digirig",
     "kind": "usb",
-    "notes": "CM108B with PTT on GPIO3. Carrier detect: use audio level (VOX) unless you've wired the board's COS pad to VOL_DN.",
+    "notes": "CM108B with PTT on GPIO3. Carrier detect: use audio level (VOX) unless you've wired the board's COS pad to VOL_DN. One Digirig + one HT is half-duplex — use Timing → Simplex node unless you have separate RX and TX radios. Mic is set hot for HT speaker audio; Auto Gain is off.",
     "device_hints": ["USB Audio", "C-Media", "Digirig"],
     "repeater": {"cos_source": "vox", "ptt_output": "cm108"},
-    "mixer": []
+    "mixer": [["Speaker", "75%"], ["Mic", "18dB"], ["Auto Gain Control", "off"]]
   },
   {
     "id": "usb-rim-lite",

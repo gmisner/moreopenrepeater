@@ -371,7 +371,9 @@ def test_audio_endpoints():
     app = create_app(start_background_tick=False, log_path=tmp / "t.log", audio_devices=lambda: devices)
     client = TestClient(app)
 
-    assert client.get("/api/audio/devices").json() == devices
+    assert client.get("/api/audio/devices").json() == [
+        {**devices[0], "card": None, "stable_id": None}
+    ]
     engine = client.get("/api/audio/engine").json()
     assert engine["enabled"] is False and engine["running"] is False
     assert engine["rx_level_db"] <= -100

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from typing import Callable, Optional
 
 from audio_io.cm108 import CM108Interface
@@ -34,6 +35,7 @@ from controller.state_machine import RepeaterConfig
 from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
+from .audio_devices import resolve_audio_device
 from .boards import run_amixer
 from .mixer import apply_saved_levels
 from .service import RepeaterService
@@ -42,6 +44,7 @@ _logger = logging.getLogger("moreopenrepeater.link_radio")
 
 BLOCK_SECONDS = 0.02
 UPDATE_SECONDS = 0.05
+STREAM_RECOVER_COOLDOWN = 5.0  # match live_audio: avoid restart thrash while USB is still gone
 _RESTART_FIELDS = (
     "link_radio_enabled", "link_radio_input_device", "link_radio_output_device", "link_radio_cos",
     "link_radio_cos_polarity", "link_radio_cos_gpio_pin", "link_radio_ptt", "link_radio_ptt_gpio_pin",
@@ -58,15 +61,15 @@ def _serial_key(device: str, line: str) -> tuple[str, str]:
 
 
 def setup_problem(config: RepeaterConfig, cm108: Optional[CM108Interface]) -> Optional[str]:
-    """Why these settings can't run the link radio, or None."""
+    """Why these settings can't run the linked radio, or None."""
     if not config.audio_enabled:
-        return "The link radio needs the repeater's live audio turned on."
+        return "The linked radio needs the repeater's live audio turned on."
     if config.link_radio_input_device == config.audio_input_device:
-        return "The link radio needs its own input device, not the repeater's receiver."
+        return "The linked radio needs its own input device, not the repeater's receiver."
     if config.link_radio_output_device == config.audio_output_device:
-        return "The link radio needs its own output device, not the repeater's transmitter."
+        return "The linked radio needs its own output device, not the repeater's transmitter."
     if config.monitor_enabled and config.link_radio_input_device == config.monitor_input_device:
-        return "The link radio's input device is the monitor receiver's."
+        return "The linked radio's input device is the monitor receiver's."
     taken = {}
     if config.cos_source == "gpio":
         taken[config.cos_gpio_pin] = "the repeater's COS pin"
@@ -80,7 +83,7 @@ def setup_problem(config: RepeaterConfig, cm108: Optional[CM108Interface]) -> Op
     if config.link_radio_ptt == "gpio":
         pins.append(config.link_radio_ptt_gpio_pin)
     if len(pins) == 2 and pins[0] == pins[1]:
-        return f"The link radio's PTT and COS can't both use GPIO{pins[0]}."
+        return f"The linked radio's PTT and COS can't both use GPIO{pins[0]}."
     for pin in pins:
         if pin in taken:
             return f"GPIO{pin} is already {taken[pin]}."
@@ -96,11 +99,11 @@ def setup_problem(config: RepeaterConfig, cm108: Optional[CM108Interface]) -> Op
         if kind != "serial":
             continue
         if not device:
-            return f"The link radio's {role} is set to a serial port, but no serial port is chosen."
+            return f"The linked radio's {role} is set to a serial port, but no serial port is chosen."
         if _serial_key(device, line) in taken_lines:
             return f"{line.upper()} on {device} is already {taken_lines[_serial_key(device, line)]}."
     if cm108 is None and "cm108" in (config.link_radio_cos, config.link_radio_ptt):
-        return "The link radio is set to use a CM108, but no second CM108 interface was found."
+        return "The linked radio is set to use a CM108, but no second CM108 interface was found."
     return None
 
 
@@ -115,6 +118,7 @@ class LinkRadio:
         engine_factory: Callable[..., AudioEngine] = AudioEngine,
         open_pin: Callable[..., GpioLine] = open_header_pin,
         clock: Callable[[], float] = lambda: asyncio.get_running_loop().time(),
+        monotonic: Callable[[], float] = time.monotonic,
         open_serial: Callable[..., GpioLine] = open_serial_line,
         run_mixer: Callable[..., object] = run_amixer,
     ) -> None:
@@ -133,6 +137,7 @@ class LinkRadio:
         self._open_serial = open_serial
         self._run_mixer = run_mixer
         self._clock = clock
+        self._monotonic = monotonic
         self._pins: list[GpioLine] = []
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._applied: Optional[RepeaterConfig] = None
@@ -143,6 +148,7 @@ class LinkRadio:
         # Repeater side (in the repeater's engine) and link side (in this engine).
         self._repeater_side: Optional[LinkAudio] = None
         self._link_side: Optional[LinkAudio] = None
+        self._last_stream_recover = float("-inf")
 
     def attach(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -243,7 +249,7 @@ class LinkRadio:
         try:
             engine.processor.play(self._renderer.render(clip, config))
         except (UnknownClipError, TTSError):
-            _logger.exception("couldn't render %s for the link radio", clip)
+            _logger.exception("couldn't render %s for the linked radio", clip)
 
     def _on_events(self, events) -> None:
         if self._loop is not None:
@@ -258,11 +264,38 @@ class LinkRadio:
         self.receiving = receiving
         self._service.link_radio_keyed(receiving)
 
+    @property
+    def cm108(self) -> Optional[CM108Interface]:
+        return self._cm108
+
     def _cm108_interface(self) -> Optional[CM108Interface]:
         if not self._cm108_looked:
             self._cm108_looked = True
             self._cm108 = self._find_cm108()
         return self._cm108
+
+    def _on_stream_dead(self) -> None:
+        """PortAudio stream went inactive (USB audio drop). Restart on the loop thread."""
+        if self._loop is None:
+            return
+        self._loop.call_soon_threadsafe(self._recover_engine)
+
+    def _recover_engine(self) -> None:
+        """Same path as a config restart: stop, then start and re-resolve devices."""
+        config = self._applied
+        if config is None or not config.link_radio_enabled:
+            self._stop()
+            return
+        now = self._monotonic()
+        if now - self._last_stream_recover < STREAM_RECOVER_COOLDOWN:
+            self._stop()
+            self.error = "linked radio audio stream died (USB unplug or device reset)"
+            _logger.warning("linked radio audio stream died again too soon; not restarting yet")
+            return
+        self._last_stream_recover = now
+        _logger.info("restarting linked radio audio after the stream died")
+        self._stop()
+        self._start(config)
 
     def _start(self, config: RepeaterConfig) -> None:
         wants_cm108 = "cm108" in (config.link_radio_cos, config.link_radio_ptt)
@@ -312,20 +345,23 @@ class LinkRadio:
         # Always "repeating", so the far end goes to the repeater whenever its COS is open.
         processor.set_repeating(True)
         processor.set_link(self._link_side)
+        input_device = resolve_audio_device(config.link_radio_input_device or None)
+        output_device = resolve_audio_device(config.link_radio_output_device or None)
         engine = self._engine_factory(
             processor,
             int(rate * BLOCK_SECONDS),
             on_events=self._on_events,
-            input_device=config.link_radio_input_device or None,
-            output_device=config.link_radio_output_device or None,
+            input_device=input_device or None,
+            output_device=output_device or None,
             ptt_output=ptt_output,
             cos_input=cos_input,
+            on_stream_dead=self._on_stream_dead,
         )
         apply_saved_levels(config, self._run_mixer, sides=("link_input", "link_output"))
         try:
             engine.start()
         except Exception as error:  # PortAudio raises its own error types
-            self.error = f"couldn't open the link radio's audio devices: {error}"
+            self.error = f"couldn't open the linked radio's audio devices: {error}"
             _logger.error("%s", self.error)
             try:
                 engine.stop()
@@ -342,7 +378,7 @@ class LinkRadio:
         try:
             line = self._open_pin(pin, output=output, active_low=active_low)
         except OSError as error:
-            raise OSError(f"couldn't open GPIO{pin} for the link radio's {role}: {error.strerror or error}") from error
+            raise OSError(f"couldn't open GPIO{pin} for the linked radio's {role}: {error.strerror or error}") from error
         self._pins.append(line)
         return line
 
@@ -351,7 +387,7 @@ class LinkRadio:
             opened = self._open_serial(device, line, output=output, active_low=active_low)
         except OSError as error:
             raise OSError(
-                f"couldn't open {device} ({line.upper()}) for the link radio's {role}: {error.strerror or error}"
+                f"couldn't open {device} ({line.upper()}) for the linked radio's {role}: {error.strerror or error}"
             ) from error
         self._pins.append(opened)
         return opened

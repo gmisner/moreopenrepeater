@@ -1,6 +1,7 @@
 import {
   Accordion,
   Badge,
+  Button,
   Card,
   Group,
   NumberInput,
@@ -28,6 +29,8 @@ import type { AudioDevice, ConfigSlice, LinkValues, SerialPort } from "./types";
 export function LinkRadioCard({
   link,
   devices,
+  devicesError,
+  onReloadDevices,
   serialPorts,
   soundUsage,
   serialUsage,
@@ -39,6 +42,8 @@ export function LinkRadioCard({
 }: {
   link: ConfigSlice<LinkValues>;
   devices: AudioDevice[];
+  devicesError?: string | null;
+  onReloadDevices?: () => void;
   serialPorts: SerialPort[];
   soundUsage: DeviceAssignment[];
   serialUsage: DeviceAssignment[];
@@ -61,7 +66,7 @@ export function LinkRadioCard({
       >
         <Stack gap="md">
           <Group justify="space-between" align="center">
-            <Title order={2}>Link radio</Title>
+            <Title order={2}>Linked Radio</Title>
             <Badge color={link.values.link_radio_enabled ? "green" : "gray"} variant="light">
               {link.values.link_radio_enabled ? "on" : "off"}
             </Badge>
@@ -72,7 +77,7 @@ export function LinkRadioCard({
             (or other CM108) — separate USB dongle from the repeater radio&apos;s.
           </Text>
           <Switch
-            label={linkRemoteBase ? "Turn the remote base on" : "Connect the link radio"}
+            label={linkRemoteBase ? "Turn the remote base on" : "Connect the linked radio"}
             checked={link.values.link_radio_enabled}
             onChange={(event) => link.setField("link_radio_enabled", event.currentTarget.checked)}
           />
@@ -80,7 +85,7 @@ export function LinkRadioCard({
             <Select
               label={labeled(
                 "Use it as",
-                'A link to a far station stays on while connected: local users go out that radio, and what it hears is repeated here (fixed frequency on the radio). A remote base stays off until a "Link radio on" macro; users tune frequency, shift and tone by DTMF through Hamlib, and it turns itself off when idle.',
+                'A link to a far station stays on while connected: local users go out that radio, and what it hears is repeated here (fixed frequency on the radio). A remote base stays off until a "Linked Radio on" macro; users tune frequency, shift and tone by DTMF through Hamlib, and it turns itself off when idle.',
               )}
               data={[
                 { value: "link", label: "A link to a far station" },
@@ -91,7 +96,7 @@ export function LinkRadioCard({
                   <Text size="sm">{option.label}</Text>
                   <Text size="xs" c="dimmed" maw={280}>
                     {option.value === "remote_base"
-                      ? 'Off until a "Link radio on" macro; users tune it by DTMF; turns off when idle.'
+                      ? 'Off until a "Linked Radio on" macro; users tune it by DTMF; turns off when idle.'
                       : "Always-on cross-band path to a fixed far station or repeater."}
                   </Text>
                 </Stack>
@@ -101,7 +106,7 @@ export function LinkRadioCard({
               allowDeselect={false}
             />
             <TextInput
-              label={labeled("Name", "Shown on the dashboard and in spoken prompts for this link radio.")}
+              label={labeled("Name", "Shown on the dashboard and in spoken prompts for this linked radio.")}
               placeholder="Link to W1XYZ"
               maxLength={40}
               value={link.values.link_radio_name}
@@ -126,7 +131,7 @@ export function LinkRadioCard({
             />
           </SimpleGrid>
           <Textarea
-            label={labeled("Notes", "Anything else operators should know about this link radio.")}
+            label={labeled("Notes", "Anything else operators should know about this linked radio.")}
             placeholder="Antenna on the south tower; Digirig Lite on USB3; keep the HT away from the Pi."
             maxLength={500}
             minRows={2}
@@ -139,24 +144,52 @@ export function LinkRadioCard({
             <Accordion.Item value="devices">
               <Accordion.Control>Sound devices</Accordion.Control>
               <Accordion.Panel>
+                {devicesError ? (
+                  <Text c="red" size="sm" mb="sm">
+                    Couldn&apos;t list sound devices: {devicesError}
+                    {onReloadDevices ? (
+                      <>
+                        {" "}
+                        <Button variant="subtle" size="compact-xs" onClick={onReloadDevices}>
+                          Retry
+                        </Button>
+                      </>
+                    ) : null}
+                  </Text>
+                ) : null}
+                {!devicesError && soundDeviceOptions(devices, "inputs", "", []).length === 0 ? (
+                  <Text c="dimmed" size="sm" mb="sm">
+                    No capture devices yet. Plug in the linked radio&apos;s USB interface, then{" "}
+                    {onReloadDevices ? (
+                      <Button variant="subtle" size="compact-xs" onClick={onReloadDevices}>
+                        refresh the list
+                      </Button>
+                    ) : (
+                      "refresh this page"
+                    )}
+                    .
+                  </Text>
+                ) : null}
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <Select
-                    label={labeled("Input (link receiver)", "Its own sound device, not the repeater's.")}
+                    label={labeled("Input (link receiver)", "Its own sound device, not the repeater's. Look for Card 3 vs Card 4 when two Digirigs are plugged in.")}
                     data={soundDeviceOptions(devices, "inputs", link.values.link_radio_input_device, soundUsage)}
                     value={link.values.link_radio_input_device || null}
                     onChange={(value) => link.setField("link_radio_input_device", value || "")}
-                    searchable
                     clearable
                     placeholder="System default"
+                    nothingFoundMessage="No input devices"
+                    comboboxProps={{ withinPortal: true, zIndex: 400 }}
                   />
                   <Select
                     label="Output (link transmitter)"
                     data={soundDeviceOptions(devices, "outputs", link.values.link_radio_output_device, soundUsage)}
                     value={link.values.link_radio_output_device || null}
                     onChange={(value) => link.setField("link_radio_output_device", value || "")}
-                    searchable
                     clearable
                     placeholder="System default"
+                    nothingFoundMessage="No output devices"
+                    comboboxProps={{ withinPortal: true, zIndex: 400 }}
                   />
                 </SimpleGrid>
               </Accordion.Panel>
@@ -169,12 +202,12 @@ export function LinkRadioCard({
                   <Select
                     label={labeled(
                       "Detect a carrier by",
-                      "CM108 COS is on this link radio's Digirig/URI — not the repeater's. Digirig Lite usually uses VOX unless you wired the COS pad.",
+                      "CM108 COS is on this linked radio's Digirig/URI — not the repeater's. Digirig Lite usually uses VOX unless you wired the COS pad.",
                     )}
                     data={[
                       { value: "vox", label: "Audio level (VOX)" },
                       { value: "ctcss", label: "CTCSS tone present" },
-                      { value: "cm108", label: "This link radio's CM108 COS" },
+                      { value: "cm108", label: "This linked radio's CM108 COS" },
                       { value: "gpio", label: "Raspberry Pi GPIO pin" },
                       { value: "serial", label: "Serial port (CTS, DSR or DCD)" },
                     ]}
@@ -262,10 +295,10 @@ export function LinkRadioCard({
                   <Select
                     label={labeled(
                       "Key the transmitter with",
-                      "CM108 PTT is GPIO3 on this link radio's own Digirig/URI (the USB interface for the link sound devices above) — not the repeater radio's CM108. Auto-picked as the other CM108, or set MOREOPENREPEATER_LINK_CM108_HIDRAW.",
+                      "CM108 PTT is GPIO3 on this linked radio's own Digirig/URI (the USB interface for the link sound devices above) — not the repeater radio's CM108. Auto-picked as the other CM108, or set MOREOPENREPEATER_LINK_CM108_HIDRAW.",
                     )}
                     data={[
-                      { value: "cm108", label: "This link radio's CM108 (its Digirig / URI)" },
+                      { value: "cm108", label: "This linked radio's CM108 (its Digirig / URI)" },
                       { value: "gpio", label: "Raspberry Pi GPIO pin" },
                       { value: "serial", label: "Serial port (RTS or DTR)" },
                       { value: "none", label: "Nothing (the radio's own VOX keys it)" },
@@ -342,7 +375,7 @@ export function LinkRadioCard({
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <NumberInput
-                    label={labeled("Transmit gain", "Applied to audio sent out the link radio.")}
+                    label={labeled("Transmit gain", "Applied to audio sent out the linked radio.")}
                     suffix=" dB"
                     min={-40}
                     max={20}
@@ -364,7 +397,7 @@ export function LinkRadioCard({
                     placeholder="off"
                   />
                   <NumberInput
-                    label={labeled("Link timeout", "Longest one transmission out the link radio.")}
+                    label={labeled("Link timeout", "Longest one transmission out the linked radio.")}
                     suffix=" s"
                     min={30}
                     max={1800}

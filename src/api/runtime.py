@@ -62,7 +62,8 @@ from .hub import HubPoller, HubSiteStore
 from .link_radio import LinkRadio
 from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkScheduler
 from .links import LinkControl, LinkError
-from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env, list_audio_devices
+from .audio_devices import list_audio_devices, set_cache_path
+from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env
 from .log_hub import LogHub, LogShipper
 from .logging_config import configure_logging
 from .mailbox import Mailbox, MailboxStore, is_mailbox_clip
@@ -674,12 +675,28 @@ class AppRuntime:
         log_shipper.set_callsign(service.config.callsign)
         if log_shipper.active:
             log_shipper.start()
+        data_root = _resolve_data_root(os.environ, _REPO_DATA_DIR)
+        set_cache_path(data_root / "audio-device-ids.json")
+
+        def _cm108_path(interface) -> Optional[str]:
+            return None if interface is None else getattr(interface, "path", None) or getattr(
+                getattr(interface, "device", None), "path", None
+            )
+
+        def _cm108_ensure(interface) -> None:
+            if interface is not None:
+                interface.ensure_open()
+
         health = HealthMonitor(
             notifier,
-            system_probe or SystemProbe(_resolve_data_root(os.environ, _REPO_DATA_DIR)),
+            system_probe or SystemProbe(data_root),
             run_marker or RunMarker(None),
             audio_status=lambda: live_audio.status(),
-            cm108_path=lambda: getattr(getattr(cm108, "device", None), "path", None),
+            cm108_path=lambda: _cm108_path(cm108),
+            cm108_ensure=lambda: _cm108_ensure(cm108),
+            link_audio_status=lambda: link_radio.status(),
+            link_cm108_path=lambda: _cm108_path(link_radio.cm108),
+            link_cm108_ensure=lambda: _cm108_ensure(link_radio.cm108),
             update_status=updater.status,
         )
         tx_fan = tx_fan or TxFan(service, cm108, temperature=health.probe.temperature_c)

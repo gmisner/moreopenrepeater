@@ -520,6 +520,26 @@ def test_simplex_courtesy_tone_after_a_local_user_can_be_turned_off():
     assert controller.tick(now=500.0) == []  # nothing was transmitted, so no ID is owed
 
 
+def test_courtesy_tone_style_none_skips_to_hang_time():
+    controller = RepeaterController(make_config(courtesy_tone_style="none"), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    commands = controller.handle_event(COSChanged(active=False), now=1.0)
+    assert controller.state == HANG_TIME
+    assert not any(isinstance(c, PlayAudio) for c in commands)
+
+
+def test_link_courtesy_tone_style_none_can_differ_from_local():
+    controller = RepeaterController(
+        make_config(courtesy_tone_style="beep", courtesy_tone_link_style="none"), now=0.0
+    )
+    controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=0.0)
+    commands = controller.handle_event(RemoteKeyed(node_id="1998", keyed=False), now=1.0)
+    assert controller.state == HANG_TIME
+    assert not any(isinstance(c, PlayAudio) for c in commands)
+    controller.handle_event(COSChanged(active=True), now=2.0)
+    assert PlayAudio(clip="courtesy_tone") in controller.handle_event(COSChanged(active=False), now=3.0)
+
+
 def test_simplex_node_transmits_a_linked_station_and_its_courtesy_tone():
     controller = RepeaterController(simplex(simplex_courtesy_tone=False), now=0.0)
     assert ptt_commands(controller.handle_event(RemoteKeyed(node_id="1998", keyed=True), now=1.0)) == [True]

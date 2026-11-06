@@ -104,10 +104,13 @@ access to.) Plug in the interface and confirm with
 
 The service finds the interface itself when it starts, so after plugging
 one in for the first time, restart it (`sudo systemctl restart moreopenrepeater`).
-If the interface drops later (USB glitch, reseat), the next PTT or COS I/O
-reopens it by USB ID without a service restart, and the live audio engine
-restarts itself if the ALSA stream died. The N in `/dev/hidrawN` depends on
-what else is plugged in, so it's looked up by USB ID rather than configured.
+If the interface drops later (USB glitch, reseat), health checks reopen
+CM108 hidraw by USB identity without a service restart (PTT/COS I/O still
+reopens it too), and both the repeater and linked-radio live audio engines
+restart themselves if an ALSA stream died. Saved PortAudio names are matched
+back to the same USB card when `hw:N` moves. The N in `/dev/hidrawN` depends
+on what else is plugged in, so it's looked up by USB identity rather than
+configured.
 With more than one CM108, pick one with
 `MOREOPENREPEATER_CM108_HIDRAW=/dev/hidrawN` in the env file (next
 section), or set it to `off` to ignore the interface.
@@ -289,7 +292,7 @@ the service user's `audio` group membership gives it access):
 |---|---|---|---|
 | Generic CM108/CM119 USB interface | CM108 GPIO3 | CM108 VOL_DN, active low | (left alone) |
 | DMK URI | CM108 GPIO3 | CM108 VOL_DN, active low | Speaker 75%, Mic 18 dB |
-| Digirig Lite | CM108 GPIO3 | Audio level (VOX); wire the COS pad for CM108 COS | (left alone) |
+| Digirig Lite | CM108 GPIO3 | Audio level (VOX); wire the COS pad for CM108 COS | Speaker 75%, Mic 18 dB, Auto Gain off |
 | USB-RIM Lite | CM108 GPIO3 | CM108 VOL_DN, active low | Speaker 75%, Mic 18 dB |
 | AIOC | CM108 GPIO3 | virtual COS on VOL_DN | (left alone) |
 | SVXLink Card (F5UII/F8ASB) | GPIO16; port 2: GPIO17 | GPIO19, active low; port 2: GPIO18 | Speaker 75%, Mic 69% |
@@ -516,28 +519,43 @@ device (CM108 audio + GPIO3 PTT only); serial RTS/DTR is Digirig **Mobile**
 (CP2102), not Lite. Controller board preset: Digirig Lite → PTT **CM108**,
 COS **VOX** (unless the COS pad is wired).
 
+The same RFI often shows up as **choppy audio** before a hard disconnect:
+`rx_db` swings from hot (e.g. −5) to near silence (−60…−80) every half-second
+while the link HT is keyed, and `dmesg` logs `error -32` / `error -71` on the
+C-Media device. One Digirig + one HT is also **half-duplex**: in repeater
+mode the controller keys that HT on COS, so receive audio dies as soon as
+PTT asserts — use **Timing → Simplex node** for a single-HT local radio, or
+separate RX and TX radios for a live local repeater. Longer bring-up notes
+(Mic levels, simplex poll commands, RFI checklist):
+[troubleshooting Digirig + HT](troubleshooting-digirig-ht.md).
+
 When the bus still dies mid-key, software can soften the failure:
 [#96](https://github.com/gmisner/moreopenrepeater/issues/96) recovers
 CM108/AIOC hidraw after a USB drop without a full service restart;
 [#111](https://github.com/gmisner/moreopenrepeater/issues/111) ignores a
-vanished CM108 during watchdog unkey (`ENODEV`). Field notes for this
-layout: [#119](https://github.com/gmisner/moreopenrepeater/issues/119).
+vanished CM108 during watchdog unkey (`ENODEV`). Soft recovery also covers
+the linked radio's audio stream and CM108, and rematches sound cards when
+`hw:N` renumbers. Field notes for this layout:
+[#119](https://github.com/gmisner/moreopenrepeater/issues/119).
 Lasting recovery still needs the interface to stay attached — ferrites on
 the Digirig USB cable, HT antenna away from the Pi/USB run, and low HT power
 for bring-up are the durable fix.
 
-Operator checklist (link radio + Digirig Lite):
+Operator checklist (Linked Radio + Digirig Lite):
 
-- [ ] Live audio on; link radio enabled as **link** (fixed frequency), not
+- [ ] Live audio on; Linked Radio enabled as **link** (fixed frequency), not
   remote base (unless CAT + Mobile/other radio).
-- [ ] Digirig chosen as **link** input/output only.
+- [ ] Digirig chosen as **linked** input/output only.
 - [ ] PTT = CM108; COS = VOX (or wired CM108 COS).
 - [ ] HT on the **other band** from the repeater; low power; antenna clear
   of the Pi/USB.
 - [ ] Ferrites on USB (and cable dress) if TX correlates with USB
   disconnects.
-- [ ] Optional: note model / frequency / notes on the Link radio page for
+- [ ] Optional: note model / frequency / notes on the Linked Radio page for
   the next operator.
+- [ ] If the *local* radio is also a single Digirig + HT, use **simplex node**
+  (or separate RX/TX HTs) — see
+  [troubleshooting Digirig + HT](troubleshooting-digirig-ht.md).
 
 ### Remote base
 

@@ -436,16 +436,38 @@ class RepeaterController:
             return self._enter_receiving(now)
         return self._enter_hang_time(now)
 
+    def _courtesy_sound(self, clip: str) -> tuple[str, Optional[str]]:
+        """(built-in style, uploaded clip id) for a courtesy clip name."""
+        source = {"courtesy_tone_link": "link", "courtesy_tone_patch": "patch"}.get(clip)
+        if source:
+            style = getattr(self.config, f"courtesy_tone_{source}_style")
+            asset = getattr(self.config, f"courtesy_tone_{source}_asset_id")
+            if asset or style != "same":
+                return (self.config.courtesy_tone_style if style == "same" else style), asset
+        return self.config.courtesy_tone_style, self.config.courtesy_tone_asset_id
+
+    def _courtesy_off(self, clip: str, duration: Optional[float]) -> bool:
+        """True when this courtesy clip should not play (style Off, or a
+        rendered empty clip). An uploaded clip is ignored when style is Off."""
+        if duration is not None and duration <= 0:
+            return True
+        style, _asset = self._courtesy_sound(clip)
+        return style == "none"
+
     def _enter_courtesy_tone(self, now: float, clip: str) -> list[ControllerCommand]:
         """`clip` says who unkeyed last: "courtesy_tone" (a local user),
         "courtesy_tone_link" or "courtesy_tone_patch"."""
         if self._simplex:
             if clip == "courtesy_tone" and not self.config.simplex_courtesy_tone:
                 return self._enter_idle(now)
+        duration = self._clip_duration(clip)
+        if self._courtesy_off(clip, duration):
+            return self._enter_idle(now) if self._simplex else self._enter_hang_time(now)
+        if self._simplex:
             self._note_transmission(now)  # the tone keys the transmitter itself
         self._set_state(COURTESY_TONE)
         self._tot_deadline = None
-        self._state_deadline = now + (self._clip_duration(clip) or self.config.courtesy_tone_duration)
+        self._state_deadline = now + (duration if duration is not None else self.config.courtesy_tone_duration)
         return [PlayAudio(clip=clip)]
 
     def _enter_hang_time(self, now: float) -> list[ControllerCommand]:

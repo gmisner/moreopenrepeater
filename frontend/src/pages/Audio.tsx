@@ -49,6 +49,7 @@ export function Audio() {
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
+  const [devicesError, setDevicesError] = useState<string | null>(null);
   const [serialPorts, setSerialPorts] = useState<SerialPort[]>([]);
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null);
   const [levels, setLevels] = useState<SoundLevel[]>([]);
@@ -104,8 +105,10 @@ export function Audio() {
   const loadDevices = useCallback(async () => {
     try {
       setDevices(await api<AudioDevice[]>("/api/audio/devices"));
-    } catch {
+      setDevicesError(null);
+    } catch (error) {
       setDevices([]);
+      setDevicesError(error instanceof Error ? error.message : String(error));
     }
     try {
       setSerialPorts(await api<SerialPort[]>("/api/serial/ports"));
@@ -270,12 +273,15 @@ export function Audio() {
       <RadioInterfaceCard
         engine={engine}
         devices={devices}
+        devicesError={devicesError}
+        onReloadDevices={() => void loadDevices()}
         serialPorts={serialPorts}
         soundUsage={soundUsage}
         serialUsage={serialUsage}
         engineStatus={engineStatus}
         state={state}
         boardPreset={boardPreset}
+        nodeMode={(config?.node_mode as string) || "repeater"}
         cosHardware={cosHardware}
         health={health}
         showSilenceHint={showSilenceHint}
@@ -296,6 +302,8 @@ export function Audio() {
       <LinkRadioCard
         link={link}
         devices={devices}
+        devicesError={devicesError}
+        onReloadDevices={() => void loadDevices()}
         serialPorts={serialPorts}
         soundUsage={soundUsage}
         serialUsage={serialUsage}

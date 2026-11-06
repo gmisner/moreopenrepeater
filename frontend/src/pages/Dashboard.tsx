@@ -50,6 +50,19 @@ type LinksStatus = {
   node?: string | null;
 };
 
+type LinkRadioStatus = {
+  enabled: boolean;
+  running: boolean;
+  error: string | null;
+  name: string;
+  mode: string;
+  rx_level_db: number;
+  receiving: boolean;
+  transmitting: boolean;
+  timed_out: boolean;
+  rig_error?: string | null;
+};
+
 function Indicator({ name, on, value, danger }: { name: string; on: boolean; value: string; danger?: boolean }) {
   // Mantine rejects bg="green.light" (throws → blank React tree). Use the CSS var.
   const color = on ? (danger ? "red" : "green") : "gray";
@@ -139,6 +152,7 @@ export function Dashboard() {
   const ctcss = status?.ctcss_hz;
 
   const [links, setLinks] = useState<LinksStatus | null>(null);
+  const [linkRadio, setLinkRadio] = useState<LinkRadioStatus | null>(null);
   const [node, setNode] = useState("");
   const [monitor, setMonitor] = useState(false);
   const [listenSource, setListenSource] = useState("tx");
@@ -163,6 +177,22 @@ export function Dashboard() {
     const timer = window.setInterval(() => void refreshLinks(), 3000);
     return () => window.clearInterval(timer);
   }, [refreshLinks]);
+
+  const refreshLinkRadio = useCallback(async () => {
+    try {
+      setLinkRadio(await api<LinkRadioStatus>("/api/link-radio"));
+    } catch {
+      /* keep last */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshLinkRadio();
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void refreshLinkRadio();
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [refreshLinkRadio]);
 
   const refreshGpio = useCallback(async () => {
     try {
@@ -361,6 +391,61 @@ export function Dashboard() {
           </SimpleGrid>
         </Grid.Col>
       </Grid>
+
+      {linkRadio ? (
+        <Card withBorder padding="lg" radius="md">
+          <Stack gap="md">
+            <Group justify="space-between" align="center">
+              <div>
+                <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
+                  Linked Radio
+                </Text>
+                <Text size="sm" c="dimmed">
+                  {linkRadio.name || "Linked Radio"}
+                  {linkRadio.mode === "remote_base" ? " · remote base" : ""}
+                  {!linkRadio.enabled ? " · off" : linkRadio.running ? "" : " · not running"}
+                </Text>
+              </div>
+              <Button component={Link} to="/audio" variant="subtle" size="xs">
+                Audio settings
+              </Button>
+            </Group>
+            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+              <Indicator
+                name="Link"
+                on={linkRadio.enabled && linkRadio.running}
+                value={
+                  linkRadio.error
+                    ? "error"
+                    : !linkRadio.enabled
+                      ? "off"
+                      : linkRadio.running
+                        ? "running"
+                        : "stopped"
+                }
+                danger={Boolean(linkRadio.error)}
+              />
+              <Indicator name="RX" on={linkRadio.receiving} value={linkRadio.receiving ? "open" : "idle"} />
+              <Indicator
+                name="TX"
+                on={linkRadio.transmitting}
+                value={linkRadio.timed_out ? "timeout" : linkRadio.transmitting ? "keyed" : "idle"}
+                danger={linkRadio.timed_out}
+              />
+              <Indicator
+                name="Level"
+                on={linkRadio.running && linkRadio.rx_level_db > -80}
+                value={linkRadio.running ? `${linkRadio.rx_level_db.toFixed(0)} dB` : "–"}
+              />
+            </SimpleGrid>
+            {linkRadio.error || linkRadio.rig_error ? (
+              <Text c="red" size="sm">
+                {linkRadio.error || linkRadio.rig_error}
+              </Text>
+            ) : null}
+          </Stack>
+        </Card>
+      ) : null}
 
       {sensors && sensors.length > 0 ? (
         <Card withBorder padding="lg" radius="md">

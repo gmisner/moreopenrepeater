@@ -15,7 +15,7 @@ from dsp.morse import MORSE_CODE
 
 SCALED_STYLES = ("beep", "high_low", "low_high", "triple", "chirp", "bumblebee", "up_run", "down_run", "bonk", "bee_boo")
 CW_STYLES = {"cw_k": "K", "cw_r": "R", "cw_t": "T"}
-COURTESY_TONE_STYLES = (*SCALED_STYLES, "nextel", *CW_STYLES, "custom")
+COURTESY_TONE_STYLES = ("none", *SCALED_STYLES, "nextel", *CW_STYLES, "custom")
 # Nextel's Direct Connect talk-permit chirp: 1800 Hz, 30 ms on, 20 off, 30 on, 20 off, 50 on.
 _NEXTEL = ((1800, 30), (0, 20), (1800, 30), (0, 20), (1800, 50))
 AMPLITUDE = 0.3
@@ -114,7 +114,10 @@ def courtesy_tone(
     cw_tone_hz: float = 800.0,
     custom: str = DEFAULT_CUSTOM_TONE,
 ) -> np.ndarray:
-    """SCALED_STYLES are `duration` long; the rest set their own length."""
+    """SCALED_STYLES are `duration` long; the rest set their own length.
+    `none` is silence (no samples) so the controller can skip the tone."""
+    if style == "none":
+        return np.zeros(0, dtype=np.float32)
     if style == "nextel":
         return _segments(_NEXTEL, sample_rate)
     if style in CW_STYLES:

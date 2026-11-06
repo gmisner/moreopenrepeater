@@ -42,6 +42,7 @@ export function assetOptions(assets: Asset[], kind: string) {
 }
 
 export function soundLevelText(level: SoundLevel) {
+  if (level.kind === "switch") return level.value > 0 ? "on" : "off";
   if (level.db == null) return `${Math.round((100 * (level.value - level.min)) / (level.max - level.min || 1))}%`;
   return `${level.db > 0 ? "+" : ""}${level.db.toFixed(1)} dB`;
 }

@@ -201,6 +201,9 @@ class ClipRenderer:
     def _render_uncached(self, clip: str, config: RepeaterConfig) -> np.ndarray:
         if clip in COURTESY_CLIPS:
             style, asset_id = courtesy_sound(clip, config)
+            if style == "none":
+                # Off: ignore an uploaded clip so the tone can be silenced from the style menu.
+                return np.zeros(0, dtype=np.float32)
             asset = self._load_asset(asset_id)
             if asset is not None:
                 return asset

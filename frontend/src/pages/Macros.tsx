@@ -54,8 +54,8 @@ const ACTION_OPTIONS = [
   { value: "tx_disable", label: "Transmitter off" },
   { value: "tx_enable", label: "Transmitter on" },
   { value: "lockout_clear", label: "Clear a stuck-carrier lockout" },
-  { value: "link_radio_on", label: "Link radio on" },
-  { value: "link_radio_off", label: "Link radio off" },
+  { value: "link_radio_on", label: "Linked Radio on" },
+  { value: "link_radio_off", label: "Linked Radio off" },
   { value: "remote_tune", label: "Remote base frequency (keyed after, then #)" },
   { value: "remote_shift", label: "Remote base shift" },
   { value: "remote_tone", label: "Remote base tone (keyed after, then #)" },
@@ -532,7 +532,7 @@ export function Macros() {
             onChange={(event) => setField("needs_code", event.currentTarget.checked)}
           />
           <Checkbox
-            label="Hide from spoken help (on by default for the transmitter and link radio switches, and for macros that need a code)"
+            label="Hide from spoken help (on by default for the transmitter and linked radio switches, and for macros that need a code)"
             checked={form.help_hidden}
             onChange={(event) => {
               setHelpHiddenTouched(true);

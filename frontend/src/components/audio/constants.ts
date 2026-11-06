@@ -1,6 +1,7 @@
 import type { EngineValues, LinkValues, SoundValues } from "./types";
 
 export const TONE_STYLES = [
+  { value: "none", label: "Off" },
   { value: "beep", label: "Beep" },
   { value: "high_low", label: "High–low" },
   { value: "low_high", label: "Low–high" },

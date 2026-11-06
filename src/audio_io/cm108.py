@@ -56,8 +56,32 @@ def gpio_bit(pin: int) -> int:
     return 1 << (pin - 1)
 
 
+def _hidraw_stable_id(node: Path, vendor: int, product: int) -> str:
+    """Identity that survives hidrawN renumbering: serial when present, else bus path."""
+    try:
+        device = (node / "device").resolve()
+    except OSError:
+        device = node / "device"
+    for path in (device, *getattr(device, "parents", ())):
+        serial = ""
+        try:
+            serial = (path / "serial").read_text().strip()
+        except OSError:
+            pass
+        if serial and serial not in ("0", "n/a", "N/A"):
+            return f"usb-{vendor:04x}:{product:04x}-{serial}"
+        try:
+            busnum = (path / "busnum").read_text().strip()
+            devpath = (path / "devpath").read_text().strip()
+        except OSError:
+            continue
+        if busnum and devpath:
+            return f"usb-{vendor:04x}:{product:04x}-{busnum}-{devpath}"
+    return f"usb-{vendor:04x}:{product:04x}"
+
+
 def find_interfaces(sysfs: Path = Path("/sys/class/hidraw")) -> list[dict]:
-    """CM108-family hidraw nodes: [{"path", "vendor", "product", "name"}].
+    """CM108-family hidraw nodes: path, vendor, product, name, stable_id.
     The N in /dev/hidrawN depends on USB enumeration order, so look it up
     rather than configuring it."""
     found = []
@@ -72,7 +96,15 @@ def find_interfaces(sysfs: Path = Path("/sys/class/hidraw")) -> list[dict]:
         except ValueError:
             continue
         if vendor == 0x0D8C or (vendor, product) == (0x1209, 0x7388):
-            found.append({"path": f"/dev/{node.name}", "vendor": vendor, "product": product, "name": fields.get("HID_NAME", "")})
+            found.append(
+                {
+                    "path": f"/dev/{node.name}",
+                    "vendor": vendor,
+                    "product": product,
+                    "name": fields.get("HID_NAME", ""),
+                    "stable_id": _hidraw_stable_id(node, vendor, product),
+                }
+            )
     return found
 
 
@@ -113,8 +145,9 @@ class CM108Interface:
     the pins that are outputs.
 
     After a USB drop (ENODEV/EPIPE), the next PTT/COS I/O closes the dead
-    fd, finds the interface again by USB ID (hidrawN can change), opens it,
-    and rewrites the remembered GPIO output state -- no process restart.
+    fd, finds the interface again by USB identity (hidrawN can change),
+    opens it, and rewrites the remembered GPIO output state -- no process
+    restart. `ensure_open` does the same without waiting for PTT/COS.
     """
 
     def __init__(
@@ -125,6 +158,7 @@ class CM108Interface:
         cos_active_low: bool = True,
         find: Callable[[], list[dict]] = find_interfaces,
         open_device: Callable[[str], HidrawDevice] = LinuxHidrawDevice,
+        stable_id: Optional[str] = None,
     ) -> None:
         self.device = device
         self.ptt_pin = ptt_pin
@@ -133,11 +167,20 @@ class CM108Interface:
         self._find = find
         self._open_device = open_device
         self._preferred_path = getattr(device, "path", None)
+        self._preferred_id = stable_id or self._identity_for_path(self._preferred_path)
         self._outputs = 0  # mask
         self._levels = 0  # data
         self._lock = threading.Lock()
         self.last_inputs: Optional[tuple[int, int]] = None  # (buttons, GPIO levels)
         self._gone = False  # last I/O found no interface; next I/O still retries
+
+    def _identity_for_path(self, path: Optional[str]) -> Optional[str]:
+        if not path:
+            return None
+        for found in self._find():
+            if found.get("path") == path:
+                return found.get("stable_id")
+        return None
 
     def _report(self) -> bytes:
         return bytes([0x00, 0x00, self._levels, self._outputs, 0x00])
@@ -152,11 +195,17 @@ class CM108Interface:
             pass
 
     def _candidate_paths(self) -> list[str]:
+        """Preferred path, then same stable_id, then any other CM108."""
         paths: list[str] = []
         if self._preferred_path:
             paths.append(self._preferred_path)
-        for found in self._find():
-            path = found["path"]
+        found = self._find()
+        if self._preferred_id:
+            for entry in found:
+                if entry.get("stable_id") == self._preferred_id and entry["path"] not in paths:
+                    paths.append(entry["path"])
+        for entry in found:
+            path = entry["path"]
             if path not in paths:
                 paths.append(path)
         return paths
@@ -185,6 +234,7 @@ class CM108Interface:
                 raise
             self.device = device
             self._preferred_path = path
+            self._preferred_id = self._identity_for_path(path) or self._preferred_id
             self._gone = False
             _logger.info("reopened CM108 at %s after USB drop", path)
             return True
@@ -193,6 +243,26 @@ class CM108Interface:
             _logger.warning("%s is gone; GPIO writes ignored until it reappears", path)
             self._gone = True
         return False
+
+    def ensure_open(self) -> bool:
+        """Reopen now if the interface was lost, without waiting for PTT/COS."""
+        with self._lock:
+            if not self._gone and self._preferred_path and os.path.exists(self._preferred_path):
+                try:
+                    self.device.get_input_report(INPUT_REPORT_LENGTH)
+                    return True
+                except OSError as error:
+                    if error.errno not in _GONE_ERRNOS:
+                        raise
+            return self._reopen()
+
+    @property
+    def gone(self) -> bool:
+        return self._gone
+
+    @property
+    def path(self) -> Optional[str]:
+        return getattr(self.device, "path", None) or self._preferred_path
 
     def _write(self) -> None:
         try:

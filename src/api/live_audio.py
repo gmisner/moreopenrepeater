@@ -30,7 +30,6 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from audio_io.audio_stream import sd
 from audio_io.cm108 import CM108Interface, LinuxHidrawDevice, find_interfaces
 from audio_io.engine import GLITCH_COUNTERS, AudioEngine
 from audio_io.openings import ReceiverOpening
@@ -43,6 +42,7 @@ from controller.state_machine import RepeaterConfig
 from playout.renderer import RECORDING_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
+from .audio_devices import resolve_audio_device
 from .boards import run_amixer
 from .mixer import apply_saved_levels
 from .monitor import AudioMonitor
@@ -108,20 +108,6 @@ def _tone_burst_ms(config) -> Optional[float]:
     return config.tone_burst_ms if config.access_mode == "tone_burst" else None
 
 
-def list_audio_devices() -> list[dict]:
-    if sd is None:
-        return []
-    return [
-        {
-            "name": d["name"],
-            "inputs": d["max_input_channels"],
-            "outputs": d["max_output_channels"],
-            "default_samplerate": d["default_samplerate"],
-        }
-        for d in sd.query_devices()
-    ]
-
-
 def cm108_from_env(env: dict, find: Callable[[], list[dict]] = find_interfaces) -> Optional[CM108Interface]:
     """`MOREOPENREPEATER_CM108_HIDRAW`: a /dev/hidrawN path, "off", or
     "auto" (the default) for the first CM108 plugged in at startup."""
@@ -129,7 +115,7 @@ def cm108_from_env(env: dict, find: Callable[[], list[dict]] = find_interfaces) 
     if setting == "off":
         return None
     if setting != "auto":
-        return _unkeyed(CM108Interface(LinuxHidrawDevice(setting)))
+        return _unkeyed(CM108Interface(LinuxHidrawDevice(setting), find=find))
     found = find()
     if not found:
         return None
@@ -140,7 +126,7 @@ def cm108_from_env(env: dict, find: Callable[[], list[dict]] = find_interfaces) 
         _logger.error("found a CM108 interface at %s but couldn't open it: %s", path, error)
         return None
     _logger.info("using the CM108 interface at %s (%s)", path, found[0]["name"])
-    return _unkeyed(CM108Interface(device))
+    return _unkeyed(CM108Interface(device, find=find, stable_id=found[0].get("stable_id")))
 
 
 def link_cm108_from_env(
@@ -161,10 +147,11 @@ def link_cm108_from_env(
     try:
         device = LinuxHidrawDevice(setting)
     except OSError as error:
-        _logger.error("couldn't open the link radio's CM108 at %s: %s", setting, error)
+        _logger.error("couldn't open the linked radio's CM108 at %s: %s", setting, error)
         return None
-    _logger.info("using the CM108 interface at %s for the link radio", setting)
-    return _unkeyed(CM108Interface(device))
+    matched = next((entry for entry in find() if entry["path"] == setting), None)
+    _logger.info("using the CM108 interface at %s for the linked radio", setting)
+    return _unkeyed(CM108Interface(device, find=find, stable_id=(matched or {}).get("stable_id")))
 
 
 def _unkeyed(interface: CM108Interface) -> CM108Interface:
@@ -527,12 +514,14 @@ class LiveAudio:
         processor.set_link(self._link)
         processor.set_port(self._port)
         processor.on_opening = self._on_opening
+        input_device = resolve_audio_device(config.audio_input_device or None)
+        output_device = resolve_audio_device(config.audio_output_device or None)
         engine = self._engine_factory(
             processor,
             int(rate * BLOCK_SECONDS),
             on_events=self._on_events,
-            input_device=config.audio_input_device or None,
-            output_device=config.audio_output_device or None,
+            input_device=input_device or None,
+            output_device=output_device or None,
             ptt_output=ptt_output,
             cos_input=cos_input,
             on_audio=self.monitor.feed,

@@ -25,6 +25,7 @@ const REFRESH_MS = 2000;
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 type AllStarNode = { number: string; rxchannel: string; duplex: string; controlled: boolean };
+type AllStarIdentity = { node: string; callsign: string; has_password: boolean };
 type AllStarStatus = {
   available: boolean;
   manual: boolean;
@@ -33,8 +34,11 @@ type AllStarStatus = {
   error: string | null;
   nodes: AllStarNode[];
   node: string | null;
+  identity?: AllStarIdentity | null;
   audio: { node?: string | null; keyed?: boolean; error?: string | null };
 };
+
+type IdentityForm = { fromNode: string; node: string; callsign: string; password: string };
 
 type Favorite = { node: string; name: string; monitor: boolean };
 type LinkSchedule = {
@@ -114,7 +118,12 @@ function describeAllStar(status: AllStarStatus, isAdmin: boolean): { text: strin
   if (status.error) return { text: status.error, pill: ["Error", "warn"] };
   if (!status.nodes.length) return { text: "rpt.conf has no nodes yet. Set one up with sudo asl-menu." };
   if (!status.node) {
-    const next = isAdmin ? "Choose the node below." : "An admin can choose one here.";
+    const placeholder = status.nodes.length === 1 && status.nodes[0]?.number === "1999";
+    const next = isAdmin
+      ? placeholder
+        ? "ASL3 ships with placeholder node 1999 — run sudo asl-menu for your real node number, callsign and password, then choose it below."
+        : "Choose this machine's AllStarLink node below (from rpt.conf). Favorite nodes below are for linking out, not this list."
+      : "An admin can choose one here.";
     return { text: `The repeater isn't the radio for a node yet. ${next}`, pill: ["Not linked", "off"] };
   }
   if (status.restart_needed) {
@@ -203,6 +212,10 @@ export function AllStar() {
   const [status, setStatus] = useState<AllStarStatus | null>(null);
   const [selectedNode, setSelectedNode] = useState("");
   const [nodeBusy, setNodeBusy] = useState(false);
+  const [identityForm, setIdentityForm] = useState<IdentityForm>({ fromNode: "", node: "", callsign: "", password: "" });
+  const [identityFilled, setIdentityFilled] = useState(false);
+  const [identityEdited, setIdentityEdited] = useState(false);
+  const [identityBusy, setIdentityBusy] = useState(false);
 
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [favoritesSaving, setFavoritesSaving] = useState(false);
@@ -287,9 +300,23 @@ export function AllStar() {
     if (echo?.settings && !echoEdited) setEchoFilled(false);
   }, [config]); // eslint-disable-line react-hooks/exhaustive-deps -- refill EchoLink defaults when station config changes
 
+  useEffect(() => {
+    if (!status?.available || identityEdited) return;
+    const focus = status.identity?.node || status.node || status.nodes[0]?.number || "";
+    if (!focus && identityFilled) return;
+    setIdentityForm({
+      fromNode: focus,
+      node: focus === "1999" ? "" : focus,
+      callsign: status.identity?.callsign || (config?.callsign ? String(config.callsign).toUpperCase() : ""),
+      password: "",
+    });
+    setIdentityFilled(true);
+  }, [status, config, identityEdited, identityFilled]);
+
   const selected = status?.nodes.find((n) => n.number === selectedNode);
   const view = status ? describeAllStar(status, isAdmin) : null;
   const showNodeForm = isAdmin && status?.available && !status.error && (status.nodes.length ?? 0) > 0;
+  const showIdentityForm = isAdmin && status?.available && !status.error && (status.nodes.length ?? 0) > 0;
   const echoView = echo ? describeEcho(echo, status?.node ?? null, isAdmin) : null;
   const showEcho = Boolean(echo && (echo.available || echo.error));
 
@@ -331,6 +358,55 @@ export function AllStar() {
       refresh().catch(() => {});
     } finally {
       setNodeBusy(false);
+    }
+  };
+
+  const setIdentityField = <K extends keyof IdentityForm>(name: K, value: IdentityForm[K]) => {
+    setIdentityForm((prev) => ({ ...prev, [name]: value }));
+    setIdentityEdited(true);
+  };
+
+  const saveIdentity = async (event: FormEvent) => {
+    event.preventDefault();
+    const fromNode = identityForm.fromNode || selectedNode;
+    const node = identityForm.node.trim();
+    const callsign = identityForm.callsign.trim().toUpperCase();
+    if (!fromNode || !node || !callsign) return;
+    const needsPassword = Number(node) >= 2000 && !status?.identity?.has_password && !identityForm.password;
+    if (needsPassword) {
+      notifyError(new Error("Enter the node password from the AllStarLink portal."));
+      return;
+    }
+    if (
+      !window.confirm(
+        `Save AllStarLink node ${node} (${callsign})? This updates ASL3's config and restarts Asterisk, dropping links for a few seconds.`,
+      )
+    ) {
+      return;
+    }
+    setIdentityBusy(true);
+    try {
+      const next = await api<AllStarStatus>("/api/allstar/identity", {
+        method: "PUT",
+        json: {
+          from_node: fromNode,
+          node,
+          callsign,
+          password: identityForm.password,
+        },
+      });
+      setStatus(next);
+      setSelectedNode(node);
+      setIdentityEdited(false);
+      setIdentityFilled(false);
+      setIdentityForm((prev) => ({ ...prev, password: "" }));
+      notifySuccess(`Node ${node} is set up and the repeater is its radio`);
+      refreshEcho().catch(() => {});
+    } catch (error) {
+      notifyError(error);
+      refresh().catch(() => {});
+    } finally {
+      setIdentityBusy(false);
     }
   };
 
@@ -441,16 +517,91 @@ export function AllStar() {
         <Text c="dimmed" size="sm">
           {view?.text ?? "Loading…"}
         </Text>
+        {showIdentityForm ? (
+          <form onSubmit={(event) => void saveIdentity(event)}>
+            <Stack gap="md" mt="md">
+              <Text size="sm" fw={600}>
+                Set node number
+              </Text>
+              <Text c="dimmed" size="sm" maw="75ch">
+                From the AllStarLink portal (Node Settings): your node number, password, and callsign. This renames the
+                ASL3 placeholder in <Code>rpt.conf</Code>, registers the node, and makes the repeater its radio.
+              </Text>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                {status!.nodes.length > 1 ? (
+                  <Select
+                    label="Change this local node"
+                    data={status!.nodes.map((n) => ({
+                      value: n.number,
+                      label: n.number === "1999" ? "1999 (ASL3 placeholder)" : n.number,
+                    }))}
+                    value={identityForm.fromNode || null}
+                    onChange={(value) => {
+                      const fromNode = value || "";
+                      setIdentityEdited(true);
+                      setIdentityForm((prev) => ({
+                        ...prev,
+                        fromNode,
+                        node: !prev.node || prev.node === prev.fromNode ? (fromNode === "1999" ? "" : fromNode) : prev.node,
+                      }));
+                    }}
+                    allowDeselect={false}
+                  />
+                ) : null}
+                <TextInput
+                  label={labeled("Node number", "Assigned in the AllStarLink portal. Not a favorite/remote node.")}
+                  required
+                  inputMode="numeric"
+                  pattern="[0-9]{1,10}"
+                  placeholder="531870"
+                  value={identityForm.node}
+                  onChange={(event) => setIdentityField("node", event.currentTarget.value)}
+                />
+                <TextInput
+                  label="Callsign / ID"
+                  required
+                  maxLength={10}
+                  placeholder={config?.callsign ? String(config.callsign).toUpperCase() : "W1AW"}
+                  value={identityForm.callsign}
+                  onChange={(event) => setIdentityField("callsign", event.currentTarget.value)}
+                />
+                <TextInput
+                  label="Node password"
+                  type="password"
+                  autoComplete="new-password"
+                  required={Number(identityForm.node) >= 2000 && !status?.identity?.has_password}
+                  placeholder={status?.identity?.has_password ? "Saved (leave blank to keep it)" : "From the portal"}
+                  value={identityForm.password}
+                  onChange={(event) => setIdentityField("password", event.currentTarget.value)}
+                />
+              </SimpleGrid>
+              <Group justify="flex-end">
+                <Button type="submit" loading={identityBusy}>
+                  Save and use this node
+                </Button>
+              </Group>
+            </Stack>
+          </form>
+        ) : null}
         {showNodeForm ? (
           <form onSubmit={(event) => void bindNode(event)}>
             <Stack gap="md" mt="md">
+              <Text size="sm" fw={600}>
+                Or pick an existing local node
+              </Text>
               <Select
-                label={labeled("Node", selected
+                label={labeled(
+                  "This machine's node",
+                  selected
                     ? selected.controlled
                       ? "The repeater is its radio."
                       : `Its radio is ${radioName(selected.rxchannel)} now.`
-                    : undefined)}
-                data={status!.nodes.map((n) => ({ value: n.number, label: n.number }))}
+                    : "Nodes already in /etc/asterisk/rpt.conf.",
+                )}
+                data={status!.nodes.map((n) => ({
+                  value: n.number,
+                  label: n.number === "1999" ? "1999 (ASL3 placeholder)" : n.number,
+                }))}
                 value={selectedNode || null}
                 onChange={(value) => setSelectedNode(value || "")}
                 allowDeselect={false}
@@ -481,8 +632,8 @@ export function AllStar() {
         <Stack gap="md">
           <Title order={2}>Favorite nodes</Title>
           <Text c="dimmed" size="sm" maw="75ch">
-            One-click buttons on the dashboard&apos;s Links card. EchoLink nodes are 3 and the EchoLink number padded to six digits (
-            <Code>3009999</Code> for 9999).
+            Remote nodes to link to — one-click buttons on the dashboard&apos;s Links card (not the node dropdown above).
+            EchoLink nodes are 3 and the EchoLink number padded to six digits (<Code>3009999</Code> for 9999).
           </Text>
           <Table.ScrollContainer minWidth={480}>
             <Table striped highlightOnHover>

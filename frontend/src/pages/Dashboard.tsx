@@ -42,13 +42,26 @@ type LinkRow = {
   until?: string;
 };
 
+type FavoriteRow = {
+  node: string;
+  name?: string;
+  callsign?: string;
+  description?: string;
+  monitor?: boolean;
+};
+
 type LinksStatus = {
   available: boolean;
   links: LinkRow[];
-  favorites: { node: string; description?: string; monitor?: boolean }[];
+  favorites: FavoriteRow[];
   error?: string;
   node?: string | null;
 };
+
+function favoriteTitle(fav: FavoriteRow) {
+  const name = fav.name || fav.callsign;
+  return name ? `${name} (${fav.node})` : fav.node;
+}
 
 type LinkRadioStatus = {
   enabled: boolean;
@@ -233,15 +246,19 @@ export function Dashboard() {
     if (!status?.locked_out) return;
   }, [status?.locked_out]);
 
-  const connect = async (event: FormEvent) => {
-    event.preventDefault();
+  const connectNode = async (target: string, monitorOnly: boolean, clearInput = false) => {
     try {
-      setLinks(await api<LinksStatus>("/api/links", { method: "POST", json: { node, monitor } }));
-      notifySuccess(`Connecting node ${node}`);
-      setNode("");
+      setLinks(await api<LinksStatus>("/api/links", { method: "POST", json: { node: target, monitor: monitorOnly } }));
+      notifySuccess(`Connecting node ${target}`);
+      if (clearInput) setNode("");
     } catch (error) {
       notifyError(error);
     }
+  };
+
+  const connect = async (event: FormEvent) => {
+    event.preventDefault();
+    await connectNode(node, monitor, true);
   };
 
   const disconnect = async (n: string) => {
@@ -551,13 +568,36 @@ export function Dashboard() {
                 </Text>
               )}
               {canWrite && links?.available ? (
-                <Group component="form" onSubmit={connect} align="flex-end" mt="md" gap="sm">
-                  <TextInput label="Node number" value={node} onChange={(event) => setNode(event.currentTarget.value)} required maw={160} />
-                  <Button type="button" variant={monitor ? "light" : "default"} onClick={() => setMonitor((v) => !v)}>
-                    {monitor ? "Monitor on" : "Monitor only"}
-                  </Button>
-                  <Button type="submit">Connect</Button>
-                </Group>
+                <Stack gap="sm" mt="md">
+                  {links.favorites.length > 0 ? (
+                    <Group gap="xs">
+                      {links.favorites.map((fav) => {
+                        const linked = links.links.some((link) => link.node === fav.node);
+                        const title = [fav.description, fav.monitor ? "monitor only" : ""].filter(Boolean).join(" · ");
+                        return (
+                          <Button
+                            key={fav.node}
+                            type="button"
+                            size="xs"
+                            variant={linked ? "light" : "default"}
+                            disabled={linked}
+                            title={title || undefined}
+                            onClick={() => void connectNode(fav.node, Boolean(fav.monitor))}
+                          >
+                            {favoriteTitle(fav)}
+                          </Button>
+                        );
+                      })}
+                    </Group>
+                  ) : null}
+                  <Group component="form" onSubmit={connect} align="flex-end" gap="sm">
+                    <TextInput label="Node number" value={node} onChange={(event) => setNode(event.currentTarget.value)} required maw={160} />
+                    <Button type="button" variant={monitor ? "light" : "default"} onClick={() => setMonitor((v) => !v)}>
+                      {monitor ? "Monitor on" : "Monitor only"}
+                    </Button>
+                    <Button type="submit">Connect</Button>
+                  </Group>
+                </Stack>
               ) : null}
               {links?.error || (!links?.available && !links?.links?.length) ? (
                 <Text c="dimmed" size="sm" mt="sm">

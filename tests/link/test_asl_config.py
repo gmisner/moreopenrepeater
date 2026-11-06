@@ -5,10 +5,17 @@ from link.asl_config import (
     control_node,
     controller_settings,
     module_state,
+    node_callsign,
     nodes,
+    registration_password,
     release_node,
+    rename_node_stanza,
+    rename_section,
     restore_module,
+    set_http_registration,
+    set_idrecording,
     set_module,
+    update_extensions_node,
 )
 
 RPT = """\
@@ -114,3 +121,34 @@ def test_modules_already_right_or_missing():
     assert f"require = res_usbradio.so\nload = chan_echolink.so  {MARK}\n\n[global]" in added
     assert module_state(added, "chan_echolink.so") == "load"
     assert restore_module(added, "chan_echolink.so") == MODULES
+
+
+REG = """\
+[general]
+register_interval = 180
+
+[registrations]
+;register => 1999:password@register.allstarlink.org
+"""
+
+
+def test_rename_node_stanza_and_callsign():
+    renamed = rename_node_stanza(RPT, "1999", "531870")
+    assert "[531870](node-main)" in renamed
+    assert "rxchannel = SimpleUSB/531870" in renamed
+    assert "[1999]" not in renamed
+    with pytest.raises(ValueError, match="already has"):
+        rename_node_stanza(renamed, "1998", "531870")
+    with_id = set_idrecording(renamed, "531870", "W1AW")
+    assert "idrecording = |iW1AW" in with_id
+    assert node_callsign(with_id, "531870") == "W1AW"
+
+
+def test_http_registration_and_extensions():
+    active = set_http_registration(REG, "531870", "s3cret1", old_node="1999")
+    assert "register => 531870:s3cret1@register.allstarlink.org" in active
+    assert registration_password(active, "531870") == "s3cret1"
+    private = set_http_registration(active, "1999", "ignored", old_node="531870")
+    assert "531870:" not in private
+    assert update_extensions_node("NODE = 1999\n", "1999", "531870") == "NODE = 531870\n"
+    assert rename_section("[1999]\ndevice = foo\n", "1999", "531870").startswith("[531870]")

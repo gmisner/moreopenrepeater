@@ -107,7 +107,8 @@ install_allstar() {
   # It edits the node's lines in rpt.conf as text (see docs/allstar.md).
   usermod -aG asterisk "$SERVICE_USER"
   local file
-  for file in rpt.conf modules.conf echolink.conf; do
+  for file in rpt.conf modules.conf echolink.conf rpt_http_registrations.conf \
+      extensions.conf simpleusb.conf usbradio.conf voter.conf savenode.conf iax.conf; do
     if [ -f "$ASTERISK_DIR/$file" ]; then chmod g+w "$ASTERISK_DIR/$file"; fi
   done
   # AMI logins and the autopatch SIP password must not be world-readable;
@@ -367,7 +368,7 @@ fi
 echo "  Logs:                   journalctl -u moreopenrepeater -f"
 if [ "$ALLSTAR" -eq 1 ]; then
   echo
-  echo "AllStarLink is installed. If this node is new, run: sudo asl-menu"
-  echo "(node number, callsign and password), then choose the node on the"
-  echo "dashboard's AllStarLink page."
+  echo "AllStarLink is installed. If this node is new, enter its portal"
+  echo "node number, callsign and password on the dashboard's AllStarLink"
+  echo "page (or run: sudo asl-menu)."
 fi

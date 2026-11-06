@@ -15,6 +15,7 @@ from ..link_radio import LinkRadio
 from ..link_schedule import LinkScheduler
 from ..links import LinkControl, LinkError
 from ..models import (
+    AllStarIdentityRequest,
     AllStarNodeRequest,
     AllStarStatusResponse,
     EchoLinkRequest,
@@ -68,6 +69,19 @@ def register(
         no_call_in_progress()
         request.state.audit_detail = f"node {body.node}"
         return await change_allstar(allstar_node.use(body.node))
+
+    @app.put("/api/allstar/identity", response_model=AllStarStatusResponse, dependencies=admin_dependencies)
+    async def put_allstar_identity(body: AllStarIdentityRequest, request: Request) -> dict:
+        no_call_in_progress()
+        request.state.audit_detail = f"node {body.from_node} -> {body.node}" + (", new password" if body.password else "")
+        return await change_allstar(
+            allstar_node.configure_identity(
+                body.from_node,
+                body.node,
+                body.callsign,
+                password=body.password or None,
+            )
+        )
 
     @app.delete("/api/allstar", response_model=AllStarStatusResponse, dependencies=admin_dependencies)
     async def delete_allstar() -> dict:

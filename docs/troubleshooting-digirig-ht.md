@@ -144,8 +144,10 @@ sudo dmesg -w
 You want **no new** `-32` / `-71` / C-Media disconnect lines while someone
 talks and the link keys.
 
-Software already softens some failures (stream restart after USB audio drop;
-CM108 hidraw recovery — see [#96](https://github.com/gmisner/moreopenrepeater/issues/96),
+Software already softens some failures (repeater and linked-radio stream
+restart after USB audio drop; proactive CM108 hidraw reopen; sound-card
+rematch when `hw:N` moves — see
+[#96](https://github.com/gmisner/moreopenrepeater/issues/96),
 [#111](https://github.com/gmisner/moreopenrepeater/issues/111)). The bus still
 has to stay attached.
 

@@ -398,10 +398,10 @@ export function Dashboard() {
             <Group justify="space-between" align="center">
               <div>
                 <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-                  Link radio
+                  Linked Radio
                 </Text>
                 <Text size="sm" c="dimmed">
-                  {linkRadio.name || "Link radio"}
+                  {linkRadio.name || "Linked Radio"}
                   {linkRadio.mode === "remote_base" ? " · remote base" : ""}
                   {!linkRadio.enabled ? " · off" : linkRadio.running ? "" : " · not running"}
                 </Text>

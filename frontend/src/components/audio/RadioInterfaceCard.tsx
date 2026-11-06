@@ -216,7 +216,7 @@ export function RadioInterfaceCard({
                   <Select
                     label={labeled(
                       "Detect a carrier by",
-                      "CM108 COS is the VOL_DN / COS line on this radio's USB interface (the same Digirig, URI, or CM108 as its sound card) — not the link radio's.",
+                      "CM108 COS is the VOL_DN / COS line on this radio's USB interface (the same Digirig, URI, or CM108 as its sound card) — not the linked radio's.",
                     )}
                     data={[
                       { value: "vox", label: "Audio level (VOX)" },
@@ -331,7 +331,7 @@ export function RadioInterfaceCard({
                   <Select
                     label={labeled(
                       "Key the transmitter with",
-                      "CM108 PTT is GPIO3 on this radio's USB interface (Digirig Lite, DMK URI, USB-RIM, …) — the same dongle as its sound card. Not the link radio's Digirig.",
+                      "CM108 PTT is GPIO3 on this radio's USB interface (Digirig Lite, DMK URI, USB-RIM, …) — the same dongle as its sound card. Not the linked radio's Digirig.",
                     )}
                     data={[
                       { value: "cm108", label: "This radio's CM108 (Digirig, URI, …)" },

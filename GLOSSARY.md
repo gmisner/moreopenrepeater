@@ -75,10 +75,11 @@ Phone patch over SIP: on-air dial-out (and optional dial-in) through the
 Asterisk sidecar. Holds PTT for the call.
 _Avoid_: phone patch alone in new prose; PBX feature
 
-**Link radio**:
+**Linked Radio** (code: `link_radio`):
 A second radio interface for RF linking or a remote base (its own audio
 devices and PTT/COS), separate from the AllStar IP link path.
-_Avoid_: secondary radio, remote radio (say remote base when that mode is meant)
+_Avoid_: secondary radio, remote radio (say remote base when that mode is meant);
+prefer “Linked Radio” in UI copy over “link radio”
 
 ### Operator features
 

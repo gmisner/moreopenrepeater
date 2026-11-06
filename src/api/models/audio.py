@@ -24,6 +24,8 @@ class AudioDeviceResponse(BaseModel):
     inputs: int
     outputs: int
     default_samplerate: float
+    card: Optional[int] = None
+    stable_id: Optional[str] = None
 
 
 class SerialPortResponse(BaseModel):

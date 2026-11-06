@@ -42,7 +42,7 @@ from controller.state_machine import RepeaterConfig
 from playout.renderer import RECORDING_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
-from .audio_devices import list_audio_devices, resolve_audio_device
+from .audio_devices import resolve_audio_device
 from .boards import run_amixer
 from .mixer import apply_saved_levels
 from .monitor import AudioMonitor

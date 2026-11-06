@@ -104,10 +104,13 @@ access to.) Plug in the interface and confirm with
 
 The service finds the interface itself when it starts, so after plugging
 one in for the first time, restart it (`sudo systemctl restart moreopenrepeater`).
-If the interface drops later (USB glitch, reseat), the next PTT or COS I/O
-reopens it by USB ID without a service restart, and the live audio engine
-restarts itself if the ALSA stream died. The N in `/dev/hidrawN` depends on
-what else is plugged in, so it's looked up by USB ID rather than configured.
+If the interface drops later (USB glitch, reseat), health checks reopen
+CM108 hidraw by USB identity without a service restart (PTT/COS I/O still
+reopens it too), and both the repeater and linked-radio live audio engines
+restart themselves if an ALSA stream died. Saved PortAudio names are matched
+back to the same USB card when `hw:N` moves. The N in `/dev/hidrawN` depends
+on what else is plugged in, so it's looked up by USB identity rather than
+configured.
 With more than one CM108, pick one with
 `MOREOPENREPEATER_CM108_HIDRAW=/dev/hidrawN` in the env file (next
 section), or set it to `off` to ignore the interface.
@@ -530,23 +533,25 @@ When the bus still dies mid-key, software can soften the failure:
 [#96](https://github.com/gmisner/moreopenrepeater/issues/96) recovers
 CM108/AIOC hidraw after a USB drop without a full service restart;
 [#111](https://github.com/gmisner/moreopenrepeater/issues/111) ignores a
-vanished CM108 during watchdog unkey (`ENODEV`). Field notes for this
-layout: [#119](https://github.com/gmisner/moreopenrepeater/issues/119).
+vanished CM108 during watchdog unkey (`ENODEV`). Soft recovery also covers
+the linked radio's audio stream and CM108, and rematches sound cards when
+`hw:N` renumbers. Field notes for this layout:
+[#119](https://github.com/gmisner/moreopenrepeater/issues/119).
 Lasting recovery still needs the interface to stay attached — ferrites on
 the Digirig USB cable, HT antenna away from the Pi/USB run, and low HT power
 for bring-up are the durable fix.
 
-Operator checklist (link radio + Digirig Lite):
+Operator checklist (Linked Radio + Digirig Lite):
 
-- [ ] Live audio on; link radio enabled as **link** (fixed frequency), not
+- [ ] Live audio on; Linked Radio enabled as **link** (fixed frequency), not
   remote base (unless CAT + Mobile/other radio).
-- [ ] Digirig chosen as **link** input/output only.
+- [ ] Digirig chosen as **linked** input/output only.
 - [ ] PTT = CM108; COS = VOX (or wired CM108 COS).
 - [ ] HT on the **other band** from the repeater; low power; antenna clear
   of the Pi/USB.
 - [ ] Ferrites on USB (and cable dress) if TX correlates with USB
   disconnects.
-- [ ] Optional: note model / frequency / notes on the Link radio page for
+- [ ] Optional: note model / frequency / notes on the Linked Radio page for
   the next operator.
 - [ ] If the *local* radio is also a single Digirig + HT, use **simplex node**
   (or separate RX/TX HTs) — see

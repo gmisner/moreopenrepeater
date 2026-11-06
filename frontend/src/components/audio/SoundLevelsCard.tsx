@@ -45,7 +45,7 @@ export function SoundLevelsCard({
       <Stack gap="md">
         <Title order={2}>Sound card levels</Title>
         <Text c="dimmed" size="sm" maw="75ch">
-          Each radio&apos;s USB interface volume controls (repeater and link radio when its devices are set): how loud
+          Each radio&apos;s USB interface volume controls (repeater and linked radio when its devices are set): how loud
           receive comes in, and how loud audio goes out to the transmitter. A change takes effect right away and is
           saved here, then set again whenever that radio&apos;s audio starts. Auto Gain on a CM108 is listed under
           receive — leave it off for stable Digirig levels. A CM108 Mic playback control only loops receive audio and

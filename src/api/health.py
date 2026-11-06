@@ -205,6 +205,10 @@ class HealthMonitor:
         marker: RunMarker,
         audio_status: Callable[[], dict] = lambda: {"enabled": False},
         cm108_path: Callable[[], Optional[str]] = lambda: None,
+        cm108_ensure: Callable[[], None] = lambda: None,
+        link_audio_status: Callable[[], dict] = lambda: {"enabled": False},
+        link_cm108_path: Callable[[], Optional[str]] = lambda: None,
+        link_cm108_ensure: Callable[[], None] = lambda: None,
         update_status: Callable[[], Optional[dict]] = lambda: None,
         clock: Callable[[], float] = time.time,
         path_exists: Callable[[str], bool] = os.path.exists,
@@ -214,6 +218,10 @@ class HealthMonitor:
         self.marker = marker
         self._audio_status = audio_status
         self._cm108_path = cm108_path
+        self._cm108_ensure = cm108_ensure
+        self._link_audio_status = link_audio_status
+        self._link_cm108_path = link_cm108_path
+        self._link_cm108_ensure = link_cm108_ensure
         self._update_status = update_status
         self._clock = clock
         self._path_exists = path_exists
@@ -222,7 +230,10 @@ class HealthMonitor:
         self._throttle_seen = 0
         self._audio_down_since: Optional[float] = None
         self._audio_alerted = False
+        self._link_audio_down_since: Optional[float] = None
+        self._link_audio_alerted = False
         self._cm108_gone = False
+        self._link_cm108_gone = False
         self.last_unexpected_stop: Optional[dict] = None
 
     def started(self) -> list[Alert]:
@@ -273,7 +284,15 @@ class HealthMonitor:
         if now - self._last_beat >= HEARTBEAT_SECONDS:
             self.marker.beat()
             self._last_beat = now
-        return self._temperature() + self._throttling() + self._audio(now) + self._cm108() + self._update()
+        return (
+            self._temperature()
+            + self._throttling()
+            + self._audio(now)
+            + self._link_audio(now)
+            + self._cm108()
+            + self._link_cm108()
+            + self._update()
+        )
 
     def _temperature(self) -> list[Alert]:
         temperature = self.probe.temperature_c()
@@ -316,49 +335,110 @@ class HealthMonitor:
             ))
         return alerts
 
-    def _audio(self, now: float) -> list[Alert]:
-        status = self._audio_status()
+    def _engine_down(
+        self,
+        status: dict,
+        *,
+        now: float,
+        down_since: Optional[float],
+        alerted: bool,
+        kind: str,
+        stopped_title: str,
+        running_title: str,
+        stopped_detail: str,
+    ) -> tuple[list[Alert], Optional[float], bool]:
         if not status.get("enabled"):
-            self._audio_down_since = None
-            self._audio_alerted = False
-            return []
+            return [], None, False
         if status.get("running"):
-            self._audio_down_since = None
-            if self._audio_alerted:
-                self._audio_alerted = False
-                return [Alert("audio", "Live audio is running again", "The audio engine is running again.", "info")]
-            return []
-        if self._audio_down_since is None:
-            self._audio_down_since = now
-        if self._audio_alerted or now - self._audio_down_since < AUDIO_GRACE_SECONDS:
-            return []
-        self._audio_alerted = True
+            if alerted:
+                return [Alert(kind, running_title, "The audio engine is running again.", "info")], None, False
+            return [], None, False
+        since = now if down_since is None else down_since
+        if alerted or now - since < AUDIO_GRACE_SECONDS:
+            return [], since, alerted
         error = status.get("error") or "The audio engine isn't running."
-        return [Alert("audio", "Live audio stopped", f"{error} The repeater can't hear or transmit until it's fixed.", "critical")]
+        return [Alert(kind, stopped_title, f"{error} {stopped_detail}", "critical")], since, True
+
+    def _audio(self, now: float) -> list[Alert]:
+        alerts, self._audio_down_since, self._audio_alerted = self._engine_down(
+            self._audio_status(),
+            now=now,
+            down_since=self._audio_down_since,
+            alerted=self._audio_alerted,
+            kind="audio",
+            stopped_title="Live audio stopped",
+            running_title="Live audio is running again",
+            stopped_detail="The repeater can't hear or transmit until it's fixed.",
+        )
+        return alerts
+
+    def _link_audio(self, now: float) -> list[Alert]:
+        alerts, self._link_audio_down_since, self._link_audio_alerted = self._engine_down(
+            self._link_audio_status(),
+            now=now,
+            down_since=self._link_audio_down_since,
+            alerted=self._link_audio_alerted,
+            kind="link_audio",
+            stopped_title="Linked radio audio stopped",
+            running_title="Linked radio audio is running again",
+            stopped_detail="The linked radio can't hear or transmit until it's fixed.",
+        )
+        return alerts
+
+    def _usb_interface(
+        self,
+        *,
+        path: Optional[str],
+        gone: bool,
+        kind: str,
+        label: str,
+    ) -> tuple[list[Alert], bool]:
+        if not path:
+            return [], gone
+        present = self._path_exists(path)
+        if not present and not gone:
+            return [Alert(
+                kind,
+                f"The {label} disappeared",
+                f"{path} is gone: the CM108 interface was unplugged or reset, so PTT and COS don't work. "
+                "Plug it back in; it will be reopened automatically when it reappears.",
+                "critical",
+            )], True
+        if present and gone:
+            return [Alert(
+                kind,
+                f"The {label} is back",
+                "It was reopened automatically; no service restart needed.",
+                "info",
+            )], False
+        return [], gone
 
     def _cm108(self) -> list[Alert]:
-        path = self._cm108_path()
-        if not path:
-            return []
-        present = self._path_exists(path)
-        if not present and not self._cm108_gone:
-            self._cm108_gone = True
-            return [Alert(
-                "cm108",
-                "The USB radio interface disappeared",
-                f"{path} is gone: the CM108 interface was unplugged or reset, so PTT and COS don't work. "
-                "Plug it back in; the next PTT or COS I/O will reopen it automatically.",
-                "critical",
-            )]
-        if present and self._cm108_gone:
-            self._cm108_gone = False
-            return [Alert(
-                "cm108",
-                "The USB radio interface is back",
-                "Auto-recovery will reopen it on the next PTT or COS I/O; no service restart needed.",
-                "info",
-            )]
-        return []
+        # ensure_open may change the preferred hidraw path before we read it.
+        try:
+            self._cm108_ensure()
+        except OSError:
+            pass
+        alerts, self._cm108_gone = self._usb_interface(
+            path=self._cm108_path(),
+            gone=self._cm108_gone,
+            kind="cm108",
+            label="USB radio interface",
+        )
+        return alerts
+
+    def _link_cm108(self) -> list[Alert]:
+        try:
+            self._link_cm108_ensure()
+        except OSError:
+            pass
+        alerts, self._link_cm108_gone = self._usb_interface(
+            path=self._link_cm108_path(),
+            gone=self._link_cm108_gone,
+            kind="link_cm108",
+            label="linked radio USB interface",
+        )
+        return alerts
 
     def _update(self) -> list[Alert]:
         status = self._update_status()

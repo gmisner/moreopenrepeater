@@ -204,9 +204,19 @@ def test_turning_audio_off_is_not_a_failure():
 
 def test_cm108_unplugged():
     present = {"yes": True}
-    monitor, _, _ = make_monitor(cm108_path=lambda: "/dev/hidraw0", path_exists=lambda path: present["yes"])
+    ensured = {"n": 0}
+
+    def ensure():
+        ensured["n"] += 1
+
+    monitor, _, _ = make_monitor(
+        cm108_path=lambda: "/dev/hidraw0",
+        cm108_ensure=ensure,
+        path_exists=lambda path: present["yes"],
+    )
 
     assert monitor.check() == []
+    assert ensured["n"] == 1
     present["yes"] = False
     alerts = monitor.check()
     assert titles(alerts) == ["The USB radio interface disappeared"]
@@ -217,7 +227,29 @@ def test_cm108_unplugged():
     alerts = monitor.check()
     assert titles(alerts) == ["The USB radio interface is back"]
     assert "restart moreopenrepeater" not in alerts[0].message.lower()
-    assert "auto-recovery" in alerts[0].message.lower()
+    assert "reopened automatically" in alerts[0].message.lower()
+
+
+def test_link_audio_and_cm108_alerts():
+    link_audio = {"enabled": True, "running": False, "error": "linked radio audio stream died"}
+    present = {"yes": True}
+    monitor, _, clock = make_monitor(
+        link_audio_status=lambda: link_audio,
+        link_cm108_path=lambda: "/dev/hidraw2",
+        path_exists=lambda path: present["yes"],
+    )
+    monitor.started()
+
+    assert monitor.check() == []
+    clock["now"] += AUDIO_GRACE_SECONDS
+    assert titles(monitor.check()) == ["Linked radio audio stopped"]
+    link_audio["running"] = True
+    assert titles(monitor.check()) == ["Linked radio audio is running again"]
+
+    present["yes"] = False
+    assert titles(monitor.check()) == ["The linked radio USB interface disappeared"]
+    present["yes"] = True
+    assert titles(monitor.check()) == ["The linked radio USB interface is back"]
 
 
 def test_update_results_alert_once_and_old_ones_never(tmp_path):

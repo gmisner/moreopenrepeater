@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from api.app import create_app
 from api.assets import AudioAssetStore
-from api.link_radio import LinkRadio, setup_problem
+from api.link_radio import STREAM_RECOVER_COOLDOWN, LinkRadio, setup_problem
 from api.live_audio import LiveAudio, link_cm108_from_env
 from api.service import RepeaterService
 from audio_io.engine import AudioEngine
@@ -41,7 +41,7 @@ class Rig:
     def __init__(self, config=CONFIG, header=None, cm108=None):
         tmp = Path(tempfile.mkdtemp())
         self.renderer = ClipRenderer(AudioAssetStore(tmp / "audio").path_for, tts=None, sample_rate=RATE)
-        self.clock = {"now": 0.0}
+        self.clock = {"now": 0.0, "mono": 0.0}
         self.service = RepeaterService(config=config, clock=lambda: self.clock["now"], renderer=self.renderer)
         self.header = header or FakeHeader()
         self.engines = []
@@ -61,6 +61,7 @@ class Rig:
             engine_factory=engine_factory,
             open_pin=self.header.open,
             clock=lambda: self.clock["now"],
+            monotonic=lambda: self.clock["mono"],
         )
         self.link.attach(ImmediateLoop())
 
@@ -298,3 +299,32 @@ def test_link_radio_gets_its_own_tail_and_delay_and_the_repeaters_dtmf_muting():
     rig.service.update_config(link_radio_squelch_tail_ms=100.0, dtmf_mute=True)
 
     assert settings.squelch_tail_ms == 100.0 and settings.dtmf_mute is True
+
+
+def test_dead_link_stream_restarts_the_engine():
+    rig = Rig()
+    first = rig.link.engine
+    assert first is rig.engines[1] and first.running
+    rig.link._recover_engine()
+    assert rig.link.engine is rig.engines[2]
+    assert first.running is False
+    assert rig.link.engine.running is True
+    assert rig.link.status()["error"] is None
+
+
+def test_link_stream_recover_cooldown_stops_without_restarting():
+    rig = Rig()
+    rig.link._recover_engine()
+    assert rig.link.engine is rig.engines[2] and rig.link.status()["error"] is None
+
+    rig.clock["mono"] += 1.0
+    rig.link._recover_engine()
+    assert rig.link.engine is None
+    assert rig.engines[2].running is False
+    assert rig.link.status()["error"] == "linked radio audio stream died (USB unplug or device reset)"
+
+    rig.clock["mono"] += STREAM_RECOVER_COOLDOWN
+    rig.link._recover_engine()
+    assert rig.link.engine is rig.engines[3]
+    assert rig.link.engine.running is True
+    assert rig.link.status()["error"] is None

@@ -17,8 +17,8 @@ export function soundAssignments(cfg: {
   };
   add(cfg.audio_input_device, "repeater RX");
   add(cfg.audio_output_device, "repeater TX");
-  add(cfg.link_radio_input_device, "link RX");
-  add(cfg.link_radio_output_device, "link TX");
+  add(cfg.link_radio_input_device, "linked RX");
+  add(cfg.link_radio_output_device, "linked TX");
   add(cfg.monitor_input_device, "monitor");
   return out;
 }
@@ -35,8 +35,8 @@ export function serialAssignments(cfg: {
   };
   add(cfg.cos_serial_device, "repeater COS");
   add(cfg.ptt_serial_device, "repeater PTT");
-  add(cfg.link_radio_cos_serial_device, "link COS");
-  add(cfg.link_radio_ptt_serial_device, "link PTT");
+  add(cfg.link_radio_cos_serial_device, "linked COS");
+  add(cfg.link_radio_ptt_serial_device, "linked PTT");
   return out;
 }
 
@@ -67,6 +67,29 @@ export function rolesForDevice(
  * then look identical when the dropdown truncates. Lead with the card. */
 const HW_CARD = /\(hw:(\d+),\d+\)/;
 
+export type SoundDeviceInfo = {
+  name: string;
+  inputs: number;
+  outputs: number;
+  card?: number | null;
+  stable_id?: string | null;
+};
+
+/** Same physical USB card after `hw:N` moved: match stable_id, else stem. */
+export function soundDeviceMatch(
+  saved: string,
+  devices: SoundDeviceInfo[],
+): SoundDeviceInfo | undefined {
+  const exact = devices.find((device) => device.name === saved);
+  if (exact) return exact;
+  const stem = saved.replace(HW_CARD, "").trim();
+  const byStem = devices.filter(
+    (device) => device.name.replace(HW_CARD, "").trim() === stem,
+  );
+  if (byStem.length === 1) return byStem[0];
+  return undefined;
+}
+
 export function formatDeviceLabel(name: string, roles: string[], missing = false): string {
   const card = name.match(HW_CARD)?.[1];
   const base = card ? `Card ${card} — ${name.replace(HW_CARD, "").replace(/:\s*-\s*$/, "").trim() || name}` : name;
@@ -76,21 +99,31 @@ export function formatDeviceLabel(name: string, roles: string[], missing = false
 }
 
 export function soundDeviceOptions(
-  devices: { name: string; inputs: number; outputs: number }[],
+  devices: SoundDeviceInfo[],
   side: "inputs" | "outputs",
   saved: string,
   assignments: DeviceAssignment[],
 ): { value: string; label: string }[] {
-  const names = devices.filter((device) => device[side] > 0).map((device) => device.name);
-  const options = names.map((name) => ({
-    value: name,
-    label: formatDeviceLabel(name, rolesForDevice(assignments, name)),
+  const present = devices.filter((device) => device[side] > 0);
+  const names = present.map((device) => device.name);
+  const options = present.map((device) => ({
+    value: device.name,
+    label: formatDeviceLabel(device.name, rolesForDevice(assignments, device.name)),
   }));
   if (saved && !names.includes(saved)) {
-    options.push({
-      value: saved,
-      label: formatDeviceLabel(saved, rolesForDevice(assignments, saved), true),
-    });
+    const matched = soundDeviceMatch(saved, present);
+    if (matched) {
+      // Saved hw:N moved; keep the stored value selectable but show the live card.
+      options.push({
+        value: saved,
+        label: formatDeviceLabel(matched.name, rolesForDevice(assignments, saved)),
+      });
+    } else {
+      options.push({
+        value: saved,
+        label: formatDeviceLabel(saved, rolesForDevice(assignments, saved), true),
+      });
+    }
   }
   return options;
 }

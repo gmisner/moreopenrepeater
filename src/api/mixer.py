@@ -50,8 +50,8 @@ _SIDE_LEVELS = {
 _SIDE_LABEL = {
     "input": "input",
     "output": "output",
-    "link_input": "link radio input",
-    "link_output": "link radio output",
+    "link_input": "linked radio input",
+    "link_output": "linked radio output",
 }
 
 

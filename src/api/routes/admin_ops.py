@@ -20,7 +20,8 @@ from audio_io.serial_lines import find_serial_ports
 from ..audit import AuditLog
 from ..backup import BackupFolder, BackupSources, backup_name, write_backup
 from ..health import HealthMonitor
-from ..live_audio import LiveAudio, list_audio_devices
+from ..audio_devices import list_audio_devices
+from ..live_audio import LiveAudio
 from ..log_hub import SECRET_FIELDS as LOG_SHIPPING_SECRET_FIELDS
 from ..log_hub import LogShipper
 from ..models import (

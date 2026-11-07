@@ -16,6 +16,7 @@ import { Icon } from "../icons/Icon";
 import { NAV, PAGE_TITLES, TABBAR } from "../nav";
 import { roleLabel, useSession } from "../session";
 import { useStatus } from "../status";
+import { ServerUpdatedBanner } from "../components/ServerUpdatedBanner";
 import { BrandMark } from "./BrandMark";
 import { ConnectionPill } from "./ConnectionPill";
 import { MiniStatus } from "./MiniStatus";
@@ -129,6 +130,7 @@ export function AppShell() {
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>
+        <ServerUpdatedBanner />
         <Outlet />
       </MantineAppShell.Main>
 

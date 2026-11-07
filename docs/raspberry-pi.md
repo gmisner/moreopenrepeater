@@ -284,6 +284,11 @@ callsign and station ID, the interface board, and the sound devices. It then
 sends a test ID and offers to create an admin account. It can be skipped, and
 run again from **Audio & tones → Radio interface → Run setup wizard**.
 
+Community-tested host / radio / interface recipes (exact PTT, COS, and level
+starting points) live in [known-working-configs.md](known-working-configs.md)
+and on the dashboard under **Tools → Known configs**. Prefer those when your
+hardware is listed; open a PR there if you bring up something new.
+
 Picking a board sets its PTT and carrier-detect wiring and, if asked, its
 mixer levels (with `amixer`, on the ALSA card of the chosen output device;
 the service user's `audio` group membership gives it access):
@@ -344,7 +349,10 @@ repeater and check:
 
 1. The dashboard's RX and PTT indicators follow the radio (COS/VOX and PTT).
 2. VOX threshold sits a few dB above the idle receive level, so quiet
-   receiver hiss doesn't hold the repeater open.
+   receiver hiss doesn't hold the repeater open. Use **Audio & tones →
+   Receiver openings** (open/peak dB, CTCSS, DTMF) to score live traffic
+   while you trim Mic gain, and **Test ID** on the Radio interface card to
+   verify the TX path.
 3. TX gain is loud enough on the air without clipping; use a second radio
    or the monitor if you have one.
 4. **Audio glitches** on the Radio interface card stays near zero while

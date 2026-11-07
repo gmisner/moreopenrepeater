@@ -119,9 +119,12 @@ describe("StatusProvider", () => {
     expect(screen.getByTestId("connected")).toHaveTextContent("true");
 
     await act(async () => {
+      MockWebSocket.instances[0].push({ callsign: "W1AW", ptt_active: true });
       MockWebSocket.instances[0].close();
     });
     expect(screen.getByTestId("connected")).toHaveTextContent("false");
+    expect(screen.getByTestId("callsign")).toHaveTextContent("");
+    expect(screen.getByTestId("ptt")).toHaveTextContent("false");
     expect(MockWebSocket.instances).toHaveLength(1);
 
     await act(async () => {

@@ -8,9 +8,11 @@ import { Notifications } from "@mantine/notifications";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { applyDensity, readDensity } from "./prefs";
 import { theme } from "./theme";
 
 const colorSchemeManager = localStorageColorSchemeManager({ key: "theme" });
+applyDensity(readDensity());
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

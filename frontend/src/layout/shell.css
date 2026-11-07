@@ -78,3 +78,9 @@
   letter-spacing: normal !important;
   color: var(--mantine-color-text) !important;
 }
+
+/* Per-browser display density (Preferences / ThemePicker). */
+html {
+  --mor-ui-scale: 1;
+  font-size: calc(100% * var(--mor-ui-scale));
+}

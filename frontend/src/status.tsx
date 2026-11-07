@@ -46,6 +46,8 @@ export function StatusProvider({ children }: { children: ReactNode }) {
       };
       ws.onclose = () => {
         if (cancelled) return;
+        // Drop last-known gauges so MiniStatus / Dashboard don't look live while offline.
+        setStatus(null);
         setConnected(false);
         retry = window.setTimeout(connect, 2000);
       };

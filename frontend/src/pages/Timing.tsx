@@ -84,7 +84,15 @@ export function Timing() {
       >
         <Stack gap="md">
           <Switch
-            label={labeled("Transmitter enabled", "Off stops all transmissions; DTMF still works")}
+            label={labeled(
+              "Transmitter enabled",
+              "Off is dry-run: the receiver, COS, DTMF and logic keep running, but PTT never keys. Distinct from the Simulator (fake inputs).",
+            )}
+            description={
+              values.transmitter_enabled
+                ? undefined
+                : "Dry-run active — PTT stays down. Turn back on before putting the repeater on the air."
+            }
             checked={values.transmitter_enabled}
             onChange={(event) => setField("transmitter_enabled", event.currentTarget.checked)}
           />

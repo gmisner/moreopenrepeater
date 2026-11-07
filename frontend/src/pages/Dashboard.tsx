@@ -454,7 +454,7 @@ export function Dashboard() {
             <Text c="dimmed">{STATE_COPY[state] ?? ""}</Text>
             {status?.transmitter_enabled === false ? (
               <Badge component={Link} to="/timing" color="red" variant="light" mt="sm" style={{ textDecoration: "none" }}>
-                transmitter off
+                dry-run · TX muted
               </Badge>
             ) : null}
           </Card>

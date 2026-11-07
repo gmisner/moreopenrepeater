@@ -27,7 +27,7 @@ def test_facet_counts_match_inventory():
         "link_radio": 27,
         "remote_base": 8,
         "aprs": 17,
-        "weather": 7,
+        "weather": 11,
         "monitor": 9,
         "autopatch": 12,
         "mailbox": 7,
@@ -40,7 +40,7 @@ def test_facet_counts_match_inventory():
         "public_page": 4,
         "sensors": 3,
     }
-    assert sum(counts.values()) == 198
+    assert sum(counts.values()) == 202
 
 
 def test_flat_dict_round_trip_preserves_values():

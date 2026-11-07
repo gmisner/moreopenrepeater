@@ -259,3 +259,7 @@ class Programming:
         """Callers should render `clip` first (off the event loop) so the
         controller knows how long to hold PTT for."""
         return self._host.controller.queue_announcement(clip, on_linked_radio=on_linked_radio)
+
+    def defer_announcement(self, clip: str, *, on_linked_radio: bool = False) -> None:
+        """Hold `clip` until the net ends (when net_hold_announcements is on)."""
+        self._held_announcements = (self._held_announcements + [(clip, on_linked_radio)])[-MAX_HELD_ANNOUNCEMENTS:]

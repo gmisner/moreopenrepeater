@@ -24,6 +24,7 @@ export type {
   AudioDevice,
   EngineStatus,
   EngineValues,
+  LinkRadioLiveStatus,
   LinkValues,
   SerialPort,
   SoundLevel,

@@ -36,6 +36,19 @@ export type EngineStatus = {
   hardware_ptt: string | null;
 };
 
+export type LinkRadioLiveStatus = {
+  enabled: boolean;
+  running: boolean;
+  error: string | null;
+  name: string;
+  mode: string;
+  rx_level_db: number;
+  receiving: boolean;
+  transmitting: boolean;
+  timed_out: boolean;
+  rig_error?: string | null;
+};
+
 export type SoundValues = {
   courtesy_tone_style: string;
   courtesy_tone_asset_id: string;

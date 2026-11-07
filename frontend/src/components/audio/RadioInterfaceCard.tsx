@@ -24,7 +24,8 @@ import {
   soundDeviceOptions,
   type DeviceAssignment,
 } from "../../deviceUsage";
-import { BOARD_NAMES, CTCSS_TONES, METER_FLOOR_DB } from "./constants";
+import { BOARD_NAMES, METER_FLOOR_DB } from "./constants";
+import { CtcssToneSelect } from "./CtcssToneSelect";
 import { LevelMeter } from "./helpers";
 import type { AudioDevice, ConfigSlice, EngineStatus, EngineValues, SerialPort } from "./types";
 
@@ -420,16 +421,12 @@ export function RadioInterfaceCard({
                     onChange={(value) => engine.setField("tx_gain_db", Number(value) || 0)}
                     required
                   />
-                  <Select
+                  <CtcssToneSelect
                     label={labeled("Transmit CTCSS tone", "Added under everything the repeater sends. Leave blank for none.")}
-                    data={CTCSS_TONES.map((hz) => ({ value: String(hz), label: `${hz.toFixed(1)} Hz` }))}
                     value={engine.values.tx_ctcss_hz === "" ? null : String(engine.values.tx_ctcss_hz)}
                     onChange={(value) =>
                       engine.setField("tx_ctcss_hz", value == null || value === "" ? "" : Number(value))
                     }
-                    searchable
-                    clearable
-                    placeholder="off"
                   />
                   <NumberInput
                     label={labeled("CTCSS level", "Adjust for about 500–750 Hz of deviation on the transmitter.")}

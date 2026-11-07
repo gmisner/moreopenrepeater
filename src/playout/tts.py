@@ -13,7 +13,6 @@ instead (getopt only treats arguments *starting* with "-" as options).
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -34,8 +33,6 @@ _logger = logging.getLogger("moreopenrepeater.tts")
 TIMEOUT_SECONDS = 30
 # First Kokoro speak on a Pi can load/download models; 30 s is too tight.
 KOKORO_SPEAK_TIMEOUT_SECONDS = 180
-# Voice listing must stay snappy so the dashboard can fall back to the builtin list.
-KOKORO_VOICES_TIMEOUT_SECONDS = 5
 DEFAULT_TTS_SPEED = 1.0
 MIN_TTS_SPEED = 0.5
 MAX_TTS_SPEED = 2.0
@@ -272,30 +269,12 @@ def detect_tts(which: Callable[[str], Optional[str]] = shutil.which) -> Optional
     return None
 
 
-def list_tts_voices(
-    engine: Optional[TTSEngine],
-    *,
-    run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
-) -> list[TTSVoiceInfo]:
-    """Voices the current engine can use. Only Kokoro is enumerated today."""
+def list_tts_voices(engine: Optional[TTSEngine]) -> list[TTSVoiceInfo]:
+    """Voices the current engine can use. Only Kokoro is enumerated today.
+
+    Uses a built-in id list instead of `kokoro voices`: spawning the CLI on a
+    Pi can peg the CPU for several seconds and starve the audio engine.
+    """
     if engine is None or engine.name != "kokoro":
         return []
-    binary = getattr(engine, "binary", "") or "kokoro"
-    ids: list[str] = []
-    try:
-        completed = run(
-            [binary, "voices", "--json"],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=KOKORO_VOICES_TIMEOUT_SECONDS,
-        )
-        payload = json.loads(completed.stdout or "{}")
-        raw = payload.get("voices") if isinstance(payload, dict) else None
-        if isinstance(raw, list):
-            ids = [str(voice_id) for voice_id in raw if voice_id]
-    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
-        _logger.warning("couldn't list kokoro voices (%s); using the built-in list", error)
-    if not ids:
-        ids = list(_KOKORO_BUILTIN_VOICES)
-    return [describe_kokoro_voice(voice_id) for voice_id in ids]
+    return [describe_kokoro_voice(voice_id) for voice_id in _KOKORO_BUILTIN_VOICES]

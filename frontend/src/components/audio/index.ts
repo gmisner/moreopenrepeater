@@ -22,6 +22,7 @@ export { engineState, parseCustomTone, playPreview, serializeCustomTone } from "
 export type {
   Asset,
   AudioDevice,
+  AudioScore,
   EngineStatus,
   EngineValues,
   LinkRadioLiveStatus,

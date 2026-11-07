@@ -22,7 +22,7 @@ def test_every_field_lives_in_exactly_one_facet():
 def test_facet_counts_match_inventory():
     counts = {name: len(names) for name, names in FACET_FIELD_NAMES.items()}
     assert counts == {
-        "identity_timing": 38,
+        "identity_timing": 39,
         "radio_audio": 33,
         "link_radio": 27,
         "remote_base": 8,
@@ -40,7 +40,7 @@ def test_facet_counts_match_inventory():
         "public_page": 4,
         "sensors": 3,
     }
-    assert sum(counts.values()) == 202
+    assert sum(counts.values()) == 203
 
 
 def test_flat_dict_round_trip_preserves_values():

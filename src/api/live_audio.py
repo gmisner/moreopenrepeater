@@ -202,7 +202,6 @@ class LiveAudio:
         self._patch: Optional[PatchAudio] = None
         self._link: Optional[LinkAudio] = None
         self._port: Optional[LinkAudio] = None
-        self._dmr: Optional[LinkAudio] = None
         self._ptt_output: Optional[Callable[[bool], None]] = None
         self.monitor = AudioMonitor()
         # Each time the receiver opened, newest last (describe_opening).
@@ -343,11 +342,6 @@ class LiveAudio:
         self._port = port
         if self.engine is not None:
             self.engine.processor.set_port(port)
-
-    def set_dmr(self, dmr: Optional[LinkAudio]) -> None:
-        self._dmr = dmr
-        if self.engine is not None:
-            self.engine.processor.set_dmr(dmr)
 
     @property
     def repeating_voice(self) -> bool:
@@ -541,7 +535,6 @@ class LiveAudio:
         processor.set_patch(self._patch)
         processor.set_link(self._link)
         processor.set_port(self._port)
-        processor.set_dmr(self._dmr)
         processor.on_opening = self._on_opening
         input_device = resolve_audio_device(config.audio_input_device or None)
         output_device = resolve_audio_device(config.audio_output_device or None)

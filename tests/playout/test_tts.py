@@ -7,11 +7,13 @@ import pytest
 
 from playout.tts import (
     CommandTTS,
+    KOKORO_SPEAK_TIMEOUT_SECONDS,
     TTSError,
     describe_kokoro_voice,
     detect_tts,
     format_voice_id,
     list_tts_voices,
+    sanitize_kokoro_voice,
     spell_callsign,
 )
 from playout.wav import encode_wav
@@ -39,6 +41,64 @@ def test_describe_kokoro_voice_maps_locale_and_gender():
     assert info.locale_label == "British English"
     assert info.gender == "male"
     assert "George" in info.label
+
+
+def test_sanitize_kokoro_voice_drops_espeak_names():
+    assert sanitize_kokoro_voice("af_heart") == "af_heart"
+    assert sanitize_kokoro_voice("mb-us1") == ""
+    assert sanitize_kokoro_voice("Alex") == ""
+
+
+def test_kokoro_ignores_legacy_voice_and_uses_default():
+    calls: list = []
+    engine = detect_tts(which=lambda b: "/usr/bin/kokoro" if b == "kokoro" else None)
+    engine.run = _fake_run_writing(np.zeros(10, dtype=np.float32), 24000, calls)
+
+    engine.synthesize("hello", voice="mb-us1")
+
+    argv = calls[0]
+    assert "-v" not in argv  # espeak leftover must not be passed through
+    assert argv[argv.index("--") + 1] == "hello"
+
+
+def test_list_tts_voices_falls_back_to_builtin_list():
+    engine = detect_tts(which=lambda b: "/usr/bin/kokoro" if b == "kokoro" else None)
+
+    def run(argv, **kwargs):
+        raise subprocess.CalledProcessError(1, argv)
+
+    voices = list_tts_voices(engine, run=run)
+    assert any(voice.id == "af_heart" for voice in voices)
+    assert any(voice.locale == "en-us" for voice in voices)
+
+
+def test_kokoro_speak_uses_long_timeout():
+    timeouts: list[float] = []
+    engine = detect_tts(which=lambda b: "/usr/bin/kokoro" if b == "kokoro" else None)
+
+    def run(argv, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        out = Path(argv[argv.index("-o") + 1])
+        out.write_bytes(encode_wav(np.zeros(8, dtype=np.float32), 24000))
+        return subprocess.CompletedProcess(argv, 0)
+
+    engine.run = run
+    engine.synthesize("hello", voice="af_heart")
+    assert timeouts == [KOKORO_SPEAK_TIMEOUT_SECONDS]
+
+
+def test_kokoro_timeout_does_not_retry_default():
+    calls: list = []
+    engine = detect_tts(which=lambda b: "/usr/bin/kokoro" if b == "kokoro" else None)
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    engine.run = run
+    with pytest.raises(TTSError, match="timed out"):
+        engine.synthesize("hello", voice="af_heart")
+    assert len(calls) == 1
 
 
 def _fake_run_writing(samples: np.ndarray, rate: int, calls: list):

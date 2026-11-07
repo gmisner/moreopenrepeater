@@ -36,6 +36,20 @@ export type EngineStatus = {
   hardware_ptt: string | null;
 };
 
+/** Offline WAV / live RX capture score from /api/audio/score and record-score. */
+export type AudioScore = {
+  duration_seconds: number;
+  sample_rate: number;
+  peak_dbfs: number;
+  rms_dbfs: number;
+  median_block_dbfs: number;
+  clipping: boolean;
+  ctcss_hz: number | null;
+  strongest_hz: number | null;
+  tone_share: number;
+  notes: string[];
+};
+
 export type LinkRadioLiveStatus = {
   enabled: boolean;
   running: boolean;

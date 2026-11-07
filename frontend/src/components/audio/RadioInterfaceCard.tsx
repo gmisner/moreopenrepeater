@@ -3,6 +3,7 @@ import {
   Alert,
   Badge,
   Button,
+  FileButton,
   Group,
   NumberInput,
   Select,
@@ -28,7 +29,7 @@ import {
 import { BOARD_NAMES, COS_METHOD_LABELS, METER_FLOOR_DB, PTT_METHOD_LABELS } from "./constants";
 import { CtcssToneSelect } from "./CtcssToneSelect";
 import { LevelMeter, shortLabel } from "./helpers";
-import type { AudioDevice, ConfigSlice, EngineStatus, EngineValues, SerialPort } from "./types";
+import type { AudioDevice, AudioScore, ConfigSlice, EngineStatus, EngineValues, SerialPort } from "./types";
 
 const HALF_DUPLEX_BOARDS = new Set(["digirig-lite", "aioc"]);
 
@@ -51,6 +52,10 @@ export function RadioInterfaceCard({
   openWizard,
   onTestId,
   testIdBusy,
+  score,
+  scoreBusy,
+  onRecordScore,
+  onScoreWav,
 }: {
   engine: ConfigSlice<EngineValues>;
   devices: AudioDevice[];
@@ -70,6 +75,10 @@ export function RadioInterfaceCard({
   openWizard: () => void;
   onTestId?: () => void;
   testIdBusy?: boolean;
+  score?: AudioScore | null;
+  scoreBusy?: boolean;
+  onRecordScore?: () => void;
+  onScoreWav?: (file: File | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const halfDuplexWarn =
@@ -161,6 +170,80 @@ export function RadioInterfaceCard({
             </Text>
           ) : null}
         </Group>
+        {!isViewer && (onRecordScore || onScoreWav) ? (
+          <Stack gap={6}>
+            <Group gap="xs" wrap="wrap" justify="space-between" align="flex-start">
+              <Group gap="xs">
+                {onRecordScore ? (
+                  <Button size="compact-sm" loading={scoreBusy} onClick={onRecordScore}>
+                    Record 5 s
+                  </Button>
+                ) : null}
+                {onScoreWav ? (
+                  <FileButton onChange={onScoreWav} accept="audio/wav,.wav">
+                    {(props) => (
+                      <Button {...props} size="compact-sm" variant="default" loading={scoreBusy}>
+                        Score WAV
+                      </Button>
+                    )}
+                  </FileButton>
+                ) : null}
+              </Group>
+              {score ? (
+                <Group gap="md" wrap="wrap">
+                  <Text size="sm">
+                    Peak{" "}
+                    <Text span fw={700}>
+                      {score.peak_dbfs.toFixed(1)} dBFS
+                    </Text>
+                  </Text>
+                  <Text size="sm">
+                    RMS{" "}
+                    <Text span fw={700}>
+                      {score.rms_dbfs.toFixed(1)} dBFS
+                    </Text>
+                  </Text>
+                  <Text size="sm">
+                    Median{" "}
+                    <Text span fw={700}>
+                      {score.median_block_dbfs.toFixed(1)} dBFS
+                    </Text>
+                  </Text>
+                  <Badge color={score.clipping ? "red" : "gray"} variant="light">
+                    {score.clipping ? "clipping" : "no clip"}
+                  </Badge>
+                  <Badge variant="light">
+                    {score.ctcss_hz != null ? `${score.ctcss_hz} Hz CTCSS` : "no CTCSS"}
+                  </Badge>
+                  {score.strongest_hz != null ? (
+                    <Badge variant="outline">
+                      ~{score.strongest_hz.toFixed(0)} Hz ({(score.tone_share * 100).toFixed(0)}%)
+                    </Badge>
+                  ) : null}
+                </Group>
+              ) : (
+                <Text size="sm" c="dimmed" maw="52ch">
+                  Capture RX while keyed (or hiss) to A/B Mic gain — peak / RMS / CTCSS without waiting for a new opening.
+                </Text>
+              )}
+            </Group>
+            {score?.notes.length ? (
+              <Stack gap={2}>
+                {score.notes.map((note) => (
+                  <Text key={note} size="sm" c="dimmed">
+                    {note}
+                  </Text>
+                ))}
+              </Stack>
+            ) : null}
+            {score ? (
+              <Text size="xs" c="dimmed">
+                {score.duration_seconds.toFixed(1)} s @ {score.sample_rate} Hz — idle a few dB below VOX; keyed peaks
+                well under 0 dBFS.
+              </Text>
+            ) : null}
+          </Stack>
+        ) : null}
         {showSilenceHint ? (
           <Text size="sm" c="dimmed">
             The input has been pure digital silence. If you expected a signal: on macOS, the app running the server needs

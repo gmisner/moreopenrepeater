@@ -40,3 +40,25 @@ scrape_configs:
 
 Uptime Kuma and similar tools can also hit `/metrics` or `/api/status` (the
 latter needs a session or API token when sign-in is on).
+
+## Grafana
+
+A starter dashboard lives at
+[`packaging/grafana/moreopenrepeater.json`](../packaging/grafana/moreopenrepeater.json).
+
+1. Scrape the repeater with Prometheus (snippet above).
+2. In Grafana: **Dashboards → Import** → upload the JSON (or paste it).
+3. Pick your Prometheus datasource when prompted (`datasource` template variable).
+
+Panels cover PTT/COS, RX level, controller state, linked nodes, 24h activity
+counters, and audio glitch totals.
+
+## Uptime Kuma
+
+| Monitor type | URL / settings | Notes |
+|---|---|---|
+| HTTP(s) | `http://repeater:8000/metrics` | Expect status 200 and body containing `moreopenrepeater_up 1` (keyword monitor if available) |
+| HTTP(s) – JSON | `http://repeater:8000/api/status` | Needs a session cookie or API token when sign-in is on; prefer `/metrics` for anonymous scrapes |
+| Prometheus | Point at the same scrape job Grafana uses | Alert when `moreopenrepeater_up == 0` or `moreopenrepeater_audio_engine_running == 0` while audio is supposed to be on |
+
+Keep `/metrics` on Tailscale / LAN only; it is intentionally unauthenticated.

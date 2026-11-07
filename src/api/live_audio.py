@@ -202,6 +202,7 @@ class LiveAudio:
         self._patch: Optional[PatchAudio] = None
         self._link: Optional[LinkAudio] = None
         self._port: Optional[LinkAudio] = None
+        self._dmr: Optional[LinkAudio] = None
         self._ptt_output: Optional[Callable[[bool], None]] = None
         self.monitor = AudioMonitor()
         # Each time the receiver opened, newest last (describe_opening).
@@ -343,6 +344,11 @@ class LiveAudio:
         if self.engine is not None:
             self.engine.processor.set_port(port)
 
+    def set_dmr(self, dmr: Optional[LinkAudio]) -> None:
+        self._dmr = dmr
+        if self.engine is not None:
+            self.engine.processor.set_dmr(dmr)
+
     @property
     def repeating_voice(self) -> bool:
         engine = self.engine
@@ -362,6 +368,28 @@ class LiveAudio:
             return False
         self._capture_armed = (self._clock(), max_seconds, on_done)
         return True
+
+    async def record_rx(self, seconds: float) -> tuple[np.ndarray, int]:
+        """Capture `seconds` of receive audio from the live engine (no COS wait).
+
+        Used by the commissioning score loop. Avoid running while parrot or
+        transmission recording is mid-capture.
+        """
+        engine = self.engine
+        if engine is None or not engine.running:
+            raise RuntimeError("Live audio isn't running")
+        processor = engine.processor
+        if getattr(processor, "_capture", None) is not None:
+            raise RuntimeError("Another capture is already in progress")
+        rate = processor.settings.sample_rate
+        processor.start_capture(seconds)
+        try:
+            await asyncio.sleep(seconds + 0.05)
+            samples = processor.stop_capture()
+        except BaseException:
+            processor.stop_capture()
+            raise
+        return samples, rate
 
     def play(self, clip: str) -> None:
         engine = self.engine
@@ -513,6 +541,7 @@ class LiveAudio:
         processor.set_patch(self._patch)
         processor.set_link(self._link)
         processor.set_port(self._port)
+        processor.set_dmr(self._dmr)
         processor.on_opening = self._on_opening
         input_device = resolve_audio_device(config.audio_input_device or None)
         output_device = resolve_audio_device(config.audio_output_device or None)

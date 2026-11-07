@@ -1,8 +1,11 @@
 import {
   Accordion,
+  Badge,
   Button,
+  Card,
   Checkbox,
   Code,
+  Grid,
   Group,
   NumberInput,
   Select,
@@ -11,11 +14,11 @@ import {
   Table,
   Text,
   TextInput,
+  Title,
 } from "@mantine/core";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
-import { ConfigSummaryCard } from "../components/ConfigSummaryCard";
 import { labeled } from "../components/FieldHint";
 import { notifyError, notifySuccess, useConfig } from "../config";
 import { Page } from "../layout/AppShell";
@@ -150,6 +153,26 @@ function scheduleText(row: ScheduleStatus | undefined, active: string) {
   if (!row) return "";
   if (row.until) return `${active} until ${shortTime(row.until)}`;
   return row.next_start ? `Next: ${shortTime(row.next_start)}` : "";
+}
+
+function scheduleDays(days: number[]) {
+  if (days.length === 7) return "Every day";
+  if (days.length === 0) return "No days";
+  return days.map((d) => DAY_NAMES[d]).join(" · ");
+}
+
+function scheduleDuration(minutes: number) {
+  if (minutes <= 0) return "until disconnect";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem ? `${hours}h ${rem}m` : `${hours}h`;
+}
+
+function heroTitleColor(kind?: string) {
+  if (kind === "on") return "green";
+  if (kind === "warn") return "amber";
+  return undefined;
 }
 
 function emptyFavorite(): Favorite {
@@ -504,38 +527,267 @@ export function AllStar() {
     }
   };
 
-  const favoriteSummary = favorites.filter((f) => f.node.trim()).length
-    ? favorites
-        .filter((f) => f.node.trim())
-        .slice(0, 3)
-        .map((f) => f.name.trim() || f.node)
-        .join(", ") + (favorites.filter((f) => f.node.trim()).length > 3 ? "…" : "")
-    : "None yet";
-  const scheduleSummary = schedules.length
-    ? `${schedules.filter((s) => s.enabled).length} on · ${schedules.length} total`
-    : "None yet";
+  const callsign =
+    status?.identity?.callsign || (config?.callsign ? String(config.callsign).toUpperCase() : "");
+  const savedFavorites = favorites.filter((f) => f.node.trim());
+  const canEditNode = Boolean(showIdentityForm || showNodeForm);
 
   return (
     <Page title="AllStarLink" description="Link this repeater to other AllStarLink nodes.">
-      <ConfigSummaryCard
-        title="Node"
-        badge={view?.pill?.[0]}
-        badgeColor={pillColor(view?.pill?.[1])}
-        blurb={view?.text ?? "Loading…"}
-        onEdit={showIdentityForm || showNodeForm ? () => setEditingNode(true) : undefined}
-        editLabel={status?.node ? "Edit…" : "Set up…"}
-        rows={
-          status?.node
-            ? [
-                { label: "Local node", value: status.node },
-                {
-                  label: "Callsign",
-                  value: status.identity?.callsign || (config?.callsign ? String(config.callsign).toUpperCase() : "—"),
-                },
-              ]
-            : undefined
-        }
-      />
+      <Card withBorder padding="lg" radius="md">
+        <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
+          <div>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em" }}>
+              This machine&apos;s node
+            </Text>
+            <Title
+              order={1}
+              c={heroTitleColor(view?.pill?.[1])}
+              style={{ fontSize: "1.9rem", fontVariantNumeric: "tabular-nums" }}
+            >
+              {status?.node || (status ? "Not linked" : "…")}
+            </Title>
+            <Group gap="sm" mt={4} wrap="wrap">
+              {callsign ? (
+                <Text size="sm" fw={600}>
+                  {callsign}
+                </Text>
+              ) : null}
+              {view?.pill ? (
+                <Badge color={pillColor(view.pill[1])} variant="light">
+                  {view.pill[0]}
+                </Badge>
+              ) : null}
+              {status?.audio?.keyed ? (
+                <Badge color="green" variant="light">
+                  node keyed
+                </Badge>
+              ) : null}
+            </Group>
+            <Text c="dimmed" size="sm" maw="70ch" mt="sm">
+              {view?.text ?? "Loading…"}
+            </Text>
+          </div>
+          {canEditNode ? (
+            <Button variant="light" onClick={() => setEditingNode(true)}>
+              {status?.node ? "Edit…" : "Set up…"}
+            </Button>
+          ) : null}
+        </Group>
+      </Card>
+
+      <Grid>
+        <Grid.Col span={{ base: 12, md: 5 }}>
+          <Stack gap="md">
+            {showEcho ? (
+              <Card withBorder padding="lg" radius="md" h="100%">
+                <Stack gap="md">
+                  <Group justify="space-between" align="flex-start" wrap="wrap">
+                    <div>
+                      <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
+                        EchoLink
+                      </Text>
+                      <Group gap="sm" mt={6} wrap="wrap">
+                        {echoView?.pill ? (
+                          <Badge color={pillColor(echoView.pill[1])} variant="light">
+                            {echoView.pill[0]}
+                          </Badge>
+                        ) : null}
+                        {echoEdited ? (
+                          <Badge color="amber" variant="light">
+                            Unsaved
+                          </Badge>
+                        ) : null}
+                      </Group>
+                    </div>
+                    {isAdmin && echo?.settings ? (
+                      <Button variant="light" size="xs" onClick={() => setEditingEcho(true)}>
+                        {echo.enabled ? "Edit…" : "Set up…"}
+                      </Button>
+                    ) : null}
+                  </Group>
+                  <Text c="dimmed" size="sm">
+                    {echoView?.text}
+                  </Text>
+                  {echo?.settings && echo.enabled ? (
+                    <Stack gap={6}>
+                      <Group justify="space-between" gap="md" wrap="nowrap">
+                        <Text size="sm" c="dimmed">
+                          Callsign
+                        </Text>
+                        <Text size="sm" ta="right">
+                          {echo.settings.callsign || "—"}
+                        </Text>
+                      </Group>
+                      <Group justify="space-between" gap="md" wrap="nowrap">
+                        <Text size="sm" c="dimmed">
+                          EchoLink node
+                        </Text>
+                        <Text size="sm" ta="right" ff="monospace">
+                          {echo.settings.node_number || "—"}
+                        </Text>
+                      </Group>
+                      <Group justify="space-between" gap="md" wrap="nowrap">
+                        <Text size="sm" c="dimmed">
+                          Location
+                        </Text>
+                        <Text size="sm" ta="right">
+                          {echo.settings.location || "—"}
+                        </Text>
+                      </Group>
+                    </Stack>
+                  ) : null}
+                </Stack>
+              </Card>
+            ) : (
+              <Card withBorder padding="lg" radius="md">
+                <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em" }}>
+                  Identity
+                </Text>
+                <Text c="dimmed" size="sm" mt="sm">
+                  EchoLink setup appears here once AllStar is available on this machine.
+                </Text>
+              </Card>
+            )}
+          </Stack>
+        </Grid.Col>
+
+        <Grid.Col span={{ base: 12, md: 7 }}>
+          <Stack gap="md">
+            <Card withBorder padding="lg" radius="md">
+              <Stack gap="md">
+                <Group justify="space-between" align="flex-start" wrap="wrap">
+                  <div>
+                    <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
+                      Favorite nodes
+                    </Text>
+                    <Text c="dimmed" size="sm" mt={4}>
+                      One-click links on the dashboard. EchoLink: 3 + six-digit number.
+                    </Text>
+                  </div>
+                  <Button variant="light" size="xs" onClick={() => setEditingFavorites(true)}>
+                    Edit…
+                  </Button>
+                </Group>
+                {savedFavorites.length ? (
+                  <Group gap="xs">
+                    {savedFavorites.map((favorite) => (
+                      <Badge
+                        key={`${favorite.node}-${favorite.name}`}
+                        size="lg"
+                        variant="light"
+                        color={favorite.monitor ? "gray" : "accent"}
+                        title={favorite.monitor ? "Monitor only" : undefined}
+                        style={{ textTransform: "none", fontWeight: 500 }}
+                      >
+                        <Text span ff="monospace" size="sm">
+                          {favorite.node}
+                        </Text>
+                        {favorite.name.trim() ? (
+                          <Text span size="sm">
+                            {" "}
+                            · {favorite.name.trim()}
+                          </Text>
+                        ) : null}
+                        {favorite.monitor ? (
+                          <Text span size="xs" c="dimmed">
+                            {" "}
+                            · mon
+                          </Text>
+                        ) : null}
+                      </Badge>
+                    ))}
+                  </Group>
+                ) : (
+                  <Text c="dimmed" size="sm">
+                    No favorites yet. Add remote nodes for the dashboard Links card.
+                  </Text>
+                )}
+              </Stack>
+            </Card>
+
+            <Card withBorder padding="lg" radius="md">
+              <Stack gap="md">
+                <Group justify="space-between" align="flex-start" wrap="wrap">
+                  <div>
+                    <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
+                      Scheduled links
+                    </Text>
+                    <Text c="dimmed" size="sm" mt={4}>
+                      Weekly auto-connect, then drop after a set time (0 = until disconnect).
+                    </Text>
+                  </div>
+                  <Button variant="light" size="xs" onClick={() => setEditingSchedules(true)}>
+                    Edit…
+                  </Button>
+                </Group>
+                {schedules.length ? (
+                  <Stack gap="xs">
+                    {schedules.map((schedule, index) => {
+                      const live = scheduleText(scheduleStatus[index], "Linked");
+                      return (
+                        <Group
+                          key={`${schedule.node}-${schedule.time}-${index}`}
+                          justify="space-between"
+                          align="flex-start"
+                          wrap="wrap"
+                          p="sm"
+                          style={{
+                            borderRadius: 8,
+                            border: "1px solid var(--mantine-color-default-border)",
+                            background: schedule.enabled
+                              ? undefined
+                              : "var(--mantine-color-default-hover)",
+                            opacity: schedule.enabled ? 1 : 0.72,
+                          }}
+                        >
+                          <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
+                            <Group gap="sm" wrap="wrap">
+                              <Text fw={600} style={{ fontVariantNumeric: "tabular-nums" }}>
+                                {schedule.time || "—:—"}
+                              </Text>
+                              <Text size="sm" c="dimmed">
+                                {scheduleDays(schedule.days)}
+                              </Text>
+                              {!schedule.enabled ? (
+                                <Badge size="sm" color="gray" variant="outline">
+                                  off
+                                </Badge>
+                              ) : null}
+                              {schedule.monitor ? (
+                                <Badge size="sm" color="gray" variant="light">
+                                  monitor
+                                </Badge>
+                              ) : null}
+                            </Group>
+                            <Text size="sm">
+                              <Text span ff="monospace">
+                                {schedule.node || "—"}
+                              </Text>
+                              {schedule.name.trim() ? ` · ${schedule.name.trim()}` : ""}
+                              {" · "}
+                              {scheduleDuration(schedule.minutes)}
+                            </Text>
+                            {live ? (
+                              <Text size="xs" c="dimmed">
+                                {live}
+                              </Text>
+                            ) : null}
+                          </Stack>
+                        </Group>
+                      );
+                    })}
+                  </Stack>
+                ) : (
+                  <Text c="dimmed" size="sm">
+                    No scheduled links yet.
+                  </Text>
+                )}
+              </Stack>
+            </Card>
+          </Stack>
+        </Grid.Col>
+      </Grid>
 
       <ConfigEditDrawer
         opened={editingNode}
@@ -661,16 +913,6 @@ export function AllStar() {
         </Stack>
       </ConfigEditDrawer>
 
-      <ConfigSummaryCard
-        title="Favorite nodes"
-        blurb="One-click links on the dashboard. EchoLink nodes are 3 + the EchoLink number padded to six digits."
-        onEdit={() => setEditingFavorites(true)}
-        rows={[
-          { label: "Count", value: String(favorites.filter((f) => f.node.trim()).length) },
-          { label: "Nodes", value: favoriteSummary },
-        ]}
-      />
-
       <ConfigEditDrawer
         opened={editingFavorites}
         onClose={() => setEditingFavorites(false)}
@@ -760,13 +1002,6 @@ export function AllStar() {
           </Stack>
         </form>
       </ConfigEditDrawer>
-
-      <ConfigSummaryCard
-        title="Scheduled links"
-        blurb="Link a node on a weekly schedule, then drop it after a set number of minutes."
-        onEdit={() => setEditingSchedules(true)}
-        rows={[{ label: "Schedules", value: scheduleSummary }]}
-      />
 
       <ConfigEditDrawer
         opened={editingSchedules}
@@ -910,158 +1145,135 @@ export function AllStar() {
         </form>
       </ConfigEditDrawer>
 
-      {showEcho ? (
-        <>
-          <ConfigSummaryCard
-            title="EchoLink"
-            badge={echoView?.pill?.[0]}
-            badgeColor={pillColor(echoView?.pill?.[1])}
-            dirty={echoEdited}
-            blurb={echoView?.text}
-            onEdit={isAdmin && echo?.settings ? () => setEditingEcho(true) : undefined}
-            editLabel={echo?.enabled ? "Edit…" : "Set up…"}
-            rows={
-              echo?.settings && echo.enabled
-                ? [
-                    { label: "Callsign", value: echo.settings.callsign || "—" },
-                    { label: "EchoLink node", value: echo.settings.node_number || "—" },
-                    { label: "Location", value: echo.settings.location || "—" },
-                  ]
-                : undefined
-            }
-          />
-
-          <ConfigEditDrawer
-            opened={editingEcho}
-            onClose={() => setEditingEcho(false)}
-            title="EchoLink"
-            subtitle="Station details for EchoLink users connecting through AllStar."
-          >
-            {isAdmin && echo?.settings ? (
-              <form onSubmit={(event) => void saveEcho(event)}>
-                <Stack gap="md">
-                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                    <TextInput
-                      label={labeled("Callsign", "With -R for a repeater, as validated by EchoLink.")}
-                      required
-                      value={echoForm.callsign}
-                      onChange={(event) => setEchoField("callsign", event.currentTarget.value)}
-                    />
-                    <TextInput
-                      label="Password"
-                      type="password"
-                      autoComplete="new-password"
-                      required={!echo.settings.has_password}
-                      description={echo.settings.has_password ? "Leave blank to keep the saved password" : undefined}
-                      placeholder=""
-                      value={echoForm.password}
-                      onChange={(event) => setEchoField("password", event.currentTarget.value)}
-                    />
-                    <TextInput
-                      label="EchoLink node number"
-                      required
-                      inputMode="numeric"
-                      placeholder="e.g. 123456"
-                      value={echoForm.node_number}
-                      onChange={(event) => setEchoField("node_number", event.currentTarget.value)}
-                    />
-                    <TextInput
-                      label="Sysop name"
-                      required
-                      maxLength={40}
-                      value={echoForm.name}
-                      onChange={(event) => setEchoField("name", event.currentTarget.value)}
-                    />
-                    <TextInput
-                      label="Location"
-                      required
-                      maxLength={40}
-                      placeholder="e.g. city, state"
-                      value={echoForm.location}
-                      onChange={(event) => setEchoField("location", event.currentTarget.value)}
-                    />
-                    <TextInput
-                      label="Email"
-                      type="email"
-                      required
-                      maxLength={80}
-                      placeholder="e.g. you@example.com"
-                      value={echoForm.email}
-                      onChange={(event) => setEchoField("email", event.currentTarget.value)}
-                    />
-                  </SimpleGrid>
-                  <Accordion variant="separated" radius="md">
-                    <Accordion.Item value="advanced">
-                      <Accordion.Control>Advanced · position &amp; RF</Accordion.Control>
-                      <Accordion.Panel>
-                        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                          <NumberInput
-                            label="Latitude"
-                            min={-90}
-                            max={90}
-                            decimalScale={4}
-                            value={echoForm.lat === "" ? undefined : echoForm.lat}
-                            onChange={(value) => setEchoField("lat", value === "" || value === undefined ? "" : Number(value))}
-                          />
-                          <NumberInput
-                            label="Longitude"
-                            min={-180}
-                            max={180}
-                            decimalScale={4}
-                            value={echoForm.lon === "" ? undefined : echoForm.lon}
-                            onChange={(value) => setEchoField("lon", value === "" || value === undefined ? "" : Number(value))}
-                          />
-                          <NumberInput
-                            label="Frequency"
-                            suffix=" MHz"
-                            min={0}
-                            max={3000}
-                            value={echoForm.frequency_mhz === "" ? undefined : echoForm.frequency_mhz}
-                            onChange={(value) =>
-                              setEchoField("frequency_mhz", value === "" || value === undefined ? "" : Number(value))
-                            }
-                          />
-                          <NumberInput
-                            label={labeled("Tone", "0 for none.")}
-                            suffix=" Hz"
-                            min={0}
-                            max={300}
-                            decimalScale={1}
-                            value={echoForm.tone_hz === "" ? undefined : echoForm.tone_hz}
-                            onChange={(value) =>
-                              setEchoField("tone_hz", value === "" || value === undefined ? "" : Number(value))
-                            }
-                          />
-                          <NumberInput
-                            label="Most stations at once"
-                            min={1}
-                            max={100}
-                            required
-                            value={echoForm.max_stations}
-                            onChange={(value) => setEchoField("max_stations", Number(value) || 20)}
-                          />
-                        </SimpleGrid>
-                      </Accordion.Panel>
-                    </Accordion.Item>
-                  </Accordion>
-                  <Group justify="space-between">
-                    {echo.enabled ? (
-                      <Button type="button" variant="subtle" color="gray" loading={echoBusy} onClick={() => void turnOffEcho()}>
-                        Turn off EchoLink
-                      </Button>
-                    ) : (
-                      <span />
-                    )}
-                    <Button type="submit" loading={echoBusy} disabled={!status?.node}>
-                      {echo.enabled ? "Save" : "Save and turn on"}
-                    </Button>
-                  </Group>
-                </Stack>
-              </form>
-            ) : null}
-          </ConfigEditDrawer>
-        </>
-      ) : null}
+      <ConfigEditDrawer
+        opened={editingEcho}
+        onClose={() => setEditingEcho(false)}
+        title="EchoLink"
+        subtitle="Station details for EchoLink users connecting through AllStar."
+      >
+        {isAdmin && echo?.settings ? (
+          <form onSubmit={(event) => void saveEcho(event)}>
+            <Stack gap="md">
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                <TextInput
+                  label={labeled("Callsign", "With -R for a repeater, as validated by EchoLink.")}
+                  required
+                  value={echoForm.callsign}
+                  onChange={(event) => setEchoField("callsign", event.currentTarget.value)}
+                />
+                <TextInput
+                  label="Password"
+                  type="password"
+                  autoComplete="new-password"
+                  required={!echo.settings.has_password}
+                  description={echo.settings.has_password ? "Leave blank to keep the saved password" : undefined}
+                  placeholder=""
+                  value={echoForm.password}
+                  onChange={(event) => setEchoField("password", event.currentTarget.value)}
+                />
+                <TextInput
+                  label="EchoLink node number"
+                  required
+                  inputMode="numeric"
+                  placeholder="e.g. 123456"
+                  value={echoForm.node_number}
+                  onChange={(event) => setEchoField("node_number", event.currentTarget.value)}
+                />
+                <TextInput
+                  label="Sysop name"
+                  required
+                  maxLength={40}
+                  value={echoForm.name}
+                  onChange={(event) => setEchoField("name", event.currentTarget.value)}
+                />
+                <TextInput
+                  label="Location"
+                  required
+                  maxLength={40}
+                  placeholder="e.g. city, state"
+                  value={echoForm.location}
+                  onChange={(event) => setEchoField("location", event.currentTarget.value)}
+                />
+                <TextInput
+                  label="Email"
+                  type="email"
+                  required
+                  maxLength={80}
+                  placeholder="e.g. you@example.com"
+                  value={echoForm.email}
+                  onChange={(event) => setEchoField("email", event.currentTarget.value)}
+                />
+              </SimpleGrid>
+              <Accordion variant="separated" radius="md">
+                <Accordion.Item value="advanced">
+                  <Accordion.Control>Advanced · position &amp; RF</Accordion.Control>
+                  <Accordion.Panel>
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                      <NumberInput
+                        label="Latitude"
+                        min={-90}
+                        max={90}
+                        decimalScale={4}
+                        value={echoForm.lat === "" ? undefined : echoForm.lat}
+                        onChange={(value) => setEchoField("lat", value === "" || value === undefined ? "" : Number(value))}
+                      />
+                      <NumberInput
+                        label="Longitude"
+                        min={-180}
+                        max={180}
+                        decimalScale={4}
+                        value={echoForm.lon === "" ? undefined : echoForm.lon}
+                        onChange={(value) => setEchoField("lon", value === "" || value === undefined ? "" : Number(value))}
+                      />
+                      <NumberInput
+                        label="Frequency"
+                        suffix=" MHz"
+                        min={0}
+                        max={3000}
+                        value={echoForm.frequency_mhz === "" ? undefined : echoForm.frequency_mhz}
+                        onChange={(value) =>
+                          setEchoField("frequency_mhz", value === "" || value === undefined ? "" : Number(value))
+                        }
+                      />
+                      <NumberInput
+                        label={labeled("Tone", "0 for none.")}
+                        suffix=" Hz"
+                        min={0}
+                        max={300}
+                        decimalScale={1}
+                        value={echoForm.tone_hz === "" ? undefined : echoForm.tone_hz}
+                        onChange={(value) =>
+                          setEchoField("tone_hz", value === "" || value === undefined ? "" : Number(value))
+                        }
+                      />
+                      <NumberInput
+                        label="Most stations at once"
+                        min={1}
+                        max={100}
+                        required
+                        value={echoForm.max_stations}
+                        onChange={(value) => setEchoField("max_stations", Number(value) || 20)}
+                      />
+                    </SimpleGrid>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
+              <Group justify="space-between">
+                {echo.enabled ? (
+                  <Button type="button" variant="subtle" color="gray" loading={echoBusy} onClick={() => void turnOffEcho()}>
+                    Turn off EchoLink
+                  </Button>
+                ) : (
+                  <span />
+                )}
+                <Button type="submit" loading={echoBusy} disabled={!status?.node}>
+                  {echo.enabled ? "Save" : "Save and turn on"}
+                </Button>
+              </Group>
+            </Stack>
+          </form>
+        ) : null}
+      </ConfigEditDrawer>
     </Page>
   );
 }

@@ -309,7 +309,9 @@ the service user's `audio` group membership gives it access):
 
 On the two-port boards, port 2 becomes the [link radio](#link-radio) when
 its sound devices are chosen. Digirig Lite has no USB-serial port (CM108
-audio + GPIO3 PTT only); if USB drops when an HT transmits near the Pi, see
+audio + GPIO3 PTT only). Digirig confirms Pi USB detection can be flaky
+(including after reboot); if the Lite vanishes on boot or when an HT
+transmits near the Pi, see
 [Digirig Lite + HT: USB drops on TX](#digirig-lite--ht-usb-drops-on-tx) —
 that is usually RFI, not a missing RTS/DTR line. The ICS Pi Repeater boards
 are listed but can't be selected yet: their PTT is on an I/O expander rather
@@ -524,23 +526,36 @@ pattern). They save the setting and say what they did.
 
 #### Digirig Lite + HT: USB drops on TX
 
-A Digirig Lite on a Pi USB port feeding a Baofeng-class HT (BF-F8HP Pro /
-similar) as the link radio may disconnect or reset around transmit: `dmesg`
-shows a USB drop, CM108/hidraw writes fail with `ENODEV`, and PTT or audio
-looks dead until unplug/replug or a service restart. That is usually **RFI /
+Two different USB problems show up with Digirig Lite on a Raspberry Pi.
+Digirig (K0TX / contact@digirig.net, Nov 2026) confirms **unreliable USB
+detection** on Pi (and some Android hosts) is a known Lite issue — devices
+may not come back cleanly after a reboot even with no RF. Separately, a
+Lite feeding a Baofeng-class HT (BF-F8HP Pro / similar) as the link radio
+may disconnect or reset **around transmit**: `dmesg` shows a USB drop,
+CM108/hidraw writes fail with `ENODEV`, and PTT or audio looks dead until
+unplug/replug or a service restart. That mid-key failure is usually **RFI /
 layout**, not a missing RTS/DTR serial PTT. Digirig Lite has **no** USB-serial
 device (CM108 audio + GPIO3 PTT only); serial RTS/DTR is Digirig **Mobile**
 (CP2102), not Lite. Controller board preset: Digirig Lite → PTT **CM108**,
 COS **VOX** (unless the COS pad is wired).
 
-The same RFI often shows up as **choppy audio** before a hard disconnect:
+**Hardware options Digirig recommends** (for detection and bus integrity):
+
+| Option | Notes |
+|--------|--------|
+| **Powered USB hub** | Conditions the USB path; often the first thing to try with two Lites on a Pi |
+| **Digirig Mobile** | Internal hub that conditions USB for the Pi; also has CP2102 serial if you need RTS/DTR |
+| **Next-revision Digirig Lite** | Digirig has offered limited early-access units with improved USB detection — ask them |
+| **Digirig HAT** (upcoming) | Dual-radio Raspberry Pi board aimed for end of year; [preview PDF](https://drive.google.com/file/d/1ROQxQ85Eejh7VIE4hI8sKK8NkWSvJ2Up/view?usp=sharing) — follow Digirig’s email list / Instagram |
+
+The RFI case often shows up as **choppy audio** before a hard disconnect:
 `rx_db` swings from hot (e.g. −5) to near silence (−60…−80) every half-second
 while the link HT is keyed, and `dmesg` logs `error -32` / `error -71` on the
 C-Media device. One Digirig + one HT is also **half-duplex**: in repeater
 mode the controller keys that HT on COS, so receive audio dies as soon as
 PTT asserts — use **Timing → Simplex node** for a single-HT local radio, or
 separate RX and TX radios for a live local repeater. Longer bring-up notes
-(Mic levels, simplex poll commands, RFI checklist):
+(Mic levels, simplex poll commands, RFI checklist, Digirig guidance):
 [troubleshooting Digirig + HT](troubleshooting-digirig-ht.md).
 
 When the bus still dies mid-key, software can soften the failure:
@@ -551,9 +566,9 @@ vanished CM108 during watchdog unkey (`ENODEV`). Soft recovery also covers
 the linked radio's audio stream and CM108, and rematches sound cards when
 `hw:N` renumbers. Field notes for this layout:
 [#119](https://github.com/gmisner/moreopenrepeater/issues/119).
-Lasting recovery still needs the interface to stay attached — ferrites on
-the Digirig USB cable, HT antenna away from the Pi/USB run, and low HT power
-for bring-up are the durable fix.
+Lasting recovery still needs the interface to stay attached — powered hub
+or Mobile, ferrites on the Digirig USB cable, HT antenna away from the
+Pi/USB run, and low HT power for bring-up.
 
 Operator checklist (Linked Radio + Digirig Lite):
 
@@ -561,6 +576,8 @@ Operator checklist (Linked Radio + Digirig Lite):
   remote base (unless CAT + Mobile/other radio).
 - [ ] Digirig chosen as **linked** input/output only.
 - [ ] PTT = CM108; COS = VOX (or wired CM108 COS).
+- [ ] Digirigs on a **powered USB hub** (or Digirig Mobile) if they vanish
+  after reboot or under TX.
 - [ ] HT on the **other band** from the repeater; low power; antenna clear
   of the Pi/USB.
 - [ ] Ferrites on USB (and cable dress) if TX correlates with USB

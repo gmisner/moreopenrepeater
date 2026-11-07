@@ -26,6 +26,10 @@ Related wiring notes: [Raspberry Pi](raspberry-pi.md), [CM108](cm108-wiring.md),
 - Digirig Lite has no USB-serial port — do not look for RTS/DTR PTT.
 - One HT is half-duplex: for live local use without a separate TX radio, set
   **Timing → Simplex node** so COS does not key that same HT.
+- Digirig documents unreliable Lite detection on Raspberry Pi (including
+  after reboot). Prefer a **powered USB hub**, Digirig Mobile, or ask Digirig
+  about next-revision Lite / the upcoming dual-radio HAT — see
+  [troubleshooting Digirig + HT](troubleshooting-digirig-ht.md#digirigs-guidance-pi-usb-detection).
 - If USB drops when the HT transmits near the Pi, that is usually RFI into
   USB — see [Digirig Lite + HT: USB drops on TX](raspberry-pi.md#digirig-lite--ht-usb-drops-on-tx).
 - Longer field notes: [troubleshooting Digirig + HT](troubleshooting-digirig-ht.md).
@@ -51,7 +55,8 @@ Related wiring notes: [Raspberry Pi](raspberry-pi.md), [CM108](cm108-wiring.md),
 | **Link COS / PTT** | VOX + CM108 GPIO3 on the second dongle |
 
 Pick each Digirig by PortAudio name (they re-enumerate after USB resets).
-Use **Audio & tones → Link radio** for the second pair. Keep HT antennas and
+Use **Audio & tones → Linked Radio** for the second pair. Put both Digirigs
+on a **powered USB hub** so they survive Pi reboot; keep HT antennas and
 USB cables short and ferrite-clamped if TX near the Pi unlocks the Digirig.
 
 ## DMK URI / USB-RIM Lite + Raspberry Pi

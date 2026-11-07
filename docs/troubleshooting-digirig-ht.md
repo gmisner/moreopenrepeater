@@ -113,6 +113,24 @@ of a sentence.
 **Half-duplex trap (repeater mode, one HT):** first sample may show hot
 `rx_db` with `ptt True`, then immediate collapse to ~−60.
 
+## Digirig’s guidance (Pi USB detection)
+
+Digirig support (K0TX, Nov 2026) says Raspberry Pi (and some Android
+devices) **do not reliably detect Digirig Lite**. That matches Lites that
+fail to reappear after a Pi reboot even with no RF on the air. Their
+recommended paths:
+
+| Option | Why |
+|--------|-----|
+| **External powered USB hub** | Conditions the USB signal; first practical fix for two Lites on a Pi |
+| **Digirig Mobile** | Internal hub aimed at Pi; also adds USB-serial (RTS/DTR) if you need it |
+| **Next-revision Digirig Lite** | Limited early-access units with improved USB detection — ask Digirig |
+| **Digirig HAT** (upcoming) | Dual-radio Pi board planned for end of year; [preview PDF](https://drive.google.com/file/d/1ROQxQ85Eejh7VIE4hI8sKK8NkWSvJ2Up/view?usp=sharing) — Digirig email list / Instagram for updates |
+
+Put the Lites on a powered hub before chasing mixer or controller bugs for
+“gone after reboot.” Soft recovery in More Open Repeater only helps once
+Linux has the device again.
+
 ## USB RFI checklist (choppy audio / disconnects)
 
 When `dmesg` shows lines like:
@@ -123,13 +141,13 @@ device not accepting address … error -71
 USB disconnect … C-Media Electronics Inc. USB Audio Device
 ```
 
-treat it as layout, not mixer math:
+treat it as layout (or the detection issue above), not mixer math:
 
-1. Both HTs on **low power** for bring-up
-2. Antennas **away** from the Pi and USB run (dummy load on the link HT is a
+1. Digirigs on a **powered USB hub** (Digirig’s recommendation for Pi)
+2. Both HTs on **low power** for bring-up
+3. Antennas **away** from the Pi and USB run (dummy load on the link HT is a
    good bench test)
-3. Snap-on **ferrites** on both Digirig USB cables, at the dongle end
-4. Digirigs on a **powered USB hub** when possible
+4. Snap-on **ferrites** on both Digirig USB cables, at the dongle end
 5. Unplug other flaky full-speed gadgets (wireless KB/mouse dongles) from the
    same hub while testing — they often reset with the same `-32` errors
 6. After a disconnect storm: unplug/replug Digirigs if needed, then

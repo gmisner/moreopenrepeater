@@ -116,12 +116,20 @@ def test_a_formula_in_the_csv_is_defused():
 
 def test_announcements_wait_for_the_end_of_the_net():
     net, service, clock, _ = make_net()
-    service.save_announcement(Announcement(id="a", name="Club meeting", message="Meeting Thursday", every_minutes=60))
+    service.save_announcement(
+        Announcement(
+            id="a",
+            name="Club meeting",
+            message="Meeting Thursday",
+            every_minutes=60,
+            on_linked_radio=True,
+        )
+    )
     run(net.start("ann"))
     clock["wall"] = datetime(2026, 10, 5, 21, 0)
     assert service.due_announcement_clips() == []
     run(net.end("ann"))
-    assert service.due_announcement_clips() == ["tts:Meeting Thursday"]
+    assert service.due_announcements() == [("tts:Meeting Thursday", True)]
 
 
 def test_links_for_the_net():

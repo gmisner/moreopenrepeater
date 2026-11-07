@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Badge,
   Button,
   Card,
@@ -17,6 +18,8 @@ import {
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
+import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
+import { ConfigSummaryCard } from "../components/ConfigSummaryCard";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
 import { useStatus } from "../status";
@@ -151,6 +154,29 @@ function emptySchedule(): NetSchedule {
   return { days: [], time: "", minutes: 60, enabled: true };
 }
 
+function toneLabel(style: string) {
+  return TONE_STYLES.find((item) => item.value === style)?.label ?? style;
+}
+
+function linksLabel(value: string) {
+  if (value === "disconnect") return "Disconnect all links";
+  if (value === "connect") return "Link a node";
+  return "Leave links as they are";
+}
+
+function scheduleSummary(schedules: NetSchedule[]) {
+  const enabled = schedules.filter((s) => s.enabled);
+  if (schedules.length === 0) return "None";
+  if (enabled.length === 0) return `${schedules.length} · all off`;
+  return `${enabled.length} on`;
+}
+
+function daysLabel(days: number[]) {
+  if (days.length === 7) return "Every day";
+  if (days.length === 0) return "No days";
+  return days.map((d) => DAY_NAMES[d]).join(", ");
+}
+
 export function Net() {
   const { config, save: saveConfig } = useConfig();
   const { status } = useStatus();
@@ -166,6 +192,8 @@ export function Net() {
   const [busy, setBusy] = useState(false);
   const [schedules, setSchedules] = useState<NetSchedule[]>([]);
   const [schedulesSaving, setSchedulesSaving] = useState(false);
+  const [editingSettings, setEditingSettings] = useState(false);
+  const [editingSchedules, setEditingSchedules] = useState(false);
   const wasActive = useRef<boolean | null>(null);
   const callsignRef = useRef<HTMLInputElement>(null);
 
@@ -280,6 +308,7 @@ export function Net() {
       await saveConfig({ net_schedules: schedules });
       await refresh();
       notifySuccess("Schedules saved");
+      setEditingSchedules(false);
     } catch (error) {
       notifyError(error);
     } finally {
@@ -297,11 +326,10 @@ export function Net() {
     detail = `Next scheduled net: ${shortTime(net.next_scheduled * 1000)}.`;
   }
 
+  const linkNodeNeeded = settings.values.net_links === "connect";
+
   return (
-    <Page
-      title="Net"
-      description="Net mode gives net control longer transmissions and its own courtesy tone, holds announcements and the phone patch until the net ends, and keeps a log of check-ins. Start it here, with a DTMF macro, or on a schedule."
-    >
+    <Page title="Net" description="Run a net with longer timeouts, check-ins, and optional schedules.">
       <Card withBorder padding="lg" radius="md">
         <Group justify="space-between" align="flex-start">
           <div>
@@ -331,9 +359,10 @@ export function Net() {
             <Group align="flex-end" mt="md" wrap="wrap">
               <TextInput
                 label="Name"
+                description="Optional · blank uses the default name"
                 style={{ flex: 1, minWidth: 180 }}
                 maxLength={60}
-                placeholder={(config?.net_name as string) || "Net"}
+                placeholder=""
                 value={startName}
                 onChange={(event) => setStartName(event.currentTarget.value)}
               />
@@ -365,14 +394,16 @@ export function Net() {
                 autoCapitalize="characters"
                 autoComplete="off"
                 spellCheck={false}
+                placeholder="e.g. W1AW"
                 value={checkinCallsign}
                 onChange={(event) => setCheckinCallsign(event.currentTarget.value)}
               />
               <TextInput
                 label="Notes"
+                description="Optional"
                 style={{ flex: 1, minWidth: 200 }}
                 maxLength={300}
-                placeholder="Name, location, traffic…"
+                placeholder=""
                 value={checkinNotes}
                 onChange={(event) => setCheckinNotes(event.currentTarget.value)}
               />
@@ -530,206 +561,275 @@ export function Net() {
         ) : null}
       </Card>
 
-      <Card
-        withBorder
-        padding="lg"
-        radius="md"
-        component="form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void settings.submit();
-        }}
-      >
-        <Stack gap="md">
-          <Title order={2}>Net settings</Title>
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-            <TextInput
-              label="Default name"
-              maxLength={60}
-              required
-              value={settings.values.net_name}
-              onChange={(event) => settings.setField("net_name", event.currentTarget.value)}
-            />
-            <NumberInput
-              label={labeled("End by itself after", "In case nobody ends it.")}
-              suffix=" minutes"
-              min={10}
-              max={1440}
-              value={settings.values.net_max_minutes}
-              onChange={(value) => settings.setField("net_max_minutes", Number(value) || 0)}
-              required
-            />
-            <NumberInput
-              label={labeled("Timeout timer during a net", "Net control often talks longer than the usual timeout allows.")}
-              suffix=" s"
-              min={30}
-              max={3600}
-              value={settings.values.net_tot_duration}
-              onChange={(value) => settings.setField("net_tot_duration", Number(value) || 0)}
-              required
-            />
-            <NumberInput
-              label="Hang time during a net"
-              suffix=" s"
-              min={0.1}
-              max={30}
-              step={0.1}
-              decimalScale={1}
-              value={settings.values.net_hang_time}
-              onChange={(value) => settings.setField("net_hang_time", Number(value) || 0)}
-              required
-            />
-            <Select
-              label={labeled("Built-in courtesy tone", "Replaces every courtesy tone while the net runs.")}
-              data={TONE_STYLES}
-              value={settings.values.net_courtesy_tone_style}
-              onChange={(value) => settings.setField("net_courtesy_tone_style", value || "same")}
-              allowDeselect={false}
-            />
-            <TextInput
-              label={labeled("Courtesy tone clip", "Plays instead of the built-in tone. Asset id, or blank for none.")}
-              value={settings.values.net_courtesy_tone_asset_id}
-              onChange={(event) => settings.setField("net_courtesy_tone_asset_id", event.currentTarget.value)}
-            />
-            <Select
-              label="When the net starts (AllStarLink)"
-              data={[
-                { value: "leave", label: "Leave links as they are" },
-                { value: "disconnect", label: "Disconnect all links" },
-                { value: "connect", label: "Link a node for the net" },
-              ]}
-              value={settings.values.net_links}
-              onChange={(value) => settings.setField("net_links", value || "leave")}
-              allowDeselect={false}
-            />
-            <TextInput
-              label={labeled("Node", "For \"Link a node\": dropped again when the net ends.")}
-              inputMode="numeric"
-              pattern="[0-9]{0,10}"
-              placeholder="2000"
-              value={settings.values.net_link_node}
-              onChange={(event) => settings.setField("net_link_node", event.currentTarget.value)}
-            />
-            <TextInput
-              label="When the net starts"
-              placeholder="Net mode on."
-              maxLength={500}
-              value={settings.values.net_start_say}
-              onChange={(event) => settings.setField("net_start_say", event.currentTarget.value)}
-            />
-            <TextInput
-              label={labeled("When it ends", "{name} is the net\'s name.")}
-              placeholder="Net mode off."
-              maxLength={500}
-              value={settings.values.net_end_say}
-              onChange={(event) => settings.setField("net_end_say", event.currentTarget.value)}
-            />
-          </SimpleGrid>
-          <Switch
-            label={labeled("Hold announcements", "Ones that come due play after the net (weather alerts still go out)")}
-            checked={settings.values.net_hold_announcements}
-            onChange={(event) => settings.setField("net_hold_announcements", event.currentTarget.checked)}
-          />
-          <Switch
-            label={labeled("Hold phone patch", "A call in progress is hung up when the net starts")}
-            checked={settings.values.net_hold_autopatch}
-            onChange={(event) => settings.setField("net_hold_autopatch", event.currentTarget.checked)}
-          />
-          <ConfigActions dirty={settings.dirty} saving={settings.saving} onReset={settings.reset} />
-        </Stack>
-      </Card>
+      <ConfigSummaryCard
+        title="Net settings"
+        dirty={settings.dirty}
+        blurb="Defaults when a net starts: timeouts, holds, and what to say."
+        onEdit={() => setEditingSettings(true)}
+        rows={[
+          { label: "Default name", value: settings.values.net_name || "—" },
+          { label: "Ends after", value: `${settings.values.net_max_minutes} min` },
+          { label: "TOT", value: `${settings.values.net_tot_duration} s` },
+          { label: "Courtesy tone", value: toneLabel(settings.values.net_courtesy_tone_style) },
+          { label: "Links", value: linksLabel(settings.values.net_links) },
+          {
+            label: "Holds",
+            value: [
+              settings.values.net_hold_announcements ? "announcements" : null,
+              settings.values.net_hold_autopatch ? "phone patch" : null,
+            ]
+              .filter(Boolean)
+              .join(", ") || "None",
+          },
+        ]}
+      />
 
-      <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => void saveSchedules(event)}>
-        <Stack gap="md">
-          <Title order={2}>Scheduled nets</Title>
-          <Text c="dimmed" size="sm" maw="75ch">
-            Start net mode at a set time each week and end it after the given number of minutes (0 runs until someone ends it, or the limit above).
-          </Text>
-          {schedules.map((schedule, index) => (
-            <Card key={index} withBorder padding="md" radius="sm" bg="var(--mantine-color-default)">
-              <Stack gap="sm">
-                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                  <TextInput
-                    label="Start"
-                    type="time"
-                    required
-                    value={schedule.time}
-                    onChange={(event) => {
-                      const next = [...schedules];
-                      next[index] = { ...schedule, time: event.currentTarget.value };
-                      setSchedules(next);
-                    }}
-                  />
-                  <NumberInput
-                    label="Minutes"
-                    min={0}
-                    max={720}
-                    required
-                    value={schedule.minutes}
-                    onChange={(value) => {
-                      const next = [...schedules];
-                      next[index] = { ...schedule, minutes: Number(value) || 0 };
-                      setSchedules(next);
-                    }}
-                  />
-                </SimpleGrid>
-                <Text size="sm" fw={600}>
-                  Days
-                </Text>
-                <Group gap="sm">
-                  {DAY_NAMES.map((day, dayIndex) => (
-                    <Checkbox
-                      key={day}
-                      label={day}
-                      checked={schedule.days.includes(dayIndex)}
+      <ConfigEditDrawer
+        opened={editingSettings}
+        onClose={() => setEditingSettings(false)}
+        title="Net settings"
+        subtitle="Applied when a net starts from here, DTMF, or a schedule."
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void settings.submit().then((ok) => {
+              if (ok) setEditingSettings(false);
+            });
+          }}
+        >
+          <Stack gap="md">
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+              <TextInput
+                label="Default name"
+                maxLength={60}
+                required
+                value={settings.values.net_name}
+                onChange={(event) => settings.setField("net_name", event.currentTarget.value)}
+              />
+              <NumberInput
+                label="End by itself after"
+                description="In case nobody ends it"
+                suffix=" minutes"
+                min={10}
+                max={1440}
+                value={settings.values.net_max_minutes}
+                onChange={(value) => settings.setField("net_max_minutes", Number(value) || 0)}
+                required
+              />
+              <NumberInput
+                label={labeled("Timeout timer during a net", "Net control often talks longer than the usual timeout allows.")}
+                suffix=" s"
+                min={30}
+                max={3600}
+                value={settings.values.net_tot_duration}
+                onChange={(value) => settings.setField("net_tot_duration", Number(value) || 0)}
+                required
+              />
+              <NumberInput
+                label="Hang time during a net"
+                suffix=" s"
+                min={0.1}
+                max={30}
+                step={0.1}
+                decimalScale={1}
+                value={settings.values.net_hang_time}
+                onChange={(value) => settings.setField("net_hang_time", Number(value) || 0)}
+                required
+              />
+              <Select
+                label="Built-in courtesy tone"
+                description="Replaces every courtesy tone while the net runs"
+                data={TONE_STYLES}
+                value={settings.values.net_courtesy_tone_style}
+                onChange={(value) => settings.setField("net_courtesy_tone_style", value || "same")}
+                allowDeselect={false}
+              />
+              <TextInput
+                label="Courtesy tone clip"
+                description="Asset id · blank = built-in tone"
+                placeholder=""
+                value={settings.values.net_courtesy_tone_asset_id}
+                onChange={(event) => settings.setField("net_courtesy_tone_asset_id", event.currentTarget.value)}
+              />
+            </SimpleGrid>
+            <Switch
+              label={labeled("Hold announcements", "Ones that come due play after the net (weather alerts still go out)")}
+              checked={settings.values.net_hold_announcements}
+              onChange={(event) => settings.setField("net_hold_announcements", event.currentTarget.checked)}
+            />
+            <Switch
+              label={labeled("Hold phone patch", "A call in progress is hung up when the net starts")}
+              checked={settings.values.net_hold_autopatch}
+              onChange={(event) => settings.setField("net_hold_autopatch", event.currentTarget.checked)}
+            />
+
+            <Accordion variant="separated" radius="md">
+              <Accordion.Item value="advanced">
+                <Accordion.Control>Advanced · links &amp; announcements</Accordion.Control>
+                <Accordion.Panel>
+                  <Stack gap="md">
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                      <Select
+                        label="When the net starts (AllStarLink)"
+                        data={[
+                          { value: "leave", label: "Leave links as they are" },
+                          { value: "disconnect", label: "Disconnect all links" },
+                          { value: "connect", label: "Link a node for the net" },
+                        ]}
+                        value={settings.values.net_links}
+                        onChange={(value) => settings.setField("net_links", value || "leave")}
+                        allowDeselect={false}
+                      />
+                      {linkNodeNeeded ? (
+                        <TextInput
+                          label="Node"
+                          description="Dropped again when the net ends"
+                          inputMode="numeric"
+                          pattern="[0-9]{0,10}"
+                          placeholder="e.g. 2000"
+                          value={settings.values.net_link_node}
+                          onChange={(event) => settings.setField("net_link_node", event.currentTarget.value)}
+                        />
+                      ) : null}
+                      <TextInput
+                        label="When the net starts"
+                        description="Spoken · blank = none"
+                        placeholder=""
+                        maxLength={500}
+                        value={settings.values.net_start_say}
+                        onChange={(event) => settings.setField("net_start_say", event.currentTarget.value)}
+                      />
+                      <TextInput
+                        label="When it ends"
+                        description="Spoken · {name} is the net's name · blank = none"
+                        placeholder=""
+                        maxLength={500}
+                        value={settings.values.net_end_say}
+                        onChange={(event) => settings.setField("net_end_say", event.currentTarget.value)}
+                      />
+                    </SimpleGrid>
+                  </Stack>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+
+            <ConfigActions dirty={settings.dirty} saving={settings.saving} onReset={settings.reset} />
+          </Stack>
+        </form>
+      </ConfigEditDrawer>
+
+      <ConfigSummaryCard
+        title="Scheduled nets"
+        blurb="Start net mode at a set time each week."
+        onEdit={() => setEditingSchedules(true)}
+        rows={[
+          { label: "Schedules", value: scheduleSummary(schedules) },
+          ...(net?.next_scheduled
+            ? [{ label: "Next", value: shortTime(net.next_scheduled * 1000) }]
+            : []),
+          ...schedules.slice(0, 3).map((schedule, index) => ({
+            label: schedule.enabled ? `Entry ${index + 1}` : `Entry ${index + 1} (off)`,
+            value: `${schedule.time || "—"} · ${daysLabel(schedule.days)} · ${schedule.minutes || "until ended"} min`,
+          })),
+        ]}
+      />
+
+      <ConfigEditDrawer
+        opened={editingSchedules}
+        onClose={() => setEditingSchedules(false)}
+        title="Scheduled nets"
+        subtitle="0 minutes runs until someone ends it, or the default limit."
+      >
+        <form onSubmit={(event) => void saveSchedules(event)}>
+          <Stack gap="md">
+            {schedules.map((schedule, index) => (
+              <Card key={index} withBorder padding="md" radius="sm" bg="var(--mantine-color-default)">
+                <Stack gap="sm">
+                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                    <TextInput
+                      label="Start"
+                      type="time"
+                      required
+                      value={schedule.time}
                       onChange={(event) => {
-                        const days = event.currentTarget.checked
-                          ? [...schedule.days, dayIndex].sort((a, b) => a - b)
-                          : schedule.days.filter((d) => d !== dayIndex);
                         const next = [...schedules];
-                        next[index] = { ...schedule, days };
+                        next[index] = { ...schedule, time: event.currentTarget.value };
                         setSchedules(next);
                       }}
                     />
-                  ))}
-                </Group>
-                <Group justify="space-between">
-                  <Checkbox
-                    label="On"
-                    checked={schedule.enabled}
-                    onChange={(event) => {
-                      const next = [...schedules];
-                      next[index] = { ...schedule, enabled: event.currentTarget.checked };
-                      setSchedules(next);
-                    }}
-                  />
-                  <Button
-                    size="compact-sm"
-                    color="red"
-                    variant="subtle"
-                    onClick={() => setSchedules(schedules.filter((_, i) => i !== index))}
-                  >
-                    Remove
-                  </Button>
-                </Group>
-              </Stack>
-            </Card>
-          ))}
-          {schedules.length === 0 ? (
-            <Text c="dimmed" size="sm">
-              No scheduled nets.
-            </Text>
-          ) : null}
-          <Group justify="space-between">
-            <Button type="button" variant="subtle" onClick={() => setSchedules([...schedules, emptySchedule()])}>
-              Add a schedule
-            </Button>
-            <Button type="submit" loading={schedulesSaving}>
-              Save schedules
-            </Button>
-          </Group>
-        </Stack>
-      </Card>
+                    <NumberInput
+                      label="Minutes"
+                      description="0 = until ended manually"
+                      min={0}
+                      max={720}
+                      required
+                      value={schedule.minutes}
+                      onChange={(value) => {
+                        const next = [...schedules];
+                        next[index] = { ...schedule, minutes: Number(value) || 0 };
+                        setSchedules(next);
+                      }}
+                    />
+                  </SimpleGrid>
+                  <Text size="sm" fw={600}>
+                    Days
+                  </Text>
+                  <Group gap="sm">
+                    {DAY_NAMES.map((day, dayIndex) => (
+                      <Checkbox
+                        key={day}
+                        label={day}
+                        checked={schedule.days.includes(dayIndex)}
+                        onChange={(event) => {
+                          const days = event.currentTarget.checked
+                            ? [...schedule.days, dayIndex].sort((a, b) => a - b)
+                            : schedule.days.filter((d) => d !== dayIndex);
+                          const next = [...schedules];
+                          next[index] = { ...schedule, days };
+                          setSchedules(next);
+                        }}
+                      />
+                    ))}
+                  </Group>
+                  <Group justify="space-between">
+                    <Checkbox
+                      label="On"
+                      checked={schedule.enabled}
+                      onChange={(event) => {
+                        const next = [...schedules];
+                        next[index] = { ...schedule, enabled: event.currentTarget.checked };
+                        setSchedules(next);
+                      }}
+                    />
+                    <Button
+                      size="compact-sm"
+                      color="red"
+                      variant="subtle"
+                      onClick={() => setSchedules(schedules.filter((_, i) => i !== index))}
+                    >
+                      Remove
+                    </Button>
+                  </Group>
+                </Stack>
+              </Card>
+            ))}
+            {schedules.length === 0 ? (
+              <Text c="dimmed" size="sm">
+                No scheduled nets.
+              </Text>
+            ) : null}
+            <Group justify="space-between">
+              <Button type="button" variant="subtle" onClick={() => setSchedules([...schedules, emptySchedule()])}>
+                Add a schedule
+              </Button>
+              <Button type="submit" loading={schedulesSaving}>
+                Save schedules
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </ConfigEditDrawer>
     </Page>
   );
 }

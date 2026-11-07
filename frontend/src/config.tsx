@@ -142,8 +142,10 @@ export function useConfigSlice<T extends Config>(keys: (keyof T & string)[], def
       setBaseline(filled);
       setEdited(new Set());
       notifySuccess("Saved");
+      return true;
     } catch (error) {
       notifyError(error);
+      return false;
     } finally {
       setSaving(false);
     }

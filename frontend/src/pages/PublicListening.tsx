@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Anchor,
   Badge,
   Button,
@@ -194,10 +195,7 @@ export function PublicListening() {
   const listenUrl = `${window.location.origin}/listen`;
 
   return (
-    <Page
-      title="Public listening"
-      description="Let people hear the repeater without the dashboard: a listening page of its own, a Broadcastify feed, or both."
-    >
+    <Page title="Public listening" description="A listen page and/or Broadcastify feed for people outside the dashboard.">
       <Card
         withBorder
         padding="lg"
@@ -210,7 +208,10 @@ export function PublicListening() {
       >
         <Stack gap="md">
           <Select
-            label={labeled("Listening page", "\"Signed-in accounts only\" asks for a sign-in first. Any account works, and a Listener account (added on the Users page) gets this page and nothing else.")}
+            label={labeled(
+              "Listening page",
+              'Listener accounts (Users) get this page only. "Anyone" needs no sign-in.',
+            )}
             data={[
               { value: "off", label: "Off" },
               { value: "signed_in", label: "Signed-in accounts only" },
@@ -230,19 +231,23 @@ export function PublicListening() {
             </Text>
           ) : null}
           <TextInput
-            label={labeled("Text on the page", "Shown under the callsign. The page also shows whether the repeater is on the air and whether a net is in session.")}
+            label={labeled("Text on the page", "Shown under the callsign · also shows on-air and net status")}
             maxLength={500}
-            placeholder="146.940 MHz, -0.6 MHz, 100.0 Hz tone"
+            description="Optional · frequency, offset, tone, etc."
+            placeholder=""
             value={page.values.public_page_text}
             onChange={(event) => page.setField("public_page_text", event.currentTarget.value)}
           />
           <Switch
-            label={labeled("Visitors can listen live", "Only what\'s transmitted")}
+            label={labeled("Visitors can listen live", "Only what's transmitted")}
             checked={page.values.public_page_audio}
             onChange={(event) => page.setField("public_page_audio", event.currentTarget.checked)}
           />
           <NumberInput
-            label={labeled("Listeners at once", "Each listener takes about 256 kbps of this controller\'s upload. Without a sign-in, at most 3 from one address.")}
+            label={labeled(
+              "Listeners at once",
+              "About 256 kbps upload each · without sign-in, at most 3 from one address",
+            )}
             min={1}
             max={200}
             required
@@ -259,8 +264,7 @@ export function PublicListening() {
           <Stack gap="md">
             <Title order={2}>Broadcastify / Icecast feed</Title>
             <Text c="dimmed" size="sm" maw="75ch">
-              Sends what&apos;s on the air to an Icecast server as a 16 kbps MP3 stream, the format Broadcastify asks for.
-              Needs ffmpeg (<Code>sudo apt install ffmpeg</Code>).
+              Streams what&apos;s on the air as 16 kbps MP3. Needs ffmpeg (<Code>sudo apt install ffmpeg</Code>).
             </Text>
             <Group gap="sm">
               <Badge color={STATE_COLORS[streamStatus?.state ?? ""] ?? "gray"} variant="light">
@@ -278,7 +282,7 @@ export function PublicListening() {
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
               <TextInput
                 label="Server"
-                placeholder="audio9.broadcastify.com"
+                placeholder="e.g. audio9.broadcastify.com"
                 value={streamForm.host}
                 onChange={(event) => setStreamField("host", event.currentTarget.value)}
               />
@@ -292,7 +296,7 @@ export function PublicListening() {
               />
               <TextInput
                 label="Mount"
-                placeholder="abc123xyz"
+                placeholder="e.g. mountpoint"
                 value={streamForm.mount}
                 onChange={(event) => setStreamField("mount", event.currentTarget.value)}
               />
@@ -303,50 +307,65 @@ export function PublicListening() {
                 onChange={(event) => setStreamField("username", event.currentTarget.value)}
               />
               <TextInput
-                label={labeled("Password", passwordSet
-                    ? "Saved on this controller only, out of backups."
-                    : "Kept on this controller only, out of backups.")}
-                placeholder={passwordSet ? "(saved; leave blank to keep)" : undefined}
+                label={labeled(
+                  "Password",
+                  passwordSet
+                    ? "Saved on this controller only, out of backups"
+                    : "Kept on this controller only, out of backups",
+                )}
+                description={passwordSet ? "Leave blank to keep the saved password" : undefined}
+                placeholder=""
                 value={streamForm.password}
                 onChange={(event) => setStreamField("password", event.currentTarget.value)}
-              />
-              <Select
-                label="Bitrate"
-                data={[
-                  { value: "16", label: "16 kbps (Broadcastify)" },
-                  { value: "24", label: "24 kbps" },
-                  { value: "32", label: "32 kbps" },
-                ]}
-                value={streamForm.bitrate}
-                onChange={(value) => setStreamField("bitrate", value || "16")}
-                allowDeselect={false}
               />
               <TextInput
                 label="Stream name"
                 maxLength={100}
-                placeholder="W1AW repeater"
+                placeholder="e.g. Club repeater"
                 value={streamForm.name}
                 onChange={(event) => setStreamField("name", event.currentTarget.value)}
               />
-              <TextInput
-                label="Genre"
-                maxLength={100}
-                value={streamForm.genre}
-                onChange={(event) => setStreamField("genre", event.currentTarget.value)}
-              />
-              <TextInput
-                label="Description"
-                maxLength={200}
-                value={streamForm.description}
-                onChange={(event) => setStreamField("description", event.currentTarget.value)}
-                style={{ gridColumn: "1 / -1" }}
-              />
             </SimpleGrid>
-            <Switch
-              label="Older server (Icecast before 2.4)"
-              checked={streamForm.legacy_icecast}
-              onChange={(event) => setStreamField("legacy_icecast", event.currentTarget.checked)}
-            />
+            <Accordion variant="separated" radius="md">
+              <Accordion.Item value="advanced">
+                <Accordion.Control>Advanced · stream metadata</Accordion.Control>
+                <Accordion.Panel>
+                  <Stack gap="md">
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                      <Select
+                        label="Bitrate"
+                        data={[
+                          { value: "16", label: "16 kbps (Broadcastify)" },
+                          { value: "24", label: "24 kbps" },
+                          { value: "32", label: "32 kbps" },
+                        ]}
+                        value={streamForm.bitrate}
+                        onChange={(value) => setStreamField("bitrate", value || "16")}
+                        allowDeselect={false}
+                      />
+                      <TextInput
+                        label="Genre"
+                        maxLength={100}
+                        value={streamForm.genre}
+                        onChange={(event) => setStreamField("genre", event.currentTarget.value)}
+                      />
+                      <TextInput
+                        label="Description"
+                        maxLength={200}
+                        value={streamForm.description}
+                        onChange={(event) => setStreamField("description", event.currentTarget.value)}
+                        style={{ gridColumn: "1 / -1" }}
+                      />
+                    </SimpleGrid>
+                    <Switch
+                      label="Older server (Icecast before 2.4)"
+                      checked={streamForm.legacy_icecast}
+                      onChange={(event) => setStreamField("legacy_icecast", event.currentTarget.checked)}
+                    />
+                  </Stack>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
             <Group justify="flex-end">
               <Button type="submit" loading={streamSaving}>
                 Save

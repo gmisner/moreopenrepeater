@@ -66,6 +66,7 @@ class AnnouncementFields(BaseModel):
     times: list[str] = []
     days: list[int] = [0, 1, 2, 3, 4, 5, 6]
     enabled: bool = True
+    on_linked_radio: bool = False
 
     @field_validator("times")
     @classmethod

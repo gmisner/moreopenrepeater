@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Callable, Optional
 from link.node_link import NodeLinkClient
 
 from .node_directory import NodeDirectory
+from .service.snapshot import LINK_RADIO_NODE
 
 if TYPE_CHECKING:
     from .service import RepeaterService
@@ -125,6 +126,26 @@ class LinkControl:
         client = self._require_client()
         await self._run(client.disconnect_all())
         _logger.info("disconnecting all links")
+
+    async def recent_events(self, limit: int = 50) -> list[dict]:
+        """Newest-first connect / key activity for the dashboard."""
+        rows = []
+        for event in self._service.links.recent_events(limit):
+            node = str(event.get("node") or "")
+            if node == LINK_RADIO_NODE:
+                label = "Linked radio"
+            else:
+                info = await self.describe(node)
+                label = info.get("callsign") or info.get("description") or ""
+            rows.append(
+                {
+                    "at": event["at"],
+                    "kind": event["kind"],
+                    "node": node,
+                    "label": label,
+                }
+            )
+        return rows
 
     def _require_client(self) -> NodeLinkClient:
         if self.client is None:

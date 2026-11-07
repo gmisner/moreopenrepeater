@@ -189,10 +189,7 @@ export function Users() {
   };
 
   return (
-    <Page
-      title="Users"
-      description="Admins manage everything, operators change repeater settings, viewers can only look and listen. Listeners only get the listening page at /listen, none of the dashboard."
-    >
+    <Page title="Users" description="Who can sign in, and what each role can do.">
       {!signInOn ? (
         <Card withBorder padding="md" radius="md">
           <Text c="dimmed">
@@ -381,7 +378,7 @@ export function Users() {
                   label="Name"
                   required
                   maxLength={60}
-                  placeholder="Claude on my laptop"
+                  placeholder="e.g. laptop"
                   autoComplete="off"
                   value={tokenName}
                   onChange={(event) => setTokenName(event.currentTarget.value)}

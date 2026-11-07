@@ -351,10 +351,7 @@ export function Alerts() {
       : "stopped unexpectedly";
 
   return (
-    <Page
-      title="Alerts & health"
-      description="A message on your phone when the repeater needs attention: a crash or power cut, a stuck-carrier lockout, an update that didn't work, overheating or low voltage, or live audio stopping."
-    >
+    <Page title="Alerts & health" description="Phone alerts when the repeater needs attention.">
       <Group justify="flex-end">
         <Button variant="subtle" loading={refreshing} onClick={() => void refresh()}>
           Refresh
@@ -474,38 +471,29 @@ export function Alerts() {
                 </Group>
               </Accordion.Control>
               <Accordion.Panel>
-                <Stack gap="sm">
-                  <Text size="sm" c="dimmed">
-                    Free. Install the{" "}
-                    <Text span component="a" href="https://ntfy.sh" target="_blank" rel="noopener">
-                      ntfy
-                    </Text>{" "}
-                    app, subscribe to a topic nobody could guess, and put its address here. Anyone who knows the topic can
-                    read the alerts.
-                  </Text>
-                  <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                    <TextInput
-                      label="Topic address"
-                      placeholder="https://ntfy.sh/w1aw-repeater-x7k2"
-                      value={form.ntfy_url}
-                      onChange={(event) => setField("ntfy_url", event.currentTarget.value)}
+                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                  <TextInput
+                    label="Topic address"
+                    description="Install the ntfy app and subscribe to a private topic"
+                    placeholder="e.g. https://ntfy.sh/your-topic"
+                    value={form.ntfy_url}
+                    onChange={(event) => setField("ntfy_url", event.currentTarget.value)}
+                  />
+                  <Stack gap={4}>
+                    <PasswordInput
+                      label={labeled("Access token", "Only for a server with access control")}
+                      placeholder={secretPlaceholder("ntfy_token")}
+                      value={form.ntfy_token}
+                      onChange={(event) => setField("ntfy_token", event.currentTarget.value)}
+                      autoComplete="new-password"
                     />
-                    <Stack gap={4}>
-                      <PasswordInput
-                        label={labeled("Access token", "Only for a server with access control.")}
-                        placeholder={secretPlaceholder("ntfy_token")}
-                        value={form.ntfy_token}
-                        onChange={(event) => setField("ntfy_token", event.currentTarget.value)}
-                        autoComplete="new-password"
-                      />
-                      {info?.secrets_set.ntfy_token && !cleared.has("ntfy_token") ? (
-                        <Button type="button" variant="subtle" size="compact-xs" onClick={() => clearSecret("ntfy_token")}>
-                          Remove
-                        </Button>
-                      ) : null}
-                    </Stack>
-                  </SimpleGrid>
-                </Stack>
+                    {info?.secrets_set.ntfy_token && !cleared.has("ntfy_token") ? (
+                      <Button type="button" variant="subtle" size="compact-xs" onClick={() => clearSecret("ntfy_token")}>
+                        Remove
+                      </Button>
+                    ) : null}
+                  </Stack>
+                </SimpleGrid>
               </Accordion.Panel>
             </Accordion.Item>
 
@@ -522,39 +510,35 @@ export function Alerts() {
                 </Group>
               </Accordion.Control>
               <Accordion.Panel>
-                <Stack gap="sm">
-                  <Text size="sm" c="dimmed">
-                    Make a bot with @BotFather, send it a message, then put its token and your chat ID here.
-                  </Text>
-                  <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                    <Stack gap={4}>
-                      <PasswordInput
-                        label="Bot token"
-                        placeholder={secretPlaceholder("telegram_token")}
-                        value={form.telegram_token}
-                        onChange={(event) => setField("telegram_token", event.currentTarget.value)}
-                        autoComplete="new-password"
-                      />
-                      {info?.secrets_set.telegram_token && !cleared.has("telegram_token") ? (
-                        <Button
-                          type="button"
-                          variant="subtle"
-                          size="compact-xs"
-                          onClick={() => clearSecret("telegram_token")}
-                        >
-                          Remove
-                        </Button>
-                      ) : null}
-                    </Stack>
-                    <TextInput
-                      label="Chat ID"
-                      placeholder="123456789"
-                      inputMode="numeric"
-                      value={form.telegram_chat_id}
-                      onChange={(event) => setField("telegram_chat_id", event.currentTarget.value)}
+                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                  <Stack gap={4}>
+                    <PasswordInput
+                      label={labeled("Bot token", "Create a bot with @BotFather, then message it once")}
+                      placeholder={secretPlaceholder("telegram_token")}
+                      value={form.telegram_token}
+                      onChange={(event) => setField("telegram_token", event.currentTarget.value)}
+                      autoComplete="new-password"
                     />
-                  </SimpleGrid>
-                </Stack>
+                    {info?.secrets_set.telegram_token && !cleared.has("telegram_token") ? (
+                      <Button
+                        type="button"
+                        variant="subtle"
+                        size="compact-xs"
+                        onClick={() => clearSecret("telegram_token")}
+                      >
+                        Remove
+                      </Button>
+                    ) : null}
+                  </Stack>
+                  <TextInput
+                    label="Chat ID"
+                    description="Numeric chat or group ID"
+                    placeholder="e.g. 123456789"
+                    inputMode="numeric"
+                    value={form.telegram_chat_id}
+                    onChange={(event) => setField("telegram_chat_id", event.currentTarget.value)}
+                  />
+                </SimpleGrid>
               </Accordion.Panel>
             </Accordion.Item>
 
@@ -571,68 +555,84 @@ export function Alerts() {
                 </Group>
               </Accordion.Control>
               <Accordion.Panel>
-                <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                  <TextInput
-                    label={labeled("Send to", "Separate several addresses with commas.")}
-                    placeholder="you@example.com"
-                    value={form.email_to}
-                    onChange={(event) => setField("email_to", event.currentTarget.value)}
-                  />
-                  <TextInput
-                    label="From"
-                    placeholder="the username below"
-                    value={form.email_from}
-                    onChange={(event) => setField("email_from", event.currentTarget.value)}
-                  />
-                  <TextInput
-                    label="SMTP server"
-                    placeholder="smtp.gmail.com"
-                    value={form.smtp_host}
-                    onChange={(event) => setField("smtp_host", event.currentTarget.value)}
-                  />
-                  <NumberInput
-                    label="Port"
-                    min={1}
-                    max={65535}
-                    value={form.smtp_port}
-                    onChange={(value) => setField("smtp_port", Number(value) || 587)}
-                    required
-                  />
-                  <Select
-                    label="Security"
-                    data={[
-                      { value: "starttls", label: "STARTTLS (usually port 587)" },
-                      { value: "ssl", label: "SSL/TLS (usually port 465)" },
-                      { value: "none", label: "None" },
-                    ]}
-                    value={form.smtp_security}
-                    onChange={(value) => setField("smtp_security", (value as FormValues["smtp_security"]) || "starttls")}
-                  />
-                  <TextInput
-                    label="Username"
-                    value={form.smtp_username}
-                    onChange={(event) => setField("smtp_username", event.currentTarget.value)}
-                  />
-                  <Stack gap={4}>
-                    <PasswordInput
-                      label={labeled("Password", "For Gmail, an app password.")}
-                      placeholder={secretPlaceholder("smtp_password")}
-                      value={form.smtp_password}
-                      onChange={(event) => setField("smtp_password", event.currentTarget.value)}
-                      autoComplete="new-password"
+                <Stack gap="md">
+                  <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                    <TextInput
+                      label={labeled("Send to", "Separate several addresses with commas")}
+                      placeholder="e.g. you@example.com"
+                      value={form.email_to}
+                      onChange={(event) => setField("email_to", event.currentTarget.value)}
                     />
-                    {info?.secrets_set.smtp_password && !cleared.has("smtp_password") ? (
-                      <Button
-                        type="button"
-                        variant="subtle"
-                        size="compact-xs"
-                        onClick={() => clearSecret("smtp_password")}
-                      >
-                        Remove
-                      </Button>
-                    ) : null}
-                  </Stack>
-                </SimpleGrid>
+                    <TextInput
+                      label="From"
+                      description="Optional · blank uses the SMTP username"
+                      placeholder=""
+                      value={form.email_from}
+                      onChange={(event) => setField("email_from", event.currentTarget.value)}
+                    />
+                  </SimpleGrid>
+                  <Accordion variant="separated" radius="md">
+                    <Accordion.Item value="smtp">
+                      <Accordion.Control>Advanced · SMTP delivery</Accordion.Control>
+                      <Accordion.Panel>
+                        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                          <TextInput
+                            label="SMTP server"
+                            placeholder="e.g. smtp.example.com"
+                            value={form.smtp_host}
+                            onChange={(event) => setField("smtp_host", event.currentTarget.value)}
+                          />
+                          <NumberInput
+                            label="Port"
+                            description="587 for STARTTLS · 465 for SSL"
+                            min={1}
+                            max={65535}
+                            value={form.smtp_port}
+                            onChange={(value) => setField("smtp_port", Number(value) || 587)}
+                            required
+                          />
+                          <Select
+                            label="Security"
+                            data={[
+                              { value: "starttls", label: "STARTTLS" },
+                              { value: "ssl", label: "SSL/TLS" },
+                              { value: "none", label: "None" },
+                            ]}
+                            value={form.smtp_security}
+                            onChange={(value) =>
+                              setField("smtp_security", (value as FormValues["smtp_security"]) || "starttls")
+                            }
+                          />
+                          <TextInput
+                            label="Username"
+                            placeholder="e.g. you@example.com"
+                            value={form.smtp_username}
+                            onChange={(event) => setField("smtp_username", event.currentTarget.value)}
+                          />
+                          <Stack gap={4}>
+                            <PasswordInput
+                              label={labeled("Password", "For Gmail, use an app password")}
+                              placeholder={secretPlaceholder("smtp_password")}
+                              value={form.smtp_password}
+                              onChange={(event) => setField("smtp_password", event.currentTarget.value)}
+                              autoComplete="new-password"
+                            />
+                            {info?.secrets_set.smtp_password && !cleared.has("smtp_password") ? (
+                              <Button
+                                type="button"
+                                variant="subtle"
+                                size="compact-xs"
+                                onClick={() => clearSecret("smtp_password")}
+                              >
+                                Remove
+                              </Button>
+                            ) : null}
+                          </Stack>
+                        </SimpleGrid>
+                      </Accordion.Panel>
+                    </Accordion.Item>
+                  </Accordion>
+                </Stack>
               </Accordion.Panel>
             </Accordion.Item>
 
@@ -651,8 +651,8 @@ export function Alerts() {
               <Accordion.Panel>
                 <Stack gap={4}>
                   <PasswordInput
-                    label={labeled("URL", "Gets a JSON POST. Slack and Discord webhook URLs work as they are.")}
-                    placeholder={secretPlaceholder("webhook_url") || "https://hooks.slack.com/services/…"}
+                    label={labeled("URL", "JSON POST · Slack and Discord webhook URLs work as-is")}
+                    placeholder={secretPlaceholder("webhook_url") || "e.g. https://hooks.example.com/…"}
                     value={form.webhook_url}
                     onChange={(event) => setField("webhook_url", event.currentTarget.value)}
                     autoComplete="new-password"
@@ -667,19 +667,23 @@ export function Alerts() {
             </Accordion.Item>
           </Accordion>
 
-          <Title order={2} c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>
-            Limits
-          </Title>
-          <NumberInput
-            label={labeled("CPU temperature alert", "A Pi slows itself down at 80–85 °C.")}
-            suffix=" °C"
-            min={40}
-            max={100}
-            maw={240}
-            value={form.temperature_limit_c}
-            onChange={(value) => setField("temperature_limit_c", Number(value) || 80)}
-            required
-          />
+          <Accordion variant="separated" radius="md">
+            <Accordion.Item value="advanced">
+              <Accordion.Control>Advanced · thresholds</Accordion.Control>
+              <Accordion.Panel>
+                <NumberInput
+                  label={labeled("CPU temperature alert", "A Pi throttles around 80–85 °C")}
+                  suffix=" °C"
+                  min={40}
+                  max={100}
+                  maw={240}
+                  value={form.temperature_limit_c}
+                  onChange={(value) => setField("temperature_limit_c", Number(value) || 80)}
+                  required
+                />
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
 
           <Group justify="space-between" wrap="wrap">
             <Button type="button" variant="default" loading={testing} onClick={() => void sendTest()}>

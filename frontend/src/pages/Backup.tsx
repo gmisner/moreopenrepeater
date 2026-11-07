@@ -386,10 +386,7 @@ export function Backup() {
   };
 
   return (
-    <Page
-      title="Backup & restore"
-      description="A full backup holds everything needed to rebuild the repeater: settings, DTMF macros, announcements, audio clips, dashboard users, airtime statistics and the audit log, and optionally recordings. The phone line lives in Asterisk and isn't included."
-    >
+    <Page title="Backup & restore" description="Download or restore settings, and schedule backups on the repeater.">
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
         {isAdmin ? (
           <Card withBorder padding="lg" radius="md">

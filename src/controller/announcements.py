@@ -29,6 +29,8 @@ class Announcement:
     times: list[str] = field(default_factory=list)  # "HH:MM", for kind="weekly"
     days: list[int] = field(default_factory=lambda: list(ALL_DAYS))
     enabled: bool = True
+    # Also play on the Linked Radio TX when that port is running (and the far end isn't keyed).
+    on_linked_radio: bool = False
 
 
 def parse_time_of_day(value: str) -> time:

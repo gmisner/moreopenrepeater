@@ -32,6 +32,7 @@ type Announcement = {
   times: string[];
   days: number[];
   enabled: boolean;
+  on_linked_radio: boolean;
   next_run: string | null;
 };
 
@@ -44,6 +45,7 @@ type FormState = {
   times: string;
   days: number[];
   enabled: boolean;
+  on_linked_radio: boolean;
 };
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -58,6 +60,7 @@ const EMPTY_FORM: FormState = {
   times: "",
   days: [0, 1, 2, 3, 4, 5, 6],
   enabled: true,
+  on_linked_radio: false,
 };
 
 let previewAudio: HTMLAudioElement | null = null;
@@ -112,6 +115,7 @@ function toBody(form: FormState) {
       .filter(Boolean),
     days: form.days,
     enabled: form.enabled,
+    on_linked_radio: form.on_linked_radio,
   };
 }
 
@@ -157,6 +161,7 @@ export function Announcements() {
       times: a.times.join(", "),
       days: [...a.days],
       enabled: a.enabled,
+      on_linked_radio: Boolean(a.on_linked_radio),
     });
   };
 
@@ -225,10 +230,7 @@ export function Announcements() {
   const usesClip = Boolean(form.asset_id);
 
   return (
-    <Page
-      title="Announcements"
-      description="Messages the repeater transmits on a schedule — net reminders, club news. They wait for the channel to be clear and never interrupt a user or the station ID."
-    >
+    <Page title="Announcements" description="Scheduled messages when the channel is clear.">
       <Card withBorder padding="lg" radius="md">
         <Table.ScrollContainer minWidth={720}>
           <Table striped highlightOnHover>
@@ -246,7 +248,16 @@ export function Announcements() {
                 const says = describeSays(a, assets);
                 return (
                   <Table.Tr key={a.id} bg={editingId === a.id ? "var(--mantine-color-default-hover)" : undefined}>
-                    <Table.Td>{a.name}</Table.Td>
+                    <Table.Td>
+                      <Group gap="xs">
+                        <Text size="sm">{a.name}</Text>
+                        {a.on_linked_radio ? (
+                          <Badge variant="light" title="Also plays on Linked Radio">
+                            link
+                          </Badge>
+                        ) : null}
+                      </Group>
+                    </Table.Td>
                     <Table.Td>
                       {says.kind === "clip" ? (
                         <Group gap="xs">
@@ -305,7 +316,7 @@ export function Announcements() {
               label="Name"
               required
               maxLength={100}
-              placeholder="Net reminder"
+              placeholder="e.g. Net reminder"
               value={form.name}
               onChange={(event) => setField("name", event.currentTarget.value)}
             />
@@ -323,7 +334,7 @@ export function Announcements() {
                 label={labeled("Message", "Spoken with text-to-speech. {callsign} is replaced with your callsign, spelled out.")}
                 style={{ gridColumn: "1 / -1" }}
                 maxLength={2000}
-                placeholder="The {callsign} net meets tonight at 8 pm on this repeater."
+                placeholder="e.g. {callsign} net reminder"
                 value={form.message}
                 onChange={(event) => setField("message", event.currentTarget.value)}
                 required
@@ -351,7 +362,7 @@ export function Announcements() {
             ) : (
               <TextInput
                 label={labeled("Times", "24-hour, station local time, comma-separated.")}
-                placeholder="08:00, 19:30"
+                placeholder="e.g. 08:00, 19:30"
                 value={form.times}
                 onChange={(event) => setField("times", event.currentTarget.value)}
                 required
@@ -372,6 +383,14 @@ export function Announcements() {
             </Checkbox.Group>
           ) : null}
           <Switch label="Enabled" checked={form.enabled} onChange={(event) => setField("enabled", event.currentTarget.checked)} />
+          <Switch
+            label={labeled(
+              "Also on Linked Radio",
+              "When Linked Radio is running, play this announcement on the link TX as well (skipped if the far end is keyed).",
+            )}
+            checked={form.on_linked_radio}
+            onChange={(event) => setField("on_linked_radio", event.currentTarget.checked)}
+          />
           <Group justify="space-between">
             <Button type="button" variant="subtle" loading={previewBusy} onClick={() => void preview()}>
               Preview

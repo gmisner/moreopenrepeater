@@ -273,10 +273,7 @@ export function Weather() {
   const enabled = wx.values.wx_alerts_enabled;
 
   return (
-    <Page
-      title="Weather"
-      description="Announce National Weather Service watches and warnings for the repeater's location (US only, from api.weather.gov). Each alert is spoken once when it's issued, as soon as the channel is clear. Airport weather, below, can be read out by a DTMF macro."
-    >
+    <Page title="Weather" description="Speak NWS watches and warnings for this location, plus optional airport METARs.">
       <Card
         withBorder
         padding="lg"
@@ -300,7 +297,7 @@ export function Weather() {
               max={90}
               step={0.0001}
               decimalScale={4}
-              placeholder="e.g. 39.0997"
+              placeholder="e.g. 41.7148"
               value={wx.values.wx_lat === "" ? undefined : wx.values.wx_lat}
               onChange={(value) => wx.setField("wx_lat", value === "" || value === undefined ? "" : Number(value))}
             />
@@ -310,13 +307,13 @@ export function Weather() {
               max={180}
               step={0.0001}
               decimalScale={4}
-              placeholder="e.g. -94.5786"
+              placeholder="e.g. -72.7272"
               value={wx.values.wx_lon === "" ? undefined : wx.values.wx_lon}
               onChange={(value) => wx.setField("wx_lon", value === "" || value === undefined ? "" : Number(value))}
             />
             <TextInput
-              label={labeled("Grid square or coordinates", "Fills in the latitude and longitude.")}
-              placeholder="FN31pr or 41.7148, -72.7272"
+              label={labeled("Grid square or coordinates", "Fills in the latitude and longitude")}
+              placeholder="e.g. FN31pr"
               value={lookup}
               onChange={(event) => setLookup(event.currentTarget.value)}
               onKeyDown={(event) => {
@@ -353,7 +350,7 @@ export function Weather() {
               required
             />
             <NumberInput
-              label={labeled("Repeat ongoing alerts every", "0 = announce each alert only once.")}
+              label={labeled("Repeat ongoing alerts every", "0 = announce each alert only once")}
               suffix=" min"
               min={0}
               step={5}
@@ -444,7 +441,7 @@ export function Weather() {
         <Stack gap="md">
           <Title order={2}>Airport weather</Title>
           <Text c="dimmed" size="sm" maw="75ch">
-            Current conditions (METAR) from aviationweather.gov, for an &quot;Airport weather&quot; DTMF macro. Reports are fetched when asked for and kept 10 minutes.
+            METARs for an &quot;Airport weather&quot; DTMF macro. Fetched on demand and kept 10 minutes.
           </Text>
           <Table.ScrollContainer minWidth={480}>
             <Table>
@@ -463,7 +460,7 @@ export function Weather() {
                         required
                         maxLength={4}
                         pattern="[A-Za-z0-9]{4}"
-                        placeholder="KAMA"
+                        placeholder="e.g. KDEN"
                         autoCapitalize="characters"
                         value={airport.icao}
                         onChange={(event) => {
@@ -475,7 +472,8 @@ export function Weather() {
                     <Table.Td>
                       <TextInput
                         maxLength={40}
-                        placeholder="Blank spells out the code"
+                        description="Optional · blank spells the code"
+                        placeholder=""
                         value={airport.name}
                         onChange={(event) => {
                           const value = event.currentTarget.value;

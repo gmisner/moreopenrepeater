@@ -107,3 +107,13 @@ def test_reset_forgets_everything():
 
     assert not c.ptt and not c.id_owed
     assert run(c, 1.0, 2000.0, sending=False, step=10.0) == []
+
+
+def test_note_transmission_starts_the_id_clock_without_sending():
+    c = LinkRadioController(LinkRadioSettings(id_interval=600.0))
+
+    c.note_transmission(10.0)
+
+    assert c.id_owed
+    assert c.update(610.0, sending=False, receiving=False) == [LinkPlay("id")]
+    assert not c.id_owed

@@ -69,7 +69,7 @@ export function Simulator() {
   };
 
   return (
-    <Page title="Simulator" description="Inject synthetic hardware events — useful until real audio_io/link hardware is wired up.">
+    <Page title="Simulator" description="Inject synthetic hardware events for testing.">
       <Card withBorder padding="lg" radius="md">
         <Group gap="sm">
           <Text size="xs" c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>

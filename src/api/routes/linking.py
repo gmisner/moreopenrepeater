@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from typing import Awaitable, Sequence
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi import Path as UrlPath
 
 from ..allstar_node import AllStarNode, AllStarSetupError
@@ -23,6 +24,7 @@ from ..models import (
     GpioOutputRequest,
     GpioStatusResponse,
     LinkConnectRequest,
+    LinkEventsResponse,
     LinkRadioStatus,
     LinksResponse,
     MonitorReceiverStatus,
@@ -123,6 +125,16 @@ def register(
     @app.get("/api/links", response_model=LinksResponse, dependencies=auth_dependencies)
     async def get_links() -> dict:
         return await links_status()
+
+    @app.get("/api/links/events", response_model=LinkEventsResponse, dependencies=auth_dependencies)
+    async def get_link_events(limit: int = Query(default=40, ge=1, le=100)) -> dict:
+        events = await links.recent_events(limit)
+        return {
+            "events": [
+                {**event, "at": datetime.fromtimestamp(event["at"])}
+                for event in events
+            ]
+        }
 
     @app.post("/api/links", response_model=LinksResponse, dependencies=transmit_dependencies)
     async def post_link(body: LinkConnectRequest, request: Request) -> dict:

@@ -1,8 +1,6 @@
 import {
   Accordion,
-  Badge,
   Button,
-  Card,
   Group,
   NumberInput,
   Select,
@@ -11,11 +9,12 @@ import {
   Switch,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
+import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
+import { ConfigSummaryCard } from "../components/ConfigSummaryCard";
 import { notifyError, notifySuccess, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
@@ -52,14 +51,14 @@ const PROVIDERS: Record<
     hint: "The username and password of a Credentials connection.",
   },
   twilio: {
-    placeholder: "yourtrunk.pstn.twilio.com",
+    placeholder: "e.g. yourtrunk.pstn.twilio.com",
     prefix: "+1",
     registers: false,
     incoming: TWILIO_SIGNALING,
     hint: "The trunk's termination URI, and a user from its credential list. Turn on Symmetric RTP. Caller ID must be a Twilio or verified number.",
   },
   other: {
-    placeholder: "sip.example.com",
+    placeholder: "e.g. sip.example.com",
     prefix: "",
     registers: true,
     hint: "Your provider's Asterisk (PJSIP) setup guide lists these.",
@@ -304,6 +303,17 @@ function trunkToForm(trunk: TrunkSettings | null, prefix: string): TrunkForm {
   };
 }
 
+function providerLabel(key: string) {
+  return (
+    {
+      voipms: "VoIP.ms",
+      telnyx: "Telnyx",
+      twilio: "Twilio",
+      other: "Other",
+    } as Record<string, string>
+  )[key] ?? key;
+}
+
 export function Autopatch() {
   const { session } = useSession();
   const isAdmin = session?.role === "admin";
@@ -319,6 +329,8 @@ export function Autopatch() {
   const [trunkForm, setTrunkForm] = useState<TrunkForm>(emptyTrunkForm());
   const [trunkDirty, setTrunkDirty] = useState(false);
   const [trunkBusy, setTrunkBusy] = useState(false);
+  const [editingTrunk, setEditingTrunk] = useState(false);
+  const [editingSettings, setEditingSettings] = useState(false);
   const trunkDirtyRef = useRef(false);
   const savedTrunkKeyRef = useRef("");
   const trunkFormRef = useRef<HTMLFormElement | null>(null);
@@ -450,6 +462,7 @@ export function Autopatch() {
       setTrunkDirty(false);
       savedTrunkKeyRef.current = JSON.stringify(next.trunk);
       notifySuccess("Phone line saved");
+      setEditingTrunk(false);
     } catch (error) {
       notifyError(error);
     } finally {
@@ -467,6 +480,7 @@ export function Autopatch() {
       setTrunkDirty(false);
       savedTrunkKeyRef.current = JSON.stringify(next.trunk);
       notifySuccess("Phone line removed");
+      setEditingTrunk(false);
     } catch (error) {
       notifyError(error);
     } finally {
@@ -487,26 +501,31 @@ export function Autopatch() {
     }
   };
 
+  const saveSettings = async () => {
+    const patchOk = await patch.submit();
+    if (!patchOk) return;
+    const incomingOk = await incoming.submit();
+    if (incomingOk) setEditingSettings(false);
+  };
+
   const trunkView = trunk ? describeTrunk(trunk, isAdmin) : null;
   const showTrunkForm = isAdmin && trunk?.configured && !trunk.error && !trunkView?.needsModules;
   const provider = PROVIDERS[trunkForm.provider] ?? PROVIDERS.other;
+  const settingsDirty = patch.dirty || incoming.dirty;
 
   return (
-    <Page
-      title="Autopatch"
-      description="Let users place phone calls through the repeater. Calls go out through a SIP phone line in the Asterisk sidecar; see the setup guide."
-    >
-      <Card withBorder padding="lg" radius="md">
-        <Title order={2} mb="sm">
-          Call
-        </Title>
-        <Text c="dimmed" size="sm">
-          {status ? describeCall(status) : "Loading…"}
-        </Text>
-        <Group mt="md" align="flex-end" wrap="wrap">
+    <Page title="Autopatch" description="Place and answer phone calls through the repeater.">
+      <ConfigSummaryCard
+        title="Call"
+        badge={status?.call ? "In call" : undefined}
+        badgeColor="green"
+        blurb={status ? describeCall(status) : "Loading…"}
+      >
+        <Group align="flex-end" wrap="wrap">
           <TextInput
             style={{ flex: 1, minWidth: 180 }}
-            placeholder="Number to call"
+            label="Number"
+            placeholder="e.g. 5551234567"
             inputMode="numeric"
             autoComplete="off"
             value={number}
@@ -527,36 +546,55 @@ export function Autopatch() {
             </Button>
           ) : null}
         </Group>
-        <Text c="dimmed" size="sm" mt="sm">
-          A test call goes out over the air like a DTMF-dialed one, and follows the same rules.
-        </Text>
-      </Card>
-
-      <Card withBorder padding="lg" radius="md">
-        <Group justify="space-between" align="flex-start" mb="sm">
-          <Title order={2}>Phone line</Title>
-          {trunkView?.pill ? (
-            <Badge color={pillColor(trunkView.pill[1])} variant="light">
-              {trunkView.pill[0]}
-            </Badge>
-          ) : null}
-        </Group>
         <Text c="dimmed" size="sm">
-          {trunkView?.text ?? "Loading…"}
+          A test call goes out over the air like a DTMF-dialed one.
         </Text>
-        {trunkView?.needsModules && isAdmin ? (
-          <Group justify="flex-end" mt="md">
+      </ConfigSummaryCard>
+
+      <ConfigSummaryCard
+        title="Phone line"
+        badge={trunkView?.pill?.[0]}
+        badgeColor={pillColor(trunkView?.pill?.[1])}
+        dirty={trunkDirty}
+        blurb={trunkView?.text ?? "Loading…"}
+        onEdit={showTrunkForm ? () => setEditingTrunk(true) : undefined}
+        editLabel={trunk?.trunk ? "Edit…" : "Set up…"}
+        rows={
+          trunk?.trunk
+            ? [
+                { label: "Provider", value: providerLabel(providerFor(trunk.trunk.server)) },
+                { label: "Server", value: trunk.trunk.server },
+                { label: "Username", value: trunk.trunk.username },
+                {
+                  label: "Format",
+                  value:
+                    trunk.ten_digit_prefix === "+1"
+                      ? "+1 + 10 digits"
+                      : trunk.ten_digit_prefix === "1"
+                        ? "1 + 10 digits"
+                        : "As dialed",
+                },
+              ]
+            : undefined
+        }
+        secondaryAction={
+          trunkView?.needsModules && isAdmin ? (
             <Button loading={trunkBusy} onClick={() => void enableModules()}>
               Turn on SIP in Asterisk
             </Button>
-          </Group>
-        ) : null}
+          ) : undefined
+        }
+      />
+
+      <ConfigEditDrawer
+        opened={editingTrunk}
+        onClose={() => setEditingTrunk(false)}
+        title="Phone line"
+        subtitle="SIP credentials for the Asterisk trunk autopatch uses."
+      >
         {showTrunkForm ? (
-          <form
-            ref={trunkFormRef}
-            onSubmit={(event) => void saveTrunk(event)}
-          >
-            <Stack gap="md" mt="md">
+          <form ref={trunkFormRef} onSubmit={(event) => void saveTrunk(event)}>
+            <Stack gap="md">
               <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                 <Select
                   label={labeled("Provider", provider.hint)}
@@ -593,7 +631,8 @@ export function Autopatch() {
                   type="password"
                   autoComplete="new-password"
                   required={!trunk?.trunk?.has_password}
-                  placeholder={trunk?.trunk?.has_password ? "Saved; leave blank to keep it" : undefined}
+                  description={trunk?.trunk?.has_password ? "Leave blank to keep the saved password" : undefined}
+                  placeholder={trunk?.trunk?.has_password ? "Saved" : undefined}
                   value={trunkForm.password}
                   onChange={(event) => setTrunkField("password", event.currentTarget.value)}
                 />
@@ -609,16 +648,22 @@ export function Autopatch() {
                   allowDeselect={false}
                 />
               </SimpleGrid>
-              <Accordion variant="contained">
-                <Accordion.Item value="more">
-                  <Accordion.Control>More settings</Accordion.Control>
+              <Switch
+                label="Register with the provider"
+                checked={trunkForm.registers}
+                onChange={(event) => setTrunkField("registers", event.currentTarget.checked)}
+              />
+              <Accordion variant="separated" radius="md">
+                <Accordion.Item value="advanced">
+                  <Accordion.Control>Advanced · SIP details</Accordion.Control>
                   <Accordion.Panel>
                     <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                       <TextInput
-                        label={labeled("Login name", "Only if the provider gives a separate one.")}
+                        label="Login name"
+                        description="Leave blank to use the username"
                         autoComplete="off"
                         spellCheck={false}
-                        placeholder="Same as username"
+                        placeholder=""
                         value={trunkForm.auth_username}
                         onChange={(event) => setTrunkField("auth_username", event.currentTarget.value)}
                       />
@@ -641,10 +686,14 @@ export function Autopatch() {
                         allowDeselect={false}
                       />
                       <TextInput
-                        label={labeled("Calls in come from", "Addresses or networks, separated by spaces, that your provider sends calls from besides the server.")}
+                        label={labeled(
+                          "Calls in come from",
+                          "Addresses or networks, separated by spaces, that your provider sends calls from besides the server.",
+                        )}
+                        description="Leave blank to use the server only"
                         autoComplete="off"
                         spellCheck={false}
-                        placeholder="Just the server"
+                        placeholder=""
                         value={trunkForm.incoming_from}
                         onChange={(event) => setTrunkField("incoming_from", event.currentTarget.value)}
                       />
@@ -652,11 +701,6 @@ export function Autopatch() {
                   </Accordion.Panel>
                 </Accordion.Item>
               </Accordion>
-              <Switch
-                label="Register with the provider"
-                checked={trunkForm.registers}
-                onChange={(event) => setTrunkField("registers", event.currentTarget.checked)}
-              />
               <Group justify="space-between">
                 {trunk?.trunk ? (
                   <Button type="button" color="red" variant="subtle" loading={trunkBusy} onClick={() => void removeTrunk()}>
@@ -676,146 +720,173 @@ export function Autopatch() {
             </Stack>
           </form>
         ) : null}
-      </Card>
+      </ConfigEditDrawer>
 
-      <Card
-        withBorder
-        padding="lg"
-        radius="md"
-        component="form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void patch.submit();
-        }}
-      >
-        <Stack gap="md">
-          <Switch
-            label="Allow autopatch calls"
-            checked={patch.values.autopatch_enabled}
-            onChange={(event) => patch.setField("autopatch_enabled", event.currentTarget.checked)}
-          />
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-            <TextInput
-              label={labeled("Access code", "Users send this, the number, then # (or just unkey, or wait 5 seconds).")}
-              required
-              autoComplete="off"
-              value={patch.values.autopatch_access_code}
-              onChange={(event) => patch.setField("autopatch_access_code", event.currentTarget.value)}
-            />
-            <TextInput
-              label={labeled("Hang-up code", "Ends the call while one is up.")}
-              required
-              autoComplete="off"
-              value={patch.values.autopatch_hangup_code}
-              onChange={(event) => patch.setField("autopatch_hangup_code", event.currentTarget.value)}
-            />
-          </SimpleGrid>
-          <Accordion variant="contained" multiple>
-            <Accordion.Item value="numbers">
-              <Accordion.Control>Numbers users can call</Accordion.Control>
-              <Accordion.Panel>
-                <Stack gap="md">
-                  <TextInput
-                    label={labeled("Allowed numbers", "Patterns separated by spaces: X is any digit, N is 2–9, Z is 1–9.")}
-                    autoComplete="off"
-                    value={patch.values.autopatch_allowed}
-                    onChange={(event) => patch.setField("autopatch_allowed", event.currentTarget.value)}
-                  />
-                  <TextInput
-                    label={labeled("Blocked numbers", "Checked after the allowed list.")}
-                    autoComplete="off"
-                    value={patch.values.autopatch_blocked}
-                    onChange={(event) => patch.setField("autopatch_blocked", event.currentTarget.value)}
-                  />
-                </Stack>
-              </Accordion.Panel>
-            </Accordion.Item>
-            <Accordion.Item value="length">
-              <Accordion.Control>Call length</Accordion.Control>
-              <Accordion.Panel>
-                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                  <NumberInput
-                    label={labeled("Maximum call length", "Users hear a warning 30 seconds before the end.")}
-                    suffix=" s"
-                    min={30}
-                    max={3600}
-                    step={30}
-                    required
-                    value={patch.values.autopatch_max_call_seconds}
-                    onChange={(value) => patch.setField("autopatch_max_call_seconds", Number(value) || 0)}
-                  />
-                  <NumberInput
-                    label="Ring for"
-                    suffix=" s"
-                    min={5}
-                    max={120}
-                    step={5}
-                    required
-                    value={patch.values.autopatch_ring_seconds}
-                    onChange={(value) => patch.setField("autopatch_ring_seconds", Number(value) || 0)}
-                  />
-                </SimpleGrid>
-              </Accordion.Panel>
-            </Accordion.Item>
-            <Accordion.Item value="dialing">
-              <Accordion.Control>Dialing and caller ID</Accordion.Control>
-              <Accordion.Panel>
-                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                  <TextInput
-                    label={labeled("Dial string", "{number} becomes the dialed digits. PJSIP/{number}@mor-trunk is the phone line above.")}
-                    required
-                    autoComplete="off"
-                    value={patch.values.autopatch_dial_string}
-                    onChange={(event) => patch.setField("autopatch_dial_string", event.currentTarget.value)}
-                  />
-                  <TextInput
-                    label={labeled("Caller ID", "e.g. \"W1AW Repeater\" <8605550100>")}
-                    autoComplete="off"
-                    value={patch.values.autopatch_caller_id}
-                    onChange={(event) => patch.setField("autopatch_caller_id", event.currentTarget.value)}
-                  />
-                </SimpleGrid>
-              </Accordion.Panel>
-            </Accordion.Item>
-          </Accordion>
-          <ConfigActions dirty={patch.dirty} saving={patch.saving} onReset={patch.reset} />
-        </Stack>
-      </Card>
+      <ConfigSummaryCard
+        title="Settings"
+        dirty={settingsDirty}
+        blurb="Access codes, call limits, and whether inbound calls are answered."
+        onEdit={() => setEditingSettings(true)}
+        rows={[
+          { label: "Autopatch", value: patch.values.autopatch_enabled ? "On" : "Off" },
+          { label: "Access code", value: patch.values.autopatch_access_code || "—" },
+          { label: "Hang-up", value: patch.values.autopatch_hangup_code || "—" },
+          {
+            label: "Max call",
+            value: `${patch.values.autopatch_max_call_seconds} s`,
+          },
+          {
+            label: "Calls in",
+            value: incoming.values.autopatch_incoming_enabled
+              ? incoming.values.autopatch_incoming_pin
+                ? `PIN set`
+                : "On · no PIN"
+              : "Off",
+          },
+        ]}
+      />
 
-      <Card
-        withBorder
-        padding="lg"
-        radius="md"
-        component="form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void incoming.submit();
-        }}
+      <ConfigEditDrawer
+        opened={editingSettings}
+        onClose={() => setEditingSettings(false)}
+        title="Autopatch settings"
+        subtitle="DTMF codes, number rules, and inbound answering."
       >
-        <Stack gap="md">
-          <Title order={2}>Calls in</Title>
-          <Switch
-            label="Answer calls to the phone line"
-            checked={incoming.values.autopatch_incoming_enabled}
-            onChange={(event) => incoming.setField("autopatch_incoming_enabled", event.currentTarget.checked)}
-          />
-          <TextInput
-            label={labeled("Access code", "Callers key it in, then #. Calls aren\'t answered without one.")}
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="4 to 8 digits"
-            required={incoming.values.autopatch_incoming_enabled}
-            value={incoming.values.autopatch_incoming_pin}
-            onChange={(event) => incoming.setField("autopatch_incoming_pin", event.currentTarget.value)}
-            maw={320}
-          />
-          <Text c="dimmed" size="sm" maw="75ch">
-            Callers get three tries at the code. Then the repeater says “Incoming phone call” and puts them on the air, with
-            the same time limit and hang-up code as calls out.
-          </Text>
-          <ConfigActions dirty={incoming.dirty} saving={incoming.saving} onReset={incoming.reset} />
-        </Stack>
-      </Card>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveSettings();
+          }}
+        >
+          <Stack gap="md">
+            <Switch
+              label="Allow autopatch calls"
+              checked={patch.values.autopatch_enabled}
+              onChange={(event) => patch.setField("autopatch_enabled", event.currentTarget.checked)}
+            />
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+              <TextInput
+                label={labeled("Access code", "Users send this, the number, then # (or just unkey, or wait 5 seconds).")}
+                required
+                autoComplete="off"
+                placeholder="e.g. *6"
+                value={patch.values.autopatch_access_code}
+                onChange={(event) => patch.setField("autopatch_access_code", event.currentTarget.value)}
+              />
+              <TextInput
+                label={labeled("Hang-up code", "Ends the call while one is up.")}
+                required
+                autoComplete="off"
+                placeholder="e.g. #"
+                value={patch.values.autopatch_hangup_code}
+                onChange={(event) => patch.setField("autopatch_hangup_code", event.currentTarget.value)}
+              />
+            </SimpleGrid>
+
+            <Switch
+              label="Answer calls to the phone line"
+              checked={incoming.values.autopatch_incoming_enabled}
+              onChange={(event) => incoming.setField("autopatch_incoming_enabled", event.currentTarget.checked)}
+            />
+            {incoming.values.autopatch_incoming_enabled ? (
+              <TextInput
+                label={labeled("Inbound access code", "Callers key it in, then #. Calls aren't answered without one.")}
+                description="4 to 8 digits"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="e.g. 1234"
+                required
+                value={incoming.values.autopatch_incoming_pin}
+                onChange={(event) => incoming.setField("autopatch_incoming_pin", event.currentTarget.value)}
+                maw={320}
+              />
+            ) : null}
+
+            <Accordion variant="separated" radius="md" multiple>
+              <Accordion.Item value="numbers">
+                <Accordion.Control>Advanced · numbers users can call</Accordion.Control>
+                <Accordion.Panel>
+                  <Stack gap="md">
+                    <TextInput
+                      label={labeled("Allowed numbers", "Patterns separated by spaces: X is any digit, N is 2–9, Z is 1–9.")}
+                      autoComplete="off"
+                      value={patch.values.autopatch_allowed}
+                      onChange={(event) => patch.setField("autopatch_allowed", event.currentTarget.value)}
+                    />
+                    <TextInput
+                      label={labeled("Blocked numbers", "Checked after the allowed list.")}
+                      autoComplete="off"
+                      value={patch.values.autopatch_blocked}
+                      onChange={(event) => patch.setField("autopatch_blocked", event.currentTarget.value)}
+                    />
+                  </Stack>
+                </Accordion.Panel>
+              </Accordion.Item>
+              <Accordion.Item value="length">
+                <Accordion.Control>Advanced · call length</Accordion.Control>
+                <Accordion.Panel>
+                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                    <NumberInput
+                      label={labeled("Maximum call length", "Users hear a warning 30 seconds before the end.")}
+                      suffix=" s"
+                      min={30}
+                      max={3600}
+                      step={30}
+                      required
+                      value={patch.values.autopatch_max_call_seconds}
+                      onChange={(value) => patch.setField("autopatch_max_call_seconds", Number(value) || 0)}
+                    />
+                    <NumberInput
+                      label="Ring for"
+                      suffix=" s"
+                      min={5}
+                      max={120}
+                      step={5}
+                      required
+                      value={patch.values.autopatch_ring_seconds}
+                      onChange={(value) => patch.setField("autopatch_ring_seconds", Number(value) || 0)}
+                    />
+                  </SimpleGrid>
+                </Accordion.Panel>
+              </Accordion.Item>
+              <Accordion.Item value="dialing">
+                <Accordion.Control>Advanced · dialing and caller ID</Accordion.Control>
+                <Accordion.Panel>
+                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                    <TextInput
+                      label={labeled(
+                        "Dial string",
+                        "{number} becomes the dialed digits. PJSIP/{number}@mor-trunk is the phone line above.",
+                      )}
+                      required
+                      autoComplete="off"
+                      value={patch.values.autopatch_dial_string}
+                      onChange={(event) => patch.setField("autopatch_dial_string", event.currentTarget.value)}
+                    />
+                    <TextInput
+                      label="Caller ID"
+                      description='Optional · e.g. "Repeater" <+15551234567>'
+                      placeholder=""
+                      autoComplete="off"
+                      value={patch.values.autopatch_caller_id}
+                      onChange={(event) => patch.setField("autopatch_caller_id", event.currentTarget.value)}
+                    />
+                  </SimpleGrid>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+
+            <ConfigActions
+              dirty={settingsDirty}
+              saving={patch.saving || incoming.saving}
+              onReset={() => {
+                patch.reset();
+                incoming.reset();
+              }}
+            />
+          </Stack>
+        </form>
+      </ConfigEditDrawer>
     </Page>
   );
 }

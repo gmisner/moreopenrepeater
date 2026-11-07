@@ -472,8 +472,10 @@ far station ──> link radio RX ──> repeater TX (link courtesy tone)
 - **Local users go out the link radio.** Its transmitter keys while the
   repeater repeats a local user, then unkeys half a second after they do
   (with a courtesy tone on the link if that's ticked). Kerchunks, signals
-  without the access tone, and the repeater's own IDs and announcements aren't
-  sent.
+  without the access tone, and the repeater's own IDs aren't sent. Announcements
+  stay off the link unless you tick **Also on Linked Radio** for that
+  announcement (then the same clip plays on the link TX when the far end isn't
+  keyed).
 - **The far end keys the repeater** like a linked node: shared timeout,
   and the link courtesy tone when it unkeys. What the far end says is never sent
   back out the link radio.

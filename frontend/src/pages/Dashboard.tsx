@@ -76,6 +76,34 @@ type LinkRadioStatus = {
   rig_error?: string | null;
 };
 
+type Transmission = { started_at: string; duration: number; timed_out: boolean };
+
+type LinkEvent = {
+  at: string;
+  kind: "connected" | "disconnected" | "keyed" | "unkeyed";
+  node: string;
+  label: string;
+};
+
+const LINK_EVENT_LABELS: Record<LinkEvent["kind"], string> = {
+  connected: "connected",
+  disconnected: "disconnected",
+  keyed: "keyed",
+  unkeyed: "unkeyed",
+};
+
+function formatAirtime(seconds: number) {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
+}
+
+function eventBadgeColor(kind: LinkEvent["kind"]) {
+  if (kind === "connected" || kind === "keyed") return "green";
+  if (kind === "disconnected") return "gray";
+  return "blue";
+}
+
 function Indicator({ name, on, value, danger }: { name: string; on: boolean; value: string; danger?: boolean }) {
   // Mantine rejects bg="green.light" (throws → blank React tree). Use the CSS var.
   const color = on ? (danger ? "red" : "green") : "gray";
@@ -176,6 +204,8 @@ export function Dashboard() {
   const [sensors, setSensors] = useState<
     { id: string; name: string; units: string; value: number | null; error: string | null }[] | null
   >(null);
+  const [recentTx, setRecentTx] = useState<Transmission[]>([]);
+  const [linkEvents, setLinkEvents] = useState<LinkEvent[]>([]);
 
   const refreshLinks = useCallback(async () => {
     try {
@@ -185,11 +215,40 @@ export function Dashboard() {
     }
   }, []);
 
+  const refreshLinkEvents = useCallback(async () => {
+    try {
+      const data = await api<{ events: LinkEvent[] }>("/api/links/events?limit=30");
+      setLinkEvents(data.events);
+    } catch {
+      /* keep last */
+    }
+  }, []);
+
+  const refreshRecentTx = useCallback(async () => {
+    try {
+      setRecentTx(await api<Transmission[]>("/api/activity/transmissions?limit=12"));
+    } catch {
+      /* keep last */
+    }
+  }, []);
+
   useEffect(() => {
     void refreshLinks();
-    const timer = window.setInterval(() => void refreshLinks(), 3000);
+    void refreshLinkEvents();
+    const timer = window.setInterval(() => {
+      void refreshLinks();
+      void refreshLinkEvents();
+    }, 3000);
     return () => window.clearInterval(timer);
-  }, [refreshLinks]);
+  }, [refreshLinks, refreshLinkEvents]);
+
+  useEffect(() => {
+    void refreshRecentTx();
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void refreshRecentTx();
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [refreshRecentTx]);
 
   const refreshLinkRadio = useCallback(async () => {
     try {
@@ -607,6 +666,43 @@ export function Dashboard() {
             </Card>
 
             <Card withBorder padding="lg" radius="md">
+              <Group justify="space-between" mb="sm">
+                <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
+                  Link activity
+                </Text>
+                <Button component={Link} to="/allstar" size="xs" variant="subtle">
+                  AllStarLink
+                </Button>
+              </Group>
+              {linkEvents.length ? (
+                <Stack gap={6}>
+                  {linkEvents.slice(0, 12).map((event, index) => (
+                    <Group key={`${event.at}-${event.node}-${event.kind}-${index}`} justify="space-between" gap="sm" wrap="nowrap">
+                      <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+                        <Badge color={eventBadgeColor(event.kind)} variant="light" style={{ flex: "0 0 auto" }}>
+                          {LINK_EVENT_LABELS[event.kind]}
+                        </Badge>
+                        <Text size="sm" ff="monospace" style={{ flex: "0 0 auto" }}>
+                          {event.node === "link-radio" ? "RF" : event.node}
+                        </Text>
+                        <Text size="sm" c="dimmed" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {event.label || (event.node === "link-radio" ? "Linked radio" : "")}
+                        </Text>
+                      </Group>
+                      <Text size="xs" c="dimmed" style={{ flex: "0 0 auto" }}>
+                        {shortTime(event.at)}
+                      </Text>
+                    </Group>
+                  ))}
+                </Stack>
+              ) : (
+                <Text c="dimmed" size="sm">
+                  Connects, disconnects, and key-ups show up here once AllStar or the linked radio is active.
+                </Text>
+              )}
+            </Card>
+
+            <Card withBorder padding="lg" radius="md">
               <Group justify="space-between" mb="sm" wrap="wrap">
                 <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
                   Listen live
@@ -636,15 +732,37 @@ export function Dashboard() {
           <Card withBorder padding="lg" radius="md">
             <Group justify="space-between" mb="sm">
               <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-                Station
+                Recent activity
               </Text>
               <Button component={Link} to="/activity" size="xs" variant="subtle">
                 Activity
               </Button>
             </Group>
-            <Text size="sm" c="dimmed">
-              Live status is above. Settings and history are on the other pages in the sidebar.
-            </Text>
+            {recentTx.length ? (
+              <Stack gap={6}>
+                {recentTx.map((row) => (
+                  <Group key={row.started_at} justify="space-between" gap="sm" wrap="nowrap">
+                    <Group gap="sm" wrap="nowrap">
+                      <Text size="sm">{shortTime(row.started_at)}</Text>
+                      <Text size="sm" ff="monospace" fw={600}>
+                        {formatAirtime(row.duration)}
+                      </Text>
+                      {row.timed_out ? (
+                        <Badge color="red" variant="light">
+                          timeout
+                        </Badge>
+                      ) : row.duration < 1.5 ? (
+                        <Badge variant="outline">kerchunk</Badge>
+                      ) : null}
+                    </Group>
+                  </Group>
+                ))}
+              </Stack>
+            ) : (
+              <Text c="dimmed" size="sm">
+                No transmissions recorded yet. Try the Simulator, or wait for on-air traffic.
+              </Text>
+            )}
           </Card>
         </Grid.Col>
       </Grid>

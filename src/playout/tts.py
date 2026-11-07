@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,10 @@ from .wav import decode_wav
 
 _logger = logging.getLogger("moreopenrepeater.tts")
 TIMEOUT_SECONDS = 30
+# First Kokoro speak on a Pi can load/download models; 30 s is too tight.
+KOKORO_SPEAK_TIMEOUT_SECONDS = 180
+# Voice listing must stay snappy so the dashboard can fall back to the builtin list.
+KOKORO_VOICES_TIMEOUT_SECONDS = 5
 DEFAULT_TTS_SPEED = 1.0
 MIN_TTS_SPEED = 0.5
 MAX_TTS_SPEED = 2.0
@@ -58,6 +63,16 @@ KOKORO_LOCALES = {
     "p": ("pt-br", "Brazilian Portuguese"),
     "z": ("zh-cn", "Mandarin Chinese"),
 }
+_KOKORO_VOICE_RE = re.compile(r"^[a-z]{2}_[a-z0-9_]+$")
+# Used when `kokoro voices` can't run (models still downloading, etc.).
+_KOKORO_BUILTIN_VOICES = (
+    "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore",
+    "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
+    "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael",
+    "am_onyx", "am_puck", "am_santa",
+    "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
+    "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+)
 
 
 def spell_callsign(callsign: str, phonetic: bool) -> str:
@@ -110,6 +125,17 @@ def lang_for_kokoro_voice(voice: str) -> str:
     return describe_kokoro_voice(voice).locale or "en-us"
 
 
+def sanitize_kokoro_voice(voice: str) -> str:
+    """Drop leftover espeak/say voice names so Kokoro uses its default instead."""
+    voice = voice.strip()
+    if not voice:
+        return ""
+    if _KOKORO_VOICE_RE.fullmatch(voice):
+        return voice
+    _logger.warning("ignoring TTS voice %r (not a Kokoro id like af_heart); using the default", voice)
+    return ""
+
+
 class TTSEngine(Protocol):
     name: str
 
@@ -133,6 +159,24 @@ class CommandTTS:
     def synthesize(
         self, text: str, voice: str = "", speed: float = DEFAULT_TTS_SPEED
     ) -> tuple[np.ndarray, int]:
+        if self.name == "kokoro":
+            voice = sanitize_kokoro_voice(voice)
+        try:
+            return self._synthesize_once(text, voice, speed)
+        except TTSError as error:
+            # Unknown-but-plausible ids: retry the Kokoro default. Don't retry timeouts.
+            if (
+                self.name == "kokoro"
+                and voice
+                and isinstance(error.__cause__, subprocess.CalledProcessError)
+            ):
+                _logger.warning("Kokoro voice %r failed; retrying with the default voice", voice)
+                return self._synthesize_once(text, "", speed)
+            raise
+
+    def _synthesize_once(
+        self, text: str, voice: str, speed: float
+    ) -> tuple[np.ndarray, int]:
         with tempfile.TemporaryDirectory(prefix="mor-tts-") as tmp:
             text_file = Path(tmp) / "text.txt"
             out_wav = Path(tmp) / "speech.wav"
@@ -140,9 +184,20 @@ class CommandTTS:
             argv = self.build_argv(text_file, out_wav, text, voice, clamp_tts_speed(speed))
             if self.binary:
                 argv = [self.binary, *argv[1:]]
+            timeout = KOKORO_SPEAK_TIMEOUT_SECONDS if self.name == "kokoro" else TIMEOUT_SECONDS
             try:
-                self.run(argv, check=True, capture_output=True, timeout=TIMEOUT_SECONDS)
-            except (OSError, subprocess.SubprocessError) as error:
+                self.run(argv, check=True, capture_output=True, timeout=timeout)
+            except subprocess.TimeoutExpired as error:
+                raise TTSError(
+                    f"{self.name} timed out after {timeout}s (first run may still be loading models)"
+                ) from error
+            except subprocess.CalledProcessError as error:
+                detail = (error.stderr or error.stdout or b"").decode("utf-8", "replace").strip()
+                message = f"{self.name} failed: {error}"
+                if detail:
+                    message = f"{message}; {detail}"
+                raise TTSError(message) from error
+            except OSError as error:
                 raise TTSError(f"{self.name} failed: {error}") from error
             if not out_wav.exists():
                 raise TTSError(f"{self.name} produced no audio")
@@ -226,23 +281,21 @@ def list_tts_voices(
     if engine is None or engine.name != "kokoro":
         return []
     binary = getattr(engine, "binary", "") or "kokoro"
+    ids: list[str] = []
     try:
         completed = run(
             [binary, "voices", "--json"],
             check=True,
             capture_output=True,
             text=True,
-            timeout=TIMEOUT_SECONDS,
+            timeout=KOKORO_VOICES_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.SubprocessError) as error:
-        _logger.warning("couldn't list kokoro voices: %s", error)
-        return []
-    try:
         payload = json.loads(completed.stdout or "{}")
-    except json.JSONDecodeError:
-        _logger.warning("kokoro voices --json returned invalid JSON")
-        return []
-    ids = payload.get("voices") if isinstance(payload, dict) else None
-    if not isinstance(ids, list):
-        return []
-    return [describe_kokoro_voice(str(voice_id)) for voice_id in ids if voice_id]
+        raw = payload.get("voices") if isinstance(payload, dict) else None
+        if isinstance(raw, list):
+            ids = [str(voice_id) for voice_id in raw if voice_id]
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
+        _logger.warning("couldn't list kokoro voices (%s); using the built-in list", error)
+    if not ids:
+        ids = list(_KOKORO_BUILTIN_VOICES)
+    return [describe_kokoro_voice(voice_id) for voice_id in ids]

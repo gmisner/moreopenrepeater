@@ -22,7 +22,7 @@ import {
   soundDeviceOptions,
   type DeviceAssignment,
 } from "../../deviceUsage";
-import { CTCSS_TONES } from "./constants";
+import { CtcssToneSelect } from "./CtcssToneSelect";
 import { RemoteBaseCard } from "./RemoteBaseCard";
 import type { AudioDevice, ConfigSlice, LinkValues, SerialPort } from "./types";
 
@@ -385,16 +385,12 @@ export function LinkRadioCard({
                     onChange={(value) => link.setField("link_radio_tx_gain_db", Number(value) || 0)}
                     required
                   />
-                  <Select
+                  <CtcssToneSelect
                     label={labeled("Transmit CTCSS tone", "For a far repeater that needs a tone to open.")}
-                    data={CTCSS_TONES.map((hz) => ({ value: String(hz), label: `${hz.toFixed(1)} Hz` }))}
                     value={linkTxCtcss}
                     onChange={(value) =>
                       link.setField("link_radio_tx_ctcss_hz", value == null || value === "" ? "" : Number(value))
                     }
-                    searchable
-                    clearable
-                    placeholder="off"
                   />
                   <NumberInput
                     label={labeled("Link timeout", "Longest one transmission out the linked radio.")}

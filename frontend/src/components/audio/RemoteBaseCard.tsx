@@ -1,6 +1,6 @@
 import { Accordion, NumberInput, Select, SimpleGrid, TextInput } from "@mantine/core";
 import { labeled } from "../FieldHint";
-import { CTCSS_TONES } from "./constants";
+import { CtcssToneSelect } from "./CtcssToneSelect";
 import type { ConfigSlice, LinkValues } from "./types";
 
 export function RemoteBaseCard({
@@ -66,16 +66,11 @@ export function RemoteBaseCard({
                       }
                       placeholder="band's usual"
                     />
-                    <Select
-                      label="Transmit CTCSS tone"
-                      data={CTCSS_TONES.map((hz) => ({ value: String(hz), label: `${hz.toFixed(1)} Hz` }))}
+                    <CtcssToneSelect
                       value={remoteTone}
                       onChange={(value) =>
                         link.setField("remote_base_tone_hz", value == null || value === "" ? "" : Number(value))
                       }
-                      searchable
-                      clearable
-                      placeholder="off"
                     />
                     <Select
                       label="Mode"

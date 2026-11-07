@@ -182,7 +182,6 @@ export function RadioInterfaceCard({
                     clearable
                     placeholder="System default"
                     nothingFoundMessage="No input devices"
-                    comboboxProps={{ withinPortal: true, zIndex: 400 }}
                   />
                   <Select
                     label="Output (transmitter)"
@@ -192,7 +191,6 @@ export function RadioInterfaceCard({
                     clearable
                     placeholder="System default"
                     nothingFoundMessage="No output devices"
-                    comboboxProps={{ withinPortal: true, zIndex: 400 }}
                   />
                 </SimpleGrid>
                 <Stack gap="sm" mt="md">

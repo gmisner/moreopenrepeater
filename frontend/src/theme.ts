@@ -155,8 +155,23 @@ export const theme = createTheme({
     NumberInput: {
       defaultProps: { variant: "default" },
     },
+    // Mantine's documented native-scroll Select recipe
+    // (https://mantine.dev/core/select/#scrollable-dropdown): ScrollArea is the
+    // library default, but on long pages its dropdown steals poorly — wheel
+    // scrolls the document and closes the popover. Prefer the same native
+    // overflow approach everywhere so every Select behaves alike.
     Select: {
-      defaultProps: { variant: "default" },
+      defaultProps: {
+        variant: "default",
+        withScrollArea: false,
+        comboboxProps: { withinPortal: true, zIndex: 400 },
+      },
+      styles: {
+        dropdown: {
+          maxHeight: 220,
+          overflowY: "auto",
+        },
+      },
     },
     Textarea: {
       defaultProps: { variant: "default" },

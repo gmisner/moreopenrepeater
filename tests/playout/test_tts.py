@@ -1,4 +1,3 @@
-import json
 import subprocess
 from pathlib import Path
 
@@ -59,17 +58,6 @@ def test_kokoro_ignores_legacy_voice_and_uses_default():
     argv = calls[0]
     assert "-v" not in argv  # espeak leftover must not be passed through
     assert argv[argv.index("--") + 1] == "hello"
-
-
-def test_list_tts_voices_falls_back_to_builtin_list():
-    engine = detect_tts(which=lambda b: "/usr/bin/kokoro" if b == "kokoro" else None)
-
-    def run(argv, **kwargs):
-        raise subprocess.CalledProcessError(1, argv)
-
-    voices = list_tts_voices(engine, run=run)
-    assert any(voice.id == "af_heart" for voice in voices)
-    assert any(voice.locale == "en-us" for voice in voices)
 
 
 def test_kokoro_speak_uses_long_timeout():
@@ -172,18 +160,12 @@ def test_detect_tts_prefers_kokoro_then_say_then_espeak_ng():
     assert detect_tts(which=lambda b: None) is None
 
 
-def test_list_tts_voices_for_kokoro():
+def test_list_tts_voices_for_kokoro_uses_builtin_list():
     engine = detect_tts(which=lambda b: "/usr/bin/kokoro" if b == "kokoro" else None)
-
-    def run(argv, **kwargs):
-        assert argv == ["/usr/bin/kokoro", "voices", "--json"]
-        return subprocess.CompletedProcess(
-            argv, 0, stdout=json.dumps({"voices": ["af_heart", "bm_george"]}), stderr=""
-        )
-
-    voices = list_tts_voices(engine, run=run)
-    assert [voice.id for voice in voices] == ["af_heart", "bm_george"]
-    assert voices[1].locale_label == "British English"
+    voices = list_tts_voices(engine)
+    assert any(voice.id == "af_heart" for voice in voices)
+    george = next(voice for voice in voices if voice.id == "bm_george")
+    assert george.locale_label == "British English"
 
 
 def test_list_tts_voices_empty_for_other_engines():

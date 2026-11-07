@@ -107,7 +107,7 @@ describe("Sites page", () => {
     expect(form).toBeTruthy();
     const fields = within(form);
     await user.type(fields.getByRole("textbox", { name: /^Name/ }), "Test Pi");
-    await user.type(fields.getByPlaceholderText("https://repeater.example.com"), "https://test.example.com");
+    await user.type(fields.getByPlaceholderText("e.g. https://…"), "https://test.example.com");
     const token = form.querySelector('input[type="password"]');
     expect(token).toBeTruthy();
     await user.type(token as HTMLElement, "mor_tok");

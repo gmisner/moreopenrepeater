@@ -584,6 +584,7 @@ class AppRuntime:
             find_cm108=lambda: link_cm108_from_env(os.environ, cm108),
             run_mixer=run_mixer,
         )
+        service.link_radio_play = link_radio.play_clip
         remote_base = remote_base or RemoteBase(service)
         gpio = gpio or GpioControl(service, cm108)
         service.programming.gpio_command = gpio.run_command
@@ -866,11 +867,11 @@ class AppRuntime:
                     _aprs_logger.exception("APRS beacon failed")
                 await asyncio.sleep(aprs.aprs_beacon_interval)
 
-        async def render_and_queue(clip: str) -> None:
+        async def render_and_queue(clip: str, *, on_linked_radio: bool = False) -> None:
             """Render off the event loop first, so the controller knows how long
             the clip is (and a TTS failure surfaces here, not mid-transmission)."""
             await asyncio.get_running_loop().run_in_executor(None, renderer.render, clip, service.config)
-            if not service.queue_announcement(clip):
+            if not service.queue_announcement(clip, on_linked_radio=on_linked_radio):
                 raise HTTPException(status_code=429, detail="Too many announcements are already waiting to play")
 
         async def aprs_prune_loop() -> None:
@@ -881,9 +882,9 @@ class AppRuntime:
         async def announcement_loop() -> None:
             while True:
                 await asyncio.sleep(ANNOUNCEMENT_POLL_SECONDS)
-                for clip in service.due_announcement_clips():
+                for clip, on_linked_radio in service.due_announcements():
                     try:
-                        await render_and_queue(clip)
+                        await render_and_queue(clip, on_linked_radio=on_linked_radio)
                     except (UnknownClipError, TTSError, HTTPException):
                         _announce_logger.exception("couldn't play scheduled announcement %s", clip)
 

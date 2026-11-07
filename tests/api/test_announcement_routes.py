@@ -55,11 +55,16 @@ def test_create_list_update_delete_round_trip():
 
     created = client.post("/api/announcements", json=NET_REMINDER).json()
     assert created["name"] == "Net reminder"
+    assert created["on_linked_radio"] is False
     assert created["next_run"] == (START + timedelta(minutes=30)).isoformat()
     assert [a["id"] for a in client.get("/api/announcements").json()] == [created["id"]]
 
-    updated = client.put(f"/api/announcements/{created['id']}", json={**NET_REMINDER, "enabled": False}).json()
+    updated = client.put(
+        f"/api/announcements/{created['id']}",
+        json={**NET_REMINDER, "enabled": False, "on_linked_radio": True},
+    ).json()
     assert updated["enabled"] is False
+    assert updated["on_linked_radio"] is True
     assert updated["next_run"] is None
 
     assert client.delete(f"/api/announcements/{created['id']}").status_code == 200
@@ -131,6 +136,14 @@ def test_play_now_renders_then_transmits_when_idle():
     assert not service.ptt_active
 
 
+def test_play_now_with_linked_radio_flag_queues_it():
+    client, service, _ = make_client()
+    announcement = client.post("/api/announcements", json={**NET_REMINDER, "on_linked_radio": True}).json()
+
+    assert client.post(f"/api/announcements/{announcement['id']}/play").status_code == 200
+    assert service.controller._announcements == [("tts:Net tonight at 8pm on {callsign}", True)]
+
+
 def test_play_now_without_tts_is_503():
     class BrokenTTS(FakeTTS):
         def synthesize(self, text, voice=""):
@@ -155,6 +168,14 @@ def test_service_reports_due_clips_on_schedule():
     clock["wall"] = START + timedelta(minutes=30)
     assert service.due_announcement_clips() == ["tts:Net tonight at 8pm on {callsign}"]
     assert service.due_announcement_clips() == []
+
+
+def test_due_announcements_carry_the_linked_radio_flag():
+    client, service, clock = make_client()
+    client.post("/api/announcements", json={**NET_REMINDER, "on_linked_radio": True})
+
+    clock["wall"] = START + timedelta(minutes=30)
+    assert service.due_announcements() == [("tts:Net tonight at 8pm on {callsign}", True)]
 
 
 def test_asset_announcement_uses_the_uploaded_clip():

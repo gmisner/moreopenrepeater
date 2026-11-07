@@ -579,7 +579,7 @@ export function MapPage() {
   const setup = body ? setupText(body) : "";
 
   return (
-    <Page title="APRS map" description="Stations heard on APRS-IS near the repeater, with active weather alert areas.">
+    <Page title="APRS map" description="Nearby APRS stations and weather alert areas.">
       {setup ? (
         <Card withBorder padding="lg" radius="md">
           <Text c="dimmed" mb="sm">

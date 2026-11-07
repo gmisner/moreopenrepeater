@@ -112,6 +112,13 @@ class LinkRadioController:
                 self._last_used = float("inf")
         return commands
 
+    def note_transmission(self, now: float) -> None:
+        """A clip went out the link without `sending` (e.g. an announcement).
+        Starts the ID clock if needed and counts as activity for idle-off."""
+        if self._id_due_at is None:
+            self._id_due_at = now + self.settings.id_interval
+        self._last_used = now
+
     def reset(self) -> None:
         """The link radio stopped: nothing is keyed, and no ID is owed."""
         self.ptt = False

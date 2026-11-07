@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Button,
   Card,
   Group,
@@ -188,10 +189,7 @@ export function Sensors() {
   const readingFor = (id: string) => status?.sensors.find((sensor) => sensor.id === id);
 
   return (
-    <Page
-      title="Site sensors"
-      description="Analog readings from a DS18B20 1-wire temperature probe or an ADS1115 I2C ADC channel (battery voltage, fuel, supply). Thresholds send phone alerts through Alerts & health, with hysteresis so a reading near the limit does not chatter. A DTMF macro can speak one or all readings."
-    >
+    <Page title="Site sensors" description="Temperature and voltage probes, with optional threshold alerts.">
       <Card
         withBorder
         padding="lg"
@@ -212,7 +210,8 @@ export function Sensors() {
             onChange={(event) => settings.setField("sensors_enabled", event.currentTarget.checked)}
           />
           <NumberInput
-            label={labeled("Poll interval", "Seconds between reads when polling is on.")}
+            label="Poll interval"
+            description="Seconds between reads when polling is on"
             min={5}
             max={3600}
             value={settings.values.sensors_poll_interval}
@@ -296,7 +295,8 @@ export function Sensors() {
                     {sensor.type === "ds18b20" ? (
                       <TextInput
                         label="1-wire device"
-                        description="28-… id from /sys/bus/w1/devices; blank uses the first sensor found"
+                        description="Optional · blank uses the first sensor found"
+                        placeholder="e.g. 28-…"
                         value={sensor.device}
                         onChange={(event) => updateSensor(index, { device: event.currentTarget.value })}
                       />
@@ -328,19 +328,8 @@ export function Sensors() {
                     )}
                     <Group grow>
                       <NumberInput
-                        label="Scale"
-                        decimalScale={6}
-                        value={sensor.scale}
-                        onChange={(value) => updateSensor(index, { scale: Number(value) || 1 })}
-                      />
-                      <NumberInput
-                        label="Offset"
-                        decimalScale={6}
-                        value={sensor.offset}
-                        onChange={(value) => updateSensor(index, { offset: Number(value) || 0 })}
-                      />
-                      <NumberInput
                         label="High threshold"
+                        description="Optional"
                         decimalScale={3}
                         value={sensor.high ?? ""}
                         onChange={(value) =>
@@ -349,18 +338,12 @@ export function Sensors() {
                       />
                       <NumberInput
                         label="Low threshold"
+                        description="Optional"
                         decimalScale={3}
                         value={sensor.low ?? ""}
                         onChange={(value) =>
                           updateSensor(index, { low: value === "" || value == null ? null : Number(value) })
                         }
-                      />
-                      <NumberInput
-                        label="Hysteresis"
-                        decimalScale={3}
-                        min={0}
-                        value={sensor.hysteresis}
-                        onChange={(value) => updateSensor(index, { hysteresis: Number(value) || 0 })}
                       />
                     </Group>
                     <Group>
@@ -375,6 +358,34 @@ export function Sensors() {
                         onChange={(event) => updateSensor(index, { speak_on_alert: event.currentTarget.checked })}
                       />
                     </Group>
+                    <Accordion variant="separated" radius="md">
+                      <Accordion.Item value={`advanced-${index}`}>
+                        <Accordion.Control>Advanced · scale &amp; hysteresis</Accordion.Control>
+                        <Accordion.Panel>
+                          <Group grow>
+                            <NumberInput
+                              label={labeled("Scale", "Reading = raw × scale + offset")}
+                              decimalScale={6}
+                              value={sensor.scale}
+                              onChange={(value) => updateSensor(index, { scale: Number(value) || 1 })}
+                            />
+                            <NumberInput
+                              label="Offset"
+                              decimalScale={6}
+                              value={sensor.offset}
+                              onChange={(value) => updateSensor(index, { offset: Number(value) || 0 })}
+                            />
+                            <NumberInput
+                              label={labeled("Hysteresis", "Stops chatter near a threshold")}
+                              decimalScale={3}
+                              min={0}
+                              value={sensor.hysteresis}
+                              onChange={(value) => updateSensor(index, { hysteresis: Number(value) || 0 })}
+                            />
+                          </Group>
+                        </Accordion.Panel>
+                      </Accordion.Item>
+                    </Accordion>
                     {reading?.history && reading.history.length > 0 ? (
                       <Table striped withTableBorder>
                         <Table.Thead>

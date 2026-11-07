@@ -128,6 +128,17 @@ class LinksResponse(BaseModel):
     schedules: list[LinkScheduleStatus] = []
 
 
+class LinkEvent(BaseModel):
+    at: datetime
+    kind: Literal["connected", "disconnected", "keyed", "unkeyed"]
+    node: str
+    label: str = ""
+
+
+class LinkEventsResponse(BaseModel):
+    events: list[LinkEvent]
+
+
 class LinkConnectRequest(BaseModel):
     node: NodeNumber
     monitor: bool = False

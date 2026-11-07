@@ -361,10 +361,7 @@ export function Updates() {
     (CHANNELS[channel]?.note || "") + (switching ? ` Updating moves this repeater to ${CHANNELS[channel]?.label}.` : "");
 
   return (
-    <Page
-      title="Updates"
-      description="New versions go to the dev channel first, then to beta for testing, and only then to stable. Production repeaters should stay on stable."
-    >
+    <Page title="Updates" description="Install new versions and choose a release channel.">
       {info && !info.available ? (
         <Card withBorder padding="md" radius="md">
           <Text c="dimmed">

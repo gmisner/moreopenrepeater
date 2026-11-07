@@ -117,10 +117,7 @@ export function Sites() {
   };
 
   return (
-    <Page
-      title="Sites"
-      description="A lightweight hub view of other moreopenrepeater instances. Each site is polled with its own API token; remotes stay independent if this hub is down."
-    >
+    <Page title="Sites" description="Hub view of other moreopenrepeater instances.">
       <Stack gap="lg">
         <Group justify="space-between" align="flex-end">
           <div>
@@ -206,16 +203,17 @@ export function Sites() {
           <Stack gap="sm">
             <Title order={4}>Add a site</Title>
             <TextInput
-              label={labeled("Name", "A label for this hub, like Production or Test Pi.")}
+              label={labeled("Name", "A label for this hub.")}
               value={name}
               onChange={(event) => setName(event.currentTarget.value)}
+              placeholder="e.g. production"
               required
             />
             <TextInput
-              label={labeled("Base URL", "Origin only, for example https://repeater.example.com — no /api path.")}
+              label={labeled("Base URL", "Origin only — no /api path.")}
               value={baseUrl}
               onChange={(event) => setBaseUrl(event.currentTarget.value)}
-              placeholder="https://repeater.example.com"
+              placeholder="e.g. https://…"
               required
             />
             <PasswordInput

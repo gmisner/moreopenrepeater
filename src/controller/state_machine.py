@@ -80,7 +80,8 @@ class RepeaterController:
         self._receiving_ptt = False  # the transmitter is up in RECEIVING (always, except on a simplex node)
         self._resume_state_after_id = IDLE
         self._remote_keyed: set[str] = set()
-        self._announcements: list[str] = []
+        # (clip, on_linked_radio) — on_linked_radio mirrors the clip on Linked Radio TX.
+        self._announcements: list[tuple[str, bool]] = []
         self._keyup_at: Optional[float] = None  # carrier seen while idle; keys up then if it lasts
         self.kerchunks_filtered = 0
         self._timeouts: list[float] = []  # recent timeouts, for the lockout
@@ -96,19 +97,20 @@ class RepeaterController:
     def set_macros(self, macros: list[Macro]) -> None:
         self._dtmf.set_macros(macros)
 
-    def queue_announcement(self, clip: str) -> bool:
+    def queue_announcement(self, clip: str, *, on_linked_radio: bool = False) -> bool:
         """Play `clip` the next time the channel is idle. Announcements never
         interrupt a user or the ID; they wait their turn. Returns False (and
-        drops the clip) if too many are already waiting."""
+        drops the clip) if too many are already waiting. `on_linked_radio`
+        also plays the clip on the Linked Radio when that port is up."""
         if len(self._announcements) >= MAX_QUEUED_ANNOUNCEMENTS:
             _logger.warning("announcement queue full; dropping %s", clip)
             return False
-        self._announcements.append(clip)
+        self._announcements.append((clip, on_linked_radio))
         return True
 
     @property
     def queued_announcements(self) -> list[str]:
-        return list(self._announcements)
+        return [clip for clip, _ in self._announcements]
 
     @property
     def carrier_present(self) -> bool:
@@ -537,10 +539,10 @@ class RepeaterController:
     def _start_announcement(self, now: float) -> list[ControllerCommand]:
         self._note_transmission(now)
         commands: list[ControllerCommand] = [] if self.state == ANNOUNCING else [AssertPTT(active=True)]
-        clip = self._announcements.pop(0)
+        clip, on_linked_radio = self._announcements.pop(0)
         self._set_state(ANNOUNCING)
         self._state_deadline = now + (self._clip_duration(clip) or ANNOUNCEMENT_FALLBACK_DURATION)
-        return commands + [PlayAudio(clip=clip)]
+        return commands + [PlayAudio(clip=clip, on_linked_radio=on_linked_radio)]
 
     def _finish_announcement(self, now: float) -> list[ControllerCommand]:
         if self._announcements and not self._id_due(now):

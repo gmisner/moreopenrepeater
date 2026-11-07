@@ -39,7 +39,7 @@ def register(
     *,
     service: RepeaterService,
     run_mixer: Callable,
-    render_and_queue: Callable[[str], Awaitable[None]],
+    render_and_queue: Callable[..., Awaitable[None]],
     status_response: Callable[..., StatusResponse],
     config_response: Callable[..., ConfigResponse],
     auth_dependencies: Sequence,

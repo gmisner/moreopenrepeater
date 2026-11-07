@@ -59,7 +59,7 @@ def register(
     service: RepeaterService,
     assets_store: AudioAssetStore,
     zone_shapes: dict,
-    render_and_queue: Callable[[str], Awaitable[None]],
+    render_and_queue: Callable[..., Awaitable[None]],
     check_weather: Callable[..., Awaitable[None]],
     status_response: Callable[..., StatusResponse],
     auth_dependencies: Sequence,
@@ -113,9 +113,10 @@ def register(
 
     @app.post("/api/announcements/{announcement_id}/play", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def play_announcement(announcement_id: str) -> StatusResponse:
-        clip = service.announcement_clip(find_announcement(announcement_id))
+        announcement = find_announcement(announcement_id)
+        clip = service.announcement_clip(announcement)
         try:
-            await render_and_queue(clip)
+            await render_and_queue(clip, on_linked_radio=announcement.on_linked_radio)
         except UnknownClipError:
             raise HTTPException(status_code=404, detail="The announcement's audio clip no longer exists")
         except TTSError as error:

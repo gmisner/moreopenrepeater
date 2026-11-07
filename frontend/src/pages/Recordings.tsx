@@ -232,7 +232,7 @@ export function Recordings() {
   const filtersActive = Boolean(search || callsign || afterDate || beforeDate);
 
   return (
-    <Page title="Recordings" description="Saved transmissions, with filters, playback, and transcripts.">
+    <Page title="Recordings" description="Saved transmissions and transcripts.">
       <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => { event.preventDefault(); void rec.submit(); }}>
         <Stack gap="md">
           <Title order={2}>Save transmissions</Title>
@@ -310,7 +310,7 @@ export function Recordings() {
             <TextInput
               label="Callsign"
               maxLength={20}
-              placeholder="W1AW"
+              placeholder="e.g. W1AW"
               value={callsignInput}
               onChange={(event) => setCallsignInput(event.currentTarget.value.toUpperCase())}
               style={{ flex: "0 1 140px" }}
@@ -319,7 +319,7 @@ export function Recordings() {
               label="Search the transcripts"
               type="search"
               maxLength={100}
-              placeholder="A word, or part of what was said"
+              placeholder=""
               value={searchInput}
               onChange={(event) => setSearchInput(event.currentTarget.value)}
               style={{ flex: "1 1 240px", maxWidth: 440 }}
@@ -502,7 +502,7 @@ export function Recordings() {
               <>
                 <TextInput
                   label={labeled("Server address", "The full /v1/audio/transcriptions address.")}
-                  placeholder="http://whisper.local:8000/v1/audio/transcriptions"
+                  placeholder="e.g. http://…"
                   pattern="https?://\S+"
                   value={transcription.values.transcription_url}
                   onChange={(event) => transcription.setField("transcription_url", event.currentTarget.value)}
@@ -510,7 +510,7 @@ export function Recordings() {
                 <TextInput
                   label="Model"
                   maxLength={100}
-                  placeholder="whisper-1"
+                  placeholder="e.g. whisper-1"
                   value={transcription.values.transcription_model}
                   onChange={(event) => transcription.setField("transcription_model", event.currentTarget.value)}
                   required

@@ -194,6 +194,19 @@ export const SIDE_LABELS = {
   link_output: "Link transmit",
 } as const;
 export const PTT_LABELS: Record<string, string> = { cm108: " · CM108 PTT", gpio: " · GPIO PTT", serial: " · serial PTT" };
+export const COS_METHOD_LABELS: Record<string, string> = {
+  vox: "Audio level (VOX)",
+  ctcss: "CTCSS tone",
+  cm108: "CM108 COS",
+  gpio: "GPIO",
+  serial: "Serial",
+};
+export const PTT_METHOD_LABELS: Record<string, string> = {
+  cm108: "CM108",
+  gpio: "GPIO",
+  serial: "Serial",
+  none: "None (radio VOX)",
+};
 export const GLITCH_SHORT: Record<string, string> = {
   dropped_input_blocks: "receive drops",
   starved_output_blocks: "transmit gaps",

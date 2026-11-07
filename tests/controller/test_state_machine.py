@@ -651,6 +651,14 @@ def test_announcement_plays_when_idle_for_its_clip_duration():
     assert commands == [AssertPTT(active=False)]
 
 
+def test_announcement_can_flag_linked_radio_playout():
+    controller = RepeaterController(make_config(), now=0.0, clip_duration=lambda clip: 1.0)
+    controller.queue_announcement("tts:crossband net", on_linked_radio=True)
+
+    commands = controller.tick(now=0.0)
+    assert PlayAudio(clip="tts:crossband net", on_linked_radio=True) in commands
+
+
 def test_announcement_waits_for_the_channel_to_clear():
     controller = RepeaterController(make_config(), now=0.0)
     controller.handle_event(COSChanged(active=True), now=0.0)

@@ -202,10 +202,7 @@ export function Remote() {
   };
 
   return (
-    <Page
-      title="Remote access"
-      description="Reach this dashboard from your other devices over a private Tailscale network (tailnet), with HTTPS. Only devices on your tailnet can connect — nothing is opened to the public internet."
-    >
+    <Page title="Remote access" description="Reach this dashboard from other devices over Tailscale.">
       {info && !info.available ? (
         <Card withBorder padding="md" radius="md">
           <Text c="dimmed" size="sm">

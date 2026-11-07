@@ -64,9 +64,14 @@ class AssertPTT:
 
 @dataclass(frozen=True)
 class PlayAudio:
-    """Play a named audio clip (e.g. courtesy tone, timeout tone, station ID)."""
+    """Play a named audio clip (e.g. courtesy tone, timeout tone, station ID).
+
+    `on_linked_radio`: also play the same clip on the Linked Radio TX (announcements
+    that opted in). Other clips leave this false.
+    """
 
     clip: str
+    on_linked_radio: bool = False
 
 
 @dataclass(frozen=True)

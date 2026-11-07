@@ -260,7 +260,7 @@ export function Audio() {
   return (
     <Page
       title="Audio & tones"
-      description="Choose the sounds the repeater transmits. Use the preview buttons to hear exactly what goes out on the air, including unsaved changes."
+      description="Sounds, radio interface, and linked radio."
     >
       <SoundsCard
         sounds={sounds}

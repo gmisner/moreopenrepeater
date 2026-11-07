@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Badge,
   Button,
   Card,
@@ -17,6 +18,7 @@ import {
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
+import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
 import { ControlCodesCard, HomeAssistantTest } from "../components/MacroExtras";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { pinLabel, SPARE_PINS } from "../gpio";
@@ -140,6 +142,7 @@ export function Macros() {
   const [macros, setMacros] = useState<Macro[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [editingPattern, setEditingPattern] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [helpHiddenTouched, setHelpHiddenTouched] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -218,6 +221,14 @@ export function Macros() {
     setEditingPattern(null);
     setHelpHiddenTouched(false);
     setForm(EMPTY_FORM);
+    setDrawerOpen(false);
+  };
+
+  const startAdd = () => {
+    setEditingPattern(null);
+    setHelpHiddenTouched(false);
+    setForm(EMPTY_FORM);
+    setDrawerOpen(true);
   };
 
   const startEdit = (macro: Macro) => {
@@ -245,6 +256,7 @@ export function Macros() {
     setEditingPattern(macro.pattern);
     setHelpHiddenTouched(true);
     setForm(next);
+    setDrawerOpen(true);
   };
 
   const collect = () => {
@@ -312,11 +324,17 @@ export function Macros() {
   const action = form.action;
 
   return (
-    <Page
-      title="DTMF macros"
-      description="Digit patterns users can key in over the air: repeater functions like a talking clock, or commands for the link layer (e.g. *81 → disconnect_all). For control-operator functions, require a one-time code or put a PIN in the pattern."
-    >
+    <Page title="DTMF macros" description="Digit patterns users can key in over the air.">
       <Card withBorder padding="lg" radius="md">
+        <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
+          <div>
+            <Title order={2}>Macros</Title>
+            <Text c="dimmed" size="sm" mt={4}>
+              For control-operator functions, require a one-time code or put a PIN in the pattern.
+            </Text>
+          </div>
+          <Button onClick={startAdd}>Add macro</Button>
+        </Group>
         <Table.ScrollContainer minWidth={720}>
           <Table striped highlightOnHover>
             <Table.Thead>
@@ -371,186 +389,194 @@ export function Macros() {
         ) : null}
       </Card>
 
-      <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => void submit(event)}>
-        <Stack gap="md">
-          <Title order={2}>{editingPattern ? `Edit macro ${editingPattern}` : "Add macro"}</Title>
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-            <TextInput
-              label="Pattern"
-              placeholder="*81"
-              required
-              pattern="[0-9A-Da-d*#]+"
-              value={form.pattern}
-              onChange={(event) => setField("pattern", event.currentTarget.value)}
-            />
-            <Select
-              label="Action"
-              data={ACTION_OPTIONS}
-              value={form.action}
-              onChange={(value) => setField("action", value || "link")}
-              allowDeselect={false}
-            />
-            <TextInput
-              label={labeled("Description", "Spoken help reads this after the digits.")}
-              placeholder="Disconnect all links"
-              value={form.description}
-              onChange={(event) => setField("description", event.currentTarget.value)}
-            />
-            {action === "help" ? (
-              <NumberInput
-                label={labeled("Page", "Long lists are split into pages of 8 when there\'s a help macro for the next page.")}
-                min={1}
-                max={99}
-                value={form.help_page === "" ? undefined : Number(form.help_page)}
-                onChange={(value) => setField("help_page", value === "" || value === undefined ? "" : String(value))}
-              />
-            ) : null}
-            {action === "link" ? (
-              <>
-                <TextInput
-                  label="Command"
-                  placeholder="disconnect_all"
-                  required
-                  value={form.command}
-                  onChange={(event) => setField("command", event.currentTarget.value)}
-                />
-                <TextInput
-                  label="Node ID"
-                  placeholder="(optional)"
-                  value={form.node_id}
-                  onChange={(event) => setField("node_id", event.currentTarget.value)}
-                />
-              </>
-            ) : null}
-            {action === "announcement" ? (
-              <Select
-                label="Announcement"
-                data={announcements.map((a) => ({ value: a.id, label: a.name }))}
-                value={form.announcement_id || null}
-                onChange={(value) => setField("announcement_id", value || "")}
+      <ConfigEditDrawer
+        opened={drawerOpen}
+        onClose={stopEdit}
+        title={editingPattern ? `Edit macro ${editingPattern}` : "Add macro"}
+        subtitle="Choose an action; extra fields appear when needed."
+      >
+        <form onSubmit={(event) => void submit(event)}>
+          <Stack gap="md">
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+              <TextInput
+                label="Pattern"
+                description="Digits, A–D, *, #"
+                placeholder="e.g. *81"
                 required
+                pattern="[0-9A-Da-d*#]+"
+                value={form.pattern}
+                onChange={(event) => setField("pattern", event.currentTarget.value)}
+              />
+              <Select
+                label="Action"
+                data={ACTION_OPTIONS}
+                value={form.action}
+                onChange={(value) => setField("action", value || "link")}
                 allowDeselect={false}
               />
-            ) : null}
-            {action === "say" ? (
               <TextInput
-                label="Text to say"
-                placeholder="Club meeting Thursday at 7"
-                required
-                value={form.say_text}
-                onChange={(event) => setField("say_text", event.currentTarget.value)}
+                label="Description"
+                description="Spoken help reads this after the digits"
+                placeholder=""
+                value={form.description}
+                onChange={(event) => setField("description", event.currentTarget.value)}
               />
-            ) : null}
-            {action === "gpio" ? (
-              <>
-                <Select
-                  label="Output"
-                  data={gpioOptions}
-                  value={form.gpio_pin}
-                  onChange={(value) => setField("gpio_pin", value || gpioOptions[0]?.value || "1")}
-                  allowDeselect={false}
+              {action === "help" ? (
+                <NumberInput
+                  label={labeled("Page", "Long lists are split into pages of 8 when there's a help macro for the next page.")}
+                  min={1}
+                  max={99}
+                  value={form.help_page === "" ? undefined : Number(form.help_page)}
+                  onChange={(value) => setField("help_page", value === "" || value === undefined ? "" : String(value))}
                 />
-                <Select
-                  label="Switch it"
-                  data={[
-                    { value: "on", label: "On" },
-                    { value: "off", label: "Off" },
-                    { value: "toggle", label: "On if off, off if on" },
-                    { value: "pulse", label: "On for a moment" },
-                  ]}
-                  value={form.gpio_verb}
-                  onChange={(value) => setField("gpio_verb", value || "on")}
-                  allowDeselect={false}
-                />
-                {form.gpio_verb === "pulse" ? (
-                  <NumberInput
-                    label="For"
-                    suffix=" s"
-                    min={0.1}
-                    max={60}
-                    step={0.1}
-                    decimalScale={1}
-                    value={form.gpio_seconds}
-                    onChange={(value) => setField("gpio_seconds", Number(value) || 1)}
+              ) : null}
+              {action === "link" ? (
+                <>
+                  <TextInput
+                    label="Command"
+                    placeholder="e.g. disconnect_all"
+                    required
+                    value={form.command}
+                    onChange={(event) => setField("command", event.currentTarget.value)}
                   />
-                ) : null}
-              </>
+                  <TextInput
+                    label="Node ID"
+                    description="Optional"
+                    placeholder=""
+                    value={form.node_id}
+                    onChange={(event) => setField("node_id", event.currentTarget.value)}
+                  />
+                </>
+              ) : null}
+              {action === "announcement" ? (
+                <Select
+                  label="Announcement"
+                  data={announcements.map((a) => ({ value: a.id, label: a.name }))}
+                  value={form.announcement_id || null}
+                  onChange={(value) => setField("announcement_id", value || "")}
+                  required
+                  allowDeselect={false}
+                />
+              ) : null}
+              {action === "say" ? (
+                <TextInput
+                  label="Text to say"
+                  description="Spoken over the air"
+                  placeholder=""
+                  required
+                  value={form.say_text}
+                  onChange={(event) => setField("say_text", event.currentTarget.value)}
+                />
+              ) : null}
+              {action === "gpio" ? (
+                <>
+                  <Select
+                    label="Output"
+                    data={gpioOptions}
+                    value={form.gpio_pin}
+                    onChange={(value) => setField("gpio_pin", value || gpioOptions[0]?.value || "1")}
+                    allowDeselect={false}
+                  />
+                  <Select
+                    label="Switch it"
+                    data={[
+                      { value: "on", label: "On" },
+                      { value: "off", label: "Off" },
+                      { value: "toggle", label: "On if off, off if on" },
+                      { value: "pulse", label: "On for a moment" },
+                    ]}
+                    value={form.gpio_verb}
+                    onChange={(value) => setField("gpio_verb", value || "on")}
+                    allowDeselect={false}
+                  />
+                  {form.gpio_verb === "pulse" ? (
+                    <NumberInput
+                      label="For"
+                      suffix=" s"
+                      min={0.1}
+                      max={60}
+                      step={0.1}
+                      decimalScale={1}
+                      value={form.gpio_seconds}
+                      onChange={(value) => setField("gpio_seconds", Number(value) || 1)}
+                    />
+                  ) : null}
+                </>
+              ) : null}
+              {action === "homeassistant" ? (
+                <TextInput
+                  label={labeled("Webhook ID or event", "A webhook ID, or event: and an event type (letters, digits, _ . -).")}
+                  placeholder="e.g. webhook_id"
+                  required
+                  pattern="(event:)?[A-Za-z0-9_.\-]{1,100}"
+                  value={form.ha_target}
+                  onChange={(event) => setField("ha_target", event.currentTarget.value)}
+                />
+              ) : null}
+              {action === "metar" ? (
+                <Select
+                  label={labeled("Airport", "Airports are listed on the Weather page.")}
+                  data={airportOptions}
+                  value={form.metar_icao}
+                  onChange={(value) => setField("metar_icao", value ?? "")}
+                />
+              ) : null}
+              {action === "sensor" ? (
+                <Select
+                  label={labeled("Sensor", "Sensors are listed on the Site sensors page.")}
+                  data={sensorOptions}
+                  value={form.sensor_id}
+                  onChange={(value) => setField("sensor_id", value ?? "")}
+                />
+              ) : null}
+              {action === "remote_shift" ? (
+                <Select
+                  label="Shift"
+                  data={[
+                    { value: "minus", label: "Minus" },
+                    { value: "plus", label: "Plus" },
+                    { value: "simplex", label: "Simplex" },
+                  ]}
+                  value={form.remote_shift}
+                  onChange={(value) => setField("remote_shift", value || "minus")}
+                  allowDeselect={false}
+                />
+              ) : null}
+            </SimpleGrid>
+            {action === "remote_tune" ? (
+              <Text c="dimmed" size="sm">
+                After the pattern, key the frequency in MHz with * as the decimal point, then #: 146*94#. Six digits work too (146940#).
+              </Text>
             ) : null}
-            {action === "homeassistant" ? (
-              <TextInput
-                label={labeled("Webhook ID or event", "A webhook ID, or event: and an event type (letters, digits, _ . -).")}
-                placeholder="porch_light or event:repeater_porch"
-                required
-                pattern="(event:)?[A-Za-z0-9_.\-]{1,100}"
-                value={form.ha_target}
-                onChange={(event) => setField("ha_target", event.currentTarget.value)}
-              />
+            {action === "remote_tone" ? (
+              <Text c="dimmed" size="sm">
+                After the pattern, key the tone with * as the decimal point, then #: 100*0# or 1000#. 0# turns the tone off.
+              </Text>
             ) : null}
-            {action === "metar" ? (
-              <Select
-                label={labeled("Airport", "Airports are listed on the Weather page.")}
-                data={airportOptions}
-                value={form.metar_icao}
-                onChange={(value) => setField("metar_icao", value ?? "")}
-              />
-            ) : null}
-            {action === "sensor" ? (
-              <Select
-                label={labeled("Sensor", "Sensors are listed on the Site sensors page.")}
-                data={sensorOptions}
-                value={form.sensor_id}
-                onChange={(value) => setField("sensor_id", value ?? "")}
-              />
-            ) : null}
-            {action === "remote_shift" ? (
-              <Select
-                label="Shift"
-                data={[
-                  { value: "minus", label: "Minus" },
-                  { value: "plus", label: "Plus" },
-                  { value: "simplex", label: "Simplex" },
-                ]}
-                value={form.remote_shift}
-                onChange={(value) => setField("remote_shift", value || "minus")}
-                allowDeselect={false}
-              />
-            ) : null}
-          </SimpleGrid>
-          {action === "remote_tune" ? (
-            <Text c="dimmed" size="sm">
-              After the pattern, key the frequency in MHz with * as the decimal point, then #: 146*94#. Six digits work too (146940#).
-            </Text>
-          ) : null}
-          {action === "remote_tone" ? (
-            <Text c="dimmed" size="sm">
-              After the pattern, key the tone with * as the decimal point, then #: 100*0# or 1000#. 0# turns the tone off.
-            </Text>
-          ) : null}
-          <Checkbox
-            label="Needs a one-time code, keyed right after the pattern"
-            checked={form.needs_code}
-            onChange={(event) => setField("needs_code", event.currentTarget.checked)}
-          />
-          <Checkbox
-            label="Hide from spoken help (on by default for the transmitter and linked radio switches, and for macros that need a code)"
-            checked={form.help_hidden}
-            onChange={(event) => {
-              setHelpHiddenTouched(true);
-              setField("help_hidden", event.currentTarget.checked);
-            }}
-          />
-          <Group justify="flex-end" gap="sm">
-            {editingPattern ? (
+            <Checkbox
+              label="Needs a one-time code, keyed right after the pattern"
+              checked={form.needs_code}
+              onChange={(event) => setField("needs_code", event.currentTarget.checked)}
+            />
+            <Checkbox
+              label="Hide from spoken help (on by default for the transmitter and linked radio switches, and for macros that need a code)"
+              checked={form.help_hidden}
+              onChange={(event) => {
+                setHelpHiddenTouched(true);
+                setField("help_hidden", event.currentTarget.checked);
+              }}
+            />
+            <Group justify="flex-end" gap="sm">
               <Button type="button" variant="subtle" onClick={stopEdit}>
-                Cancel edit
+                Cancel
               </Button>
-            ) : null}
-            <Button type="submit" loading={saving}>
-              {editingPattern ? "Save changes" : "Add macro"}
-            </Button>
-          </Group>
-        </Stack>
-      </Card>
+              <Button type="submit" loading={saving}>
+                {editingPattern ? "Save changes" : "Add macro"}
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </ConfigEditDrawer>
 
       <Card
         withBorder
@@ -563,27 +589,36 @@ export function Macros() {
         }}
       >
         <Stack gap="md">
-          <Title order={2}>Home Assistant</Title>
-          <Text c="dimmed" size="sm" maw="75ch">
-            A Home Assistant macro calls a webhook trigger or fires an event. Anyone who hears the digits can key them again, so give these macros a one-time code or a PIN.
-          </Text>
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-            <TextInput
-              label={labeled("Home Assistant address", "As this controller reaches it.")}
-              placeholder="http://homeassistant.local:8123"
-              pattern="https?://\S+"
-              value={ha.values.homeassistant_url}
-              onChange={(event) => ha.setField("homeassistant_url", event.currentTarget.value)}
-            />
-            <Checkbox
-              mt="xl"
-              label='Say "Done" or "Failed" afterwards'
-              checked={ha.values.homeassistant_say_result}
-              onChange={(event) => ha.setField("homeassistant_say_result", event.currentTarget.checked)}
-            />
-          </SimpleGrid>
-          <HomeAssistantTest />
-          <ConfigActions dirty={ha.dirty} saving={ha.saving} onReset={ha.reset} />
+          <Accordion variant="separated" radius="md">
+            <Accordion.Item value="homeassistant">
+              <Accordion.Control>Advanced · Home Assistant</Accordion.Control>
+              <Accordion.Panel>
+                <Stack gap="md">
+                  <Text c="dimmed" size="sm" maw="75ch">
+                    A Home Assistant macro calls a webhook or fires an event. Protect these macros with a one-time code or PIN.
+                  </Text>
+                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                    <TextInput
+                      label="Home Assistant address"
+                      description="As this controller reaches it"
+                      placeholder="e.g. http://homeassistant.local:8123"
+                      pattern="https?://\S+"
+                      value={ha.values.homeassistant_url}
+                      onChange={(event) => ha.setField("homeassistant_url", event.currentTarget.value)}
+                    />
+                    <Checkbox
+                      mt="xl"
+                      label='Say "Done" or "Failed" afterwards'
+                      checked={ha.values.homeassistant_say_result}
+                      onChange={(event) => ha.setField("homeassistant_say_result", event.currentTarget.checked)}
+                    />
+                  </SimpleGrid>
+                  <HomeAssistantTest />
+                  <ConfigActions dirty={ha.dirty} saving={ha.saving} onReset={ha.reset} />
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
         </Stack>
       </Card>
 

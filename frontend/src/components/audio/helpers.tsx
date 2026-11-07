@@ -20,6 +20,21 @@ export function meterPercent(db: number) {
   return Math.max(0, Math.min(100, ((db - METER_FLOOR_DB) / -METER_FLOOR_DB) * 100));
 }
 
+/** Shorten long ALSA / CoreAudio device names for summary rows. */
+export function shortLabel(value: string, empty = "System default", max = 42) {
+  const text = value.trim();
+  if (!text) return empty;
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
+/** Shorten long ALSA / CoreAudio device names for summary rows. */
+export function shortDevice(name: string, empty = "System default") {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return empty;
+  return trimmed.length > 42 ? `${trimmed.slice(0, 40)}…` : trimmed;
+}
+
 export function parseCustomTone(text: string): [string, string][] {
   return (text || "")
     .split(/\s+/)

@@ -78,6 +78,8 @@ class RepeaterService:
         self.renderer = renderer
         self.activity = activity
         self.audio_output: Optional[AudioOutput] = None
+        # Plays a clip on the Linked Radio TX (announcements with on_linked_radio).
+        self.link_radio_play: Optional[Callable[[str], None]] = None
         self.lockout_hook: Optional[Callable[[bool], None]] = None  # stuck-carrier lockout engaged/cleared
         self.net_active = False
         saved = state_store.load() if state_store is not None else None
@@ -280,6 +282,8 @@ class RepeaterService:
                     self.activity.clip_played(command.clip, now)
                 if self.audio_output is not None:
                     self.audio_output.play(command.clip)
+                if command.on_linked_radio and self.link_radio_play is not None:
+                    self.link_radio_play(command.clip)
             elif isinstance(command, SendLinkCommand):
                 if self._config.saved.gmrs_mode:
                     _logger.warning("link command %r ignored: linking is off in GMRS mode", command.command)
@@ -342,8 +346,8 @@ class RepeaterService:
     def _run_action(self, action: RunAction) -> None:
         self._programming.run_action(action)
 
-    def speak(self, clip: str) -> None:
-        self._programming.speak(clip)
+    def speak(self, clip: str, *, on_linked_radio: bool = False) -> None:
+        self._programming.speak(clip, on_linked_radio=on_linked_radio)
 
     def weather_summary_text(self) -> str:
         return self._weather.summary_text()
@@ -422,11 +426,14 @@ class RepeaterService:
     def announcement_clip(self, announcement: Announcement) -> str:
         return self._programming.announcement_clip(announcement)
 
+    def due_announcements(self) -> list[tuple[str, bool]]:
+        return self._programming.due_announcements()
+
     def due_announcement_clips(self) -> list[str]:
         return self._programming.due_announcement_clips()
 
-    def queue_announcement(self, clip: str) -> bool:
-        return self._programming.queue_announcement(clip)
+    def queue_announcement(self, clip: str, *, on_linked_radio: bool = False) -> bool:
+        return self._programming.queue_announcement(clip, on_linked_radio=on_linked_radio)
 
     def weather_polled(self, geojson: dict, announce: bool = True) -> list[str]:
         return self._weather.polled(geojson, announce=announce)

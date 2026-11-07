@@ -1,7 +1,6 @@
 import {
-  Badge,
+  Accordion,
   Button,
-  Card,
   Checkbox,
   Code,
   Group,
@@ -12,14 +11,15 @@ import {
   Table,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
+import { ConfigSummaryCard } from "../components/ConfigSummaryCard";
+import { labeled } from "../components/FieldHint";
 import { notifyError, notifySuccess, useConfig } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
-import { labeled } from "../components/FieldHint";
 
 const REFRESH_MS = 2000;
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -219,7 +219,6 @@ export function AllStar() {
 
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [favoritesSaving, setFavoritesSaving] = useState(false);
-  const [known, setKnown] = useState<Map<string, FavoriteInfo>>(new Map());
 
   const [schedules, setSchedules] = useState<LinkSchedule[]>([]);
   const [scheduleStatus, setScheduleStatus] = useState<ScheduleStatus[]>([]);
@@ -230,6 +229,11 @@ export function AllStar() {
   const [echoFilled, setEchoFilled] = useState(false);
   const [echoEdited, setEchoEdited] = useState(false);
   const [echoBusy, setEchoBusy] = useState(false);
+
+  const [editingNode, setEditingNode] = useState(false);
+  const [editingFavorites, setEditingFavorites] = useState(false);
+  const [editingSchedules, setEditingSchedules] = useState(false);
+  const [editingEcho, setEditingEcho] = useState(false);
 
   const refresh = useCallback(async () => {
     const next = await api<AllStarStatus>("/api/allstar");
@@ -247,7 +251,6 @@ export function AllStar() {
 
   const refreshLinks = useCallback(async () => {
     const links = await api<{ favorites: FavoriteInfo[]; schedules: ScheduleStatus[] }>("/api/links");
-    setKnown(new Map(links.favorites.map((f) => [f.node, f])));
     setScheduleStatus(links.schedules ?? []);
   }, []);
 
@@ -335,6 +338,7 @@ export function AllStar() {
     try {
       setStatus(await api<AllStarStatus>("/api/allstar", { method: "PUT", json: { node: selectedNode } }));
       notifySuccess(`The repeater is node ${selectedNode}'s radio`);
+      setEditingNode(false);
       refreshEcho().catch(() => {});
     } catch (error) {
       notifyError(error);
@@ -353,6 +357,7 @@ export function AllStar() {
     try {
       setStatus(await api<AllStarStatus>("/api/allstar", { method: "DELETE" }));
       notifySuccess("Node settings put back");
+      setEditingNode(false);
     } catch (error) {
       notifyError(error);
       refresh().catch(() => {});
@@ -401,6 +406,7 @@ export function AllStar() {
       setIdentityFilled(false);
       setIdentityForm((prev) => ({ ...prev, password: "" }));
       notifySuccess(`Node ${node} is set up and the repeater is its radio`);
+      setEditingNode(false);
       refreshEcho().catch(() => {});
     } catch (error) {
       notifyError(error);
@@ -410,12 +416,6 @@ export function AllStar() {
     }
   };
 
-  const lookupText = (node: string) => {
-    const info = known.get(node);
-    if (!info) return "";
-    return [info.callsign, info.description].filter(Boolean).join(" · ");
-  };
-
   const saveFavorites = async (event: FormEvent) => {
     event.preventDefault();
     setFavoritesSaving(true);
@@ -423,6 +423,7 @@ export function AllStar() {
       await saveConfig({ link_favorites: favorites });
       await refreshLinks();
       notifySuccess("Favorites saved");
+      setEditingFavorites(false);
     } catch (error) {
       notifyError(error);
     } finally {
@@ -441,6 +442,7 @@ export function AllStar() {
       await saveConfig({ link_schedules: schedules });
       await refreshLinks();
       notifySuccess("Schedules saved");
+      setEditingSchedules(false);
     } catch (error) {
       notifyError(error);
     } finally {
@@ -476,6 +478,7 @@ export function AllStar() {
       setEchoFilled(false);
       setEchoEdited(false);
       notifySuccess(next.loaded === false ? "Saved, but Asterisk didn't load EchoLink" : `EchoLink is on as ${body.callsign}`);
+      setEditingEcho(false);
     } catch (error) {
       notifyError(error);
     } finally {
@@ -493,6 +496,7 @@ export function AllStar() {
       setEchoFilled(false);
       setEchoEdited(false);
       notifySuccess("EchoLink turned off");
+      setEditingEcho(false);
     } catch (error) {
       notifyError(error);
     } finally {
@@ -500,239 +504,295 @@ export function AllStar() {
     }
   };
 
+  const favoriteSummary = favorites.filter((f) => f.node.trim()).length
+    ? favorites
+        .filter((f) => f.node.trim())
+        .slice(0, 3)
+        .map((f) => f.name.trim() || f.node)
+        .join(", ") + (favorites.filter((f) => f.node.trim()).length > 3 ? "…" : "")
+    : "None yet";
+  const scheduleSummary = schedules.length
+    ? `${schedules.filter((s) => s.enabled).length} on · ${schedules.length} total`
+    : "None yet";
+
   return (
-    <Page
-      title="AllStarLink"
-      description="Link the repeater to other AllStarLink nodes. The controller becomes the radio of a node in the AllStarLink (ASL3) install beside it."
-    >
-      <Card withBorder padding="lg" radius="md">
-        <Group justify="space-between" align="flex-start" mb="sm">
-          <Title order={2}>Node</Title>
-          {view?.pill ? (
-            <Badge color={pillColor(view.pill[1])} variant="light">
-              {view.pill[0]}
-            </Badge>
-          ) : null}
-        </Group>
-        <Text c="dimmed" size="sm">
-          {view?.text ?? "Loading…"}
-        </Text>
-        {showIdentityForm ? (
-          <form onSubmit={(event) => void saveIdentity(event)}>
-            <Stack gap="md" mt="md">
-              <Text size="sm" fw={600}>
-                Set node number
-              </Text>
-              <Text c="dimmed" size="sm" maw="75ch">
-                From the AllStarLink portal (Node Settings): your node number, password, and callsign. This renames the
-                ASL3 placeholder in <Code>rpt.conf</Code>, registers the node, and makes the repeater its radio.
-              </Text>
-              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                {status!.nodes.length > 1 ? (
-                  <Select
-                    label="Change this local node"
-                    data={status!.nodes.map((n) => ({
-                      value: n.number,
-                      label: n.number === "1999" ? "1999 (ASL3 placeholder)" : n.number,
-                    }))}
-                    value={identityForm.fromNode || null}
-                    onChange={(value) => {
-                      const fromNode = value || "";
-                      setIdentityEdited(true);
-                      setIdentityForm((prev) => ({
-                        ...prev,
-                        fromNode,
-                        node: !prev.node || prev.node === prev.fromNode ? (fromNode === "1999" ? "" : fromNode) : prev.node,
-                      }));
-                    }}
-                    allowDeselect={false}
+    <Page title="AllStarLink" description="Link this repeater to other AllStarLink nodes.">
+      <ConfigSummaryCard
+        title="Node"
+        badge={view?.pill?.[0]}
+        badgeColor={pillColor(view?.pill?.[1])}
+        blurb={view?.text ?? "Loading…"}
+        onEdit={showIdentityForm || showNodeForm ? () => setEditingNode(true) : undefined}
+        editLabel={status?.node ? "Edit…" : "Set up…"}
+        rows={
+          status?.node
+            ? [
+                { label: "Local node", value: status.node },
+                {
+                  label: "Callsign",
+                  value: status.identity?.callsign || (config?.callsign ? String(config.callsign).toUpperCase() : "—"),
+                },
+              ]
+            : undefined
+        }
+      />
+
+      <ConfigEditDrawer
+        opened={editingNode}
+        onClose={() => setEditingNode(false)}
+        title="AllStarLink node"
+        subtitle="Register or pick the local ASL3 node this repeater becomes the radio for."
+      >
+        <Stack gap="md">
+          {showIdentityForm ? (
+            <form onSubmit={(event) => void saveIdentity(event)}>
+              <Stack gap="md">
+                <Text size="sm" fw={600}>
+                  Set node number
+                </Text>
+                <Text c="dimmed" size="sm" maw="75ch">
+                  From the AllStarLink portal: node number, password, and callsign. Updates <Code>rpt.conf</Code> and
+                  makes the repeater its radio.
+                </Text>
+                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                  {status!.nodes.length > 1 ? (
+                    <Select
+                      label="Change this local node"
+                      data={status!.nodes.map((n) => ({
+                        value: n.number,
+                        label: n.number === "1999" ? "1999 (ASL3 placeholder)" : n.number,
+                      }))}
+                      value={identityForm.fromNode || null}
+                      onChange={(value) => {
+                        const fromNode = value || "";
+                        setIdentityEdited(true);
+                        setIdentityForm((prev) => ({
+                          ...prev,
+                          fromNode,
+                          node:
+                            !prev.node || prev.node === prev.fromNode
+                              ? fromNode === "1999"
+                                ? ""
+                                : fromNode
+                              : prev.node,
+                        }));
+                      }}
+                      allowDeselect={false}
+                    />
+                  ) : null}
+                  <TextInput
+                    label={labeled("Node number", "Assigned in the AllStarLink portal. Not a favorite/remote node.")}
+                    required
+                    inputMode="numeric"
+                    pattern="[0-9]{1,10}"
+                    placeholder="e.g. 531870"
+                    value={identityForm.node}
+                    onChange={(event) => setIdentityField("node", event.currentTarget.value)}
                   />
-                ) : null}
-                <TextInput
-                  label={labeled("Node number", "Assigned in the AllStarLink portal. Not a favorite/remote node.")}
-                  required
-                  inputMode="numeric"
-                  pattern="[0-9]{1,10}"
-                  placeholder="531870"
-                  value={identityForm.node}
-                  onChange={(event) => setIdentityField("node", event.currentTarget.value)}
-                />
-                <TextInput
-                  label="Callsign / ID"
-                  required
-                  maxLength={10}
-                  placeholder={config?.callsign ? String(config.callsign).toUpperCase() : "W1AW"}
-                  value={identityForm.callsign}
-                  onChange={(event) => setIdentityField("callsign", event.currentTarget.value)}
-                />
-                <TextInput
-                  label="Node password"
-                  type="password"
-                  autoComplete="new-password"
-                  required={Number(identityForm.node) >= 2000 && !status?.identity?.has_password}
-                  placeholder={status?.identity?.has_password ? "Saved (leave blank to keep it)" : "From the portal"}
-                  value={identityForm.password}
-                  onChange={(event) => setIdentityField("password", event.currentTarget.value)}
-                />
-              </SimpleGrid>
-              <Group justify="flex-end">
-                <Button type="submit" loading={identityBusy}>
-                  Save and use this node
-                </Button>
-              </Group>
-            </Stack>
-          </form>
-        ) : null}
-        {showNodeForm ? (
-          <form onSubmit={(event) => void bindNode(event)}>
-            <Stack gap="md" mt="md">
-              <Text size="sm" fw={600}>
-                Or pick an existing local node
-              </Text>
-              <Select
-                label={labeled(
-                  "This machine's node",
-                  selected
-                    ? selected.controlled
-                      ? "The repeater is its radio."
-                      : `Its radio is ${radioName(selected.rxchannel)} now.`
-                    : "Nodes already in /etc/asterisk/rpt.conf.",
-                )}
-                data={status!.nodes.map((n) => ({
-                  value: n.number,
-                  label: n.number === "1999" ? "1999 (ASL3 placeholder)" : n.number,
-                }))}
-                value={selectedNode || null}
-                onChange={(value) => setSelectedNode(value || "")}
-                allowDeselect={false}
-                maw={280}
-              />
-              <Group justify="space-between">
-                {status?.node ? (
-                  <Button type="button" variant="subtle" color="gray" loading={nodeBusy} onClick={() => void releaseNode()}>
-                    Stop using this node
+                  <TextInput
+                    label="Callsign / ID"
+                    required
+                    maxLength={10}
+                    placeholder="e.g. W1AW"
+                    value={identityForm.callsign}
+                    onChange={(event) => setIdentityField("callsign", event.currentTarget.value)}
+                  />
+                  <TextInput
+                    label="Node password"
+                    type="password"
+                    autoComplete="new-password"
+                    required={Number(identityForm.node) >= 2000 && !status?.identity?.has_password}
+                    description={status?.identity?.has_password ? "Leave blank to keep the saved password" : "From the portal"}
+                    placeholder=""
+                    value={identityForm.password}
+                    onChange={(event) => setIdentityField("password", event.currentTarget.value)}
+                  />
+                </SimpleGrid>
+                <Group justify="flex-end">
+                  <Button type="submit" loading={identityBusy}>
+                    Save and use this node
                   </Button>
-                ) : (
-                  <span />
-                )}
-                <Button type="submit" loading={nodeBusy}>
-                  {selected?.controlled ? "Set up again" : "Use this node"}
-                </Button>
-              </Group>
-              <Text c="dimmed" size="sm">
-                This changes the node&apos;s <Code>rxchannel</Code>, <Code>duplex</Code> and hang time in <Code>rpt.conf</Code>,
-                turns on Asterisk&apos;s USRP channel, and restarts Asterisk.
-              </Text>
-            </Stack>
-          </form>
-        ) : null}
-      </Card>
-
-      <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => void saveFavorites(event)}>
-        <Stack gap="md">
-          <Title order={2}>Favorite nodes</Title>
-          <Text c="dimmed" size="sm" maw="75ch">
-            Remote nodes to link to — one-click buttons on the dashboard&apos;s Links card (not the node dropdown above).
-            EchoLink nodes are 3 and the EchoLink number padded to six digits (<Code>3009999</Code> for 9999).
-          </Text>
-          <Table.ScrollContainer minWidth={480}>
-            <Table striped highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Node</Table.Th>
-                  <Table.Th>Name</Table.Th>
-                  <Table.Th>Monitor only</Table.Th>
-                  <Table.Th />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {favorites.map((favorite, index) => (
-                  <Table.Tr key={index}>
-                    <Table.Td>
-                      <TextInput
-                        required
-                        inputMode="numeric"
-                        pattern="[0-9]{1,10}"
-                        placeholder="2000"
-                        value={favorite.node}
-                        onChange={(event) => {
-                          const next = [...favorites];
-                          next[index] = { ...favorite, node: event.currentTarget.value };
-                          setFavorites(next);
-                        }}
-                      />
-                    </Table.Td>
-                    <Table.Td>
-                      <TextInput
-                        maxLength={40}
-                        placeholder={lookupText(favorite.node) || "Name"}
-                        value={favorite.name}
-                        onChange={(event) => {
-                          const next = [...favorites];
-                          next[index] = { ...favorite, name: event.currentTarget.value };
-                          setFavorites(next);
-                        }}
-                      />
-                    </Table.Td>
-                    <Table.Td>
-                      <Checkbox
-                        aria-label="Monitor only"
-                        checked={favorite.monitor}
-                        onChange={(event) => {
-                          const next = [...favorites];
-                          next[index] = { ...favorite, monitor: event.currentTarget.checked };
-                          setFavorites(next);
-                        }}
-                      />
-                    </Table.Td>
-                    <Table.Td>
-                      <Button
-                        size="compact-sm"
-                        color="red"
-                        variant="subtle"
-                        onClick={() => setFavorites(favorites.filter((_, i) => i !== index))}
-                      >
-                        Remove
-                      </Button>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
-          {favorites.length === 0 ? (
-            <Text c="dimmed" size="sm">
-              No favorites yet.
-            </Text>
+                </Group>
+              </Stack>
+            </form>
           ) : null}
-          <Group justify="space-between">
-            <Button type="button" variant="subtle" onClick={() => setFavorites([...favorites, emptyFavorite()])}>
-              Add a node
-            </Button>
-            <Button type="submit" loading={favoritesSaving}>
-              Save favorites
-            </Button>
-          </Group>
+          {showNodeForm ? (
+            <form onSubmit={(event) => void bindNode(event)}>
+              <Stack gap="md">
+                <Text size="sm" fw={600}>
+                  Or pick an existing local node
+                </Text>
+                <Select
+                  label={labeled(
+                    "This machine's node",
+                    selected
+                      ? selected.controlled
+                        ? "The repeater is its radio."
+                        : `Its radio is ${radioName(selected.rxchannel)} now.`
+                      : "Nodes already in /etc/asterisk/rpt.conf.",
+                  )}
+                  data={status!.nodes.map((n) => ({
+                    value: n.number,
+                    label: n.number === "1999" ? "1999 (ASL3 placeholder)" : n.number,
+                  }))}
+                  value={selectedNode || null}
+                  onChange={(value) => setSelectedNode(value || "")}
+                  allowDeselect={false}
+                  maw={280}
+                />
+                <Group justify="space-between">
+                  {status?.node ? (
+                    <Button type="button" variant="subtle" color="gray" loading={nodeBusy} onClick={() => void releaseNode()}>
+                      Stop using this node
+                    </Button>
+                  ) : (
+                    <span />
+                  )}
+                  <Button type="submit" loading={nodeBusy}>
+                    {selected?.controlled ? "Set up again" : "Use this node"}
+                  </Button>
+                </Group>
+                <Text c="dimmed" size="sm">
+                  Updates the node&apos;s <Code>rxchannel</Code>, <Code>duplex</Code>, and hang time, then restarts Asterisk.
+                </Text>
+              </Stack>
+            </form>
+          ) : null}
         </Stack>
-      </Card>
+      </ConfigEditDrawer>
 
-      <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => void saveSchedules(event)}>
-        <Stack gap="md">
-          <Title order={2}>Scheduled links</Title>
-          <Text c="dimmed" size="sm" maw="75ch">
-            Link a node at a set time each week and drop the link after the given number of minutes (0 keeps it until someone
-            disconnects it).
-          </Text>
-          {schedules.map((schedule, index) => (
-            <Card key={index} withBorder padding="md" radius="sm" bg="var(--mantine-color-default)">
-              <Stack gap="sm">
+      <ConfigSummaryCard
+        title="Favorite nodes"
+        blurb="One-click links on the dashboard. EchoLink nodes are 3 + the EchoLink number padded to six digits."
+        onEdit={() => setEditingFavorites(true)}
+        rows={[
+          { label: "Count", value: String(favorites.filter((f) => f.node.trim()).length) },
+          { label: "Nodes", value: favoriteSummary },
+        ]}
+      />
+
+      <ConfigEditDrawer
+        opened={editingFavorites}
+        onClose={() => setEditingFavorites(false)}
+        title="Favorite nodes"
+        subtitle="Remote nodes for the dashboard Links card."
+      >
+        <form onSubmit={(event) => void saveFavorites(event)}>
+          <Stack gap="md">
+            <Table.ScrollContainer minWidth={480}>
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Node</Table.Th>
+                    <Table.Th>Name</Table.Th>
+                    <Table.Th>Monitor only</Table.Th>
+                    <Table.Th />
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {favorites.map((favorite, index) => (
+                    <Table.Tr key={index}>
+                      <Table.Td>
+                        <TextInput
+                          required
+                          inputMode="numeric"
+                          pattern="[0-9]{1,10}"
+                          placeholder="e.g. 2000"
+                          value={favorite.node}
+                          onChange={(event) => {
+                            const next = [...favorites];
+                            next[index] = { ...favorite, node: event.currentTarget.value };
+                            setFavorites(next);
+                          }}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <TextInput
+                          maxLength={40}
+                          placeholder="Optional name"
+                          value={favorite.name}
+                          onChange={(event) => {
+                            const next = [...favorites];
+                            next[index] = { ...favorite, name: event.currentTarget.value };
+                            setFavorites(next);
+                          }}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <Checkbox
+                          aria-label="Monitor only"
+                          checked={favorite.monitor}
+                          onChange={(event) => {
+                            const next = [...favorites];
+                            next[index] = { ...favorite, monitor: event.currentTarget.checked };
+                            setFavorites(next);
+                          }}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <Button
+                          size="compact-sm"
+                          color="red"
+                          variant="subtle"
+                          onClick={() => setFavorites(favorites.filter((_, i) => i !== index))}
+                        >
+                          Remove
+                        </Button>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+            {favorites.length === 0 ? (
+              <Text c="dimmed" size="sm">
+                No favorites yet.
+              </Text>
+            ) : null}
+            <Group justify="space-between">
+              <Button type="button" variant="subtle" onClick={() => setFavorites([...favorites, emptyFavorite()])}>
+                Add a node
+              </Button>
+              <Button type="submit" loading={favoritesSaving}>
+                Save favorites
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </ConfigEditDrawer>
+
+      <ConfigSummaryCard
+        title="Scheduled links"
+        blurb="Link a node on a weekly schedule, then drop it after a set number of minutes."
+        onEdit={() => setEditingSchedules(true)}
+        rows={[{ label: "Schedules", value: scheduleSummary }]}
+      />
+
+      <ConfigEditDrawer
+        opened={editingSchedules}
+        onClose={() => setEditingSchedules(false)}
+        title="Scheduled links"
+        subtitle="0 minutes keeps the link until someone disconnects it."
+      >
+        <form onSubmit={(event) => void saveSchedules(event)}>
+          <Stack gap="md">
+            {schedules.map((schedule, index) => (
+              <Stack
+                key={index}
+                gap="sm"
+                p="md"
+                style={{
+                  border: "1px solid var(--mantine-color-default-border)",
+                  borderRadius: "var(--mantine-radius-md)",
+                }}
+              >
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <TextInput
                     label="Node"
                     required
                     inputMode="numeric"
                     pattern="[0-9]{1,10}"
-                    placeholder="2000"
+                    placeholder="e.g. 2000"
                     value={schedule.node}
                     onChange={(event) => {
                       const next = [...schedules];
@@ -743,7 +803,7 @@ export function AllStar() {
                   <TextInput
                     label="Name"
                     maxLength={40}
-                    placeholder="Tuesday net"
+                    placeholder="e.g. Tuesday net"
                     value={schedule.name}
                     onChange={(event) => {
                       const next = [...schedules];
@@ -764,6 +824,7 @@ export function AllStar() {
                   />
                   <NumberInput
                     label="Minutes linked"
+                    description="0 = until disconnected"
                     min={0}
                     max={720}
                     required
@@ -831,146 +892,175 @@ export function AllStar() {
                   </Group>
                 </Group>
               </Stack>
-            </Card>
-          ))}
-          {schedules.length === 0 ? (
-            <Text c="dimmed" size="sm">
-              No scheduled links.
-            </Text>
-          ) : null}
-          <Group justify="space-between">
-            <Button type="button" variant="subtle" onClick={() => setSchedules([...schedules, emptySchedule()])}>
-              Add a schedule
-            </Button>
-            <Button type="submit" loading={schedulesSaving}>
-              Save schedules
-            </Button>
-          </Group>
-        </Stack>
-      </Card>
+            ))}
+            {schedules.length === 0 ? (
+              <Text c="dimmed" size="sm">
+                No scheduled links.
+              </Text>
+            ) : null}
+            <Group justify="space-between">
+              <Button type="button" variant="subtle" onClick={() => setSchedules([...schedules, emptySchedule()])}>
+                Add a schedule
+              </Button>
+              <Button type="submit" loading={schedulesSaving}>
+                Save schedules
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </ConfigEditDrawer>
 
       {showEcho ? (
-        <Card withBorder padding="lg" radius="md">
-          <Group justify="space-between" align="flex-start" mb="sm">
-            <Title order={2}>EchoLink</Title>
-            {echoView?.pill ? (
-              <Badge color={pillColor(echoView.pill[1])} variant="light">
-                {echoView.pill[0]}
-              </Badge>
-            ) : null}
-          </Group>
-          <Text c="dimmed" size="sm">
-            {echoView?.text}
-          </Text>
-          {isAdmin && echo?.settings ? (
-            <form onSubmit={(event) => void saveEcho(event)}>
-              <Stack gap="md" mt="md">
-                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                  <TextInput
-                    label={labeled("Callsign", "With -R for a repeater, as validated by EchoLink.")}
-                    required
-                    value={echoForm.callsign}
-                    onChange={(event) => setEchoField("callsign", event.currentTarget.value)}
-                  />
-                  <TextInput
-                    label="Password"
-                    type="password"
-                    autoComplete="new-password"
-                    required={!echo.settings.has_password}
-                    placeholder={echo.settings.has_password ? "Saved (leave blank to keep it)" : undefined}
-                    value={echoForm.password}
-                    onChange={(event) => setEchoField("password", event.currentTarget.value)}
-                  />
-                  <TextInput
-                    label="EchoLink node number"
-                    required
-                    inputMode="numeric"
-                    value={echoForm.node_number}
-                    onChange={(event) => setEchoField("node_number", event.currentTarget.value)}
-                  />
-                  <TextInput
-                    label="Sysop name"
-                    required
-                    maxLength={40}
-                    value={echoForm.name}
-                    onChange={(event) => setEchoField("name", event.currentTarget.value)}
-                  />
-                  <TextInput
-                    label="Location"
-                    required
-                    maxLength={40}
-                    placeholder="e.g. Newington, CT"
-                    value={echoForm.location}
-                    onChange={(event) => setEchoField("location", event.currentTarget.value)}
-                  />
-                  <TextInput
-                    label="Email"
-                    type="email"
-                    required
-                    maxLength={80}
-                    value={echoForm.email}
-                    onChange={(event) => setEchoField("email", event.currentTarget.value)}
-                  />
-                  <NumberInput
-                    label="Latitude"
-                    min={-90}
-                    max={90}
-                    decimalScale={4}
-                    value={echoForm.lat === "" ? undefined : echoForm.lat}
-                    onChange={(value) => setEchoField("lat", value === "" || value === undefined ? "" : Number(value))}
-                  />
-                  <NumberInput
-                    label="Longitude"
-                    min={-180}
-                    max={180}
-                    decimalScale={4}
-                    value={echoForm.lon === "" ? undefined : echoForm.lon}
-                    onChange={(value) => setEchoField("lon", value === "" || value === undefined ? "" : Number(value))}
-                  />
-                  <NumberInput
-                    label="Frequency"
-                    suffix=" MHz"
-                    min={0}
-                    max={3000}
-                    value={echoForm.frequency_mhz === "" ? undefined : echoForm.frequency_mhz}
-                    onChange={(value) =>
-                      setEchoField("frequency_mhz", value === "" || value === undefined ? "" : Number(value))
-                    }
-                  />
-                  <NumberInput
-                    label={labeled("Tone", "0 for none.")}
-                    suffix=" Hz"
-                    min={0}
-                    max={300}
-                    decimalScale={1}
-                    value={echoForm.tone_hz === "" ? undefined : echoForm.tone_hz}
-                    onChange={(value) => setEchoField("tone_hz", value === "" || value === undefined ? "" : Number(value))}
-                  />
-                  <NumberInput
-                    label="Most stations at once"
-                    min={1}
-                    max={100}
-                    required
-                    value={echoForm.max_stations}
-                    onChange={(value) => setEchoField("max_stations", Number(value) || 20)}
-                  />
-                </SimpleGrid>
-                <Group justify="space-between">
-                  {echo.enabled ? (
-                    <Button type="button" variant="subtle" color="gray" loading={echoBusy} onClick={() => void turnOffEcho()}>
-                      Turn off EchoLink
+        <>
+          <ConfigSummaryCard
+            title="EchoLink"
+            badge={echoView?.pill?.[0]}
+            badgeColor={pillColor(echoView?.pill?.[1])}
+            dirty={echoEdited}
+            blurb={echoView?.text}
+            onEdit={isAdmin && echo?.settings ? () => setEditingEcho(true) : undefined}
+            editLabel={echo?.enabled ? "Edit…" : "Set up…"}
+            rows={
+              echo?.settings && echo.enabled
+                ? [
+                    { label: "Callsign", value: echo.settings.callsign || "—" },
+                    { label: "EchoLink node", value: echo.settings.node_number || "—" },
+                    { label: "Location", value: echo.settings.location || "—" },
+                  ]
+                : undefined
+            }
+          />
+
+          <ConfigEditDrawer
+            opened={editingEcho}
+            onClose={() => setEditingEcho(false)}
+            title="EchoLink"
+            subtitle="Station details for EchoLink users connecting through AllStar."
+          >
+            {isAdmin && echo?.settings ? (
+              <form onSubmit={(event) => void saveEcho(event)}>
+                <Stack gap="md">
+                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                    <TextInput
+                      label={labeled("Callsign", "With -R for a repeater, as validated by EchoLink.")}
+                      required
+                      value={echoForm.callsign}
+                      onChange={(event) => setEchoField("callsign", event.currentTarget.value)}
+                    />
+                    <TextInput
+                      label="Password"
+                      type="password"
+                      autoComplete="new-password"
+                      required={!echo.settings.has_password}
+                      description={echo.settings.has_password ? "Leave blank to keep the saved password" : undefined}
+                      placeholder=""
+                      value={echoForm.password}
+                      onChange={(event) => setEchoField("password", event.currentTarget.value)}
+                    />
+                    <TextInput
+                      label="EchoLink node number"
+                      required
+                      inputMode="numeric"
+                      placeholder="e.g. 123456"
+                      value={echoForm.node_number}
+                      onChange={(event) => setEchoField("node_number", event.currentTarget.value)}
+                    />
+                    <TextInput
+                      label="Sysop name"
+                      required
+                      maxLength={40}
+                      value={echoForm.name}
+                      onChange={(event) => setEchoField("name", event.currentTarget.value)}
+                    />
+                    <TextInput
+                      label="Location"
+                      required
+                      maxLength={40}
+                      placeholder="e.g. city, state"
+                      value={echoForm.location}
+                      onChange={(event) => setEchoField("location", event.currentTarget.value)}
+                    />
+                    <TextInput
+                      label="Email"
+                      type="email"
+                      required
+                      maxLength={80}
+                      placeholder="e.g. you@example.com"
+                      value={echoForm.email}
+                      onChange={(event) => setEchoField("email", event.currentTarget.value)}
+                    />
+                  </SimpleGrid>
+                  <Accordion variant="separated" radius="md">
+                    <Accordion.Item value="advanced">
+                      <Accordion.Control>Advanced · position &amp; RF</Accordion.Control>
+                      <Accordion.Panel>
+                        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                          <NumberInput
+                            label="Latitude"
+                            min={-90}
+                            max={90}
+                            decimalScale={4}
+                            value={echoForm.lat === "" ? undefined : echoForm.lat}
+                            onChange={(value) => setEchoField("lat", value === "" || value === undefined ? "" : Number(value))}
+                          />
+                          <NumberInput
+                            label="Longitude"
+                            min={-180}
+                            max={180}
+                            decimalScale={4}
+                            value={echoForm.lon === "" ? undefined : echoForm.lon}
+                            onChange={(value) => setEchoField("lon", value === "" || value === undefined ? "" : Number(value))}
+                          />
+                          <NumberInput
+                            label="Frequency"
+                            suffix=" MHz"
+                            min={0}
+                            max={3000}
+                            value={echoForm.frequency_mhz === "" ? undefined : echoForm.frequency_mhz}
+                            onChange={(value) =>
+                              setEchoField("frequency_mhz", value === "" || value === undefined ? "" : Number(value))
+                            }
+                          />
+                          <NumberInput
+                            label={labeled("Tone", "0 for none.")}
+                            suffix=" Hz"
+                            min={0}
+                            max={300}
+                            decimalScale={1}
+                            value={echoForm.tone_hz === "" ? undefined : echoForm.tone_hz}
+                            onChange={(value) =>
+                              setEchoField("tone_hz", value === "" || value === undefined ? "" : Number(value))
+                            }
+                          />
+                          <NumberInput
+                            label="Most stations at once"
+                            min={1}
+                            max={100}
+                            required
+                            value={echoForm.max_stations}
+                            onChange={(value) => setEchoField("max_stations", Number(value) || 20)}
+                          />
+                        </SimpleGrid>
+                      </Accordion.Panel>
+                    </Accordion.Item>
+                  </Accordion>
+                  <Group justify="space-between">
+                    {echo.enabled ? (
+                      <Button type="button" variant="subtle" color="gray" loading={echoBusy} onClick={() => void turnOffEcho()}>
+                        Turn off EchoLink
+                      </Button>
+                    ) : (
+                      <span />
+                    )}
+                    <Button type="submit" loading={echoBusy} disabled={!status?.node}>
+                      {echo.enabled ? "Save" : "Save and turn on"}
                     </Button>
-                  ) : (
-                    <span />
-                  )}
-                  <Button type="submit" loading={echoBusy} disabled={!status?.node}>
-                    {echo.enabled ? "Save" : "Save and turn on"}
-                  </Button>
-                </Group>
-              </Stack>
-            </form>
-          ) : null}
-        </Card>
+                  </Group>
+                </Stack>
+              </form>
+            ) : null}
+          </ConfigEditDrawer>
+        </>
       ) : null}
     </Page>
   );

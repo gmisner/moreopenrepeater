@@ -167,10 +167,7 @@ export function Mailbox() {
   const names = Object.fromEntries(data.boxes.map((b) => [b.box, b.name]));
 
   return (
-    <Page
-      title="Mailbox"
-      description="Leave a short voice message for another station, over the air. They hear a reminder that messages are waiting, and play them back with their PIN."
-    >
+    <Page title="Mailbox" description="Voice messages left over the air, played back with a PIN.">
       <Card
         withBorder
         padding="lg"
@@ -309,7 +306,7 @@ export function Mailbox() {
                     inputMode="numeric"
                     maxLength={6}
                     pattern="[0-9]{1,6}"
-                    placeholder="12"
+                    placeholder="e.g. 12"
                     readOnly={Boolean(editing)}
                     value={boxNumber}
                     onChange={(event) => setBoxNumber(event.currentTarget.value)}
@@ -317,7 +314,7 @@ export function Mailbox() {
                   <TextInput
                     label="Whose"
                     maxLength={60}
-                    placeholder="W1AW"
+                    placeholder="e.g. W1AW"
                     value={boxName}
                     onChange={(event) => setBoxName(event.currentTarget.value)}
                   />

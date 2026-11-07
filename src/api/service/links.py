@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections import deque
 from typing import TYPE_CHECKING
 
 from controller.events import ControllerEvent, LinkStateChanged, RemoteKeyed
@@ -13,6 +15,8 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger("moreopenrepeater.service")
 
+LINK_EVENT_LIMIT = 100
+
 
 class LinkSupport:
     """Tracks linked nodes and feeds link events into the controller."""
@@ -21,6 +25,17 @@ class LinkSupport:
         self._host = host
         self.nodes: set[str] = set()
         self.audio = False  # api.allstar_audio is carrying the node's audio
+        self._events: deque[dict] = deque(maxlen=LINK_EVENT_LIMIT)
+
+    def recent_events(self, limit: int = 50) -> list[dict]:
+        """Newest-first link activity for the dashboard."""
+        return list(self._events)[: max(0, limit)]
+
+    def _record(self, kind: str, node_id: str) -> None:
+        # USRP keyed spam is not useful on the dashboard; keep linked-radio RX.
+        if node_id == LINK_AUDIO_NODE:
+            return
+        self._events.appendleft({"at": time.time(), "kind": kind, "node": node_id})
 
     def simulate_remote_keyed(self, node_id: str, keyed: bool) -> None:
         _logger.info("simulate_remote_keyed(node_id=%r, keyed=%s)", node_id, keyed)
@@ -28,6 +43,7 @@ class LinkSupport:
             self.nodes.add(node_id)
         else:
             self.nodes.discard(node_id)
+        self._record("keyed" if keyed else "unkeyed", node_id)
         host = self._host
         host._apply_commands(host.controller.handle_event(RemoteKeyed(node_id=node_id, keyed=keyed), host._clock()))
 
@@ -46,11 +62,15 @@ class LinkSupport:
                 self.nodes.add(event.node_id)
             else:
                 self.nodes.discard(event.node_id)
+            self._record("connected" if event.linked else "disconnected", event.node_id)
+        elif isinstance(event, RemoteKeyed):
+            self._record("keyed" if event.keyed else "unkeyed", event.node_id)
         host._apply_commands(host.controller.handle_event(event, host._clock()))
 
     def radio_keyed(self, keyed: bool) -> None:
         """The link radio started or stopped hearing the far end."""
         _logger.info("link radio %s", "receiving" if keyed else "clear")
+        self._record("keyed" if keyed else "unkeyed", LINK_RADIO_NODE)
         host = self._host
         host._apply_commands(
             host.controller.handle_event(RemoteKeyed(node_id=LINK_RADIO_NODE, keyed=keyed), host._clock())

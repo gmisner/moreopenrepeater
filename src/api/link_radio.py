@@ -235,6 +235,21 @@ class LinkRadio:
             self._service.update_config(link_radio_enabled=False)
             self._service.speak(TTS_PREFIX + "Remote base off.")
 
+    def play_clip(self, clip: str) -> None:
+        """Play `clip` on the Linked Radio TX (announcements marked on_linked_radio).
+
+        No-op when the link isn't running or the far end is keyed — never transmit
+        over the far end. A playing clip keys the transmitter by itself.
+        """
+        engine = self.engine
+        if engine is None:
+            return
+        if self.receiving:
+            _logger.info("skipping linked-radio announcement %s: far end is keyed", clip)
+            return
+        self.controller.note_transmission(self._clock())
+        self._play(engine, clip)
+
     # -- internals ------------------------------------------------------------
 
     def _play(self, engine: AudioEngine, clip: str) -> None:

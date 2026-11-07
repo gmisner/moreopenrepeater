@@ -14,7 +14,7 @@ from api.service import RepeaterService
 from audio_io.engine import AudioEngine
 from controller.events import DTMFDigit
 from controller.macros import Macro
-from controller.state_machine import COURTESY_TONE, IDLE, RECEIVING, RepeaterConfig
+from controller.state_machine import ANNOUNCING, COURTESY_TONE, IDLE, RECEIVING, RepeaterConfig
 from playout.renderer import ClipRenderer
 
 from test_live_audio import FakeCM108, FakeHeader, FakeStream, ImmediateLoop
@@ -142,6 +142,41 @@ def test_local_user_is_sent_out_the_link_radio_and_it_unkeys_after():
     assert not rig.link.controller.ptt
     rig.step(link_engine, silence(5))
     assert not link_engine.transmitting
+
+
+def test_announcement_marked_for_linked_radio_plays_on_the_link_tx():
+    rig = Rig()
+    rig.service.link_radio_play = rig.link.play_clip
+    drain(rig.link.engine)
+
+    # Seed the processor clip queue the way play_clip would after a render.
+    samples = np.full(BLOCK * 5, 0.2, dtype=np.float32)
+    key = rig.renderer._cache_key("tts:net on the link", rig.service.config)
+    rig.renderer._cache[key] = samples
+    rig.service.queue_announcement("tts:net on the link", on_linked_radio=True)
+    rig.service.tick()
+
+    assert rig.service.controller.state == ANNOUNCING
+    assert rig.link.controller.id_owed
+    out = rig.step(rig.link.engine, silence(5))
+    assert np.abs(out).max() > 0.05
+
+
+def test_announcement_on_linked_radio_skips_while_far_end_is_keyed():
+    rig = Rig()
+    rig.service.link_radio_play = rig.link.play_clip
+    drain(rig.link.engine)
+    rig.link.receiving = True
+
+    samples = np.full(BLOCK * 5, 0.2, dtype=np.float32)
+    key = rig.renderer._cache_key("tts:quiet on link", rig.service.config)
+    rig.renderer._cache[key] = samples
+    rig.service.queue_announcement("tts:quiet on link", on_linked_radio=True)
+    rig.service.tick()
+
+    out = rig.step(rig.link.engine, silence(5))
+    assert np.abs(out).max() < 0.01
+    assert not rig.link.controller.id_owed
 
 
 def test_the_far_end_is_not_sent_back_out_the_link():

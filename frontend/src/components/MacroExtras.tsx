@@ -47,7 +47,7 @@ export function HomeAssistantTest() {
       <Group align="flex-end" wrap="wrap">
         <TextInput
           label={labeled("Test webhook ID or event", "Use event: followed by an event type to test an event.")}
-          placeholder="porch_light or event:repeater_porch"
+          placeholder="e.g. webhook_id"
           pattern="(event:)?[A-Za-z0-9_.\-]{1,100}"
           value={target}
           onChange={(event) => setTarget(event.currentTarget.value)}

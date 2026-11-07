@@ -119,6 +119,6 @@ export type ConfigSlice<T> = {
   setField: <K extends keyof T & string>(name: K, value: T[K]) => void;
   dirty: boolean;
   reset: () => void;
-  submit: () => Promise<void>;
+  submit: () => Promise<boolean | void>;
   saving: boolean;
 };

@@ -31,7 +31,8 @@ class Programming:
     def __init__(self, host: "RepeaterService", scheduler: AnnouncementScheduler) -> None:
         self._host = host
         self.scheduler = scheduler
-        self._held_announcements: list[str] = []
+        # (clip, on_linked_radio) held while a net is on (net_hold_announcements).
+        self._held_announcements: list[tuple[str, bool]] = []
         self._action_source = "DTMF"
         self.audit_hook: Optional[Callable[[str, str, str], None]] = None  # (actor, action, detail)
         self.aprs_summary: Optional[Callable[[], str]] = None
@@ -126,7 +127,10 @@ class Programming:
             if announcement is None:
                 _logger.warning("DTMF macro refers to unknown announcement %r", action.argument)
             else:
-                host.speak(self.announcement_clip(announcement))
+                host.speak(
+                    self.announcement_clip(announcement),
+                    on_linked_radio=announcement.on_linked_radio,
+                )
         elif action.action == "aprs":
             text = self.aprs_summary() if self.aprs_summary else "The A P R S map is not set up."
             host.speak(TTS_PREFIX + text)
@@ -168,7 +172,7 @@ class Programming:
         else:
             _logger.warning("DTMF action %s(%r) did nothing", action.action, action.argument)
 
-    def speak(self, clip: str) -> None:
+    def speak(self, clip: str, *, on_linked_radio: bool = False) -> None:
         """Queue `clip` like an announcement, rendering it off the event loop
         first so the controller knows how long to hold PTT."""
         host = self._host
@@ -177,14 +181,14 @@ class Programming:
         except RuntimeError:
             loop = None
         if host.renderer is None or loop is None:
-            self.queue_announcement(clip)
+            self.queue_announcement(clip, on_linked_radio=on_linked_radio)
             return
         config = host.controller.config
 
         def rendered(future: "asyncio.Future") -> None:
             if future.exception() is not None:
                 _logger.error("couldn't render %s: %s", clip, future.exception())
-            elif not self.queue_announcement(clip):
+            elif not self.queue_announcement(clip, on_linked_radio=on_linked_radio):
                 _logger.warning("announcement queue full; dropped %s", clip)
 
         loop.run_in_executor(None, host.renderer.render, clip, config).add_done_callback(rendered)
@@ -233,21 +237,25 @@ class Programming:
             return ASSET_PREFIX + announcement.asset_id
         return TTS_PREFIX + announcement.message
 
-    def due_announcement_clips(self) -> list[str]:
-        """Scheduled announcements to play now. During a net they wait
-        (if net_hold_announcements), and play once it's over."""
+    def due_announcements(self) -> list[tuple[str, bool]]:
+        """Scheduled announcements to play now as `(clip, on_linked_radio)`.
+        During a net they wait (if net_hold_announcements), and play once it's over."""
         host = self._host
         due = self.scheduler.due(host.wall_now())
         for announcement in due:
             _logger.info("announcement %r is due", announcement.name)
-        clips = [self.announcement_clip(a) for a in due]
+        items = [(self.announcement_clip(a), a.on_linked_radio) for a in due]
         if host.net_active and host.saved_config.net_hold_announcements:
-            self._held_announcements = (self._held_announcements + clips)[-MAX_HELD_ANNOUNCEMENTS:]
+            self._held_announcements = (self._held_announcements + items)[-MAX_HELD_ANNOUNCEMENTS:]
             return []
         held, self._held_announcements = self._held_announcements, []
-        return held + clips
+        return held + items
 
-    def queue_announcement(self, clip: str) -> bool:
+    def due_announcement_clips(self) -> list[str]:
+        """Clip names from `due_announcements` (tests and callers that ignore the link flag)."""
+        return [clip for clip, _ in self.due_announcements()]
+
+    def queue_announcement(self, clip: str, *, on_linked_radio: bool = False) -> bool:
         """Callers should render `clip` first (off the event loop) so the
         controller knows how long to hold PTT for."""
-        return self._host.controller.queue_announcement(clip)
+        return self._host.controller.queue_announcement(clip, on_linked_radio=on_linked_radio)

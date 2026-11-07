@@ -10,7 +10,6 @@ import {
   SimpleGrid,
   Stack,
   Switch,
-  Text,
   TextInput,
   Title,
 } from "@mantine/core";
@@ -219,7 +218,7 @@ export function Aprs() {
     : [...SYMBOLS, { value: beacon.values.aprs_symbol, label: beacon.values.aprs_symbol }];
 
   return (
-    <Page title="APRS" description="Periodically beacon the repeater's position or status to APRS-IS.">
+    <Page title="APRS" description="Beacon the station's position to APRS-IS, and optionally map nearby stations.">
       <Card
         withBorder
         padding="lg"
@@ -238,7 +237,7 @@ export function Aprs() {
           />
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <TextInput
-              label={labeled("APRS callsign", "Your passcode is derived from this automatically.")}
+              label={labeled("APRS callsign", "Passcode is derived from this automatically")}
               placeholder="e.g. W1AW-10"
               value={beacon.values.aprs_callsign}
               onChange={(event) => beacon.setField("aprs_callsign", event.currentTarget.value)}
@@ -253,125 +252,120 @@ export function Aprs() {
               onChange={(value) => beacon.setField("aprs_beacon_interval", Number(value) || 0)}
             />
             <TextInput
-              label={labeled("Beacon comment", preview
+              label={labeled(
+                "Beacon comment",
+                preview
                   ? `Sends: ${preview}${preview.length > MAX_COMMENT ? ` — ${preview.length} characters; radios may only show the first ${MAX_COMMENT}.` : ""}`
-                  : undefined)}
-              placeholder="e.g. Hartford CT, net Tue 8pm"
+                  : undefined,
+              )}
+              placeholder="e.g. net Tue 8pm"
               value={beacon.values.aprs_comment}
               onChange={(event) => beacon.setField("aprs_comment", event.currentTarget.value)}
               style={{ gridColumn: "1 / -1" }}
             />
+            <NumberInput
+              label="Latitude"
+              description="Optional · blank = status beacon"
+              placeholder=""
+              min={-90}
+              max={90}
+              decimalScale={4}
+              step={0.0001}
+              value={beacon.values.aprs_lat === "" ? undefined : beacon.values.aprs_lat}
+              onChange={(value) =>
+                beacon.setField("aprs_lat", value === "" || value === undefined ? "" : Number(value))
+              }
+            />
+            <NumberInput
+              label="Longitude"
+              description="Optional · blank = status beacon"
+              placeholder=""
+              min={-180}
+              max={180}
+              decimalScale={4}
+              step={0.0001}
+              value={beacon.values.aprs_lon === "" ? undefined : beacon.values.aprs_lon}
+              onChange={(value) =>
+                beacon.setField("aprs_lon", value === "" || value === undefined ? "" : Number(value))
+              }
+            />
+            <TextInput
+              label={labeled("Grid square or coordinates", "Fills in latitude and longitude")}
+              placeholder="e.g. FN31pr"
+              autoComplete="off"
+              value={lookup}
+              onChange={(event) => setLookup(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  applyLookup();
+                }
+              }}
+              rightSectionWidth={64}
+              rightSection={
+                <Button size="compact-sm" variant="subtle" onClick={applyLookup}>
+                  Set
+                </Button>
+              }
+            />
+            <Select
+              label="Map symbol"
+              data={symbolData}
+              value={beacon.values.aprs_symbol}
+              onChange={(value) => beacon.setField("aprs_symbol", value || "/r")}
+              allowDeselect={false}
+              searchable
+            />
+            <NumberInput
+              label={labeled("Output frequency", "Lets APRS radios tune the repeater with one button")}
+              suffix=" MHz"
+              description="Optional"
+              placeholder=""
+              min={28}
+              max={1300}
+              decimalScale={3}
+              step={0.001}
+              value={beacon.values.aprs_frequency_mhz === "" ? undefined : beacon.values.aprs_frequency_mhz}
+              onChange={(value) =>
+                beacon.setField("aprs_frequency_mhz", value === "" || value === undefined ? "" : Number(value))
+              }
+            />
+            <NumberInput
+              label={labeled("Offset", "0 for simplex")}
+              suffix=" MHz"
+              placeholder="e.g. -0.6"
+              min={-9.99}
+              max={9.99}
+              decimalScale={2}
+              step={0.01}
+              value={beacon.values.aprs_offset_mhz === "" ? undefined : beacon.values.aprs_offset_mhz}
+              onChange={(value) =>
+                beacon.setField("aprs_offset_mhz", value === "" || value === undefined ? "" : Number(value))
+              }
+            />
+            <NumberInput
+              label="Access tone"
+              suffix=" Hz"
+              description={
+                requiredTone
+                  ? `Optional · blank uses required CTCSS (${requiredTone} Hz)`
+                  : "Optional · blank = none"
+              }
+              placeholder=""
+              min={60}
+              max={260}
+              decimalScale={1}
+              step={0.1}
+              value={beacon.values.aprs_tone_hz === "" ? undefined : beacon.values.aprs_tone_hz}
+              onChange={(value) =>
+                beacon.setField("aprs_tone_hz", value === "" || value === undefined ? "" : Number(value))
+              }
+            />
           </SimpleGrid>
 
-          <Accordion variant="contained" multiple defaultValue={["position"]}>
-            <Accordion.Item value="position">
-              <Accordion.Control>Position</Accordion.Control>
-              <Accordion.Panel>
-                <Stack gap="md">
-                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                    <NumberInput
-                      label="Latitude"
-                      placeholder="blank = status beacon"
-                      min={-90}
-                      max={90}
-                      decimalScale={4}
-                      step={0.0001}
-                      value={beacon.values.aprs_lat === "" ? undefined : beacon.values.aprs_lat}
-                      onChange={(value) =>
-                        beacon.setField("aprs_lat", value === "" || value === undefined ? "" : Number(value))
-                      }
-                    />
-                    <NumberInput
-                      label="Longitude"
-                      placeholder="blank = status beacon"
-                      min={-180}
-                      max={180}
-                      decimalScale={4}
-                      step={0.0001}
-                      value={beacon.values.aprs_lon === "" ? undefined : beacon.values.aprs_lon}
-                      onChange={(value) =>
-                        beacon.setField("aprs_lon", value === "" || value === undefined ? "" : Number(value))
-                      }
-                    />
-                    <TextInput
-                      label={labeled("Grid square or coordinates", "Fills in the latitude and longitude.")}
-                      placeholder="FN31pr or 41.7148, -72.7272"
-                      autoComplete="off"
-                      value={lookup}
-                      onChange={(event) => setLookup(event.currentTarget.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          applyLookup();
-                        }
-                      }}
-                      rightSectionWidth={64}
-                      rightSection={
-                        <Button size="compact-sm" variant="subtle" onClick={applyLookup}>
-                          Set
-                        </Button>
-                      }
-                    />
-                    <Select
-                      label="Map symbol"
-                      data={symbolData}
-                      value={beacon.values.aprs_symbol}
-                      onChange={(value) => beacon.setField("aprs_symbol", value || "/r")}
-                      allowDeselect={false}
-                      searchable
-                    />
-                  </SimpleGrid>
-                </Stack>
-              </Accordion.Panel>
-            </Accordion.Item>
-            <Accordion.Item value="frequency">
-              <Accordion.Control>Frequency for APRS radios</Accordion.Control>
-              <Accordion.Panel>
-                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                  <NumberInput
-                    label={labeled("Output frequency", "Lets APRS radios tune to the repeater with one button.")}
-                    suffix=" MHz"
-                    placeholder="blank = leave out"
-                    min={28}
-                    max={1300}
-                    decimalScale={3}
-                    step={0.001}
-                    value={beacon.values.aprs_frequency_mhz === "" ? undefined : beacon.values.aprs_frequency_mhz}
-                    onChange={(value) =>
-                      beacon.setField("aprs_frequency_mhz", value === "" || value === undefined ? "" : Number(value))
-                    }
-                  />
-                  <NumberInput
-                    label={labeled("Offset", "e.g. -0.6 or 5. Use 0 for simplex.")}
-                    suffix=" MHz"
-                    placeholder="standard"
-                    min={-9.99}
-                    max={9.99}
-                    decimalScale={2}
-                    step={0.01}
-                    value={beacon.values.aprs_offset_mhz === "" ? undefined : beacon.values.aprs_offset_mhz}
-                    onChange={(value) =>
-                      beacon.setField("aprs_offset_mhz", value === "" || value === undefined ? "" : Number(value))
-                    }
-                  />
-                  <NumberInput
-                    label="Access tone"
-                    suffix=" Hz"
-                    placeholder={requiredTone ? `${requiredTone} (required CTCSS)` : "none"}
-                    min={60}
-                    max={260}
-                    decimalScale={1}
-                    step={0.1}
-                    value={beacon.values.aprs_tone_hz === "" ? undefined : beacon.values.aprs_tone_hz}
-                    onChange={(value) =>
-                      beacon.setField("aprs_tone_hz", value === "" || value === undefined ? "" : Number(value))
-                    }
-                  />
-                </SimpleGrid>
-              </Accordion.Panel>
-            </Accordion.Item>
-            <Accordion.Item value="server">
-              <Accordion.Control>APRS-IS server</Accordion.Control>
+          <Accordion variant="separated" radius="md">
+            <Accordion.Item value="advanced">
+              <Accordion.Control>Advanced · APRS-IS server</Accordion.Control>
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <TextInput
@@ -420,14 +414,13 @@ export function Aprs() {
             </Anchor>
           </Group>
           <Switch
-            label="Map nearby APRS stations"
+            label={labeled(
+              "Map nearby APRS stations",
+              "Receives positions only · nothing is transmitted",
+            )}
             checked={map.values.aprs_map_enabled}
             onChange={(event) => map.setField("aprs_map_enabled", event.currentTarget.checked)}
           />
-          <Text c="dimmed" size="sm" maw="75ch">
-            Receives position reports from the APRS-IS server above, centered on the latitude and longitude above (or the
-            weather alert location). Nothing is transmitted.
-          </Text>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <NumberInput
               label="Range"
@@ -459,23 +452,31 @@ export function Aprs() {
               onChange={(value) => map.setField("distance_units", value || "mi")}
               allowDeselect={false}
             />
-            <TextInput
-              label={labeled("Map tiles", <>
-                  A <Code>{`{z}/{x}/{y}`}</Code> tile URL. Leave blank on repeaters without internet to show range rings
-                  only.
-                </>)}
-              placeholder="blank = no background map"
-              value={map.values.aprs_map_tiles}
-              onChange={(event) => map.setField("aprs_map_tiles", event.currentTarget.value)}
-              style={{ gridColumn: "1 / -1" }}
-            />
           </SimpleGrid>
-          <Group justify="space-between" wrap="wrap">
-            <Button type="button" variant="subtle" onClick={() => map.setField("aprs_map_tiles", OSM_TILES)}>
-              Use OpenStreetMap
-            </Button>
-            <ConfigActions dirty={map.dirty} saving={map.saving} onReset={map.reset} />
-          </Group>
+          <Accordion variant="separated" radius="md">
+            <Accordion.Item value="tiles">
+              <Accordion.Control>Advanced · map tiles</Accordion.Control>
+              <Accordion.Panel>
+                <Stack gap="md">
+                  <TextInput
+                    label={labeled(
+                      "Map tiles",
+                      <>
+                        A <Code>{`{z}/{x}/{y}`}</Code> tile URL. Blank shows range rings only (no background map).
+                      </>,
+                    )}
+                    placeholder=""
+                    value={map.values.aprs_map_tiles}
+                    onChange={(event) => map.setField("aprs_map_tiles", event.currentTarget.value)}
+                  />
+                  <Button type="button" variant="subtle" onClick={() => map.setField("aprs_map_tiles", OSM_TILES)}>
+                    Use OpenStreetMap
+                  </Button>
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
+          <ConfigActions dirty={map.dirty} saving={map.saving} onReset={map.reset} />
         </Stack>
       </Card>
     </Page>

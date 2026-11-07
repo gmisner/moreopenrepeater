@@ -77,7 +77,7 @@ export function Activity() {
   const kerchunkNote = s == null ? "" : `under 1.5 s${s.rx_count ? ` · ${Math.round((100 * s.kerchunks) / s.rx_count)}%` : ""}${s.kerchunks_filtered ? ` · ${s.kerchunks_filtered} more filtered out` : ""}`;
 
   return (
-    <Page title="Activity" description="How much the repeater gets used. Recorded automatically and kept for about a year.">
+    <Page title="Activity" description="How much the repeater gets used.">
       <Group justify="space-between" wrap="wrap">
         <Button component={Link} to="/recordings" variant="light" size="sm">
           Open recordings

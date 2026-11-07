@@ -36,6 +36,28 @@ def make_config(**overrides):
     return RepeaterConfig(**defaults)
 
 
+def test_dry_run_ignores_cos_and_never_asserts_ptt():
+    """transmitter_enabled=False is dry-run: COS must not key PTT."""
+    controller = RepeaterController(make_config(transmitter_enabled=False), now=0.0)
+
+    commands = controller.handle_event(COSChanged(active=True), now=0.0)
+
+    assert controller.state == IDLE
+    assert commands == []
+    assert AssertPTT(active=True) not in commands
+
+
+def test_disabling_transmitter_drops_ptt_while_receiving():
+    controller = RepeaterController(make_config(), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    assert controller.state == RECEIVING
+
+    commands = controller.update_config(make_config(transmitter_enabled=False), now=1.0)
+
+    assert controller.state == IDLE
+    assert AssertPTT(active=False) in commands
+
+
 def test_full_receive_cycle_returns_to_idle():
     controller = RepeaterController(make_config(), now=0.0)
     assert controller.state == IDLE

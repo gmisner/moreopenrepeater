@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-from typing import Awaitable, Callable, Sequence
+from pathlib import Path
+from typing import Awaitable, Callable, Optional, Sequence
 
 from fastapi import FastAPI, HTTPException, Request
 
@@ -24,6 +25,7 @@ from ..models import (
     BoardApplyRequest,
     BoardApplyResponse,
     BoardResponse,
+    CommitSummary,
     ConfigResponse,
     ConfigUpdateRequest,
     SoundLevelUpdateRequest,
@@ -31,6 +33,7 @@ from ..models import (
     StatusResponse,
 )
 from ..service import RepeaterService
+from ..updates import installed_version
 from playout.tts import TTSError
 
 
@@ -44,10 +47,18 @@ def register(
     config_response: Callable[..., ConfigResponse],
     auth_dependencies: Sequence,
     transmit_dependencies: Sequence,
+    repo_dir: Optional[Path] = None,
 ) -> None:
     @app.get("/api/status", response_model=StatusResponse, dependencies=auth_dependencies)
     def get_status() -> StatusResponse:
         return status_response(service.snapshot())
+
+    @app.get("/api/version", response_model=Optional[CommitSummary], dependencies=auth_dependencies)
+    def get_version() -> Optional[dict]:
+        """Installed git commit — used by the dashboard to detect mid-session upgrades."""
+        if repo_dir is None:
+            return None
+        return installed_version(repo_dir)
 
     @app.get("/api/config", response_model=ConfigResponse, dependencies=auth_dependencies)
     def get_config() -> ConfigResponse:

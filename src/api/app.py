@@ -41,6 +41,7 @@ from .routes import hub as hub_routes
 from .routes import linking as linking_routes
 from .routes import mailbox as mailbox_routes
 from .routes import media as media_routes
+from .routes import metrics as metrics_routes
 from .routes import nets as nets_routes
 from .routes import programming as programming_routes
 from .routes import realtime as realtime_routes
@@ -251,6 +252,15 @@ def create_app(
         config_response=_config_response,
         auth_dependencies=runtime.auth_dependencies,
         transmit_dependencies=runtime.transmit_dependencies,
+        repo_dir=REPO_DIR,
+    )
+
+    metrics_routes.register(
+        app,
+        service=runtime.service,
+        live_audio=runtime.live_audio,
+        activity_store=runtime.activity_store,
+        process_started_at=time.time(),
     )
 
     simulate_routes.register(

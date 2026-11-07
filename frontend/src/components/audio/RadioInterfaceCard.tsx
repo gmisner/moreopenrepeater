@@ -49,6 +49,8 @@ export function RadioInterfaceCard({
   showSilenceHint,
   isViewer,
   openWizard,
+  onTestId,
+  testIdBusy,
 }: {
   engine: ConfigSlice<EngineValues>;
   devices: AudioDevice[];
@@ -66,6 +68,8 @@ export function RadioInterfaceCard({
   showSilenceHint: boolean;
   isViewer: boolean;
   openWizard: () => void;
+  onTestId?: () => void;
+  testIdBusy?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const halfDuplexWarn =
@@ -88,9 +92,16 @@ export function RadioInterfaceCard({
         onEdit={isViewer ? undefined : () => setEditing(true)}
         secondaryAction={
           !isViewer ? (
-            <Button variant="default" onClick={openWizard}>
-              Setup wizard
-            </Button>
+            <Group gap="xs">
+              <Button variant="default" onClick={openWizard}>
+                Setup wizard
+              </Button>
+              {onTestId ? (
+                <Button variant="light" loading={testIdBusy} onClick={onTestId}>
+                  Test ID
+                </Button>
+              ) : null}
+            </Group>
           ) : undefined
         }
         rows={[

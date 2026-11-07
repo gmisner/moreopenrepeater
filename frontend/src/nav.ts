@@ -37,6 +37,7 @@ export const NAV: NavGroup[] = [
     label: "Tools",
     items: [
       { id: "simulator", label: "Simulator", icon: "simulator" },
+      { id: "configs", label: "Known configs", icon: "info" },
       { id: "logs", label: "Logs", icon: "logs" },
       { id: "backup", label: "Backup & restore", icon: "backup" },
       { id: "users", label: "Users", icon: "users", adminOnly: true },

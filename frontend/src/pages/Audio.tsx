@@ -1,4 +1,6 @@
+import { Anchor, Badge, Card, Group, Stack, Table, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import {
   ENGINE_DEFAULTS,
@@ -58,6 +60,17 @@ export function Audio() {
   const [levelNotes, setLevelNotes] = useState<string[]>([]);
   const [previewBusy, setPreviewBusy] = useState<string | null>(null);
   const [levelsSaving, setLevelsSaving] = useState(false);
+  const [testIdBusy, setTestIdBusy] = useState(false);
+  const [openings, setOpenings] = useState<
+    {
+      started_at: number;
+      duration: number;
+      open_db: number;
+      peak_db: number;
+      ctcss_hz: number | null;
+      dtmf_digits: string;
+    }[]
+  >([]);
   const silentPolls = useRef(0);
   const [showSilenceHint, setShowSilenceHint] = useState(false);
 
@@ -164,6 +177,12 @@ export function Audio() {
       } catch {
         // Linked radio status is optional for this page; retry next poll.
       }
+      try {
+        const nextOpenings = await api<typeof openings>("/api/audio/openings");
+        if (!cancelled) setOpenings(nextOpenings.slice(0, 8));
+      } catch {
+        // Openings are diagnostics-only.
+      }
     };
     void tick();
     const id = window.setInterval(() => {
@@ -265,11 +284,30 @@ export function Audio() {
     : "";
   const unsavedLevels = levels.some((level) => !level.saved);
 
+  const sendTestId = async () => {
+    setTestIdBusy(true);
+    try {
+      await api("/api/audio/test-id", { method: "POST" });
+      notifySuccess("Playing the station ID");
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setTestIdBusy(false);
+    }
+  };
+
   return (
     <Page
       title="Audio & tones"
       description="Sounds, radio interface, and linked radio."
     >
+      <Text size="sm" c="dimmed">
+        Looking for a starting recipe? See{" "}
+        <Anchor component={Link} to="/configs">
+          Known configs
+        </Anchor>{" "}
+        for Digirig, CM108, AIOC, and SVXLink board settings.
+      </Text>
       <SoundsCard
         sounds={sounds}
         assets={assets}
@@ -295,7 +333,55 @@ export function Audio() {
         showSilenceHint={showSilenceHint}
         isViewer={isViewer}
         openWizard={openWizard}
+        onTestId={isViewer ? undefined : () => void sendTestId()}
+        testIdBusy={testIdBusy}
       />
+      <Card withBorder padding="lg" radius="md">
+        <Stack gap="sm">
+          <Group justify="space-between" align="baseline">
+            <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
+              Receiver openings
+            </Text>
+            <Text size="sm" c="dimmed">
+              Live score of what opened COS — level, peak, CTCSS, DTMF
+            </Text>
+          </Group>
+          {openings.length ? (
+            <Table striped highlightOnHover withTableBorder={false}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>When</Table.Th>
+                  <Table.Th>Length</Table.Th>
+                  <Table.Th>Open</Table.Th>
+                  <Table.Th>Peak</Table.Th>
+                  <Table.Th>CTCSS</Table.Th>
+                  <Table.Th>DTMF</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {openings.map((row) => (
+                  <Table.Tr key={row.started_at}>
+                    <Table.Td>{new Date(row.started_at * 1000).toLocaleTimeString()}</Table.Td>
+                    <Table.Td>{row.duration.toFixed(1)} s</Table.Td>
+                    <Table.Td>{row.open_db.toFixed(0)} dB</Table.Td>
+                    <Table.Td>{row.peak_db.toFixed(0)} dB</Table.Td>
+                    <Table.Td>
+                      {row.ctcss_hz != null ? <Badge variant="light">{row.ctcss_hz} Hz</Badge> : "—"}
+                    </Table.Td>
+                    <Table.Td ff="monospace">{row.dtmf_digits || "—"}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          ) : (
+            <Text size="sm" c="dimmed">
+              No openings yet. Key a radio into the repeater (or use the Simulator) and watch open/peak levels to
+              set VOX and Mic gain. Aim for idle a few dB below the VOX threshold, and keyed peaks well under 0
+              dBFS.
+            </Text>
+          )}
+        </Stack>
+      </Card>
       <LinkRadioCard
         link={link}
         devices={devices}

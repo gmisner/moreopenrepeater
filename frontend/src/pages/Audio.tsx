@@ -1,4 +1,4 @@
-import { Anchor, Badge, Card, Group, Stack, Table, Text } from "@mantine/core";
+import { Anchor, Badge, Button, Card, Code, FileButton, Group, Stack, Table, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -61,6 +61,19 @@ export function Audio() {
   const [previewBusy, setPreviewBusy] = useState<string | null>(null);
   const [levelsSaving, setLevelsSaving] = useState(false);
   const [testIdBusy, setTestIdBusy] = useState(false);
+  const [scoreBusy, setScoreBusy] = useState(false);
+  const [score, setScore] = useState<{
+    duration_seconds: number;
+    sample_rate: number;
+    peak_dbfs: number;
+    rms_dbfs: number;
+    median_block_dbfs: number;
+    clipping: boolean;
+    ctcss_hz: number | null;
+    strongest_hz: number | null;
+    tone_share: number;
+    notes: string[];
+  } | null>(null);
   const [openings, setOpenings] = useState<
     {
       started_at: number;
@@ -296,6 +309,37 @@ export function Audio() {
     }
   };
 
+  const recordAndScore = async () => {
+    setScoreBusy(true);
+    try {
+      const body = await api<NonNullable<typeof score>>("/api/audio/record-score?seconds=5", {
+        method: "POST",
+      });
+      setScore(body);
+      notifySuccess("Scored a 5 s RX capture");
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setScoreBusy(false);
+    }
+  };
+
+  const scoreUploadedWav = async (file: File | null) => {
+    if (!file) return;
+    setScoreBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const body = await api<NonNullable<typeof score>>("/api/audio/score", { method: "POST", body: form });
+      setScore(body);
+      notifySuccess(`Scored ${file.name}`);
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setScoreBusy(false);
+    }
+  };
+
   return (
     <Page
       title="Audio & tones"
@@ -336,6 +380,79 @@ export function Audio() {
         onTestId={isViewer ? undefined : () => void sendTestId()}
         testIdBusy={testIdBusy}
       />
+      <Card withBorder padding="lg" radius="md">
+        <Stack gap="sm">
+          <Group justify="space-between" align="flex-start" wrap="wrap">
+            <div>
+              <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
+                Record &amp; score
+              </Text>
+              <Text size="sm" c="dimmed" maw="70ch">
+                Capture 5 s of RX (or upload a WAV) and score peak/RMS/CTCSS without waiting for new live traffic.
+                Re-run after each Mic gain change to A/B the same kind of clip.
+              </Text>
+            </div>
+            {!isViewer ? (
+              <Group gap="xs">
+                <Button loading={scoreBusy} onClick={() => void recordAndScore()}>
+                  Record 5 s
+                </Button>
+                <FileButton onChange={(file) => void scoreUploadedWav(file)} accept="audio/wav,.wav">
+                  {(props) => (
+                    <Button {...props} variant="default" loading={scoreBusy}>
+                      Score WAV
+                    </Button>
+                  )}
+                </FileButton>
+              </Group>
+            ) : null}
+          </Group>
+          {score ? (
+            <Stack gap="xs">
+              <Group gap="md" wrap="wrap">
+                <Text size="sm">
+                  Peak <Text span fw={700}>{score.peak_dbfs.toFixed(1)} dBFS</Text>
+                </Text>
+                <Text size="sm">
+                  RMS <Text span fw={700}>{score.rms_dbfs.toFixed(1)} dBFS</Text>
+                </Text>
+                <Text size="sm">
+                  Median block <Text span fw={700}>{score.median_block_dbfs.toFixed(1)} dBFS</Text>
+                </Text>
+                <Badge color={score.clipping ? "red" : "gray"} variant="light">
+                  {score.clipping ? "clipping" : "no clip"}
+                </Badge>
+                <Badge variant="light">
+                  {score.ctcss_hz != null ? `${score.ctcss_hz} Hz CTCSS` : "no CTCSS"}
+                </Badge>
+                {score.strongest_hz != null ? (
+                  <Badge variant="outline">
+                    ~{score.strongest_hz.toFixed(0)} Hz ({(score.tone_share * 100).toFixed(0)}%)
+                  </Badge>
+                ) : null}
+              </Group>
+              {score.notes.length ? (
+                <Stack gap={2}>
+                  {score.notes.map((note) => (
+                    <Text key={note} size="sm" c="dimmed">
+                      {note}
+                    </Text>
+                  ))}
+                </Stack>
+              ) : null}
+              <Text size="xs" c="dimmed">
+                {score.duration_seconds.toFixed(1)} s @ {score.sample_rate} Hz — aim for idle a few dB below the VOX
+                threshold and keyed peaks well under 0 dBFS.
+              </Text>
+            </Stack>
+          ) : (
+            <Text size="sm" c="dimmed">
+              No score yet. With live audio on, press <Code>Record 5 s</Code> while someone keys up (or hiss is
+              present), then tweak Mic and record again.
+            </Text>
+          )}
+        </Stack>
+      </Card>
       <Card withBorder padding="lg" radius="md">
         <Stack gap="sm">
           <Group justify="space-between" align="baseline">

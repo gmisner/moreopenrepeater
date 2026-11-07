@@ -18,7 +18,7 @@ RATE = 8000
 class FakeTTS:
     name = "fake"
 
-    def synthesize(self, text, voice=""):
+    def synthesize(self, text, voice="", speed=1.0):
         return np.full(2 * RATE, 0.1, dtype=np.float32), RATE  # 2 seconds
 
 
@@ -36,12 +36,24 @@ def make_client(tts=FakeTTS(), config=RepeaterConfig(callsign="W1AW")):
 
 def test_tts_info_reports_the_engine():
     client, *_ = make_client()
-    assert client.get("/api/audio/tts").json() == {"engine": "fake"}
+    assert client.get("/api/audio/tts").json() == {
+        "engine": "fake",
+        "voices": [],
+        "min_speed": 0.5,
+        "max_speed": 2.0,
+        "default_speed": 1.0,
+    }
 
 
 def test_tts_info_reports_none_without_an_engine():
     client, *_ = make_client(tts=None)
-    assert client.get("/api/audio/tts").json() == {"engine": None}
+    assert client.get("/api/audio/tts").json() == {
+        "engine": None,
+        "voices": [],
+        "min_speed": 0.5,
+        "max_speed": 2.0,
+        "default_speed": 1.0,
+    }
 
 
 def test_preview_returns_a_playable_wav_of_the_clip():

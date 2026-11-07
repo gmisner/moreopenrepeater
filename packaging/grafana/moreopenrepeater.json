@@ -1,0 +1,176 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "PTT / COS / TX enabled",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "max": 1, "min": 0, "unit": "short" },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "moreopenrepeater_ptt_active",
+          "legendFormat": "PTT",
+          "refId": "A"
+        },
+        {
+          "expr": "moreopenrepeater_cos_active",
+          "legendFormat": "COS",
+          "refId": "B"
+        },
+        {
+          "expr": "moreopenrepeater_transmitter_enabled",
+          "legendFormat": "TX enabled",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "title": "RX level (dBFS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "dB" },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "moreopenrepeater_rx_level_dbfs",
+          "legendFormat": "RX",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Controller state",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name" },
+      "targets": [
+        {
+          "expr": "moreopenrepeater_controller_state",
+          "legendFormat": "{{state}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Linked nodes",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "expr": "moreopenrepeater_linked_nodes",
+          "legendFormat": "links",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Process uptime",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "expr": "moreopenrepeater_process_uptime_seconds",
+          "legendFormat": "uptime",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Activity (24h counters)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "moreopenrepeater_activity_rx_count",
+          "legendFormat": "RX openings",
+          "refId": "A"
+        },
+        {
+          "expr": "moreopenrepeater_activity_timeouts",
+          "legendFormat": "timeouts",
+          "refId": "B"
+        },
+        {
+          "expr": "moreopenrepeater_activity_ids",
+          "legendFormat": "IDs",
+          "refId": "C"
+        },
+        {
+          "expr": "moreopenrepeater_activity_kerchunks",
+          "legendFormat": "kerchunks",
+          "refId": "D"
+        }
+      ]
+    },
+    {
+      "title": "Audio glitches",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "moreopenrepeater_audio_dropped_input_blocks_total",
+          "legendFormat": "RX drops",
+          "refId": "A"
+        },
+        {
+          "expr": "moreopenrepeater_audio_starved_output_blocks_total",
+          "legendFormat": "TX starve",
+          "refId": "B"
+        },
+        {
+          "expr": "moreopenrepeater_audio_input_overflows_total",
+          "legendFormat": "input overflow",
+          "refId": "C"
+        },
+        {
+          "expr": "moreopenrepeater_audio_output_underflows_total",
+          "legendFormat": "output underflow",
+          "refId": "D"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["moreopenrepeater", "ham-radio"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "name": "datasource",
+        "query": "prometheus",
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "moreopenrepeater",
+  "uid": "moreopenrepeater",
+  "version": 1
+}

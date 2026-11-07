@@ -9,6 +9,8 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
 import { useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
@@ -27,11 +29,28 @@ type IdValues = {
   cw_id_suffix: string;
   voice_id_text: string;
   tts_voice: string;
+  tts_speed: number;
   id_phonetic: boolean;
   long_id_mode: string;
   long_id_interval: number;
   long_id_text: string;
   long_id_asset_id: string;
+};
+
+type TTSVoice = {
+  id: string;
+  label: string;
+  locale: string;
+  locale_label: string;
+  gender: string;
+};
+
+type TTSInfo = {
+  engine: string | null;
+  voices: TTSVoice[];
+  min_speed: number;
+  max_speed: number;
+  default_speed: number;
 };
 
 const KEYS = [
@@ -47,6 +66,7 @@ const KEYS = [
   "cw_id_suffix",
   "voice_id_text",
   "tts_voice",
+  "tts_speed",
   "id_phonetic",
   "long_id_mode",
   "long_id_interval",
@@ -67,6 +87,7 @@ const DEFAULTS: IdValues = {
   cw_id_suffix: "",
   voice_id_text: "",
   tts_voice: "",
+  tts_speed: 1,
   id_phonetic: false,
   long_id_mode: "off",
   long_id_interval: 3600,
@@ -74,11 +95,63 @@ const DEFAULTS: IdValues = {
   long_id_asset_id: "",
 };
 
+const SPEED_OPTIONS = [
+  { value: "0.8", label: "Slower (0.8×)" },
+  { value: "0.9", label: "Slightly slow (0.9×)" },
+  { value: "1", label: "Normal (1×)" },
+  { value: "1.1", label: "Slightly fast (1.1×)" },
+  { value: "1.25", label: "Faster (1.25×)" },
+  { value: "1.5", label: "Fast (1.5×)" },
+];
+
 export function Identification() {
   const { values, setField, dirty, reset, submit, saving } = useConfigSlice<IdValues>(KEYS, DEFAULTS);
+  const [tts, setTts] = useState<TTSInfo | null>(null);
   const isCw = values.id_mode === "cw";
   const isVoice = values.id_mode === "voice";
   const longOn = values.long_id_mode !== "off";
+  const kokoro = tts?.engine === "kokoro";
+
+  useEffect(() => {
+    let cancelled = false;
+    void api<TTSInfo>("/api/audio/tts")
+      .then((info) => {
+        if (!cancelled) setTts(info);
+      })
+      .catch(() => {
+        if (!cancelled) setTts({ engine: null, voices: [], min_speed: 0.5, max_speed: 2, default_speed: 1 });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const localeOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const voice of tts?.voices || []) {
+      if (voice.locale && !seen.has(voice.locale)) seen.set(voice.locale, voice.locale_label);
+    }
+    return [...seen.entries()].map(([value, label]) => ({ value, label }));
+  }, [tts]);
+
+  const selectedLocale = useMemo(() => {
+    if (!kokoro || !tts?.voices.length) return "";
+    if (values.tts_voice) {
+      const match = tts.voices.find((voice) => voice.id === values.tts_voice);
+      if (match) return match.locale;
+    }
+    return localeOptions[0]?.value || "";
+  }, [kokoro, tts, values.tts_voice, localeOptions]);
+
+  const voiceOptions = useMemo(() => {
+    const voices = (tts?.voices || []).filter((voice) => !selectedLocale || voice.locale === selectedLocale);
+    return voices.map((voice) => ({ value: voice.id, label: voice.label }));
+  }, [tts, selectedLocale]);
+
+  const speedValue = String(values.tts_speed || 1);
+  const speedData = SPEED_OPTIONS.some((option) => option.value === speedValue)
+    ? SPEED_OPTIONS
+    : [...SPEED_OPTIONS, { value: speedValue, label: `Custom (${speedValue}×)` }];
 
   return (
     <Page title="Identification" description="Callsign and how often the station identifies.">
@@ -181,13 +254,53 @@ export function Identification() {
                   value={values.voice_id_text}
                   onChange={(event) => setField("voice_id_text", event.currentTarget.value)}
                 />
-                <TextInput
-                  label="TTS voice"
-                  description="Optional · blank uses the engine default"
-                  placeholder=""
-                  value={values.tts_voice}
-                  onChange={(event) => setField("tts_voice", event.currentTarget.value)}
-                />
+                {kokoro ? (
+                  <>
+                    <Select
+                      label="Accent / locale"
+                      description="Filters the Kokoro voices below"
+                      data={localeOptions}
+                      value={selectedLocale || null}
+                      onChange={(value) => {
+                        const nextLocale = value || "";
+                        const current = (tts?.voices || []).find((voice) => voice.id === values.tts_voice);
+                        if (current && current.locale === nextLocale) return;
+                        const first = (tts?.voices || []).find((voice) => voice.locale === nextLocale);
+                        setField("tts_voice", first?.id || "");
+                      }}
+                      searchable
+                    />
+                    <Select
+                      label="Voice"
+                      description="Kokoro speaker for IDs and announcements · clear for default"
+                      data={voiceOptions}
+                      value={values.tts_voice || null}
+                      onChange={(value) => setField("tts_voice", value || "")}
+                      searchable
+                      clearable
+                      placeholder="Default (af_heart)"
+                    />
+                    <Select
+                      label="Speech speed"
+                      description="How quickly Kokoro reads the text"
+                      data={speedData}
+                      value={speedValue}
+                      onChange={(value) => setField("tts_speed", Number(value) || 1)}
+                    />
+                  </>
+                ) : (
+                  <TextInput
+                    label="TTS voice"
+                    description={
+                      tts?.engine
+                        ? `Optional · ${tts.engine} is active. Install kokoro-cli for locale and speed controls.`
+                        : "Optional · install kokoro-cli for selectable voices"
+                    }
+                    placeholder=""
+                    value={values.tts_voice}
+                    onChange={(event) => setField("tts_voice", event.currentTarget.value)}
+                  />
+                )}
               </SimpleGrid>
               <Switch
                 label="Spell callsign phonetically"

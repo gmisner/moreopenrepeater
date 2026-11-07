@@ -16,8 +16,20 @@ class AudioPreviewRequest(BaseModel):
     net: bool = False  # as it would sound during a net
 
 
+class TTSVoiceOption(BaseModel):
+    id: str
+    label: str
+    locale: str
+    locale_label: str
+    gender: str
+
+
 class TTSInfoResponse(BaseModel):
     engine: Optional[str]
+    voices: list[TTSVoiceOption] = []
+    min_speed: float = 0.5
+    max_speed: float = 2.0
+    default_speed: float = 1.0
 
 class AudioDeviceResponse(BaseModel):
     name: str
@@ -137,3 +149,18 @@ class AudioEngineResponse(BaseModel):
     output_underflows: int = 0
     hardware_ptt: Optional[str]  # "cm108", "gpio" or "serial"
     listeners: int = 0
+
+
+class AudioScoreResponse(BaseModel):
+    """Summary stats for a fixed RX clip (live record or uploaded WAV)."""
+
+    duration_seconds: float
+    sample_rate: int
+    peak_dbfs: float
+    rms_dbfs: float
+    median_block_dbfs: float
+    clipping: bool
+    ctcss_hz: Optional[float]
+    strongest_hz: Optional[float]
+    tone_share: float
+    notes: list[str]

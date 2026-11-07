@@ -144,10 +144,10 @@ class ClipRenderer:
             for key in [k for k in self._cache if k[0] == "id_long" and k not in wanted]:
                 del self._cache[key]
 
-    def speak(self, text: str, voice: str = "") -> np.ndarray:
+    def speak(self, text: str, voice: str = "", speed: float = 1.0) -> np.ndarray:
         if self.tts is None:
             raise TTSError("no text-to-speech engine is installed")
-        samples, rate = self.tts.synthesize(text, voice)
+        samples, rate = self.tts.synthesize(text, voice, speed=speed)
         samples = resample(samples, rate, self.sample_rate)
         peak = float(np.max(np.abs(samples))) if len(samples) else 0.0
         return (samples * (SPEECH_PEAK / peak)).astype(np.float32) if peak > 0 else samples
@@ -179,7 +179,14 @@ class ClipRenderer:
             asset = clip.removeprefix(ASSET_PREFIX)
             return (ASSET_PREFIX, asset, self._asset_version(asset))
         if clip.startswith(TTS_PREFIX):
-            return (TTS_PREFIX, clip.removeprefix(TTS_PREFIX), config.tts_voice, config.callsign, config.id_phonetic)
+            return (
+                TTS_PREFIX,
+                clip.removeprefix(TTS_PREFIX),
+                config.tts_voice,
+                config.tts_speed,
+                config.callsign,
+                config.id_phonetic,
+            )
         if clip.startswith(RECORDING_PREFIX) and self._recording_path is not None:
             return (RECORDING_PREFIX, clip.removeprefix(RECORDING_PREFIX))
         raise UnknownClipError(clip)
@@ -223,7 +230,7 @@ class ClipRenderer:
             return asset
         if clip.startswith(TTS_PREFIX):
             text = format_voice_id(clip.removeprefix(TTS_PREFIX), config.callsign, config.id_phonetic)
-            return self.speak(text, config.tts_voice)
+            return self.speak(text, config.tts_voice, speed=config.tts_speed)
         if clip.startswith(RECORDING_PREFIX) and self._recording_path is not None:
             try:
                 return read_wav(self._recording_path(clip.removeprefix(RECORDING_PREFIX)), self.sample_rate)
@@ -246,7 +253,8 @@ class ClipRenderer:
         mode, asset, text = parts
         return (
             clip, config.callsign, config.cw_id_suffix, mode, config.cw_wpm, config.cw_tone_hz, asset,
-            self._asset_version(asset), text, config.id_phonetic, config.tts_voice, self.tts is not None,
+            self._asset_version(asset), text, config.id_phonetic, config.tts_voice, config.tts_speed,
+            self.tts is not None,
         )
 
     def _voice_id(self, asset_id: Optional[str], template: str, config: RepeaterConfig) -> Optional[np.ndarray]:
@@ -257,7 +265,7 @@ class ClipRenderer:
         if not text or self.tts is None:
             return None
         try:
-            return self.speak(text, config.tts_voice)
+            return self.speak(text, config.tts_voice, speed=config.tts_speed)
         except TTSError:
             _logger.exception("voice ID text-to-speech failed")
             return None

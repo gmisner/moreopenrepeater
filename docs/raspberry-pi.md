@@ -53,9 +53,13 @@ sudo apt install -y python3-venv python3-dev libportaudio2 espeak-ng alsa-utils
 `libportaudio2` is PortAudio's runtime library, needed by `sounddevice`
 (`audio_io`'s stream layer) even before any real audio hardware is
 attached. `espeak-ng` gives the voice ID, announcements and weather alerts
-a text-to-speech voice (`pico2wave` from `libttspico-utils` also works and
-sounds better, if your distribution has it). Without one, IDs fall back to
-CW and spoken announcements can't render. `alsa-utils` provides `amixer`,
+a text-to-speech voice. For selectable accent, voice and speed on the
+Identification page, install [`kokoro-cli`](https://pypi.org/project/kokoro-cli/)
+(`uv tool install kokoro-cli && kokoro setup`, about 120 MB of models) —
+it is preferred when present. `pico2wave` from `libttspico-utils` is another
+step up from espeak if your distribution has it. Without one, IDs fall back
+to CW and spoken announcements can't render. On a Pi 4, Kokoro can take longer
+than realtime on the first render of a clip; cached announcements are fine. `alsa-utils` provides `amixer`,
 which interface board presets use to set the sound card's levels.
 
 ## 2. Dedicated user + install location
@@ -350,9 +354,9 @@ repeater and check:
 1. The dashboard's RX and PTT indicators follow the radio (COS/VOX and PTT).
 2. VOX threshold sits a few dB above the idle receive level, so quiet
    receiver hiss doesn't hold the repeater open. Use **Audio & tones →
-   Receiver openings** (open/peak dB, CTCSS, DTMF) to score live traffic
-   while you trim Mic gain, and **Test ID** on the Radio interface card to
-   verify the TX path.
+   Record & score** (5 s capture or upload a WAV) to A/B Mic gain with
+   peak/RMS/CTCSS stats, **Receiver openings** for what actually opened
+   COS, and **Test ID** on the Radio interface card to verify the TX path.
 3. TX gain is loud enough on the air without clipping; use a second radio
    or the monitor if you have one.
 4. **Audio glitches** on the Radio interface card stays near zero while

@@ -24,7 +24,7 @@ class FakeTTS:
     def __init__(self):
         self.spoken = []
 
-    def synthesize(self, text, voice=""):
+    def synthesize(self, text, voice="", speed=1.0):
         self.spoken.append(text)
         return np.full(2 * RATE, 0.1, dtype=np.float32), RATE  # 2 seconds
 
@@ -146,7 +146,7 @@ def test_play_now_with_linked_radio_flag_queues_it():
 
 def test_play_now_without_tts_is_503():
     class BrokenTTS(FakeTTS):
-        def synthesize(self, text, voice=""):
+        def synthesize(self, text, voice="", speed=1.0):
             from playout.tts import TTSError
 
             raise TTSError("engine exploded")

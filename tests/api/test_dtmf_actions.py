@@ -22,7 +22,7 @@ NOW = datetime(2026, 9, 28, 21, 5)
 class FakeTTS:
     name = "fake"
 
-    def synthesize(self, text, voice=""):
+    def synthesize(self, text, voice="", speed=1.0):
         return np.full(RATE, 0.1, dtype=np.float32), RATE
 
 

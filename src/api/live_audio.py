@@ -363,6 +363,28 @@ class LiveAudio:
         self._capture_armed = (self._clock(), max_seconds, on_done)
         return True
 
+    async def record_rx(self, seconds: float) -> tuple[np.ndarray, int]:
+        """Capture `seconds` of receive audio from the live engine (no COS wait).
+
+        Used by the commissioning score loop. Avoid running while parrot or
+        transmission recording is mid-capture.
+        """
+        engine = self.engine
+        if engine is None or not engine.running:
+            raise RuntimeError("Live audio isn't running")
+        processor = engine.processor
+        if getattr(processor, "_capture", None) is not None:
+            raise RuntimeError("Another capture is already in progress")
+        rate = processor.settings.sample_rate
+        processor.start_capture(seconds)
+        try:
+            await asyncio.sleep(seconds + 0.05)
+            samples = processor.stop_capture()
+        except BaseException:
+            processor.stop_capture()
+            raise
+        return samples, rate
+
     def play(self, clip: str) -> None:
         engine = self.engine
         if engine is None:

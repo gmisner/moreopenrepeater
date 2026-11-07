@@ -1,10 +1,19 @@
+import json
 import subprocess
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from playout.tts import CommandTTS, TTSError, detect_tts, format_voice_id, spell_callsign
+from playout.tts import (
+    CommandTTS,
+    TTSError,
+    describe_kokoro_voice,
+    detect_tts,
+    format_voice_id,
+    list_tts_voices,
+    spell_callsign,
+)
 from playout.wav import encode_wav
 
 
@@ -22,6 +31,14 @@ def test_format_voice_id_substitutes_the_callsign():
 
 def test_format_voice_id_tolerates_stray_braces():
     assert format_voice_id("{oops} {callsign}", "N0CALL", False) == "{oops} N 0 C A L L"
+
+
+def test_describe_kokoro_voice_maps_locale_and_gender():
+    info = describe_kokoro_voice("bm_george")
+    assert info.locale == "en-gb"
+    assert info.locale_label == "British English"
+    assert info.gender == "male"
+    assert "George" in info.label
 
 
 def _fake_run_writing(samples: np.ndarray, rate: int, calls: list):
@@ -59,10 +76,45 @@ def test_pico2wave_prefixes_text_so_it_cannot_be_parsed_as_a_flag():
     assert calls[0][-1] == " -x text"
 
 
-def test_detect_tts_prefers_say_then_espeak_ng():
+def test_kokoro_puts_text_after_double_dash_and_passes_speed():
+    calls: list = []
+    engine = detect_tts(which=lambda b: "/usr/bin/kokoro" if b == "kokoro" else None)
+    engine.run = _fake_run_writing(np.zeros(10, dtype=np.float32), 24000, calls)
+
+    engine.synthesize("-v evil", voice="am_adam", speed=1.25)
+
+    argv = calls[0]
+    assert argv[:2] == ["kokoro", "speak"]
+    assert argv[argv.index("-v") + 1] == "am_adam"
+    assert argv[argv.index("--speed") + 1] == "1.25"
+    assert argv[argv.index("--lang") + 1] == "en-us"
+    assert argv[argv.index("--") + 1] == "-v evil"
+
+
+def test_detect_tts_prefers_kokoro_then_say_then_espeak_ng():
+    assert detect_tts(which=lambda b: b in ("kokoro", "say", "espeak-ng")).name == "kokoro"
     assert detect_tts(which=lambda b: b in ("say", "espeak-ng")).name == "say"
     assert detect_tts(which=lambda b: b in ("espeak-ng", "pico2wave")).name == "espeak-ng"
     assert detect_tts(which=lambda b: None) is None
+
+
+def test_list_tts_voices_for_kokoro():
+    engine = detect_tts(which=lambda b: "/usr/bin/kokoro" if b == "kokoro" else None)
+
+    def run(argv, **kwargs):
+        assert argv == ["kokoro", "voices", "--json"]
+        return subprocess.CompletedProcess(
+            argv, 0, stdout=json.dumps({"voices": ["af_heart", "bm_george"]}), stderr=""
+        )
+
+    voices = list_tts_voices(engine, run=run)
+    assert [voice.id for voice in voices] == ["af_heart", "bm_george"]
+    assert voices[1].locale_label == "British English"
+
+
+def test_list_tts_voices_empty_for_other_engines():
+    engine = detect_tts(which=lambda b: "/usr/bin/say" if b == "say" else None)
+    assert list_tts_voices(engine) == []
 
 
 def test_engine_failure_raises_tts_error():

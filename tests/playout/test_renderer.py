@@ -21,7 +21,7 @@ class FakeTTS:
         self.calls: list[tuple[str, str]] = []
         self.fail = fail
 
-    def synthesize(self, text, voice=""):
+    def synthesize(self, text, voice="", speed=1.0):
         self.calls.append((text, voice))
         if self.fail:
             raise TTSError("boom")

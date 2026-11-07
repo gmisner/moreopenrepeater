@@ -70,8 +70,8 @@ The dashboard, with a station transmitting while a net is running:
   moves blocks, a worker thread does the processing, and PTT follows what
   is actually being transmitted.
 - **`playout`** -- turns the controller's `PlayAudio` clip names into samples:
-  courtesy/timeout tones, CW or text-to-speech IDs (`say`, `espeak-ng` or
-  `pico2wave`, whichever is installed), uploaded clips, and spoken
+  courtesy/timeout tones, CW or text-to-speech IDs (`kokoro`, `say`,
+  `espeak-ng` or `pico2wave`, whichever is installed), uploaded clips, and spoken
   announcements. Rendered clips are cached, so the controller knows each
   clip's real length and the live engine can start it without delay.
 - **`wx`** -- National Weather Service active-alert polling

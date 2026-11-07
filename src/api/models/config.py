@@ -217,6 +217,7 @@ class ConfigUpdateRequest(BaseModel):
     voice_id_text: Optional[str] = None
     id_phonetic: Optional[bool] = None
     tts_voice: Optional[str] = None
+    tts_speed: Optional[float] = Field(default=None, ge=0.5, le=2.0)
     # --- facet: aprs ---
     aprs_enabled: Optional[bool] = None
     aprs_server: Optional[str] = None

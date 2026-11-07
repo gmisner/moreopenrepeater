@@ -102,7 +102,7 @@ class FakeCard:
 class FakeTTS:
     name = "fake"
 
-    def synthesize(self, text, voice=""):
+    def synthesize(self, text, voice="", speed=1.0):
         return np.full(RATE, 0.1, dtype=np.float32), RATE
 
 

@@ -133,7 +133,7 @@ def test_schedule_settings_round_trip_through_config():
     class FakeTTS:
         name = "fake"
 
-        def synthesize(self, text, voice=""):
+        def synthesize(self, text, voice="", speed=1.0):
             return np.full(8000, 0.1, dtype=np.float32), 8000
 
     tmp = Path(tempfile.mkdtemp())

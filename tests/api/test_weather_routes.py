@@ -24,7 +24,7 @@ class FakeTTS:
     def __init__(self):
         self.spoken = []
 
-    def synthesize(self, text, voice=""):
+    def synthesize(self, text, voice="", speed=1.0):
         self.spoken.append(text)
         return np.full(RATE, 0.1, dtype=np.float32), RATE
 

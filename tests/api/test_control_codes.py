@@ -125,7 +125,7 @@ def test_decoder_gives_up_on_a_slow_or_garbled_code():
 class FakeTTS:
     name = "fake"
 
-    def synthesize(self, text, voice=""):
+    def synthesize(self, text, voice="", speed=1.0):
         return np.full(8000, 0.1, dtype=np.float32), 8000
 
 

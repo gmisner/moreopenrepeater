@@ -52,15 +52,15 @@ sudo apt install -y python3-venv python3-dev libportaudio2 espeak-ng alsa-utils
 
 `libportaudio2` is PortAudio's runtime library, needed by `sounddevice`
 (`audio_io`'s stream layer) even before any real audio hardware is
-attached. `espeak-ng` gives the voice ID, announcements and weather alerts
-a text-to-speech voice. For selectable accent, voice and speed on the
-Identification page, install [`kokoro-cli`](https://pypi.org/project/kokoro-cli/)
-(`uv tool install kokoro-cli && kokoro setup`, about 120 MB of models) —
-it is preferred when present. `pico2wave` from `libttspico-utils` is another
-step up from espeak if your distribution has it. Without one, IDs fall back
-to CW and spoken announcements can't render. On a Pi 4, Kokoro can take longer
-than realtime on the first render of a clip; cached announcements are fine. `alsa-utils` provides `amixer`,
-which interface board presets use to set the sound card's levels.
+attached. The installer also puts **Kokoro** (`kokoro-cli`) in the venv and
+downloads about 120 MB of models under `data/kokoro/` — that is the default
+voice for IDs and announcements, with accent / voice / speed on the
+Identification page. `espeak-ng` stays installed as a thin fallback if the
+model download fails offline. Without either, IDs fall back to CW and spoken
+announcements can't render. On a Pi 4, Kokoro can take longer than realtime
+on the first render of a clip; cached announcements are fine. `alsa-utils`
+provides `amixer`, which interface board presets use to set the sound card's
+levels.
 
 ## 2. Dedicated user + install location
 

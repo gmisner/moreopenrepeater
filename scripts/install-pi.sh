@@ -255,6 +255,7 @@ fi
 step "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
+# espeak-ng stays as a thin TTS fallback if Kokoro setup fails offline.
 apt-get install -y -q --no-install-recommends git python3-venv python3-dev libportaudio2 espeak-ng curl alsa-utils
 
 python3 - <<'EOF' || fail "Python 3.11 or newer is required (Raspberry Pi OS Bookworm or later)."
@@ -275,7 +276,7 @@ fi
 if getent group systemd-journal >/dev/null; then
   usermod -aG systemd-journal "$SERVICE_USER"
 fi
-# Settings, recordings, logs and backups: the only part the service can write.
+# Settings, recordings, logs, backups, and Kokoro models: the only part the service can write.
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$INSTALL_DIR/data"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data"
 rm -rf "$INSTALL_DIR/.cache"  # pip's cache from when it ran as the service user
@@ -284,8 +285,21 @@ step "Installing Python dependencies (this can take a few minutes on a Pi)"
 [ -x "$INSTALL_DIR/.venv/bin/python" ] || python3 -m venv "$INSTALL_DIR/.venv"
 "$INSTALL_DIR/.venv/bin/pip" install -q --no-cache-dir --upgrade pip
 "$INSTALL_DIR/.venv/bin/pip" install -q --no-cache-dir -e "$INSTALL_DIR"
+# Neural TTS for IDs and announcements (locale / voice / speed on Identification).
+"$INSTALL_DIR/.venv/bin/pip" install -q --no-cache-dir "kokoro-cli>=0.4"
 # The service can't write bytecode next to root's files, so compile it now.
 "$INSTALL_DIR/.venv/bin/python" -m compileall -q "$INSTALL_DIR/src" >/dev/null
+
+step "Downloading Kokoro voice models (~120 MB, once)"
+KOKORO_HOME="$INSTALL_DIR/data/kokoro"
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$KOKORO_HOME"
+# Run as the service user so ownership of the models matches the unit.
+if ! sudo -u "$SERVICE_USER" env "KOKORO_HOME=$KOKORO_HOME" \
+    "$INSTALL_DIR/.venv/bin/kokoro" setup --model int8; then
+  echo "Warning: Kokoro model download failed; voice IDs will use espeak-ng until setup succeeds."
+  echo "         Retry later with: sudo -u $SERVICE_USER env KOKORO_HOME=$KOKORO_HOME $INSTALL_DIR/.venv/bin/kokoro setup"
+fi
+chown -R "$SERVICE_USER:$SERVICE_USER" "$KOKORO_HOME"
 
 step "Allowing access to CM108 USB radio interfaces"
 install -m 644 "$INSTALL_DIR/packaging/99-cm108.rules" /etc/udev/rules.d/99-cm108.rules

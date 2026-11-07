@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -125,6 +127,8 @@ class CommandTTS:
     name: str
     build_argv: Callable[[Path, Path, str, str, float], list[str]]
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run
+    # Absolute path when the binary isn't on PATH (e.g. kokoro in the venv).
+    binary: str = ""
 
     def synthesize(
         self, text: str, voice: str = "", speed: float = DEFAULT_TTS_SPEED
@@ -134,6 +138,8 @@ class CommandTTS:
             out_wav = Path(tmp) / "speech.wav"
             text_file.write_text(text)
             argv = self.build_argv(text_file, out_wav, text, voice, clamp_tts_speed(speed))
+            if self.binary:
+                argv = [self.binary, *argv[1:]]
             try:
                 self.run(argv, check=True, capture_output=True, timeout=TIMEOUT_SECONDS)
             except (OSError, subprocess.SubprocessError) as error:
@@ -179,20 +185,32 @@ def _kokoro_argv(text_file: Path, out_wav: Path, text: str, voice: str, speed: f
     ]
 
 
-_ENGINES = (
-    ("kokoro", lambda: CommandTTS("kokoro", _kokoro_argv)),
-    ("say", lambda: CommandTTS("say", _say_argv)),
-    ("espeak-ng", lambda: CommandTTS("espeak-ng", _espeak_argv("espeak-ng"))),
-    ("espeak", lambda: CommandTTS("espeak", _espeak_argv("espeak"))),
-    ("pico2wave", lambda: CommandTTS("pico2wave", _pico_argv)),
+def resolve_tts_binary(name: str, which: Callable[[str], Optional[str]] = shutil.which) -> Optional[str]:
+    """PATH first, then the binary next to this process's Python (the venv)."""
+    found = which(name)
+    if found:
+        return found
+    sibling = Path(sys.executable).resolve().parent / name
+    if sibling.is_file() and os.access(sibling, os.X_OK):
+        return str(sibling)
+    return None
+
+
+_ENGINES: tuple[tuple[str, Callable[[str], CommandTTS]], ...] = (
+    ("kokoro", lambda path: CommandTTS("kokoro", _kokoro_argv, binary=path)),
+    ("say", lambda path: CommandTTS("say", _say_argv, binary=path)),
+    ("espeak-ng", lambda path: CommandTTS("espeak-ng", _espeak_argv(path), binary=path)),
+    ("espeak", lambda path: CommandTTS("espeak", _espeak_argv(path), binary=path)),
+    ("pico2wave", lambda path: CommandTTS("pico2wave", _pico_argv, binary=path)),
 )
 
 
 def detect_tts(which: Callable[[str], Optional[str]] = shutil.which) -> Optional[TTSEngine]:
-    for binary, factory in _ENGINES:
-        if which(binary):
-            _logger.info("text-to-speech engine: %s", binary)
-            return factory()
+    for name, factory in _ENGINES:
+        path = resolve_tts_binary(name, which=which)
+        if path:
+            _logger.info("text-to-speech engine: %s (%s)", name, path)
+            return factory(path)
     _logger.warning(
         "no text-to-speech engine found (install kokoro-cli, espeak-ng, or libttspico-utils); voice IDs fall back to CW"
     )
@@ -207,9 +225,10 @@ def list_tts_voices(
     """Voices the current engine can use. Only Kokoro is enumerated today."""
     if engine is None or engine.name != "kokoro":
         return []
+    binary = getattr(engine, "binary", "") or "kokoro"
     try:
         completed = run(
-            ["kokoro", "voices", "--json"],
+            [binary, "voices", "--json"],
             check=True,
             capture_output=True,
             text=True,

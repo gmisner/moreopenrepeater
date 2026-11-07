@@ -24,6 +24,7 @@ import {
   type AudioDevice,
   type EngineStatus,
   type EngineValues,
+  type LinkRadioLiveStatus,
   type LinkValues,
   type SerialPort,
   type SoundLevel,
@@ -52,6 +53,7 @@ export function Audio() {
   const [devicesError, setDevicesError] = useState<string | null>(null);
   const [serialPorts, setSerialPorts] = useState<SerialPort[]>([]);
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null);
+  const [linkStatus, setLinkStatus] = useState<LinkRadioLiveStatus | null>(null);
   const [levels, setLevels] = useState<SoundLevel[]>([]);
   const [levelNotes, setLevelNotes] = useState<string[]>([]);
   const [previewBusy, setPreviewBusy] = useState<string | null>(null);
@@ -155,6 +157,12 @@ export function Audio() {
         setShowSilenceHint(silentPolls.current >= SILENT_POLLS_BEFORE_HINT);
       } catch {
         // Next poll retries; session handling covers sign-out.
+      }
+      try {
+        const linkNext = await api<LinkRadioLiveStatus>("/api/link-radio");
+        if (!cancelled) setLinkStatus(linkNext);
+      } catch {
+        // Linked radio status is optional for this page; retry next poll.
       }
     };
     void tick();
@@ -288,6 +296,21 @@ export function Audio() {
         isViewer={isViewer}
         openWizard={openWizard}
       />
+      <LinkRadioCard
+        link={link}
+        devices={devices}
+        devicesError={devicesError}
+        onReloadDevices={() => void loadDevices()}
+        serialPorts={serialPorts}
+        soundUsage={soundUsage}
+        serialUsage={serialUsage}
+        linkStatus={linkStatus}
+        linkRemoteBase={linkRemoteBase}
+        linkCosHardware={linkCosHardware}
+        linkTxCtcss={linkTxCtcss}
+        remoteOffset={remoteOffset}
+        remoteTone={remoteTone}
+      />
       <MonitorReceiverCard devices={devices} />
       <SoundLevelsCard
         levels={levels}
@@ -298,20 +321,6 @@ export function Audio() {
         setLevels={setLevels}
         setLevel={setLevel}
         saveUnsavedLevels={saveUnsavedLevels}
-      />
-      <LinkRadioCard
-        link={link}
-        devices={devices}
-        devicesError={devicesError}
-        onReloadDevices={() => void loadDevices()}
-        serialPorts={serialPorts}
-        soundUsage={soundUsage}
-        serialUsage={serialUsage}
-        linkRemoteBase={linkRemoteBase}
-        linkCosHardware={linkCosHardware}
-        linkTxCtcss={linkTxCtcss}
-        remoteOffset={remoteOffset}
-        remoteTone={remoteTone}
       />
       <AudioHardwareCards assets={assets} reloadAssets={loadAssets} canWrite={!isViewer} />
     </Page>

@@ -1,6 +1,8 @@
 import {
   Accordion,
+  Badge,
   Button,
+  Group,
   NumberInput,
   Select,
   SimpleGrid,
@@ -21,11 +23,11 @@ import {
   soundDeviceOptions,
   type DeviceAssignment,
 } from "../../deviceUsage";
-import { COS_METHOD_LABELS, PTT_METHOD_LABELS } from "./constants";
+import { COS_METHOD_LABELS, METER_FLOOR_DB, PTT_METHOD_LABELS } from "./constants";
 import { CtcssToneSelect } from "./CtcssToneSelect";
-import { shortLabel } from "./helpers";
+import { LevelMeter, shortLabel } from "./helpers";
 import { RemoteBaseCard } from "./RemoteBaseCard";
-import type { AudioDevice, ConfigSlice, LinkValues, SerialPort } from "./types";
+import type { AudioDevice, ConfigSlice, LinkRadioLiveStatus, LinkValues, SerialPort } from "./types";
 
 export function LinkRadioCard({
   link,
@@ -35,6 +37,7 @@ export function LinkRadioCard({
   serialPorts,
   soundUsage,
   serialUsage,
+  linkStatus,
   linkRemoteBase,
   linkCosHardware,
   linkTxCtcss,
@@ -48,6 +51,7 @@ export function LinkRadioCard({
   serialPorts: SerialPort[];
   soundUsage: DeviceAssignment[];
   serialUsage: DeviceAssignment[];
+  linkStatus: LinkRadioLiveStatus | null;
   linkRemoteBase: boolean;
   linkCosHardware: boolean;
   linkTxCtcss: string | null;
@@ -92,7 +96,37 @@ export function LinkRadioCard({
               ]
             : []),
         ]}
-      />
+      >
+        <LevelMeter
+          db={linkStatus?.rx_level_db ?? METER_FLOOR_DB}
+          running={Boolean(linkStatus?.running)}
+          open={Boolean(linkStatus?.running && linkStatus.receiving)}
+          thresholdDb={link.values.link_radio_vox_threshold_db}
+          showThreshold={link.values.link_radio_cos === "vox"}
+        />
+        <Group gap="sm" wrap="wrap">
+          <Text size="sm">
+            RX{" "}
+            <Text span fw={700}>
+              {linkStatus?.running ? `${linkStatus.rx_level_db.toFixed(0)} dBFS` : "–"}
+            </Text>
+          </Text>
+          <Badge color={linkStatus?.running && linkStatus.receiving ? "green" : "gray"} variant="light">
+            carrier
+          </Badge>
+          <Badge
+            color={linkStatus?.running && linkStatus.transmitting ? "red" : "gray"}
+            variant="light"
+          >
+            {linkStatus?.timed_out ? "timeout" : "TX"}
+          </Badge>
+        </Group>
+        {linkStatus?.error || linkStatus?.rig_error ? (
+          <Text c="red" size="sm">
+            {linkStatus.error || linkStatus.rig_error}
+          </Text>
+        ) : null}
+      </ConfigSummaryCard>
 
       <ConfigEditDrawer
         opened={editing}

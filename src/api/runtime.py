@@ -26,7 +26,7 @@ from controller.state_machine import RepeaterConfig
 from link.aprs_client import APRSClient, format_frequency_comment, format_position_report, format_status_report
 from link.asterisk_files import asterisk_files_from_env
 from link.node_link import NodeLinkClient
-from playout.renderer import ClipRenderer, UnknownClipError
+from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError, detect_tts
 from wx.nws import fetch_active_alerts, fetch_zone_geometry, missing_zones
 
@@ -637,6 +637,7 @@ class AppRuntime:
         hub_poller = hub_poller if hub_poller is not None else HubPoller()
         homeassistant = homeassistant or HomeAssistant(service, os.environ.get(HOMEASSISTANT_TOKEN_ENV))
         airport_weather = airport_weather or AirportWeather(service)
+        service.weather.metar_text = lambda: airport_weather.text("")
         site_sensors = site_sensors or SiteSensors(
             service, history=sensor_history or SensorHistoryStore()
         )
@@ -888,6 +889,30 @@ class AppRuntime:
                     except (UnknownClipError, TTSError, HTTPException):
                         _announce_logger.exception("couldn't play scheduled announcement %s", clip)
 
+        async def weather_schedule_loop() -> None:
+            """Routine METAR / alert-summary announcements on wx_schedule_minutes."""
+            while True:
+                await asyncio.sleep(ANNOUNCEMENT_POLL_SECONDS)
+                try:
+                    if not service.weather_schedule_due():
+                        continue
+                    on_linked_radio = service.config.weather.wx_schedule_on_linked_radio
+                    text = await asyncio.get_running_loop().run_in_executor(
+                        None, service.scheduled_weather_text
+                    )
+                    if not text:
+                        continue
+                    clip = TTS_PREFIX + text
+                    _weather_logger.info("scheduled weather announcement due")
+                    if service.net_active and service.saved_config.net_hold_announcements:
+                        service.defer_announcement(clip, on_linked_radio=on_linked_radio)
+                        continue
+                    await render_and_queue(clip, on_linked_radio=on_linked_radio)
+                except (UnknownClipError, TTSError, HTTPException):
+                    _weather_logger.exception("couldn't play scheduled weather announcement")
+                except Exception:
+                    _weather_logger.exception("unexpected error in scheduled weather")
+
         async def check_weather(announce: bool) -> None:
             config = service.config
             wx, aprs = config.weather, config.aprs
@@ -1041,6 +1066,7 @@ class AppRuntime:
                 tasks.append(asyncio.create_task(tick_loop()))
                 tasks.append(asyncio.create_task(aprs_beacon_loop()))
                 tasks.append(asyncio.create_task(announcement_loop()))
+                tasks.append(asyncio.create_task(weather_schedule_loop()))
                 tasks.append(asyncio.create_task(weather_loop()))
                 tasks.append(asyncio.create_task(aprs_receiver.run()))
                 tasks.append(asyncio.create_task(aprs_prune_loop()))

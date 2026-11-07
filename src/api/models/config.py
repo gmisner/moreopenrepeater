@@ -27,6 +27,7 @@ from .types import (
     SerialInputLine,
     SerialOutputLine,
     TranscriptionEngine,
+    WeatherScheduleContent,
     WeatherSeverity,
     hh_mm,
     weekdays,
@@ -251,6 +252,10 @@ class ConfigUpdateRequest(BaseModel):
     wx_poll_interval: Optional[float] = Field(default=None, ge=30)
     wx_repeat_minutes: Optional[float] = Field(default=None, ge=0)
     metar_airports: Optional[list[MetarAirport]] = Field(default=None, max_length=20)
+    wx_schedule_enabled: Optional[bool] = None
+    wx_schedule_minutes: Optional[float] = Field(default=None, ge=5, le=24 * 60)
+    wx_schedule_content: Optional[WeatherScheduleContent] = None
+    wx_schedule_on_linked_radio: Optional[bool] = None
     audio_enabled: Optional[bool] = None
     setup_wizard_done: Optional[bool] = None
     audio_input_device: Optional[str] = None

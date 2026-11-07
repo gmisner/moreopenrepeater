@@ -266,6 +266,9 @@ several phases (see the plan file for the full breakdown):
 - **NWS weather alerts**: polls active alerts for the repeater's location, announces
   new ones at or above a chosen severity, optionally repeats them, and shows the
   current alerts on the dashboard with a Play button.
+- **Scheduled weather**: optional interval announcements of airport METARs and/or an
+  active-alert summary (Weather page). Can also play on Linked Radio when that port
+  is up, using the same opt-in path as scheduled announcements.
 - **APRS beacon as a repeater object**: the beacon uses the repeater map symbol by
   default, and can include the output frequency, offset and access tone in the
   standard APRS format (`146.940MHz T100 -060`). APRS radios can then tune to the

@@ -8,6 +8,7 @@ from pydantic import Field
 
 NetLinks = Literal["leave", "disconnect", "connect"]
 WeatherSeverity = Literal["Minor", "Moderate", "Severe", "Extreme"]
+WeatherScheduleContent = Literal["metar", "alerts", "both"]
 CosSource = Literal["vox", "ctcss", "cm108", "gpio", "serial"]
 Polarity = Literal["low", "high"]
 PttOutput = Literal["cm108", "gpio", "serial"]

@@ -37,7 +37,11 @@ FACET_FIELD_NAMES: dict[str, tuple[str, ...]] = {
     'link_radio': ('link_radio_enabled', 'link_radio_name', 'link_radio_model', 'link_radio_frequency', 'link_radio_notes', 'link_radio_input_device', 'link_radio_output_device', 'link_radio_input_levels', 'link_radio_output_levels', 'link_radio_cos', 'link_radio_cos_polarity', 'link_radio_cos_gpio_pin', 'link_radio_cos_serial_device', 'link_radio_cos_serial_line', 'link_radio_vox_threshold_db', 'link_radio_ptt', 'link_radio_ptt_gpio_pin', 'link_radio_ptt_serial_device', 'link_radio_ptt_serial_line', 'link_radio_ptt_polarity', 'link_radio_tx_gain_db', 'link_radio_tx_ctcss_hz', 'link_radio_timeout', 'link_radio_squelch_tail_ms', 'link_radio_tx_delay_ms', 'link_radio_courtesy_tone', 'link_radio_mode'),
     'remote_base': ('remote_base_rigctld', 'remote_base_rig_mode', 'remote_base_mhz', 'remote_base_shift', 'remote_base_offset_mhz', 'remote_base_tone_hz', 'remote_base_ranges', 'remote_base_idle_minutes'),
     'aprs': ('aprs_enabled', 'aprs_server', 'aprs_port', 'aprs_callsign', 'aprs_lat', 'aprs_lon', 'aprs_comment', 'aprs_beacon_interval', 'aprs_symbol', 'aprs_frequency_mhz', 'aprs_offset_mhz', 'aprs_tone_hz', 'aprs_map_enabled', 'aprs_map_radius_km', 'aprs_map_hours', 'aprs_map_tiles', 'distance_units'),
-    'weather': ('wx_alerts_enabled', 'wx_lat', 'wx_lon', 'wx_min_severity', 'wx_poll_interval', 'wx_repeat_minutes', 'metar_airports'),
+    'weather': (
+        'wx_alerts_enabled', 'wx_lat', 'wx_lon', 'wx_min_severity', 'wx_poll_interval', 'wx_repeat_minutes',
+        'metar_airports', 'wx_schedule_enabled', 'wx_schedule_minutes', 'wx_schedule_content',
+        'wx_schedule_on_linked_radio',
+    ),
     'monitor': ('monitor_enabled', 'monitor_name', 'monitor_input_device', 'monitor_squelch', 'monitor_vox_threshold_db', 'monitor_gpio_pin', 'monitor_gpio_polarity', 'monitor_gain_db', 'monitor_record'),
     'autopatch': ('autopatch_enabled', 'autopatch_access_code', 'autopatch_hangup_code', 'autopatch_dial_string', 'autopatch_ten_digit_prefix', 'autopatch_caller_id', 'autopatch_allowed', 'autopatch_blocked', 'autopatch_max_call_seconds', 'autopatch_ring_seconds', 'autopatch_incoming_enabled', 'autopatch_incoming_pin'),
     'mailbox': ('mailbox_enabled', 'mailbox_leave_code', 'mailbox_play_code', 'mailbox_delete_code', 'mailbox_max_seconds', 'mailbox_retention_days', 'mailbox_reminder_minutes'),
@@ -195,6 +199,10 @@ class RepeaterConfig:
     wx_poll_interval: float = 120.0
     wx_repeat_minutes: float = 0.0
     metar_airports: list = field(default_factory=list)
+    wx_schedule_enabled: bool = False
+    wx_schedule_minutes: float = 60.0
+    wx_schedule_content: Literal['metar', 'alerts', 'both'] = 'metar'
+    wx_schedule_on_linked_radio: bool = False
     # --- monitor ---
     monitor_enabled: bool = False
     monitor_name: str = ''
@@ -302,7 +310,19 @@ class RepeaterConfig:
 
     @property
     def weather(self) -> WeatherConfig:
-        return WeatherConfig(wx_alerts_enabled=self.wx_alerts_enabled, wx_lat=self.wx_lat, wx_lon=self.wx_lon, wx_min_severity=self.wx_min_severity, wx_poll_interval=self.wx_poll_interval, wx_repeat_minutes=self.wx_repeat_minutes, metar_airports=self.metar_airports)
+        return WeatherConfig(
+            wx_alerts_enabled=self.wx_alerts_enabled,
+            wx_lat=self.wx_lat,
+            wx_lon=self.wx_lon,
+            wx_min_severity=self.wx_min_severity,
+            wx_poll_interval=self.wx_poll_interval,
+            wx_repeat_minutes=self.wx_repeat_minutes,
+            metar_airports=self.metar_airports,
+            wx_schedule_enabled=self.wx_schedule_enabled,
+            wx_schedule_minutes=self.wx_schedule_minutes,
+            wx_schedule_content=self.wx_schedule_content,
+            wx_schedule_on_linked_radio=self.wx_schedule_on_linked_radio,
+        )
 
     @property
     def monitor(self) -> MonitorConfig:

@@ -444,6 +444,19 @@ class RepeaterService:
     def weather_alert_clip(self, alert: WeatherAlert) -> str:
         return self._weather.alert_clip(alert)
 
+    def weather_schedule_due(self) -> bool:
+        return self._weather.take_due_schedule()
+
+    def scheduled_weather_text(self) -> Optional[str]:
+        return self._weather.scheduled_text()
+
+    def next_weather_schedule_run(self) -> Optional[datetime]:
+        return self._weather.next_schedule_run()
+
+    def defer_announcement(self, clip: str, *, on_linked_radio: bool = False) -> None:
+        self._programming.defer_announcement(clip, on_linked_radio=on_linked_radio)
+
+
     def export_snapshot(self) -> dict:
         return self._config.export_snapshot()
 

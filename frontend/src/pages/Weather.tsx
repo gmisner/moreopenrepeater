@@ -49,6 +49,10 @@ type WxValues = {
   wx_min_severity: string;
   wx_poll_interval: number;
   wx_repeat_minutes: number;
+  wx_schedule_enabled: boolean;
+  wx_schedule_minutes: number;
+  wx_schedule_content: string;
+  wx_schedule_on_linked_radio: boolean;
 };
 
 const WX_KEYS = [
@@ -58,6 +62,10 @@ const WX_KEYS = [
   "wx_min_severity",
   "wx_poll_interval",
   "wx_repeat_minutes",
+  "wx_schedule_enabled",
+  "wx_schedule_minutes",
+  "wx_schedule_content",
+  "wx_schedule_on_linked_radio",
 ] as (keyof WxValues)[];
 
 const WX_DEFAULTS: WxValues = {
@@ -67,6 +75,10 @@ const WX_DEFAULTS: WxValues = {
   wx_min_severity: "Severe",
   wx_poll_interval: 300,
   wx_repeat_minutes: 0,
+  wx_schedule_enabled: false,
+  wx_schedule_minutes: 60,
+  wx_schedule_content: "metar",
+  wx_schedule_on_linked_radio: false,
 };
 
 const SEVERITY_COLOR: Record<string, string> = {
@@ -273,7 +285,7 @@ export function Weather() {
   const enabled = wx.values.wx_alerts_enabled;
 
   return (
-    <Page title="Weather" description="Speak NWS watches and warnings for this location, plus optional airport METARs.">
+    <Page title="Weather" description="Speak NWS watches and warnings for this location, plus optional airport METARs on a schedule.">
       <Card
         withBorder
         padding="lg"
@@ -359,6 +371,50 @@ export function Weather() {
               required
             />
           </SimpleGrid>
+          <Title order={3}>Scheduled weather</Title>
+          <Text c="dimmed" size="sm" maw="75ch">
+            Speak airport weather and/or a summary of active alerts on a timer. Waits for a clear
+            channel (and holds during a net when announcements are held). Separate from the NWS
+            alert pushes above.
+          </Text>
+          <Switch
+            label="Announce weather on a schedule"
+            checked={wx.values.wx_schedule_enabled}
+            onChange={(event) => wx.setField("wx_schedule_enabled", event.currentTarget.checked)}
+          />
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            <NumberInput
+              label="Every"
+              suffix=" min"
+              min={5}
+              step={5}
+              value={wx.values.wx_schedule_minutes}
+              onChange={(value) => wx.setField("wx_schedule_minutes", Number(value) || 60)}
+              disabled={!wx.values.wx_schedule_enabled}
+              required
+            />
+            <Select
+              label="What to say"
+              data={[
+                { value: "metar", label: "Airport weather (METARs)" },
+                { value: "alerts", label: "Active weather alerts" },
+                { value: "both", label: "Airport weather and alerts" },
+              ]}
+              value={wx.values.wx_schedule_content}
+              onChange={(value) => wx.setField("wx_schedule_content", value || "metar")}
+              allowDeselect={false}
+              disabled={!wx.values.wx_schedule_enabled}
+            />
+          </SimpleGrid>
+          <Switch
+            label={labeled(
+              "Also on Linked Radio",
+              "When Linked Radio is running, play the scheduled weather on the link TX as well (skipped if the far end is keyed).",
+            )}
+            checked={wx.values.wx_schedule_on_linked_radio}
+            onChange={(event) => wx.setField("wx_schedule_on_linked_radio", event.currentTarget.checked)}
+            disabled={!wx.values.wx_schedule_enabled}
+          />
           <Group justify="space-between">
             <Button type="button" variant="subtle" onClick={useDeviceLocation}>
               Use this device&apos;s location
@@ -441,7 +497,8 @@ export function Weather() {
         <Stack gap="md">
           <Title order={2}>Airport weather</Title>
           <Text c="dimmed" size="sm" maw="75ch">
-            METARs for an &quot;Airport weather&quot; DTMF macro. Fetched on demand and kept 10 minutes.
+            METARs for an &quot;Airport weather&quot; DTMF macro and for scheduled weather above. Fetched on
+            demand and kept 10 minutes.
           </Text>
           <Table.ScrollContainer minWidth={480}>
             <Table>

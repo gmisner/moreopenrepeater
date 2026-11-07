@@ -179,7 +179,6 @@ export function LinkRadioCard({
                     clearable
                     placeholder="System default"
                     nothingFoundMessage="No input devices"
-                    comboboxProps={{ withinPortal: true, zIndex: 400 }}
                   />
                   <Select
                     label="Output (link transmitter)"
@@ -189,7 +188,6 @@ export function LinkRadioCard({
                     clearable
                     placeholder="System default"
                     nothingFoundMessage="No output devices"
-                    comboboxProps={{ withinPortal: true, zIndex: 400 }}
                   />
                 </SimpleGrid>
               </Accordion.Panel>

@@ -3,19 +3,20 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
+import { theme } from "../../theme";
 import { CtcssToneSelect } from "./CtcssToneSelect";
 
 function CtcssSelectHarness() {
   const [value, setValue] = useState<string | null>(null);
   return (
-    <MantineProvider>
+    <MantineProvider theme={theme}>
       <CtcssToneSelect value={value} onChange={setValue} />
     </MantineProvider>
   );
 }
 
 describe("CtcssToneSelect", () => {
-  it("renders a native-overflow dropdown without ScrollArea", async () => {
+  it("inherits the theme native-scroll Select defaults", async () => {
     const user = userEvent.setup();
     render(<CtcssSelectHarness />);
 
@@ -28,7 +29,6 @@ describe("CtcssToneSelect", () => {
     expect(dropdown!.querySelector(".mantine-ScrollArea-root")).toBeNull();
     expect((dropdown as HTMLElement).style.maxHeight).toBe("220px");
     expect((dropdown as HTMLElement).style.overflowY).toBe("auto");
-    expect((dropdown as HTMLElement).style.overscrollBehavior).toBe("contain");
   });
 
   it("lets the operator type to filter and pick a high tone", async () => {

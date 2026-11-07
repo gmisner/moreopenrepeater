@@ -18,6 +18,10 @@ WorkingDirectory=/opt/moreopenrepeater
 # Multithreaded BLAS makes the audio worker's small matrix products late now
 # and then on a Pi (waking the other cores costs more than it saves).
 Environment=OPENBLAS_NUM_THREADS=1
+# venv first so `kokoro` (and other console scripts) resolve for TTS.
+Environment=PATH=/opt/moreopenrepeater/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+# Kokoro models (~120 MB) live under data/ so the service user can read them.
+Environment=KOKORO_HOME=/opt/moreopenrepeater/data/kokoro
 # The dashboard's Updates page asks moreopenrepeater-update.path for an
 # update by writing the request file, and reads progress from the updater's
 # state directory. Remote access (Tailscale) uses the same pattern.

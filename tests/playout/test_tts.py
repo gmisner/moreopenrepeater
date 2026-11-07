@@ -59,7 +59,7 @@ def test_say_engine_passes_text_via_file_not_argv():
     samples, rate = engine.synthesize("-v evil", voice="Samantha")
 
     argv = calls[0]
-    assert argv[0] == "say"
+    assert argv[0] == "/usr/bin/say"
     assert "-v evil" not in argv  # announcement text can't smuggle in flags
     assert argv[argv.index("-v") + 1] == "Samantha"
     assert "-f" in argv
@@ -84,11 +84,25 @@ def test_kokoro_puts_text_after_double_dash_and_passes_speed():
     engine.synthesize("-v evil", voice="am_adam", speed=1.25)
 
     argv = calls[0]
-    assert argv[:2] == ["kokoro", "speak"]
+    assert argv[:2] == ["/usr/bin/kokoro", "speak"]
     assert argv[argv.index("-v") + 1] == "am_adam"
     assert argv[argv.index("--speed") + 1] == "1.25"
     assert argv[argv.index("--lang") + 1] == "en-us"
     assert argv[argv.index("--") + 1] == "-v evil"
+
+
+def test_resolve_tts_binary_checks_venv_sibling(tmp_path, monkeypatch):
+    from playout import tts as tts_mod
+
+    fake_python = tmp_path / "python"
+    fake_python.write_text("")
+    fake_python.chmod(0o755)
+    kokoro = tmp_path / "kokoro"
+    kokoro.write_text("")
+    kokoro.chmod(0o755)
+    monkeypatch.setattr(tts_mod.sys, "executable", str(fake_python))
+
+    assert tts_mod.resolve_tts_binary("kokoro", which=lambda _name: None) == str(kokoro)
 
 
 def test_detect_tts_prefers_kokoro_then_say_then_espeak_ng():
@@ -102,7 +116,7 @@ def test_list_tts_voices_for_kokoro():
     engine = detect_tts(which=lambda b: "/usr/bin/kokoro" if b == "kokoro" else None)
 
     def run(argv, **kwargs):
-        assert argv == ["kokoro", "voices", "--json"]
+        assert argv == ["/usr/bin/kokoro", "voices", "--json"]
         return subprocess.CompletedProcess(
             argv, 0, stdout=json.dumps({"voices": ["af_heart", "bm_george"]}), stderr=""
         )

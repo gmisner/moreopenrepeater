@@ -23,7 +23,9 @@ python3 -m venv .venv
 ```
 
 On Debian or Ubuntu, `sudo apt install libportaudio2 espeak-ng` first, so the
-audio and text-to-speech tests run instead of skipping. To run the dashboard
+audio and text-to-speech tests run instead of skipping. A Pi install also
+pulls in Kokoro via the installer; for local neural TTS, `pip install
+kokoro-cli` into the venv and run `kokoro setup`. To run the dashboard
 locally and try live audio on a Mac, see "Development" in the
 [README](README.md#development).
 

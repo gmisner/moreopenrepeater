@@ -6,7 +6,7 @@ INSTALLER = (ROOT / "scripts" / "install-pi.sh").read_text()
 
 
 def test_installer_prefers_piper_tts_dependency():
-    assert 'dependencies=("piper-tts>=1.2")' in INSTALLER
+    assert 'dependencies=("piper-tts[http]>=1.2")' in INSTALLER
     assert "piper.download_voices" in INSTALLER
     assert "piper_voice_ready" in INSTALLER
     assert "en_GB-cori-high" in INSTALLER

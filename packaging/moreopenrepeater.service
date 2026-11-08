@@ -24,6 +24,8 @@ Environment=PATH=/opt/moreopenrepeater/.venv/bin:/usr/local/sbin:/usr/local/bin:
 # Piper voices live under data/ so they survive venv swaps.
 Environment=PIPER_DATA_DIR=/opt/moreopenrepeater/data/piper
 Environment=PIPER_VOICE=en_GB-cori-high
+# Long-lived piper.http_server keeps the ONNX model warm (CLI reloads every speak).
+Environment=PIPER_SERVICE_URL=http://127.0.0.1:8766
 # Kokoro models (~120 MB) when kokoro-cli is still installed on this site.
 Environment=KOKORO_HOME=/opt/moreopenrepeater/data/kokoro
 # The dashboard's Updates page asks moreopenrepeater-update.path for an

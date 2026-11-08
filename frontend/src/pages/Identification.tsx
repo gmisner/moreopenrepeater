@@ -119,7 +119,7 @@ export function Identification() {
   const isCw = values.id_mode === "cw";
   const isVoice = values.id_mode === "voice";
   const longOn = values.long_id_mode !== "off";
-  const kokoro = tts?.engine === "kokoro";
+  const neuralPicker = tts?.engine === "kokoro" || tts?.engine === "piper";
 
   useEffect(() => {
     let cancelled = false;
@@ -144,13 +144,13 @@ export function Identification() {
   }, [tts]);
 
   const selectedLocale = useMemo(() => {
-    if (!kokoro || !tts?.voices.length) return "";
+    if (!neuralPicker || !tts?.voices.length) return "";
     if (values.tts_voice) {
       const match = tts.voices.find((voice) => voice.id === values.tts_voice);
       if (match) return match.locale;
     }
     return localeOptions[0]?.value || "";
-  }, [kokoro, tts, values.tts_voice, localeOptions]);
+  }, [neuralPicker, tts, values.tts_voice, localeOptions]);
 
   const voiceOptions = useMemo(() => {
     const voices = (tts?.voices || []).filter((voice) => !selectedLocale || voice.locale === selectedLocale);
@@ -275,10 +275,10 @@ export function Identification() {
                   value={values.voice_id_text}
                   onChange={(event) => setField("voice_id_text", event.currentTarget.value)}
                 />
-                {kokoro ? (
+                {neuralPicker ? (
                   <>
                     <Select
-                      label={labeled("Accent / locale", "Filters the Kokoro voices below")}
+                      label={labeled("Accent / locale", "Filters the voices below")}
                       data={localeOptions}
                       value={selectedLocale || null}
                       onChange={(value) => {
@@ -291,16 +291,21 @@ export function Identification() {
                       searchable
                     />
                     <Select
-                      label={labeled("Voice", "Kokoro speaker for IDs and announcements · clear for default")}
+                      label={labeled(
+                        "Voice",
+                        tts?.engine === "piper"
+                          ? "Piper speaker for IDs and announcements · first use of a new voice downloads it · clear for default"
+                          : "Kokoro speaker for IDs and announcements · clear for default",
+                      )}
                       data={voiceOptions}
                       value={values.tts_voice || null}
                       onChange={(value) => setField("tts_voice", value || "")}
                       searchable
                       clearable
-                      placeholder="Default (af_heart)"
+                      placeholder={tts?.engine === "piper" ? "Default (en_GB-cori-high)" : "Default (af_heart)"}
                     />
                     <Select
-                      label={labeled("Speech speed", "How quickly Kokoro reads the text")}
+                      label={labeled("Speech speed", "How quickly the voice reads the text")}
                       data={speedData}
                       value={speedValue}
                       onChange={(value) => setField("tts_speed", Number(value) || 1)}
@@ -309,8 +314,8 @@ export function Identification() {
                 ) : (
                   <TextInput
                     label={labeled("TTS voice", tts?.engine
-                        ? `Optional · ${tts.engine} is active. Install kokoro-cli for locale and speed controls.`
-                        : "Optional · install kokoro-cli for selectable voices")}
+                        ? `Optional · ${tts.engine} is active. Install piper-tts for selectable voices.`
+                        : "Optional · install piper-tts for selectable voices")}
                     placeholder=""
                     value={values.tts_voice}
                     onChange={(event) => setField("tts_voice", event.currentTarget.value)}

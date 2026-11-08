@@ -53,8 +53,44 @@ def test_sanitize_kokoro_voice_drops_espeak_names():
 
 def test_sanitize_piper_voice_maps_kokoro_leftovers_to_default():
     assert sanitize_piper_voice("en_US-lessac-medium") == "en_US-lessac-medium"
+    assert sanitize_piper_voice("en_US-hfc_female-medium") == "en_US-hfc_female-medium"
     assert sanitize_piper_voice("af_heart") == DEFAULT_PIPER_VOICE
     assert sanitize_piper_voice("") == DEFAULT_PIPER_VOICE
+
+
+def test_ensure_piper_voice_skips_when_files_exist(tmp_path, monkeypatch):
+    from playout.tts import ensure_piper_voice
+
+    voice = "en_GB-cori-high"
+    (tmp_path / f"{voice}.onnx").write_bytes(b"x")
+    (tmp_path / f"{voice}.onnx.json").write_text("{}")
+    monkeypatch.setenv("PIPER_DATA_DIR", str(tmp_path))
+    calls: list = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    ensure_piper_voice(voice, run=run)
+    assert calls == []
+
+
+def test_ensure_piper_voice_downloads_when_missing(tmp_path, monkeypatch):
+    from playout.tts import ensure_piper_voice
+
+    voice = "en_US-amy-medium"
+    monkeypatch.setenv("PIPER_DATA_DIR", str(tmp_path))
+    calls: list = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        (tmp_path / f"{voice}.onnx").write_bytes(b"x")
+        (tmp_path / f"{voice}.onnx.json").write_text("{}")
+        return subprocess.CompletedProcess(argv, 0)
+
+    ensure_piper_voice(voice, run=run)
+    assert calls and "piper.download_voices" in calls[0]
+    assert voice in calls[0]
 
 
 def test_kokoro_ignores_legacy_voice_and_uses_default():
@@ -179,7 +215,8 @@ def test_detect_tts_attaches_espeak_fallback_to_piper():
     assert engine.fallback.name == "espeak-ng"
 
 
-def test_piper_speak_argv_and_timeout():
+def test_piper_speak_argv_and_timeout(monkeypatch):
+    monkeypatch.delenv("PIPER_DATA_DIR", raising=False)
     timeouts: list[float] = []
     calls: list = []
     engine = detect_tts(which=lambda b: "/usr/bin/piper" if b == "piper" else None)
@@ -201,7 +238,8 @@ def test_piper_speak_argv_and_timeout():
     assert timeouts == [PIPER_SPEAK_TIMEOUT_SECONDS]
 
 
-def test_piper_falls_back_to_espeak_on_timeout():
+def test_piper_falls_back_to_espeak_on_timeout(monkeypatch):
+    monkeypatch.delenv("PIPER_DATA_DIR", raising=False)
     calls: list = []
     engine = detect_tts(which=lambda b: "/bin/" + b if b in ("piper", "espeak-ng") else None)
 
@@ -249,10 +287,18 @@ def test_list_tts_voices_for_kokoro_uses_builtin_list():
     assert george.locale_label == "British English"
 
 
-def test_list_tts_voices_for_piper_lists_default_voice():
+def test_list_tts_voices_for_piper_lists_curated_set():
     engine = detect_tts(which=lambda b: "/usr/bin/piper" if b == "piper" else None)
     voices = list_tts_voices(engine)
-    assert voices and voices[0].id == DEFAULT_PIPER_VOICE
+    ids = [voice.id for voice in voices]
+    assert DEFAULT_PIPER_VOICE in ids
+    assert "en_US-lessac-medium" in ids
+    assert "en_GB-alan-medium" in ids
+    assert len(ids) > 5
+    cori = next(voice for voice in voices if voice.id == DEFAULT_PIPER_VOICE)
+    assert cori.locale == "en-GB"
+    assert cori.locale_label == "British English"
+    assert "Cori" in cori.label
 
 
 def test_list_tts_voices_empty_for_other_engines():

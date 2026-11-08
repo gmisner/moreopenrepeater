@@ -44,7 +44,25 @@ MAX_TTS_SPEED = 2.0
 KOKORO_SERVICE_MODE = "required"
 DEFAULT_PIPER_VOICE = "en_GB-cori-high"
 # Piper voice ids look like en_GB-cori-high (locale-name-quality).
-_PIPER_VOICE_RE = re.compile(r"^[a-z]{2}_[A-Z]{2}-[a-z0-9]+-(x_low|low|medium|high)$")
+_PIPER_VOICE_RE = re.compile(r"^[a-z]{2}_[A-Z]{2}-[a-z0-9_]+-(x_low|low|medium|high)$")
+# Curated English set for the Identification picker (download on first use).
+_PIPER_BUILTIN_VOICES = (
+    "en_GB-cori-high",
+    "en_GB-cori-medium",
+    "en_GB-alan-medium",
+    "en_GB-alba-medium",
+    "en_GB-jenny_dioco-medium",
+    "en_US-lessac-high",
+    "en_US-lessac-medium",
+    "en_US-amy-medium",
+    "en_US-ryan-high",
+    "en_US-ryan-medium",
+    "en_US-joe-medium",
+    "en_US-kristin-medium",
+    "en_US-bryce-medium",
+    "en_US-hfc_female-medium",
+    "en_US-hfc_male-medium",
+)
 
 ITU_PHONETIC = {
     "A": "Alpha", "B": "Bravo", "C": "Charlie", "D": "Delta", "E": "Echo", "F": "Foxtrot",
@@ -157,6 +175,27 @@ def sanitize_piper_voice(voice: str) -> str:
     return default_piper_voice()
 
 
+def ensure_piper_voice(voice: str, *, run: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> None:
+    """Download a Piper voice into PIPER_DATA_DIR when the onnx file is missing."""
+    data_dir = os.environ.get("PIPER_DATA_DIR", "").strip()
+    if not data_dir:
+        return
+    root = Path(data_dir)
+    if (root / f"{voice}.onnx").is_file() and (root / f"{voice}.onnx.json").is_file():
+        return
+    root.mkdir(parents=True, exist_ok=True)
+    _logger.info("downloading Piper voice %s into %s", voice, root)
+    try:
+        run(
+            [sys.executable, "-m", "piper.download_voices", "--data-dir", str(root), voice],
+            check=True,
+            capture_output=True,
+            timeout=180,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as error:
+        raise TTSError(f"couldn't download Piper voice {voice}: {error}") from error
+
+
 class TTSEngine(Protocol):
     name: str
 
@@ -187,6 +226,7 @@ class CommandTTS:
         if self.name == "piper":
             voice = sanitize_piper_voice(voice)
             with self._lock:
+                ensure_piper_voice(voice, run=self.run)
                 return self._synthesize_neural(text, voice, speed)
         if self.name == "kokoro":
             voice = sanitize_kokoro_voice(voice)
@@ -361,14 +401,23 @@ def detect_tts(which: Callable[[str], Optional[str]] = shutil.which) -> Optional
     return primary
 
 
+_PIPER_LOCALE_LABELS = {
+    "en_GB": ("en-GB", "British English"),
+    "en_US": ("en-US", "American English"),
+}
+
+
 def describe_piper_voice(voice_id: str) -> TTSVoiceInfo:
     parts = voice_id.split("-")
-    locale = parts[0] if parts else ""
+    locale_key = parts[0] if parts else ""
     name = parts[1].replace("_", " ").title() if len(parts) > 1 else voice_id
     quality = parts[2] if len(parts) > 2 else ""
     label = f"{name} ({quality})" if quality else name
-    locale_label = locale.replace("_", "-") if locale else "Other"
-    return TTSVoiceInfo(id=voice_id, label=label, locale=locale_label, locale_label=locale_label, gender="")
+    locale, locale_label = _PIPER_LOCALE_LABELS.get(
+        locale_key,
+        (locale_key.replace("_", "-") or "other", locale_key.replace("_", "-") or "Other"),
+    )
+    return TTSVoiceInfo(id=voice_id, label=label, locale=locale, locale_label=locale_label, gender="")
 
 
 def list_tts_voices(engine: Optional[TTSEngine]) -> list[TTSVoiceInfo]:
@@ -380,7 +429,7 @@ def list_tts_voices(engine: Optional[TTSEngine]) -> list[TTSVoiceInfo]:
     if engine is None:
         return []
     if engine.name == "piper":
-        return [describe_piper_voice(DEFAULT_PIPER_VOICE)]
+        return [describe_piper_voice(voice_id) for voice_id in _PIPER_BUILTIN_VOICES]
     if engine.name == "kokoro":
         return [describe_kokoro_voice(voice_id) for voice_id in _KOKORO_BUILTIN_VOICES]
     return []

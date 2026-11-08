@@ -9,7 +9,8 @@ Wants=network-online.target
 # stop, systemd kills it and Restart= starts it again.
 Type=notify
 WatchdogSec=30
-TimeoutStartSec=120
+# Kokoro may need a few minutes on first boot to load int8 weights into serve.
+TimeoutStartSec=300
 User=moreopenrepeater
 Group=moreopenrepeater
 # Support bundles run journalctl -u moreopenrepeater from this process.

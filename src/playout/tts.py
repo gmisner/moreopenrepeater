@@ -20,22 +20,26 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional, Protocol
 
 import numpy as np
 
+from .kokoro_service import DEFAULT_KOKORO_SERVICE_URL
 from .wav import decode_wav
 
 _logger = logging.getLogger("moreopenrepeater.tts")
 TIMEOUT_SECONDS = 30
-# First Kokoro speak on a Pi can load/download models; 30 s is too tight.
-KOKORO_SPEAK_TIMEOUT_SECONDS = 180
+# With `kokoro serve` up, speak should be seconds. Keep headroom for a busy Pi.
+KOKORO_SPEAK_TIMEOUT_SECONDS = 60
 DEFAULT_TTS_SPEED = 1.0
 MIN_TTS_SPEED = 0.5
 MAX_TTS_SPEED = 2.0
+# Prefer the long-lived localhost service so each speak does not reload ONNX.
+KOKORO_SERVICE_MODE = "required"
 
 ITU_PHONETIC = {
     "A": "Alpha", "B": "Bravo", "C": "Charlie", "D": "Delta", "E": "Echo", "F": "Foxtrot",
@@ -152,21 +156,26 @@ class CommandTTS:
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run
     # Absolute path when the binary isn't on PATH (e.g. kokoro in the venv).
     binary: str = ""
+    # Serialize Kokoro speaks so a cold service does not get stampeded.
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def synthesize(
         self, text: str, voice: str = "", speed: float = DEFAULT_TTS_SPEED
     ) -> tuple[np.ndarray, int]:
         if self.name == "kokoro":
             voice = sanitize_kokoro_voice(voice)
+            with self._lock:
+                return self._synthesize_kokoro(text, voice, speed)
+        return self._synthesize_once(text, voice, speed)
+
+    def _synthesize_kokoro(
+        self, text: str, voice: str, speed: float
+    ) -> tuple[np.ndarray, int]:
         try:
             return self._synthesize_once(text, voice, speed)
         except TTSError as error:
             # Unknown-but-plausible ids: retry the Kokoro default. Don't retry timeouts.
-            if (
-                self.name == "kokoro"
-                and voice
-                and isinstance(error.__cause__, subprocess.CalledProcessError)
-            ):
+            if voice and isinstance(error.__cause__, subprocess.CalledProcessError):
                 _logger.warning("Kokoro voice %r failed; retrying with the default voice", voice)
                 return self._synthesize_once(text, "", speed)
             raise
@@ -186,7 +195,7 @@ class CommandTTS:
                 self.run(argv, check=True, capture_output=True, timeout=timeout)
             except subprocess.TimeoutExpired as error:
                 raise TTSError(
-                    f"{self.name} timed out after {timeout}s (first run may still be loading models)"
+                    f"{self.name} timed out after {timeout}s (is kokoro serve running?)"
                 ) from error
             except subprocess.CalledProcessError as error:
                 detail = (error.stderr or error.stdout or b"").decode("utf-8", "replace").strip()
@@ -217,7 +226,9 @@ def _pico_argv(text_file: Path, out_wav: Path, text: str, voice: str, speed: flo
 
 
 def _kokoro_argv(text_file: Path, out_wav: Path, text: str, voice: str, speed: float) -> list[str]:
-    # --service off keeps synthesis local even if a kokoro serve daemon is up.
+    # Prefer the long-lived localhost service (started by the API lifespan) so
+    # each speak does not cold-load the ONNX model on a Pi.
+    service_url = os.environ.get("KOKORO_SERVICE_URL", DEFAULT_KOKORO_SERVICE_URL)
     return [
         "kokoro",
         "speak",
@@ -226,7 +237,9 @@ def _kokoro_argv(text_file: Path, out_wav: Path, text: str, voice: str, speed: f
         "-f",
         "wav",
         "--service",
-        "off",
+        KOKORO_SERVICE_MODE,
+        "--service-url",
+        service_url,
         "--speed",
         f"{speed:g}",
         "--lang",

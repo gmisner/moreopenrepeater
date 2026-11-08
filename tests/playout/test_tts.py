@@ -133,6 +133,8 @@ def test_kokoro_puts_text_after_double_dash_and_passes_speed():
 
     argv = calls[0]
     assert argv[:2] == ["/usr/bin/kokoro", "speak"]
+    assert argv[argv.index("--service") + 1] == "required"
+    assert argv[argv.index("--service-url") + 1].startswith("http://127.0.0.1:")
     assert argv[argv.index("-v") + 1] == "am_adam"
     assert argv[argv.index("--speed") + 1] == "1.25"
     assert argv[argv.index("--lang") + 1] == "en-us"
@@ -184,7 +186,18 @@ def test_engine_failure_raises_tts_error():
 
 @pytest.mark.skipif(detect_tts() is None, reason="no local text-to-speech engine installed")
 def test_real_installed_engine_produces_audible_speech():
-    samples, rate = detect_tts().synthesize("W 1 A W repeater")
+    from playout.kokoro_service import KokoroService
+
+    engine = detect_tts()
+    service = None
+    if engine.name == "kokoro":
+        service = KokoroService(binary=engine.binary or "kokoro")
+        service.start_and_wait(timeout=120)
+    try:
+        samples, rate = engine.synthesize("W 1 A W repeater")
+    finally:
+        if service is not None:
+            service.stop()
     assert rate >= 8000
     assert len(samples) / rate > 0.5
     assert np.max(np.abs(samples)) > 0.05

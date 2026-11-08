@@ -215,8 +215,39 @@ def test_detect_tts_attaches_espeak_fallback_to_piper():
     assert engine.fallback.name == "espeak-ng"
 
 
+def test_piper_http_synthesize_posts_json(monkeypatch):
+    from playout.tts import synthesize_piper_http
+    from playout.wav import encode_wav
+
+    monkeypatch.setenv("PIPER_SERVICE_URL", "http://127.0.0.1:8766")
+    seen: list = []
+
+    class _Resp:
+        def read(self):
+            return encode_wav(np.zeros(12, dtype=np.float32), 22050)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def urlopen(req, timeout=0):
+        seen.append((getattr(req, "full_url", str(req)), req.data, timeout))
+        return _Resp()
+
+    samples, rate = synthesize_piper_http("hello", "en_GB-cori-high", 1.25, urlopen=urlopen)
+    assert rate == 22050 and len(samples) == 12
+    url, body, timeout = seen[0]
+    assert url.endswith("/synthesize")
+    assert b"hello" in body
+    assert b"en_GB-cori-high" in body
+    assert timeout == 90
+
+
 def test_piper_speak_argv_and_timeout(monkeypatch):
     monkeypatch.delenv("PIPER_DATA_DIR", raising=False)
+    monkeypatch.setenv("PIPER_SERVICE_URL", "off")
     timeouts: list[float] = []
     calls: list = []
     engine = detect_tts(which=lambda b: "/usr/bin/piper" if b == "piper" else None)
@@ -240,6 +271,7 @@ def test_piper_speak_argv_and_timeout(monkeypatch):
 
 def test_piper_falls_back_to_espeak_on_timeout(monkeypatch):
     monkeypatch.delenv("PIPER_DATA_DIR", raising=False)
+    monkeypatch.setenv("PIPER_SERVICE_URL", "off")
     calls: list = []
     engine = detect_tts(which=lambda b: "/bin/" + b if b in ("piper", "espeak-ng") else None)
 

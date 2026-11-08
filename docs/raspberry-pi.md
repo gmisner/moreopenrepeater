@@ -52,16 +52,19 @@ sudo apt install -y python3-venv python3-dev libportaudio2 espeak-ng alsa-utils
 
 `libportaudio2` is PortAudio's runtime library, needed by `sounddevice`
 (`audio_io`'s stream layer) even before any real audio hardware is
-attached. The installer puts **Piper** (`piper-tts`) in the venv and
+attached. The installer puts **Piper** (`piper-tts[http]`) in the venv and
 downloads the `en_GB-cori-high` voice under `data/piper/` on first
 install — that is the default neural voice for IDs and announcements on a
-Pi (much lighter than Kokoro). Later updates reuse those files and a pip
-wheel cache under `/var/cache/moreopenrepeater/pip`. If Piper is missing,
-`espeak-ng` (from apt) is the fallback; without either, IDs fall back to
-CW. Sites that already had **Kokoro** keep it installed on update, but
-Piper is preferred when both are present so the controller is not pegged
-by Kokoro loads. `alsa-utils` provides `amixer`, which interface board
-presets use to set the sound card's levels.
+Pi (much lighter than Kokoro). The API keeps a localhost
+`piper.http_server` running so the ONNX model stays loaded; one-shot
+`piper` CLI invokes reload the model every time and often time out on a
+Pi. Later updates reuse those files and a pip wheel cache under
+`/var/cache/moreopenrepeater/pip`. If Piper is missing, `espeak-ng` (from
+apt) is the fallback; without either, IDs fall back to CW. Sites that
+already had **Kokoro** keep it installed on update, but Piper is preferred
+when both are present so the controller is not pegged by Kokoro loads.
+`alsa-utils` provides `amixer`, which interface board presets use to set
+the sound card's levels.
 
 ## 2. Dedicated user + install location
 

@@ -357,7 +357,8 @@ python3 -m venv "$venv"
 "$venv/bin/python" -m pip install -q --cache-dir "$PIP_CACHE_DIR" --upgrade pip setuptools wheel
 # Piper is the default neural TTS on Pi (lighter than Kokoro). Keep kokoro-cli
 # only when the previous venv already had it, so existing sites are not forced.
-dependencies=("piper-tts>=1.2")
+# [http] pulls Flask so we can keep the ONNX voice loaded in piper.http_server.
+dependencies=("piper-tts[http]>=1.2")
 installed_venv="${previous_venv:-$INSTALL_DIR/.venv}"
 if [ -x "$installed_venv/bin/python" ] &&
     "$installed_venv/bin/python" -m pip show kokoro-cli >/dev/null 2>&1; then

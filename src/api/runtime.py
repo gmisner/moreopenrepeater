@@ -27,6 +27,7 @@ from link.aprs_client import APRSClient, format_frequency_comment, format_positi
 from link.asterisk_files import asterisk_files_from_env
 from link.node_link import NodeLinkClient
 from playout.kokoro_service import KokoroService, KokoroServiceError
+from playout.piper_service import PiperService, PiperServiceError
 from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError, detect_tts
 from wx.nws import fetch_active_alerts, fetch_zone_geometry, missing_zones
@@ -105,6 +106,18 @@ def _kokoro_service_for(renderer: ClipRenderer) -> Optional[KokoroService]:
         return None
     binary = getattr(tts, "binary", "") or "kokoro"
     return KokoroService(binary=binary)
+
+
+def _piper_service_for(renderer: ClipRenderer) -> Optional[PiperService]:
+    """Build an HTTP serve manager when the clip renderer is using Piper."""
+    tts = getattr(renderer, "tts", None)
+    if tts is None or getattr(tts, "name", None) != "piper":
+        return None
+    from playout.tts import piper_service_url
+
+    if not piper_service_url():
+        return None
+    return PiperService()
 
 
 def _resolve_data_root(env: dict, repo_data_dir: Path) -> Path:
@@ -1110,6 +1123,16 @@ class AppRuntime:
                             "Kokoro service failed to become ready; voice IDs fall back to CW until it works"
                         )
                         await loop.run_in_executor(None, kokoro_service.stop)
+                piper_service = _piper_service_for(renderer)
+                if piper_service is not None:
+                    try:
+                        await loop.run_in_executor(None, piper_service.start_and_wait)
+                        self.piper_service = piper_service
+                    except PiperServiceError:
+                        _tts_logger.exception(
+                            "Piper service failed to become ready; voice IDs use CLI/espeak until it works"
+                        )
+                        await loop.run_in_executor(None, piper_service.stop)
                 loop.run_in_executor(None, renderer.warm, service.config)
                 service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
                 tasks.append(asyncio.create_task(backup_loop()))
@@ -1157,6 +1180,9 @@ class AppRuntime:
             if self.kokoro_service is not None:
                 await asyncio.get_running_loop().run_in_executor(None, self.kokoro_service.stop)
                 self.kokoro_service = None
+            if self.piper_service is not None:
+                await asyncio.get_running_loop().run_in_executor(None, self.piper_service.stop)
+                self.piper_service = None
             if start_background_tick:
                 health.stopping()
 
@@ -1171,6 +1197,7 @@ class AppRuntime:
         self.monitor_recordings = monitor_recordings
         self.renderer = renderer
         self.kokoro_service: Optional[KokoroService] = None
+        self.piper_service: Optional[PiperService] = None
         self.live_audio = live_audio
         self.monitor_receiver = monitor_receiver
         self.link_radio = link_radio

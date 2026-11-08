@@ -9,11 +9,13 @@ Text is handed to `say`/`espeak` through a file rather than argv so that
 announcement text starting with "-" can't be parsed as a command-line flag;
 `pico2wave` has no file option, so its text is prefixed with a space
 instead (getopt only treats arguments *starting* with "-" as options).
-`kokoro` gets text after `--`; `piper` reads text from `-i` so flags in the
-announcement cannot break argv.
+`kokoro` gets text after `--`; `piper` prefers the long-lived
+`piper.http_server` (same idea as Kokoro serve) and otherwise reads text
+from `-i` so flags in the announcement cannot break argv.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -26,17 +28,23 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional, Protocol
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen as _urlopen
 
 import numpy as np
 
 from .kokoro_service import DEFAULT_KOKORO_SERVICE_URL
+from .piper_service import DEFAULT_PIPER_SERVICE_URL
 from .wav import decode_wav
 
 _logger = logging.getLogger("moreopenrepeater.tts")
 TIMEOUT_SECONDS = 30
 # Fail over to espeak before a slow Pi speaks long enough to starve the controller.
 KOKORO_SPEAK_TIMEOUT_SECONDS = 20
+# CLI cold-loads ONNX each time; keep short so we fall back rather than stall TX.
 PIPER_SPEAK_TIMEOUT_SECONDS = 30
+# HTTP path keeps the model warm; allow longer when switching voices (first load).
+PIPER_HTTP_SPEAK_TIMEOUT_SECONDS = 90
 DEFAULT_TTS_SPEED = 1.0
 MIN_TTS_SPEED = 0.5
 MAX_TTS_SPEED = 2.0
@@ -206,6 +214,48 @@ class TTSError(RuntimeError):
     pass
 
 
+def piper_service_url() -> str:
+    """Local Piper HTTP base URL, or empty to force the one-shot CLI."""
+    raw = os.environ.get("PIPER_SERVICE_URL", DEFAULT_PIPER_SERVICE_URL).strip()
+    if raw.lower() in ("", "off", "0", "false", "no"):
+        return ""
+    return raw.rstrip("/")
+
+
+def synthesize_piper_http(
+    text: str,
+    voice: str,
+    speed: float,
+    *,
+    urlopen: Callable[..., object] = _urlopen,
+    service_url: Optional[str] = None,
+) -> tuple[np.ndarray, int]:
+    """POST text to the long-lived Piper HTTP server and decode the WAV body."""
+    base = (service_url if service_url is not None else piper_service_url()).rstrip("/")
+    if not base:
+        raise TTSError("Piper HTTP service URL is not set")
+    length_scale = 1.0 / speed if speed else 1.0
+    payload = {
+        "text": text,
+        "voice": voice or default_piper_voice(),
+        "length_scale": length_scale,
+    }
+    request = Request(
+        f"{base}/synthesize",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=PIPER_HTTP_SPEAK_TIMEOUT_SECONDS) as response:
+            raw = response.read()
+    except (URLError, HTTPError, TimeoutError, OSError) as error:
+        raise TTSError(f"piper http failed: {error}") from error
+    if not raw:
+        raise TTSError("piper http produced no audio")
+    return decode_wav(raw)
+
+
 @dataclass
 class CommandTTS:
     """Runs `build_argv(text_file, out_wav, text, voice, speed)` and reads the WAV it writes."""
@@ -213,6 +263,7 @@ class CommandTTS:
     name: str
     build_argv: Callable[[Path, Path, str, str, float], list[str]]
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run
+    urlopen: Callable[..., object] = _urlopen
     # Absolute path when the binary isn't on PATH (e.g. kokoro in the venv).
     binary: str = ""
     # When neural TTS fails or times out on a hot Pi, use espeak/pico instead of silence.
@@ -238,8 +289,18 @@ class CommandTTS:
         self, text: str, voice: str, speed: float
     ) -> tuple[np.ndarray, int]:
         try:
+            if self.name == "piper" and piper_service_url():
+                return synthesize_piper_http(text, voice, speed, urlopen=self.urlopen)
             return self._synthesize_once(text, voice, speed)
         except TTSError as error:
+            # Prefer warm HTTP; if the service is down, one-shot CLI may still work
+            # (slow on a Pi) before we hand off to espeak.
+            if self.name == "piper" and piper_service_url():
+                _logger.warning("piper http failed (%s); trying CLI", error)
+                try:
+                    return self._synthesize_once(text, voice, speed)
+                except TTSError as cli_error:
+                    error = cli_error
             # Unknown-but-plausible Kokoro ids: retry the default. Don't retry timeouts.
             if (
                 self.name == "kokoro"

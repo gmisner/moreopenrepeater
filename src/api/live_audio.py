@@ -25,6 +25,7 @@ import collections
 import dataclasses
 import logging
 import subprocess
+import threading
 import time
 from typing import Callable, Optional
 
@@ -66,7 +67,8 @@ MIN_RECORDING_SECONDS = 1.0  # shorter captures are kerchunks, not worth keeping
 MAX_RECORDING_SECONDS = 300.0
 MAX_PARROT_SECONDS = 30.0
 PARROT_ARMED_SECONDS = 60.0  # give up waiting for the parrot transmission after this
-STREAM_RECOVER_COOLDOWN = 5.0  # avoid tight restart loops while the USB device is still gone
+STREAM_RECOVER_COOLDOWN = 5.0
+STREAM_RECOVER_MAX_DELAY = 60.0
 _RESTART_FIELDS = (
     "audio_enabled",
     "audio_input_device",
@@ -202,13 +204,19 @@ class LiveAudio:
         self._patch: Optional[PatchAudio] = None
         self._link: Optional[LinkAudio] = None
         self._port: Optional[LinkAudio] = None
-        self._ptt_output: Optional[Callable[[bool], None]] = None
+        self._stopped_ptt_error: Optional[str] = None
+        self._watchdog_unkeyed = threading.Event()
         self.monitor = AudioMonitor()
         # Each time the receiver opened, newest last (describe_opening).
         self.openings: collections.deque[dict] = collections.deque(maxlen=OPENINGS_KEPT)
         # Audio glitches with what the repeater was doing, newest last.
         self.glitches: collections.deque[dict] = collections.deque(maxlen=GLITCHES_KEPT)
-        self._last_stream_recover = float("-inf")  # so the first recover is never cooldown-blocked
+        self._last_stream_recover = float("-inf")
+        self._retry_delay = STREAM_RECOVER_COOLDOWN
+        self._retry_at: Optional[float] = None
+        self._retry_handle: Optional[asyncio.TimerHandle] = None
+        self._generation = 0
+        self._closed = False
 
     @property
     def cm108(self) -> Optional[CM108Interface]:
@@ -228,6 +236,8 @@ class LiveAudio:
         self.apply_config(self._service.config)
 
     def shutdown(self) -> None:
+        self._closed = True
+        self._cancel_recovery()
         self._stop_engine()
 
     def progress(self) -> Optional[float]:
@@ -238,22 +248,26 @@ class LiveAudio:
     def release_ptt(self) -> None:
         """Unkey the transmitter directly, from any thread, without the
         engine: for when the service is about to be killed."""
-        if self._ptt_output is None:
-            return
-        try:
-            self._ptt_output(False)
-        except OSError as error:
-            # CM108 ENODEV is already swallowed; header/serial PTT can still fail.
-            _logger.warning("couldn't release PTT (interface may be gone): %s", error)
+        self._watchdog_unkeyed.set()
+        engine = self.engine
+        if engine is not None:
+            engine.release_ptt()
 
     def apply_config(self, config: RepeaterConfig) -> None:
+        if self._closed:
+            return
         previous = self._applied
         self._applied = config
         needs_restart = previous is None or any(getattr(previous, f) != getattr(config, f) for f in _RESTART_FIELDS)
         if needs_restart:
+            was_recovering = self._retry_handle is not None
+            self._cancel_recovery()
             self._stop_engine()
             if config.audio_enabled:
-                self._start_engine(config)
+                if was_recovering:
+                    self._retry_engine(self._generation)
+                else:
+                    self._start_engine(config)
         elif self.engine is not None:
             settings = self.engine.processor.settings
             for field in _LIVE_FIELDS:
@@ -265,10 +279,13 @@ class LiveAudio:
         config = self._service.config
         engine = self.engine
         processor = engine.processor if engine else None
+        retry_at = self._retry_at
         return {
             "enabled": config.audio_enabled,
             "running": engine is not None and engine.running,
             "error": self.error,
+            "ptt_error": (engine.ptt_error if engine else None) or self._stopped_ptt_error,
+            "retry_in_seconds": max(0.0, retry_at - self._monotonic()) if retry_at is not None else None,
             "input_device": config.audio_input_device,
             "output_device": config.audio_output_device,
             "sample_rate": self._renderer.sample_rate,
@@ -421,9 +438,13 @@ class LiveAudio:
         except (UnknownClipError, TTSError):
             _logger.exception("couldn't render %s for transmission", clip)
 
-    def _on_events(self, events) -> None:
+    def _on_events(self, generation: int, events) -> None:
         if self._loop is not None:
-            self._loop.call_soon_threadsafe(self._service.handle_audio_events, events)
+            self._loop.call_soon_threadsafe(self._forward_events, generation, events)
+
+    def _forward_events(self, generation: int, events) -> None:
+        if generation == self._generation and self.engine is not None:
+            self._service.handle_audio_events(events)
 
     def _on_opening(self, opening: ReceiverOpening) -> None:
         if self._loop is not None:
@@ -459,30 +480,61 @@ class LiveAudio:
         self.openings.append(entry)
         _receiver_logger.info("receiver opened: %s", describe_opening(opening))
 
-    def _on_stream_dead(self) -> None:
+    def _on_stream_dead(self, generation: int) -> None:
         """PortAudio stream went inactive (USB audio drop). Restart on the loop thread."""
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._recover_engine, generation)
+
+    def _cancel_recovery(self) -> None:
+        if self._retry_handle is not None:
+            self._retry_handle.cancel()
+        self._retry_handle = None
+        self._retry_at = None
+        self._last_stream_recover = float("-inf")
+        self._retry_delay = STREAM_RECOVER_COOLDOWN
+
+    def _recover_engine(self, generation: Optional[int] = None) -> None:
+        if self._closed or self.engine is None or (generation is not None and generation != self._generation):
+            return
+        self._stop_engine()
+        self.error = "audio stream died (USB unplug or device reset)"
+        now = self._monotonic()
+        elapsed = now - self._last_stream_recover
+        if elapsed >= STREAM_RECOVER_MAX_DELAY:
+            self._retry_delay = STREAM_RECOVER_COOLDOWN
+        if elapsed < self._retry_delay:
+            self._schedule_recovery(self._retry_delay - elapsed)
+        else:
+            self._retry_engine(self._generation)
+
+    def _schedule_recovery(self, delay: float) -> None:
         if self._loop is None:
             return
-        self._loop.call_soon_threadsafe(self._recover_engine)
+        self._retry_at = self._monotonic() + delay
+        self._retry_handle = self._loop.call_later(delay, self._retry_engine, self._generation)
+        self._retry_delay = min(self._retry_delay * 2, STREAM_RECOVER_MAX_DELAY)
 
-    def _recover_engine(self) -> None:
-        """Same path as toggling audio_enabled: stop, then start and re-resolve devices."""
+    def _retry_engine(self, generation: int) -> None:
         config = self._applied
-        if config is None or not config.audio_enabled:
-            self._stop_engine()
+        if self._closed or generation != self._generation or config is None or not config.audio_enabled:
             return
-        now = self._monotonic()
-        if now - self._last_stream_recover < STREAM_RECOVER_COOLDOWN:
-            self._stop_engine()
-            self.error = "audio stream died (USB unplug or device reset)"
-            _logger.warning("audio stream died again too soon; not restarting yet")
-            return
-        self._last_stream_recover = now
+        self._retry_handle = None
+        self._retry_at = None
+        self._last_stream_recover = self._monotonic()
         _logger.info("restarting live audio after the stream died")
-        self._stop_engine()
-        self._start_engine(config)
+        self._start_engine(config, recovering=True)
+        if self.engine is None:
+            self._schedule_recovery(self._retry_delay)
 
-    def _start_engine(self, config: RepeaterConfig) -> None:
+    def _start_engine(self, config: RepeaterConfig, *, recovering: bool = False) -> None:
+        try:
+            self._open_engine(config, recovering=recovering)
+        except Exception as error:  # PortAudio raises its own error types
+            self.error = f"couldn't open audio devices: {error}"
+            _logger.error("%s", self.error)
+            self._release_pins()
+
+    def _open_engine(self, config: RepeaterConfig, *, recovering: bool) -> None:
         cos_source = config.cos_source
         if cos_source == "cm108" and self._cm108 is None:
             self.error = "COS source is CM108, but no CM108 interface was found when the service started"
@@ -530,40 +582,41 @@ class LiveAudio:
                 **{field: getattr(config, field) for field in _LIVE_FIELDS},
             )
         )
-        processor.set_ptt(self._service.ptt_active)
-        processor.set_repeating(self._service.repeating)
+        if not recovering:
+            processor.set_ptt(self._service.ptt_active)
+            processor.set_repeating(self._service.repeating)
         processor.set_patch(self._patch)
         processor.set_link(self._link)
         processor.set_port(self._port)
         processor.on_opening = self._on_opening
         input_device = resolve_audio_device(config.audio_input_device or None)
         output_device = resolve_audio_device(config.audio_output_device or None)
+        self._generation += 1
+        generation = self._generation
         engine = self._engine_factory(
             processor,
             int(rate * BLOCK_SECONDS),
-            on_events=self._on_events,
+            on_events=lambda events: self._on_events(generation, events),
             input_device=input_device or None,
             output_device=output_device or None,
             ptt_output=ptt_output,
             cos_input=cos_input,
             on_audio=self.monitor.feed,
             on_glitch=self._on_glitch,
-            on_stream_dead=self._on_stream_dead,
+            on_stream_dead=lambda: self._on_stream_dead(generation),
+            ptt_allowed=lambda: not self._watchdog_unkeyed.is_set(),
         )
-        self._ptt_output = ptt_output
+        if ptt_output is not None and (recovering or self._stopped_ptt_error is not None):
+            if not engine.confirm_ptt_idle():
+                self._stopped_ptt_error = engine.ptt_error
+                raise RuntimeError(engine.ptt_error)
+            self._stopped_ptt_error = None
         apply_saved_levels(config, self._run_mixer, sides=("input", "output"))
         try:
             engine.start()
-        except Exception as error:  # PortAudio raises its own error types
-            self.error = f"couldn't open audio devices: {error}"
-            _logger.error("%s", self.error)
-            try:
-                engine.stop()
-            except Exception:
-                pass
-            self._ptt_output = None
-            self._release_pins()
-            return
+        except Exception:
+            engine.stop()
+            raise
         self.engine = engine
         self.error = None
 
@@ -592,17 +645,18 @@ class LiveAudio:
         self._pins = []
 
     def _stop_engine(self) -> None:
-        self._ptt_output = None
-        if self.engine is not None:
-            processor = self.engine.processor
-            self.engine.stop()
+        self._generation += 1
+        engine = self.engine
+        if engine is not None:
+            engine.stop()
+            self._stopped_ptt_error = engine.ptt_error or self._stopped_ptt_error
             self.engine = None
             self._release_pins()
-            # Otherwise the controller would sit in RECEIVING until the timeout timer.
+            # Queued events from this engine are stale now. Clear what the controller last received.
             released = []
-            if processor.cos_open:
+            if self._service.cos_active:
                 released.append(COSChanged(active=False))
-            if processor.ctcss_hz is not None:
+            if self._service.ctcss_hz is not None:
                 released.append(CTCSSChanged(tone_hz=None))
             if released:
                 self._service.handle_audio_events(released)

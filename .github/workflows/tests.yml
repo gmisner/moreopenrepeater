@@ -84,7 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Lint
-        run: shellcheck scripts/install-pi.sh scripts/update.sh scripts/asl-harden.sh scripts/tailscale.sh
+        run: shellcheck scripts/install-pi.sh scripts/update.sh scripts/service-readiness.sh scripts/asl-harden.sh scripts/tailscale.sh
       # A local copy with the channel branches, all at the commit under test.
       - name: Prepare a local clone source
         run: |
@@ -114,11 +114,13 @@ jobs:
           sudo grep -qx MOREOPENREPEATER_UPDATE_CHANNEL=stable /etc/moreopenrepeater/env
           systemctl is-enabled moreopenrepeater-update.path
           systemctl is-enabled moreopenrepeater-tailscale.path
-      - name: Run again (update)
+      - name: Run again (update) with a loopback-only dashboard
         run: |
+          sudo bash scripts/install-pi.sh --localhost
           before=$(sudo md5sum /etc/moreopenrepeater/env)
           sudo bash scripts/install-pi.sh
           test "$before" = "$(sudo md5sum /etc/moreopenrepeater/env)"
+          sudo grep -qx MOREOPENREPEATER_HOST=127.0.0.1 /etc/moreopenrepeater/env
           systemctl is-active moreopenrepeater
       - name: Update to beta the way the dashboard does
         run: |
@@ -135,11 +137,14 @@ jobs:
           test "$state" = succeeded
           test "$(sudo git -C /opt/moreopenrepeater rev-parse HEAD)" = "$(sudo git -C /tmp/src rev-parse beta)"
           sudo grep -qx MOREOPENREPEATER_UPDATE_CHANNEL=beta /etc/moreopenrepeater/env
+          sudo grep -qx MOREOPENREPEATER_HOST=127.0.0.1 /etc/moreopenrepeater/env
           systemctl is-active moreopenrepeater
-      - name: A release that doesn't start is rolled back
+      - name: A running release with a broken dashboard is rolled back
         run: |
           good=$(sudo git -C /opt/moreopenrepeater rev-parse HEAD)
-          echo 'raise SystemExit("broken on purpose")' | sudo tee -a /tmp/src/src/api/app.py >/dev/null
+          good_venv=$(readlink /opt/moreopenrepeater/.venv-current)
+          sudo touch "$good_venv/rollback-marker"
+          sudo sed -i '/return session_response(identify(request))/c\        return Response(status_code=503)' /tmp/src/src/api/routes/session.py
           sudo git -C /tmp/src -c user.name=ci -c user.email=ci@example.com commit -qam "A broken release"
           sudo git -C /tmp/src branch -f main HEAD
           sudo rm -f /var/lib/moreopenrepeater-update/status.json
@@ -152,6 +157,9 @@ jobs:
           sudo cat /var/lib/moreopenrepeater-update/update.log
           test "$state" = rolled_back
           test "$(sudo git -C /opt/moreopenrepeater rev-parse HEAD)" = "$good"
+          test "$(readlink /opt/moreopenrepeater/.venv-current)" = "$good_venv"
+          sudo test -f "$good_venv/rollback-marker"
+          sudo grep -qx MOREOPENREPEATER_HOST=127.0.0.1 /etc/moreopenrepeater/env
           sudo grep -qx MOREOPENREPEATER_UPDATE_CHANNEL=beta /etc/moreopenrepeater/env
           systemctl is-active moreopenrepeater
       - name: SD card protection on and off
@@ -162,7 +170,8 @@ jobs:
           sudo grep -qx MOREOPENREPEATER_LOG_PATH=/run/moreopenrepeater/moreopenrepeater.log /etc/moreopenrepeater/env
           systemctl is-active moreopenrepeater
           sudo test -s /run/moreopenrepeater/moreopenrepeater.log
-          sudo bash scripts/install-pi.sh --no-protect-sd
+          sudo bash scripts/install-pi.sh --no-protect-sd --lan
+          sudo grep -qx MOREOPENREPEATER_HOST=0.0.0.0 /etc/moreopenrepeater/env
           test ! -e /etc/systemd/journald.conf.d/60-moreopenrepeater.conf
           if sudo grep -q '^MOREOPENREPEATER_LOG_PATH=' /etc/moreopenrepeater/env; then exit 1; fi
           systemctl is-active moreopenrepeater

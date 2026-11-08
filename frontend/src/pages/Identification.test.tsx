@@ -1,6 +1,7 @@
 import { MantineProvider } from "@mantine/core";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigContext, type Config } from "../config";
 import { Identification } from "./Identification";
@@ -14,20 +15,26 @@ vi.mock("@mantine/notifications", () => ({
 import { notifications } from "@mantine/notifications";
 
 function renderIdentification(config: Config | null, save: (patch: Config) => Promise<Config>) {
-  return render(
-    <MantineProvider>
-      <ConfigContext.Provider
-        value={{
-          config,
+  function Provider() {
+    const [current, setCurrent] = useState(config);
+    return (
+      <MantineProvider>
+        <ConfigContext.Provider value={{
+          config: current,
           loading: false,
           refresh: vi.fn(),
-          save,
-        }}
-      >
-        <Identification />
-      </ConfigContext.Provider>
-    </MantineProvider>,
-  );
+          save: async (patch) => {
+            const next = await save(patch);
+            setCurrent(next);
+            return next;
+          },
+        }}>
+          <Identification />
+        </ConfigContext.Provider>
+      </MantineProvider>
+    );
+  }
+  return render(<Provider />);
 }
 
 describe("Identification page", () => {

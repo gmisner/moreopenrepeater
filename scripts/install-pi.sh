@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scripts/install-pi.sh | sudo bash
 #
 # Safe to run again: it updates the checkout and dependencies and restarts
-# the service, but never overwrites /etc/moreopenrepeater/env. What it does
+# the service, but preserves local settings in /etc/moreopenrepeater/env. What it does
 # is the manual procedure in docs/raspberry-pi.md. The dashboard's Updates
 # page runs it too (through scripts/update.sh).
 #
@@ -15,7 +15,7 @@
 #   --localhost
 #              listen on 127.0.0.1 only (dashboard only from the Pi itself, or
 #              via SSH tunnel / Tailscale Serve). Default is 0.0.0.0 (LAN/Wi-Fi).
-#   --lan      deprecated; LAN listen is now the default (kept so old docs work)
+#   --lan      explicitly listen on 0.0.0.0 (the default for a new install)
 #   --allstar  also install AllStarLink (ASL3) for linking and autopatch, and
 #              connect the controller to it (Debian 12 or 13; docs/allstar.md)
 #   --protect-sd / --no-protect-sd
@@ -37,7 +37,7 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/moreopenrepeater}"
 SERVICE_USER=moreopenrepeater
 ENV_DIR=/etc/moreopenrepeater
 ENV_FILE="$ENV_DIR/env"
-LISTEN_LOCALHOST=0
+LISTEN_HOST=""
 ALLSTAR=0
 CHANNEL=""
 FETCHED=0
@@ -53,8 +53,8 @@ fail() { printf '\033[1;31mError:\033[0m %s\n' "$*" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --localhost) LISTEN_LOCALHOST=1 ;;
-    --lan) ;;  # default is LAN; kept for old docs / scripts
+    --localhost) LISTEN_HOST=127.0.0.1 ;;
+    --lan) LISTEN_HOST=0.0.0.0 ;;
     --allstar) ALLSTAR=1 ;;
     --channel) CHANNEL="${2:-}"; shift ;;
     --channel=*) CHANNEL="${1#--channel=}" ;;
@@ -212,6 +212,12 @@ case "$CHANNEL" in
   *) fail "unknown channel '$CHANNEL' (choose stable, beta or dev)." ;;
 esac
 
+if [ "${MOREOPENREPEATER_INSTALL_LOCKED:-0}" = 0 ]; then
+  exec 9>/run/lock/moreopenrepeater-install.lock
+  flock -n 9 || fail "another install or update is running."
+  export MOREOPENREPEATER_INSTALL_LOCKED=1
+fi
+
 if [ "$FETCHED" -eq 0 ]; then
   BRANCH="${BRANCH:-$CHANNEL_BRANCH}"
   if ! command -v git >/dev/null; then
@@ -220,13 +226,14 @@ if [ "$FETCHED" -eq 0 ]; then
     apt-get install -y -q --no-install-recommends git
   fi
 
+  commit=""
   step "Fetching moreopenrepeater ($CHANNEL: $BRANCH) into $INSTALL_DIR"
   if [ -d "$INSTALL_DIR/.git" ]; then
     # The code belongs to root (earlier versions gave it to the service
     # user), so the dashboard can't change what the updater runs as root.
     find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o \( ! -user root -o ! -group root \) -exec chown -h root:root {} +
     git -C "$INSTALL_DIR" fetch -q origin "$BRANCH"
-    git -C "$INSTALL_DIR" checkout -q -f -B "$BRANCH" FETCH_HEAD
+    commit="$(git -C "$INSTALL_DIR" rev-parse FETCH_HEAD)"
   else
     if [ -e "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR")" ]; then
       fail "$INSTALL_DIR exists and isn't a moreopenrepeater checkout; move it aside first."
@@ -245,12 +252,49 @@ if [ "$FETCHED" -eq 0 ]; then
   find "$INSTALL_DIR" -path "$INSTALL_DIR/data" -prune -o ! -type l -perm /022 -exec chmod go-w {} +
 
   pass=(--fetched --channel "$CHANNEL")
-  if [ "$LISTEN_LOCALHOST" -eq 1 ]; then pass+=(--localhost); fi
+  case "$LISTEN_HOST" in
+    127.0.0.1) pass+=(--localhost) ;;
+    0.0.0.0) pass+=(--lan) ;;
+  esac
   if [ "$ALLSTAR" -eq 1 ]; then pass+=(--allstar); fi
   if [ "$PROTECT_SD" = 1 ]; then pass+=(--protect-sd); fi
   if [ "$PROTECT_SD" = 0 ]; then pass+=(--no-protect-sd); fi
-  exec bash "$INSTALL_DIR/scripts/install-pi.sh" "${pass[@]}"
+  if [ -n "$commit" ]; then
+    # Build the dependencies from the candidate without changing the live checkout.
+    candidate="$(mktemp -d)"
+    trap 'rm -rf -- "$candidate"' EXIT
+    git -C "$INSTALL_DIR" archive "$commit" | tar -x -C "$candidate"
+    installer="$candidate/scripts/install-pi.sh"
+    if [ ! -f "$candidate/scripts/service-readiness.sh" ]; then
+      # Older releases don't understand the staged handoff. Use this
+      # installer with their source and unit files.
+      if [ -f "$INSTALL_DIR/scripts/service-readiness.sh" ]; then
+        installer="$INSTALL_DIR/scripts/install-pi.sh"
+        export INSTALL_HELPERS="$INSTALL_DIR/scripts"
+      else
+        # Both releases predate staged installs. Keep the legacy handoff
+        # and explicitly forward an existing loopback restriction.
+        if [ -z "$LISTEN_HOST" ] && [ -f "$ENV_FILE" ] &&
+            [ "$(env_value MOREOPENREPEATER_HOST)" = 127.0.0.1 ]; then
+          pass+=(--localhost)
+        fi
+        git -C "$INSTALL_DIR" checkout -q -f -B "$BRANCH" "$commit"
+        bash "$INSTALL_DIR/scripts/install-pi.sh" "${pass[@]}"
+        exit
+      fi
+    fi
+    INSTALL_CANDIDATE="$candidate" INSTALL_COMMIT="$commit" INSTALL_BRANCH="$BRANCH" \
+      bash "$installer" "${pass[@]}"
+  else
+    bash "$INSTALL_DIR/scripts/install-pi.sh" "${pass[@]}"
+  fi
+  exit
 fi
+
+candidate="${INSTALL_CANDIDATE:-$INSTALL_DIR}"
+commit="${INSTALL_COMMIT:-$(git -C "$INSTALL_DIR" rev-parse HEAD)}"
+# shellcheck source=scripts/service-readiness.sh
+source "${INSTALL_HELPERS:-$candidate/scripts}/service-readiness.sh"
 
 step "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
@@ -282,22 +326,31 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data"
 rm -rf "$INSTALL_DIR/.cache"  # pip's cache from when it ran as the service user
 
 step "Installing Python dependencies (this can take a few minutes on a Pi)"
-[ -x "$INSTALL_DIR/.venv/bin/python" ] || python3 -m venv "$INSTALL_DIR/.venv"
-"$INSTALL_DIR/.venv/bin/pip" install -q --no-cache-dir --upgrade pip
-"$INSTALL_DIR/.venv/bin/pip" install -q --no-cache-dir -e "$INSTALL_DIR"
-# Neural TTS for IDs and announcements (locale / voice / speed on Identification).
-"$INSTALL_DIR/.venv/bin/pip" install -q --no-cache-dir "kokoro-cli>=0.4"
-# The service can't write bytecode next to root's files, so compile it now.
-"$INSTALL_DIR/.venv/bin/python" -m compileall -q "$INSTALL_DIR/src" >/dev/null
+venv_root="$INSTALL_DIR/.venvs"
+install -d -m 755 "$venv_root"
+previous_venv="$(readlink "$INSTALL_DIR/.venv-current" || true)"
+venv="$(mktemp -d "$venv_root/$commit.XXXXXX")"
+# Keep a published environment until the updater has finished using it.
+trap 'if [ "$(readlink "$INSTALL_DIR/.venv-current" || true)" != "$venv" ]; then rm -rf -- "$venv"; fi' EXIT
+chmod 755 "$venv"
+python3 -m venv "$venv"
+"$venv/bin/python" -m pip install -q --no-cache-dir --upgrade pip setuptools wheel
+dependencies=("kokoro-cli>=0.4")
+installed_venv="${previous_venv:-$INSTALL_DIR/.venv}"
+if [ -x "$installed_venv/bin/python" ] &&
+    "$installed_venv/bin/python" -m pip show vosk >/dev/null 2>&1; then
+  dependencies+=("vosk>=0.3.45")
+fi
+"$venv/bin/python" -m pip install -q --no-cache-dir -e "$candidate" "${dependencies[@]}"
 
 step "Downloading Kokoro voice models (~120 MB, once)"
 KOKORO_HOME="$INSTALL_DIR/data/kokoro"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$KOKORO_HOME"
 # Run as the service user so ownership of the models matches the unit.
 if ! sudo -u "$SERVICE_USER" env "KOKORO_HOME=$KOKORO_HOME" \
-    "$INSTALL_DIR/.venv/bin/kokoro" setup --model int8; then
+    "$venv/bin/kokoro" setup --model int8; then
   echo "Warning: Kokoro model download failed; voice IDs will use espeak-ng until setup succeeds."
-  echo "         Retry later with: sudo -u $SERVICE_USER env KOKORO_HOME=$KOKORO_HOME $INSTALL_DIR/.venv/bin/kokoro setup"
+  echo "         Retry later with: sudo -u $SERVICE_USER env KOKORO_HOME=$KOKORO_HOME $INSTALL_DIR/.venv-current/bin/kokoro setup"
 fi
 chown -R "$SERVICE_USER:$SERVICE_USER" "$KOKORO_HOME"
 
@@ -315,16 +368,22 @@ if [ ! -f "$ENV_FILE" ]; then
   set_env MOREOPENREPEATER_AUTH_USER admin
   set_env MOREOPENREPEATER_AUTH_PASSWORD "$GENERATED_PASSWORD"
 fi
-# Default is every interface (LAN/Wi-Fi). Older installs used 127.0.0.1;
-# move them unless --localhost was passed.
-if [ "$LISTEN_LOCALHOST" -eq 1 ]; then
-  set_env MOREOPENREPEATER_HOST 127.0.0.1
-elif [ "$(env_value MOREOPENREPEATER_HOST)" = "127.0.0.1" ] || [ -z "$(env_value MOREOPENREPEATER_HOST)" ]; then
-  set_env MOREOPENREPEATER_HOST 0.0.0.0
+# Fresh installs get the template default. Existing bind settings change
+# only with an explicit flag.
+if [ -n "$LISTEN_HOST" ]; then
+  set_env MOREOPENREPEATER_HOST "$LISTEN_HOST"
 fi
 set_env MOREOPENREPEATER_UPDATE_CHANNEL "$CHANNEL"
 if [ -n "$PROTECT_SD" ]; then set_env MOREOPENREPEATER_PROTECT_SD "$PROTECT_SD"; fi
 if [ "$(env_value MOREOPENREPEATER_PROTECT_SD)" = 1 ]; then protect_sd; else unprotect_sd; fi
+
+if [ "$candidate" != "$INSTALL_DIR" ]; then
+  step "Checking out $commit"
+  git -C "$INSTALL_DIR" checkout -q -f -B "$INSTALL_BRANCH" "$commit"
+  # Keep imports tied to the canonical checkout for data, web assets, and Git.
+  "$venv/bin/python" -m pip install -q --no-deps --no-build-isolation -e "$INSTALL_DIR"
+fi
+"$venv/bin/python" -m compileall -q "$INSTALL_DIR/src" >/dev/null
 
 if [ "$ALLSTAR" -eq 1 ]; then
   install_allstar
@@ -336,6 +395,19 @@ for unit in moreopenrepeater.service moreopenrepeater-update.service moreopenrep
             moreopenrepeater-restart.service moreopenrepeater-restart.path; do
   install -m 644 "$INSTALL_DIR/packaging/$unit" "/etc/systemd/system/$unit"
 done
+# Keep the packaged unit usable for manual installs with the legacy .venv.
+service_dropin=/etc/systemd/system/moreopenrepeater.service.d/60-release-venv.conf
+install -d -m 755 "$(dirname "$service_dropin")"
+cat >"$service_dropin" <<EOF
+[Service]
+Environment=PATH=$INSTALL_DIR/.venv-current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+ExecStart=
+ExecStart=$INSTALL_DIR/.venv-current/bin/moreopenrepeater-api
+EOF
+# Virtualenv console scripts contain absolute paths, so publish a link
+# instead of moving the environment. The legacy .venv is left intact.
+ln -sfnT "$venv" "$INSTALL_DIR/.venv-current.new"
+mv -Tf "$INSTALL_DIR/.venv-current.new" "$INSTALL_DIR/.venv-current"
 systemctl daemon-reload
 enable_hardware_watchdog
 systemctl enable -q moreopenrepeater
@@ -344,24 +416,14 @@ systemctl enable -q --now moreopenrepeater-tailscale.path
 systemctl enable -q --now moreopenrepeater-restart.path
 systemctl restart moreopenrepeater
 
+wait_for_dashboard || fail "the dashboard didn't come up; see: journalctl -u moreopenrepeater -n 50"
+# The running environment and its immediate predecessor are both retained.
+for old_venv in "$venv_root"/*; do
+  [ "$old_venv" = "$venv" ] || [ "$old_venv" = "$previous_venv" ] || rm -rf -- "$old_venv"
+done
+
 PORT="$(env_value MOREOPENREPEATER_PORT)"
 PORT="${PORT:-8000}"
-printf 'Waiting for the dashboard to come up'
-up=0
-for _ in $(seq 1 90); do
-  # Any HTTP answer (even 401) means it's up.
-  if curl -s -o /dev/null "http://127.0.0.1:$PORT/api/session"; then
-    up=1
-    echo " ok"
-    break
-  fi
-  printf '.'
-  sleep 1
-done
-[ "$up" -eq 1 ] || fail "the dashboard didn't come up; see: journalctl -u moreopenrepeater -n 50"
-sleep 5  # and stays up
-systemctl is-active -q moreopenrepeater || fail "the service stopped after starting; see: journalctl -u moreopenrepeater -n 50"
-
 HOST="$(env_value MOREOPENREPEATER_HOST)"
 echo
 if [ -n "$GENERATED_PASSWORD" ]; then

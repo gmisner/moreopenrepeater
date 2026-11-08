@@ -11,6 +11,7 @@ from api.assets import AudioAssetStore
 from api.live_audio import STREAM_RECOVER_COOLDOWN, LiveAudio, cm108_from_env
 from api.service import RepeaterService
 from audio_io.engine import AudioEngine
+from controller.events import COSChanged, CTCSSChanged
 from controller.state_machine import COURTESY_TONE, RECEIVING, RepeaterConfig
 from playout.renderer import ClipRenderer
 
@@ -39,8 +40,30 @@ class BrokenStream(FakeStream):
         raise RuntimeError("Error querying device -1")
 
 
+class FakeTimer:
+    def __init__(self, delay, fn):
+        self.delay = delay
+        self.fn = fn
+        self.cancelled = False
+
+    def cancel(self):
+        self.cancelled = True
+
+    def run(self):
+        if not self.cancelled:
+            self.fn()
+
+
 class ImmediateLoop:
     """Stands in for the asyncio loop: runs callbacks synchronously."""
+
+    def __init__(self):
+        self.timers = []
+
+    def call_later(self, delay, fn, *args):
+        timer = FakeTimer(delay, lambda: fn(*args))
+        self.timers.append(timer)
+        return timer
 
     def call_soon_threadsafe(self, fn, *args):
         fn(*args)
@@ -200,32 +223,80 @@ def test_dead_alsa_stream_restarts_the_engine():
     assert live.status()["error"] is None
 
 
-def test_stream_recover_cooldown_stops_without_restarting():
-    live, _service, clock, engines = make_live()
-    live._recover_engine()
-    assert live.engine is engines[1] and live.status()["error"] is None
+def test_stream_recovery_retries_failed_opens_until_the_device_returns():
+    class DisconnectableStream(FakeStream):
+        available = True
 
-    clock["mono"] += 1.0  # still inside STREAM_RECOVER_COOLDOWN
-    live._recover_engine()
-    assert live.engine is None
-    assert engines[1].running is False
-    assert live.status()["error"] == "audio stream died (USB unplug or device reset)"
+        def start(self):
+            if not self.available:
+                raise RuntimeError("USB device still absent")
+            super().start()
 
-
-def test_stream_recover_after_cooldown_restarts():
-    live, _service, clock, engines = make_live()
-    live._recover_engine()
-    assert live.engine is engines[1]
-
-    clock["mono"] += 1.0
+    live, _service, clock, engines = make_live(stream=DisconnectableStream)
+    DisconnectableStream.available = False
     live._recover_engine()
     assert live.engine is None
+    assert "USB device still absent" in live.status()["error"]
+    first_retry = live._loop.timers[-1]
+    assert first_retry.delay == STREAM_RECOVER_COOLDOWN
+    assert live.status()["retry_in_seconds"] == STREAM_RECOVER_COOLDOWN
 
-    clock["mono"] += STREAM_RECOVER_COOLDOWN
-    live._recover_engine()
-    assert live.engine is engines[2]
-    assert live.engine.running is True
+    clock["mono"] += first_retry.delay
+    first_retry.run()
+    second_retry = live._loop.timers[-1]
+    assert second_retry.delay > first_retry.delay
+    assert live.engine is None
+
+    DisconnectableStream.available = True
+    clock["mono"] += second_retry.delay
+    second_retry.run()
+    assert live.engine is engines[-1] and live.engine.running
     assert live.status()["error"] is None
+    assert live.status()["retry_in_seconds"] is None
+    live.shutdown()
+
+
+@pytest.mark.parametrize("stop", ["disable", "shutdown"])
+def test_pending_stream_recovery_is_cancelled_when_audio_stops(stop):
+    live, service, clock, engines = make_live()
+    live._recover_engine()
+    clock["mono"] += 1.0  # stream died again before the first cooldown elapsed
+    live._recover_engine()
+    timer = live._loop.timers[-1]
+    assert live.engine is None
+    assert len(engines) == 2
+
+    if stop == "disable":
+        service.update_config(audio_enabled=False)
+    else:
+        live.shutdown()
+    assert timer.cancelled
+    timer.fn()  # even a callback already taken from the timer queue is stale
+    assert live.engine is None
+    assert len(engines) == 2
+    assert live.status()["retry_in_seconds"] is None
+
+
+def test_old_stream_death_cannot_stop_a_replacement_engine():
+    live, service, _clock, engines = make_live()
+    notify_death = live.engine._on_stream_dead
+    service.update_config(audio_input_device="Replacement")
+    notify_death()
+    assert live.engine is engines[1]
+    assert len(engines) == 2
+    live.shutdown()
+
+
+def test_recovery_does_not_replay_old_ptt_requests():
+    cm108 = FakeCM108()
+    live, service, _clock, _engines = make_live(cm108=cm108)
+    service.simulate_cos(True)
+    assert service.ptt_active is True
+    live._recover_engine()
+
+    feed(live.engine, tone(level=0))
+    assert True not in cm108.ptt
+    live.shutdown()
 
 
 def test_stopping_mid_transmission_releases_carrier():
@@ -236,6 +307,26 @@ def test_stopping_mid_transmission_releases_carrier():
     service.update_config(audio_enabled=False)
     assert service.cos_active is False
     assert service.controller.state != RECEIVING
+
+
+def test_stream_recovery_clears_carrier_when_the_old_release_event_is_still_queued():
+    live, service, _clock, _engines = make_live()
+    service.simulate_cos(True)
+    service.simulate_ctcss(100.0)
+    pending = []
+    live._loop.call_soon_threadsafe = lambda fn, *args: pending.append((fn, args))
+    live.engine._on_events([COSChanged(active=False), CTCSSChanged(tone_hz=None)])
+    assert not live.engine.processor.cos_open and live.engine.processor.ctcss_hz is None
+
+    live._recover_engine()
+
+    assert not service.cos_active
+    assert service.ctcss_hz is None
+    for callback, args in pending:
+        callback(*args)
+    assert not service.cos_active
+    assert service.ctcss_hz is None
+    live.shutdown()
 
 
 def test_device_open_failure_is_reported_not_raised():
@@ -502,3 +593,39 @@ def test_audio_glitches_are_logged_with_what_the_repeater_was_doing(caplog):
     client = TestClient(create_app(service=service, live_audio=live, start_background_tick=False, log_path=tmp / "t.log"))
     assert [g["state"] for g in client.get("/api/audio/glitches").json()] == ["receiving", "idle"]
     assert client.get("/api/audio/engine").json()["output_underflows"] == 0
+
+
+def test_watchdog_unkey_prevents_keying_after_an_engine_replacement():
+    cm108 = FakeCM108()
+    live, service, _clock, _engines = make_live(cm108=cm108)
+    live.release_ptt()
+    service.update_config(audio_input_device="Replacement")
+
+    live.engine.processor.play(tone())
+    feed(live.engine, tone(level=0))
+    assert cm108.ptt == [False]
+    assert not live.engine.transmitting
+    live.shutdown()
+
+
+def test_stream_recovery_waits_for_hardware_ptt_to_be_released():
+    class FlakyCM108(FakeCM108):
+        available = False
+
+        def set_ptt(self, active):
+            if not self.available:
+                raise OSError("hardware PTT disappeared")
+            super().set_ptt(active)
+
+    cm108 = FlakyCM108()
+    live, _service, _clock, _engines = make_live(cm108=cm108)
+    live._recover_engine()
+    assert live.engine is None
+    assert "hardware PTT disappeared" in live.status()["ptt_error"]
+
+    cm108.available = True
+    live._loop.timers[-1].run()
+    assert live.engine is not None and live.engine.running
+    assert live.status()["ptt_error"] is None
+    assert cm108.ptt == [False]
+    live.shutdown()

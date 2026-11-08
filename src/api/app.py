@@ -456,6 +456,7 @@ def create_app(
         renderer=runtime.renderer,
         public_listeners=runtime.public_listeners,
         identify=runtime.identify,
+        bind_stream_identity=runtime.bind_stream_identity,
         auth_enabled=runtime.auth_enabled,
         status_response=_status_response,
         web_dir=WEB_DIR,

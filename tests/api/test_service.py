@@ -125,6 +125,17 @@ def test_snapshot_notifies_subscribers():
     asyncio.run(run())
 
 
+def test_status_subscriber_keeps_only_the_latest_snapshot():
+    service, clock = make_service()
+    queue = service.subscribe()
+
+    service.simulate_cos(active=True)
+    service.simulate_cos(active=False)
+
+    assert queue.qsize() == 1
+    assert queue.get_nowait().cos_active is False
+
+
 def test_snapshot_round_trips_config_and_macros_into_a_fresh_service():
     macro = Macro(pattern="*81", description="disconnect all", command="disconnect_all", node_id="*")
     source, _ = make_service(macros=[macro], callsign="W1AW")

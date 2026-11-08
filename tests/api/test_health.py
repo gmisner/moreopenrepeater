@@ -272,3 +272,19 @@ def test_update_results_alert_once_and_old_ones_never(tmp_path):
     status.update(state="succeeded", started_at=700.0)
     alerts = monitor.check()
     assert titles(alerts) == ["Updated"] and alerts[0].message == "Installed abcdef1 from the stable channel."
+
+
+def test_ptt_failure_is_critical_even_while_live_audio_runs():
+    audio = {"enabled": True, "running": True, "ptt_error": "Couldn't release hardware PTT: I/O error"}
+    monitor, _, _ = make_monitor(audio_status=lambda: audio)
+
+    alerts = monitor.check()
+    assert titles(alerts) == ["Live audio PTT failed"]
+    assert alerts[0].severity == "critical"
+    assert "I/O error" in alerts[0].message
+    assert monitor.check() == []
+
+    audio.update(enabled=False, running=False)
+    assert monitor.check() == []
+    audio["ptt_error"] = None
+    assert titles(monitor.check()) == ["Live audio PTT recovered"]

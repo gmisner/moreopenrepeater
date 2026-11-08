@@ -126,7 +126,8 @@ class LinuxHidrawDevice:
         self._fd = os.open(path, os.O_RDWR)
 
     def write_report(self, report: bytes) -> None:
-        os.write(self._fd, report)
+        if os.write(self._fd, report) != len(report):
+            raise OSError(errno.EIO, "Incomplete CM108 output report")
 
     def get_input_report(self, length: int) -> bytes:
         buffer = bytearray(length + 1)  # report ID 0, then the report
@@ -146,8 +147,7 @@ class CM108Interface:
 
     After a USB drop (ENODEV/EPIPE), the next PTT/COS I/O closes the dead
     fd, finds the interface again by USB identity (hidrawN can change),
-    opens it, and rewrites the remembered GPIO output state -- no process
-    restart. `ensure_open` does the same without waiting for PTT/COS.
+    opens it, and restores spare GPIO outputs with PTT released. `ensure_open` does the same without waiting for PTT/COS.
     """
 
     def __init__(
@@ -173,6 +173,7 @@ class CM108Interface:
         self._lock = threading.Lock()
         self.last_inputs: Optional[tuple[int, int]] = None  # (buttons, GPIO levels)
         self._gone = False  # last I/O found no interface; next I/O still retries
+        self._device_closed = False
 
     def _identity_for_path(self, path: Optional[str]) -> Optional[str]:
         if not path:
@@ -186,6 +187,9 @@ class CM108Interface:
         return bytes([0x00, 0x00, self._levels, self._outputs, 0x00])
 
     def _close_device(self) -> None:
+        if self._device_closed:
+            return
+        self._device_closed = True
         close = getattr(self.device, "close", None)
         if close is None:
             return
@@ -195,24 +199,18 @@ class CM108Interface:
             pass
 
     def _candidate_paths(self) -> list[str]:
-        """Preferred path, then same stable_id, then any other CM108."""
-        paths: list[str] = []
-        if self._preferred_path:
-            paths.append(self._preferred_path)
+        """Stay with the same physical interface when its identity is known."""
         found = self._find()
         if self._preferred_id:
-            for entry in found:
-                if entry.get("stable_id") == self._preferred_id and entry["path"] not in paths:
-                    paths.append(entry["path"])
-        for entry in found:
-            path = entry["path"]
-            if path not in paths:
-                paths.append(path)
-        return paths
+            paths = [entry["path"] for entry in found if entry.get("stable_id") == self._preferred_id]
+            return sorted(paths, key=lambda path: path != self._preferred_path)
+        paths = ([self._preferred_path] if self._preferred_path else []) + [entry["path"] for entry in found]
+        return list(dict.fromkeys(paths))
 
     def _reopen(self) -> bool:
         """Close the dead fd and open a CM108 by preferred path or USB ID."""
         self._close_device()
+        self._levels &= ~gpio_bit(self.ptt_pin)
         for path in self._candidate_paths():
             try:
                 device = self._open_device(path)
@@ -233,6 +231,7 @@ class CM108Interface:
                     continue
                 raise
             self.device = device
+            self._device_closed = False
             self._preferred_path = path
             self._preferred_id = self._identity_for_path(path) or self._preferred_id
             self._gone = False
@@ -247,7 +246,7 @@ class CM108Interface:
     def ensure_open(self) -> bool:
         """Reopen now if the interface was lost, without waiting for PTT/COS."""
         with self._lock:
-            if not self._gone and self._preferred_path and os.path.exists(self._preferred_path):
+            if not self._device_closed and self._preferred_path and os.path.exists(self._preferred_path):
                 try:
                     self.device.get_input_report(INPUT_REPORT_LENGTH)
                     return True
@@ -265,6 +264,9 @@ class CM108Interface:
         return getattr(self.device, "path", None) or self._preferred_path
 
     def _write(self) -> None:
+        if self._device_closed:
+            self._reopen()
+            return
         try:
             self.device.write_report(self._report())
             self._gone = False
@@ -301,6 +303,8 @@ class CM108Interface:
     def read_inputs(self) -> tuple[int, int]:
         """(button inputs, GPIO levels), read from the chip now."""
         with self._lock:
+            if self._device_closed and not self._reopen():
+                raise OSError(errno.ENODEV, "CM108 is unavailable")
             try:
                 report = self.device.get_input_report(INPUT_REPORT_LENGTH)
                 self._gone = False
@@ -317,7 +321,24 @@ class CM108Interface:
         return bool(self.read_inputs()[1] & gpio_bit(pin))
 
     def set_ptt(self, active: bool) -> None:
-        self.set_gpio(self.ptt_pin, active)
+        bit = gpio_bit(self.ptt_pin)
+        with self._lock:
+            self._outputs |= bit
+            self._levels = self._levels | bit if active else self._levels & ~bit
+            if not self._device_closed:
+                try:
+                    self.device.write_report(self._report())
+                    self._gone = False
+                    return
+                except OSError as error:
+                    # Reopening or writing a spare pin must never replay a failed key.
+                    self._levels &= ~bit
+                    if error.errno not in _GONE_ERRNOS:
+                        raise
+            self._levels &= ~bit
+            reopened = self._reopen()
+            if active or not reopened:
+                raise OSError(errno.ENODEV, "CM108 disconnected during PTT write")
 
     def cos_from_buttons(self, buttons: int) -> bool:
         pulled_low = bool(buttons & self.cos_input)

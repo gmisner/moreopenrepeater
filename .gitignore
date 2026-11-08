@@ -5,3 +5,7 @@ __pycache__/
 .pytest_cache/
 /data/
 .DS_Store
+
+/.venvs/
+/.venv-current
+/.venv-current.new

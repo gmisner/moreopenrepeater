@@ -21,10 +21,10 @@ after `-s --`, following `bash`:
   repeater trying the next release; `dev` follows every push to `main`).
   See [Updates](#6-updates).
 - `--localhost` listens on `127.0.0.1` only (dashboard from the Pi itself, or
-  via SSH tunnel / Tailscale). The default is every interface (`0.0.0.0`), so
-  other devices on the LAN can open `http://<pi-ip>:8000`. Sign-in is on;
-  see [Security](#security-sign-in-users-and-https). `--lan` is accepted but
-  does nothing (LAN listen is already the default).
+  via SSH tunnel / Tailscale). `--lan` listens on every interface
+  (`0.0.0.0`), the default for a fresh install, so other devices on the LAN
+  can open `http://<pi-ip>:8000`. Updates keep the existing bind address
+  unless you pass one of these flags. See [Security](#security-sign-in-users-and-https).
 - `--allstar` also installs AllStarLink (ASL3) from its apt repository, for
   linking and autopatch. It gives the controller an AMI login of its own
   (usable only from the Pi) and lets it edit the node's settings; see
@@ -133,11 +133,11 @@ A plain USB sound dongle can be turned into an interface with a transistor
 and a little soldering: see [cm108-wiring.md](cm108-wiring.md).
 
 Before going on the air, check the interface with the repeater stopped and
-a dummy load on the transmitter:
+a dummy load on the transmitter. Use `.venv` for a manual or older installation.
 
 ```
 sudo systemctl stop moreopenrepeater
-sudo -u moreopenrepeater /opt/moreopenrepeater/.venv/bin/python /opt/moreopenrepeater/scripts/cm108_check.py
+sudo -u moreopenrepeater /opt/moreopenrepeater/.venv-current/bin/python /opt/moreopenrepeater/scripts/cm108_check.py
 ```
 
 It names the chip, keys PTT for a second, then shows COS and the GPIO
@@ -834,9 +834,13 @@ How it works: the service can't update itself (it can't write the code), so
 the page writes the chosen channel to `data/update-request`.
 `moreopenrepeater-update.path` notices and starts
 `moreopenrepeater-update.service`, which runs `scripts/update.sh` as root:
-it runs the installer for that channel, reports progress in
-`/var/lib/moreopenrepeater-update/status.json`, and goes back to the previous
-commit if the service doesn't come up.
+it stages the selected release's Python environment, then starts the service
+with it and checks the dashboard API. The current environment is available
+through `.venv-current`. The installer keeps the current and immediately
+previous environments, along with a legacy `.venv` if present. If the
+release fails the check, the updater restores the previous checkout,
+environment, and service configuration. Progress is recorded in
+`/var/lib/moreopenrepeater-update/status.json`.
 
 ### Automatic updates
 
@@ -859,7 +863,7 @@ From a terminal, run the installer again (add `--channel beta` to switch):
 curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scripts/install-pi.sh | sudo bash
 ```
 
-Or by hand:
+For a manual installation using `.venv`, update by hand:
 
 ```
 cd /opt/moreopenrepeater

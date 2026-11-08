@@ -121,8 +121,10 @@ class AudioStream:
 
     def stop(self) -> None:
         self._active = False
-        self._stream.stop()
-        self._stream.close()
+        try:
+            self._stream.stop()
+        finally:
+            self._stream.close()
 
     @property
     def active(self) -> bool:

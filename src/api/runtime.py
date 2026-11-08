@@ -767,6 +767,22 @@ class AppRuntime:
             user = users.get(username)
             return Identity(username, user.role) if user else None
 
+        async def bind_stream_identity(conn: HTTPConnection) -> Callable[[], Optional[Identity]]:
+            """Look up live session/role state without hashing a Basic password per frame."""
+            credentials = parse_basic_auth_header(conn.headers.get("Authorization"))
+            if not auth_enabled() or credentials is None:
+                return lambda: identify(conn)
+
+            username, password = credentials
+            if auth_settings is not None and verify_credentials(username, password, auth_settings):
+                return lambda: Identity(username, "admin")
+
+            account = users.get(username)
+            authenticated = await asyncio.to_thread(users.authenticate, username, password)
+            if authenticated is None or authenticated != account:
+                return lambda: None
+            return lambda: Identity(username, account.role) if users.get(username) == account else None
+
         def require_auth(request: Request) -> None:
             # No WWW-Authenticate header: it would make browsers pop their
             # native Basic Auth dialog over the dashboard's own login page
@@ -1181,6 +1197,7 @@ class AppRuntime:
         self.check_login = check_login
         self.role_of = role_of
         self.identify = identify
+        self.bind_stream_identity = bind_stream_identity
         self.auth_dependencies = auth_dependencies
         self.admin_dependencies = admin_dependencies
         self.account_dependencies = account_dependencies

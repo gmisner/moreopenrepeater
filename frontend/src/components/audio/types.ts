@@ -23,6 +23,8 @@ export type EngineStatus = {
   enabled: boolean;
   running: boolean;
   error: string | null;
+  ptt_error?: string | null;
+  retry_in_seconds?: number | null;
   sample_rate: number;
   device_sample_rate: number | null;
   rx_level_db: number;

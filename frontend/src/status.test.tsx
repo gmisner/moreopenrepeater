@@ -135,6 +135,46 @@ describe("StatusProvider", () => {
     expect(MockWebSocket.instances[1].url).toBe("ws://pi.local/ws/status");
   });
 
+  it("discards frames and open events from a closed socket", async () => {
+    render(
+      <StatusProvider>
+        <StatusProbe />
+      </StatusProvider>,
+    );
+
+    const socket = MockWebSocket.instances[0];
+    await act(async () => {
+      socket.open();
+      socket.push({ callsign: "W1AW" });
+      socket.close();
+      socket.push({ callsign: "STALE" });
+      socket.open();
+    });
+
+    expect(screen.getByTestId("connected")).toHaveTextContent("false");
+    expect(screen.getByTestId("raw")).toHaveTextContent("null");
+  });
+
+  it("clears status and reconnects when updates stop arriving", async () => {
+    render(
+      <StatusProvider>
+        <StatusProbe />
+      </StatusProvider>,
+    );
+
+    await act(async () => {
+      MockWebSocket.instances[0].open();
+      MockWebSocket.instances[0].push({ callsign: "W1AW", ptt_active: true });
+      await vi.advanceTimersByTimeAsync(5000);
+      MockWebSocket.instances[0].push(null);
+      await vi.advanceTimersByTimeAsync(8000);
+    });
+
+    expect(screen.getByTestId("connected")).toHaveTextContent("false");
+    expect(screen.getByTestId("raw")).toHaveTextContent("null");
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
   it("uses wss when the page is https", () => {
     vi.stubGlobal("location", { protocol: "https:", host: "example.ts.net" });
     render(

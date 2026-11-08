@@ -12,10 +12,12 @@ newest first. The 50 most recent recordings without a transcript are picked up a
 ## Vosk, on the controller
 
 Offline, free, and nothing leaves the controller. It's less accurate than Whisper,
-especially with noisy signals.
+especially with noisy signals. Use `.venv` in the command below for a manual
+or older installation. The installer carries an existing Vosk installation
+forward to the new environment during updates.
 
 ```bash
-sudo /opt/moreopenrepeater/.venv/bin/pip install vosk
+sudo /opt/moreopenrepeater/.venv-current/bin/pip install vosk
 cd /tmp
 curl -LO https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
 unzip vosk-model-small-en-us-0.15.zip

@@ -91,7 +91,7 @@ kokoro_models_ready() {
 # Piper voice: onnx + json config from `python -m piper.download_voices`.
 piper_voice_ready() {
   local home="$1"
-  local voice="${2:-en_US-lessac-medium}"
+  local voice="${2:-en_GB-cori-high}"
   [ -f "$home/${voice}.onnx" ] && [ -f "$home/${voice}.onnx.json" ]
 }
 
@@ -371,7 +371,7 @@ fi
 
 step "Ensuring Piper voice models"
 PIPER_HOME="$INSTALL_DIR/data/piper"
-PIPER_VOICE="${PIPER_VOICE:-en_US-lessac-medium}"
+PIPER_VOICE="${PIPER_VOICE:-en_GB-cori-high}"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$PIPER_HOME"
 if piper_voice_ready "$PIPER_HOME" "$PIPER_VOICE"; then
   echo "Piper voice $PIPER_VOICE already present under $PIPER_HOME; skipping download."

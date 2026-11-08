@@ -42,8 +42,8 @@ MIN_TTS_SPEED = 0.5
 MAX_TTS_SPEED = 2.0
 # Prefer the long-lived localhost service so each speak does not reload ONNX.
 KOKORO_SERVICE_MODE = "required"
-DEFAULT_PIPER_VOICE = "en_US-lessac-medium"
-# Piper voice ids look like en_US-lessac-medium (locale-name-quality).
+DEFAULT_PIPER_VOICE = "en_GB-cori-high"
+# Piper voice ids look like en_GB-cori-high (locale-name-quality).
 _PIPER_VOICE_RE = re.compile(r"^[a-z]{2}_[A-Z]{2}-[a-z0-9]+-(x_low|low|medium|high)$")
 
 ITU_PHONETIC = {
@@ -153,7 +153,7 @@ def sanitize_piper_voice(voice: str) -> str:
         return default_piper_voice()
     if _PIPER_VOICE_RE.fullmatch(voice):
         return voice
-    _logger.warning("ignoring TTS voice %r (not a Piper id like en_US-lessac-medium); using %s", voice, default_piper_voice())
+    _logger.warning("ignoring TTS voice %r (not a Piper id like en_GB-cori-high); using %s", voice, default_piper_voice())
     return default_piper_voice()
 
 

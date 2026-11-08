@@ -23,7 +23,7 @@ Environment=OPENBLAS_NUM_THREADS=1
 Environment=PATH=/opt/moreopenrepeater/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 # Piper voices live under data/ so they survive venv swaps.
 Environment=PIPER_DATA_DIR=/opt/moreopenrepeater/data/piper
-Environment=PIPER_VOICE=en_US-lessac-medium
+Environment=PIPER_VOICE=en_GB-cori-high
 # Kokoro models (~120 MB) when kokoro-cli is still installed on this site.
 Environment=KOKORO_HOME=/opt/moreopenrepeater/data/kokoro
 # The dashboard's Updates page asks moreopenrepeater-update.path for an

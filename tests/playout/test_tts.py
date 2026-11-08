@@ -162,6 +162,33 @@ def test_detect_tts_prefers_kokoro_then_say_then_espeak_ng():
     assert detect_tts(which=lambda b: None) is None
 
 
+def test_detect_tts_attaches_espeak_fallback_to_kokoro():
+    engine = detect_tts(which=lambda b: "/bin/" + b if b in ("kokoro", "espeak-ng") else None)
+    assert engine.name == "kokoro"
+    assert engine.fallback is not None
+    assert engine.fallback.name == "espeak-ng"
+
+
+def test_kokoro_falls_back_to_espeak_on_timeout():
+    calls: list = []
+    engine = detect_tts(which=lambda b: "/bin/" + b if b in ("kokoro", "espeak-ng") else None)
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if "kokoro" in argv[0] or (len(argv) > 1 and argv[1] == "speak"):
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        out = Path(argv[argv.index("-w") + 1])
+        out.write_bytes(encode_wav(np.zeros(20, dtype=np.float32), 16000))
+        return subprocess.CompletedProcess(argv, 0)
+
+    engine.run = run
+    engine.fallback.run = run
+    samples, rate = engine.synthesize("hello", voice="af_heart")
+    assert rate == 16000 and len(samples) == 20
+    assert any(a[0].endswith("kokoro") or a[1:2] == ["speak"] for a in calls)
+    assert any("espeak-ng" in a[0] for a in calls)
+
+
 def test_list_tts_voices_for_kokoro_uses_builtin_list():
     engine = detect_tts(which=lambda b: "/usr/bin/kokoro" if b == "kokoro" else None)
     voices = list_tts_voices(engine)

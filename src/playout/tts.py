@@ -33,8 +33,8 @@ from .wav import decode_wav
 
 _logger = logging.getLogger("moreopenrepeater.tts")
 TIMEOUT_SECONDS = 30
-# With `kokoro serve` up, speak should be seconds. Keep headroom for a busy Pi.
-KOKORO_SPEAK_TIMEOUT_SECONDS = 60
+# Fail over to espeak before a slow Pi speaks long enough to starve the controller.
+KOKORO_SPEAK_TIMEOUT_SECONDS = 20
 DEFAULT_TTS_SPEED = 1.0
 MIN_TTS_SPEED = 0.5
 MAX_TTS_SPEED = 2.0
@@ -156,6 +156,8 @@ class CommandTTS:
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run
     # Absolute path when the binary isn't on PATH (e.g. kokoro in the venv).
     binary: str = ""
+    # When Kokoro fails or times out on a hot Pi, use espeak/pico instead of silence.
+    fallback: Optional["CommandTTS"] = None
     # Serialize Kokoro speaks so a cold service does not get stampeded.
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
@@ -177,8 +179,15 @@ class CommandTTS:
             # Unknown-but-plausible ids: retry the Kokoro default. Don't retry timeouts.
             if voice and isinstance(error.__cause__, subprocess.CalledProcessError):
                 _logger.warning("Kokoro voice %r failed; retrying with the default voice", voice)
-                return self._synthesize_once(text, "", speed)
-            raise
+                try:
+                    return self._synthesize_once(text, "", speed)
+                except TTSError as retry_error:
+                    error = retry_error
+            if self.fallback is not None:
+                _logger.warning("Kokoro failed (%s); falling back to %s", error, self.fallback.name)
+                # espeak voice names are not Kokoro ids — leave blank.
+                return self.fallback.synthesize(text, "", speed=speed)
+            raise error
 
     def _synthesize_once(
         self, text: str, voice: str, speed: float
@@ -271,15 +280,31 @@ _ENGINES: tuple[tuple[str, Callable[[str], CommandTTS]], ...] = (
 
 
 def detect_tts(which: Callable[[str], Optional[str]] = shutil.which) -> Optional[TTSEngine]:
+    engines: dict[str, CommandTTS] = {}
     for name, factory in _ENGINES:
         path = resolve_tts_binary(name, which=which)
         if path:
-            _logger.info("text-to-speech engine: %s (%s)", name, path)
-            return factory(path)
-    _logger.warning(
-        "no text-to-speech engine found (install kokoro-cli, espeak-ng, or libttspico-utils); voice IDs fall back to CW"
-    )
-    return None
+            engines[name] = factory(path)
+    if not engines:
+        _logger.warning(
+            "no text-to-speech engine found (install kokoro-cli, espeak-ng, or libttspico-utils); voice IDs fall back to CW"
+        )
+        return None
+    primary_name = next(name for name, _factory in _ENGINES if name in engines)
+    primary = engines[primary_name]
+    if primary_name == "kokoro":
+        for fallback_name in ("espeak-ng", "espeak", "pico2wave"):
+            if fallback_name in engines:
+                primary.fallback = engines[fallback_name]
+                _logger.info(
+                    "text-to-speech engine: %s (%s), fallback %s",
+                    primary_name,
+                    primary.binary,
+                    fallback_name,
+                )
+                return primary
+    _logger.info("text-to-speech engine: %s (%s)", primary_name, primary.binary)
+    return primary
 
 
 def list_tts_voices(engine: Optional[TTSEngine]) -> list[TTSVoiceInfo]:

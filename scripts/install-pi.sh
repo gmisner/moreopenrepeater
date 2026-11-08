@@ -88,6 +88,13 @@ kokoro_models_ready() {
     [ -f "$voices" ] && [ "$(stat -c%s "$voices")" -eq 28214398 ]
 }
 
+# Piper voice: onnx + json config from `python -m piper.download_voices`.
+piper_voice_ready() {
+  local home="$1"
+  local voice="${2:-en_GB-cori-high}"
+  [ -f "$home/${voice}.onnx" ] && [ -f "$home/${voice}.onnx.json" ]
+}
+
 # ASL3's apt repository package for this Debian release.
 asl_repo_package() {
   local codename
@@ -338,7 +345,7 @@ rm -rf "$INSTALL_DIR/.cache"  # pip's cache from when it ran as the service user
 step "Installing Python dependencies (this can take a few minutes on a Pi)"
 venv_root="$INSTALL_DIR/.venvs"
 install -d -m 755 "$venv_root"
-# Survive across atomic venv swaps so updates don't re-download onnxruntime / kokoro-cli.
+# Survive across atomic venv swaps so updates don't re-download onnxruntime / piper voices.
 PIP_CACHE_DIR="${PIP_CACHE_DIR:-/var/cache/moreopenrepeater/pip}"
 install -d -m 755 "$PIP_CACHE_DIR"
 previous_venv="$(readlink "$INSTALL_DIR/.venv-current" || true)"
@@ -348,29 +355,50 @@ trap 'if [ "$(readlink "$INSTALL_DIR/.venv-current" || true)" != "$venv" ]; then
 chmod 755 "$venv"
 python3 -m venv "$venv"
 "$venv/bin/python" -m pip install -q --cache-dir "$PIP_CACHE_DIR" --upgrade pip setuptools wheel
-dependencies=("kokoro-cli>=0.4")
+# Piper is the default neural TTS on Pi (lighter than Kokoro). Keep kokoro-cli
+# only when the previous venv already had it, so existing sites are not forced.
+dependencies=("piper-tts>=1.2")
 installed_venv="${previous_venv:-$INSTALL_DIR/.venv}"
+if [ -x "$installed_venv/bin/python" ] &&
+    "$installed_venv/bin/python" -m pip show kokoro-cli >/dev/null 2>&1; then
+  dependencies+=("kokoro-cli>=0.4")
+fi
 if [ -x "$installed_venv/bin/python" ] &&
     "$installed_venv/bin/python" -m pip show vosk >/dev/null 2>&1; then
   dependencies+=("vosk>=0.3.45")
 fi
 "$venv/bin/python" -m pip install -q --cache-dir "$PIP_CACHE_DIR" -e "$candidate" "${dependencies[@]}"
 
-step "Ensuring Kokoro voice models"
-KOKORO_HOME="$INSTALL_DIR/data/kokoro"
-install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$KOKORO_HOME"
-# Models live under data/ and survive updates; only fetch when missing or the wrong size.
-if kokoro_models_ready "$KOKORO_HOME"; then
-  echo "Kokoro models already present under $KOKORO_HOME; skipping download."
+step "Ensuring Piper voice models"
+PIPER_HOME="$INSTALL_DIR/data/piper"
+PIPER_VOICE="${PIPER_VOICE:-en_GB-cori-high}"
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$PIPER_HOME"
+if piper_voice_ready "$PIPER_HOME" "$PIPER_VOICE"; then
+  echo "Piper voice $PIPER_VOICE already present under $PIPER_HOME; skipping download."
 else
-  # Run as the service user so ownership of the models matches the unit.
-  if ! sudo -u "$SERVICE_USER" env "KOKORO_HOME=$KOKORO_HOME" \
-      "$venv/bin/kokoro" setup --model int8; then
-    echo "Warning: Kokoro model download failed; voice IDs will use espeak-ng until setup succeeds."
-    echo "         Retry later with: sudo -u $SERVICE_USER env KOKORO_HOME=$KOKORO_HOME $INSTALL_DIR/.venv-current/bin/kokoro setup"
+  if ! sudo -u "$SERVICE_USER" "$venv/bin/python" -m piper.download_voices \
+      --data-dir "$PIPER_HOME" "$PIPER_VOICE"; then
+    echo "Warning: Piper voice download failed; voice IDs will use espeak-ng until setup succeeds."
+    echo "         Retry later with: sudo -u $SERVICE_USER $INSTALL_DIR/.venv-current/bin/python -m piper.download_voices --data-dir $PIPER_HOME $PIPER_VOICE"
   fi
 fi
-chown -R "$SERVICE_USER:$SERVICE_USER" "$KOKORO_HOME"
+chown -R "$SERVICE_USER:$SERVICE_USER" "$PIPER_HOME"
+
+# Optional: keep Kokoro models current when kokoro-cli is still installed.
+if [ -x "$venv/bin/kokoro" ]; then
+  step "Ensuring Kokoro voice models"
+  KOKORO_HOME="$INSTALL_DIR/data/kokoro"
+  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$KOKORO_HOME"
+  if kokoro_models_ready "$KOKORO_HOME"; then
+    echo "Kokoro models already present under $KOKORO_HOME; skipping download."
+  else
+    if ! sudo -u "$SERVICE_USER" env "KOKORO_HOME=$KOKORO_HOME" \
+        "$venv/bin/kokoro" setup --model int8; then
+      echo "Warning: Kokoro model download failed; Piper/espeak will be used instead."
+    fi
+  fi
+  chown -R "$SERVICE_USER:$SERVICE_USER" "$KOKORO_HOME"
+fi
 
 step "Allowing access to CM108 USB radio interfaces"
 install -m 644 "$INSTALL_DIR/packaging/99-cm108.rules" /etc/udev/rules.d/99-cm108.rules

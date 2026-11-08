@@ -26,6 +26,7 @@ from controller.state_machine import RepeaterConfig
 from link.aprs_client import APRSClient, format_frequency_comment, format_position_report, format_status_report
 from link.asterisk_files import asterisk_files_from_env
 from link.node_link import NodeLinkClient
+from playout.kokoro_service import KokoroService, KokoroServiceError
 from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError, detect_tts
 from wx.nws import fetch_active_alerts, fetch_zone_geometry, missing_zones
@@ -94,6 +95,16 @@ from .watchdog import Watchdog, ping_interval, sd_notify
 REPO_DIR = Path(__file__).resolve().parent.parent.parent
 WEB_DIR = REPO_DIR / "web"
 _REPO_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+_tts_logger = logging.getLogger("moreopenrepeater.tts")
+
+
+def _kokoro_service_for(renderer: ClipRenderer) -> Optional[KokoroService]:
+    """Build a serve manager when the clip renderer is using Kokoro."""
+    tts = getattr(renderer, "tts", None)
+    if tts is None or getattr(tts, "name", None) != "kokoro":
+        return None
+    binary = getattr(tts, "binary", "") or "kokoro"
+    return KokoroService(binary=binary)
 
 
 def _resolve_data_root(env: dict, repo_data_dir: Path) -> Path:
@@ -1089,6 +1100,16 @@ class AppRuntime:
                 activity_store.prune((datetime.now() - timedelta(days=RETENTION_DAYS)).timestamp())
                 audit.prune((datetime.now() - timedelta(days=AUDIT_RETENTION_DAYS)).timestamp())
                 loop = asyncio.get_running_loop()
+                kokoro_service = _kokoro_service_for(renderer)
+                if kokoro_service is not None:
+                    try:
+                        await loop.run_in_executor(None, kokoro_service.start_and_wait)
+                        self.kokoro_service = kokoro_service
+                    except KokoroServiceError:
+                        _tts_logger.exception(
+                            "Kokoro service failed to become ready; voice IDs fall back to CW until it works"
+                        )
+                        await loop.run_in_executor(None, kokoro_service.stop)
                 loop.run_in_executor(None, renderer.warm, service.config)
                 service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
                 tasks.append(asyncio.create_task(backup_loop()))
@@ -1133,6 +1154,9 @@ class AppRuntime:
             link_radio.shutdown()
             activity_store.flush()
             site_sensors.history.flush()
+            if self.kokoro_service is not None:
+                await asyncio.get_running_loop().run_in_executor(None, self.kokoro_service.stop)
+                self.kokoro_service = None
             if start_background_tick:
                 health.stopping()
 
@@ -1146,6 +1170,7 @@ class AppRuntime:
         self.mailbox_store = mailbox_store
         self.monitor_recordings = monitor_recordings
         self.renderer = renderer
+        self.kokoro_service: Optional[KokoroService] = None
         self.live_audio = live_audio
         self.monitor_receiver = monitor_receiver
         self.link_radio = link_radio

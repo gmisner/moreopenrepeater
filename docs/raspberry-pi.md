@@ -53,14 +53,19 @@ sudo apt install -y python3-venv python3-dev libportaudio2 espeak-ng alsa-utils
 `libportaudio2` is PortAudio's runtime library, needed by `sounddevice`
 (`audio_io`'s stream layer) even before any real audio hardware is
 attached. The installer also puts **Kokoro** (`kokoro-cli`) in the venv and
-downloads about 120 MB of models under `data/kokoro/` — that is the default
-voice for IDs and announcements, with accent / voice / speed on the
-Identification page. `espeak-ng` stays installed as a thin fallback if the
-model download fails offline. Without either, IDs fall back to CW and spoken
-announcements can't render. On a Pi 4, Kokoro can take longer than realtime
-on the first render of a clip; cached announcements are fine. `alsa-utils`
-provides `amixer`, which interface board presets use to set the sound card's
-levels.
+downloads about 120 MB of models under `data/kokoro/` on first install —
+that is the default voice for IDs and announcements, with accent / voice /
+speed on the Identification page. Later updates reuse those models and a
+pip wheel cache under `/var/cache/moreopenrepeater/pip` so low-bandwidth
+sites are not asked to pull onnxruntime again. At runtime the API starts a
+localhost `kokoro serve` so the ONNX model loads once; each speak hits that
+service instead of cold-loading ~90 MB per announcement (which used to hang
+the dashboard for minutes on a Pi after reboot). `espeak-ng` stays installed
+as a thin fallback if the model download fails offline. Without either, IDs
+fall back to CW and spoken announcements can't render. The first boot after
+install can still take a couple of minutes while serve loads weights;
+after that, speaks are seconds. `alsa-utils` provides `amixer`, which
+interface board presets use to set the sound card's levels.
 
 ## 2. Dedicated user + install location
 

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,10 +34,14 @@ function SliceProbe() {
   return (
     <div>
       <span data-testid="callsign">{slice.values.callsign}</span>
+      <span data-testid="transmitter">{String(slice.values.transmitter_enabled)}</span>
       <span data-testid="dirty">{String(slice.dirty)}</span>
       <span data-testid="saving">{String(slice.saving)}</span>
       <button type="button" onClick={() => slice.setField("callsign", "W1AW")}>
         edit-callsign
+      </button>
+      <button type="button" onClick={() => slice.setField("callsign", "K1ABC")}>
+        revise-callsign
       </button>
       <button type="button" onClick={() => slice.setField("require_ctcss_hz", "")}>
         clear-ctcss
@@ -52,18 +57,24 @@ function SliceProbe() {
 }
 
 function renderWithConfig(config: Config | null, save: (patch: Config) => Promise<Config>) {
-  return render(
-    <ConfigContext.Provider
-      value={{
-        config,
+  function Provider() {
+    const [current, setCurrent] = useState(config);
+    return (
+      <ConfigContext.Provider value={{
+        config: current,
         loading: false,
         refresh: vi.fn(),
-        save,
-      }}
-    >
-      <SliceProbe />
-    </ConfigContext.Provider>,
-  );
+        save: async (patch) => {
+          const next = await save(patch);
+          setCurrent(next);
+          return next;
+        },
+      }}>
+        <SliceProbe />
+      </ConfigContext.Provider>
+    );
+  }
+  return render(<Provider />);
 }
 
 describe("buildConfigPatch", () => {
@@ -171,6 +182,47 @@ describe("useConfigSlice", () => {
     expect(notifications.show).toHaveBeenCalledWith({ color: "green", message: "Saved" });
     expect(screen.getByTestId("dirty")).toHaveTextContent("false");
     expect(screen.getByTestId("callsign")).toHaveTextContent("W1AW");
+  });
+
+  it("keeps edited fields and refreshes untouched fields when another card saves", async () => {
+    const user = userEvent.setup();
+    const context = {
+      config: { callsign: "N0CALL", transmitter_enabled: false },
+      loading: false,
+      refresh: vi.fn(),
+      save: vi.fn(),
+    };
+    const view = render(
+      <ConfigContext.Provider value={context}><SliceProbe /></ConfigContext.Provider>,
+    );
+    await user.click(screen.getByRole("button", { name: "edit-callsign" }));
+
+    view.rerender(
+      <ConfigContext.Provider value={{ ...context, config: { callsign: "NEW1", transmitter_enabled: true } }}>
+        <SliceProbe />
+      </ConfigContext.Provider>,
+    );
+    expect(screen.getByTestId("callsign")).toHaveTextContent("W1AW");
+    expect(screen.getByTestId("transmitter")).toHaveTextContent("true");
+    expect(screen.getByTestId("dirty")).toHaveTextContent("true");
+    await user.click(screen.getByRole("button", { name: "reset" }));
+    expect(screen.getByTestId("callsign")).toHaveTextContent("NEW1");
+  });
+
+  it("keeps an edit made while the previous version is saving", async () => {
+    const user = userEvent.setup();
+    let finish!: (config: Config) => void;
+    const save = vi.fn(() => new Promise<Config>((resolve) => { finish = resolve; }));
+    renderWithConfig({ callsign: "N0CALL" }, save);
+
+    await user.click(screen.getByRole("button", { name: "edit-callsign" }));
+    await user.click(screen.getByRole("button", { name: "submit" }));
+    expect(save).toHaveBeenCalledWith({ callsign: "W1AW" });
+    await user.click(screen.getByRole("button", { name: "revise-callsign" }));
+    await act(async () => finish({ callsign: "W1AW" }));
+
+    expect(screen.getByTestId("callsign")).toHaveTextContent("K1ABC");
+    expect(screen.getByTestId("dirty")).toHaveTextContent("true");
   });
 
   it("surfaces save failures without clearing dirty state", async () => {

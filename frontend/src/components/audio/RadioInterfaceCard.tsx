@@ -161,8 +161,11 @@ export function RadioInterfaceCard({
           <Badge color={engineStatus?.running && engineStatus.ctcss_hz != null ? "green" : "gray"} variant="light">
             {engineStatus?.ctcss_hz != null ? `${engineStatus.ctcss_hz} Hz` : "no tone"}
           </Badge>
-          <Badge color={engineStatus?.running && engineStatus.transmitting ? "red" : "gray"} variant="light">
-            TX
+          <Badge
+            color={engineStatus?.ptt_error || (engineStatus?.running && engineStatus.transmitting) ? "red" : "gray"}
+            variant="light"
+          >
+            {engineStatus?.ptt_error ? "PTT unknown" : "TX"}
           </Badge>
           {health ? (
             <Text size="sm" c="dimmed">
@@ -253,6 +256,16 @@ export function RadioInterfaceCard({
         {engineStatus?.error ? (
           <Text c="red" size="sm">
             {engineStatus.error}
+          </Text>
+        ) : null}
+        {engineStatus?.ptt_error && engineStatus.ptt_error !== engineStatus.error ? (
+          <Text c="red" size="sm">
+            {engineStatus.ptt_error}
+          </Text>
+        ) : null}
+        {engineStatus?.retry_in_seconds != null ? (
+          <Text c="dimmed" size="sm">
+            Retrying live audio in {Math.ceil(engineStatus.retry_in_seconds)} s.
           </Text>
         ) : null}
       </ConfigSummaryCard>

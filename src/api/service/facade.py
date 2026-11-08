@@ -252,7 +252,7 @@ class RepeaterService:
         )
 
     def subscribe(self) -> "asyncio.Queue[StatusSnapshot]":
-        queue: "asyncio.Queue[StatusSnapshot]" = asyncio.Queue()
+        queue: "asyncio.Queue[StatusSnapshot]" = asyncio.Queue(maxsize=1)
         self._subscribers.add(queue)
         return queue
 
@@ -262,6 +262,9 @@ class RepeaterService:
     def _notify(self) -> None:
         snapshot = self.snapshot()
         for queue in self._subscribers:
+            if queue.full():
+                queue.get_nowait()
+                queue.task_done()
             queue.put_nowait(snapshot)
 
     # --- controller command loop (orchestration) ---

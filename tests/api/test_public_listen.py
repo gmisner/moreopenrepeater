@@ -56,7 +56,7 @@ def test_public_audio_is_capped_per_address(tmp_path, monkeypatch):
             assert a.receive_json()["sample_rate"] and b.receive_json() and c.receive_json()
             assert client.get("/api/public/status").json()["listeners"] == 3
             with pytest.raises(WebSocketDisconnect) as closed:
-                with client.websocket_connect("/ws/public/audio") as d:
+                with client.websocket_connect("/ws/public/audio", headers={"X-Forwarded-For": "192.0.2.5"}) as d:
                     d.receive_json()
             assert closed.value.code == 1013
 

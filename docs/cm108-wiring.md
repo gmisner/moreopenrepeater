@@ -116,11 +116,12 @@ Connect the dongle's ground to the radio's ground.
 
 ## Test before going on the air
 
-With a dummy load on the transmitter and the repeater stopped:
+With a dummy load on the transmitter and the repeater stopped, run the check
+below. Use `.venv` for a manual or older installation.
 
 ```
 sudo systemctl stop moreopenrepeater
-sudo -u moreopenrepeater /opt/moreopenrepeater/.venv/bin/python /opt/moreopenrepeater/scripts/cm108_check.py
+sudo -u moreopenrepeater /opt/moreopenrepeater/.venv-current/bin/python /opt/moreopenrepeater/scripts/cm108_check.py
 ```
 
 It keys PTT for a second, then shows COS live while you key a radio on the

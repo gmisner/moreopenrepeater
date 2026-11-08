@@ -101,16 +101,17 @@ def test_hidiocginput_matches_the_kernel_header():
     assert _hidiocginput(5) == 0xC005480A
 
 
-def test_writes_are_ignored_when_the_hidraw_device_stays_gone():
-    """Unplug with no replacement: unkey must not raise, and local state still tracks."""
+def test_ptt_reports_failed_writes_when_the_hidraw_device_stays_gone():
     device = FakeHidrawDevice(write_error=OSError(errno.ENODEV, "No such device"))
 
     def still_gone(path: str) -> FakeHidrawDevice:
         raise OSError(errno.ENOENT, "No such file or directory")
 
     cm108 = CM108Interface(device, find=lambda: [], open_device=still_gone)
-    cm108.set_ptt(True)
-    cm108.set_ptt(False)
+    with pytest.raises(OSError):
+        cm108.set_ptt(True)
+    with pytest.raises(OSError):
+        cm108.set_ptt(False)
     cm108.set_gpio(1, True)
     assert device.written_reports == []
     assert cm108._gone is True
@@ -207,4 +208,30 @@ def test_candidate_paths_prefer_matching_stable_id():
         {"path": "/dev/hidraw4", "vendor": 0x0D8C, "product": 0x013C, "name": "mine", "stable_id": "usb-mine"},
     ]
     cm108 = CM108Interface(device, find=lambda: found, stable_id="usb-mine")
-    assert cm108._candidate_paths() == ["/dev/hidraw1", "/dev/hidraw4", "/dev/hidraw9"]
+    assert cm108._candidate_paths() == ["/dev/hidraw4"]
+
+
+def test_reopen_after_a_failed_assertion_cannot_replay_ptt():
+    dead = FakeHidrawDevice(write_error=OSError(errno.ENODEV, "No such device"))
+    replacement = FakeHidrawDevice()
+    cm108 = CM108Interface(dead, find=lambda: [], open_device=lambda path: replacement)
+    with pytest.raises(OSError):
+        cm108.set_ptt(True)
+
+    assert replacement.written_reports == [bytes([0, 0, 0, GPIO3, 0])]
+    assert cm108.output_level(3) is False
+
+
+def test_cos_reopen_does_not_restore_an_asserted_ptt_bit():
+    dead = FakeHidrawDevice()
+    alive = FakeHidrawDevice()
+
+    def disconnected(length):
+        raise OSError(errno.ENODEV, "No such device")
+
+    cm108 = CM108Interface(dead, find=lambda: [], open_device=lambda path: alive)
+    cm108.set_ptt(True)
+    dead.get_input_report = disconnected
+    cm108.read_cos()
+
+    assert alive.written_reports == [bytes([0, 0, 0, GPIO3, 0])]

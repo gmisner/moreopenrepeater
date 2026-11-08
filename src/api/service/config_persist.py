@@ -5,6 +5,7 @@ import dataclasses
 import logging
 from typing import TYPE_CHECKING, Callable
 
+from controller.announcements import next_occurrence
 from controller.config import RepeaterConfig
 from controller.modes import effective_config
 
@@ -35,10 +36,12 @@ class ConfigPersistence:
 
     def apply(self, saved: RepeaterConfig, persist: bool = False) -> None:
         host = self._host
+        if persist and host._state_store is not None:
+            snapshot = self.export_snapshot()
+            snapshot["config"] = saved.to_flat_dict()
+            host._state_store.save(snapshot)
         self.saved = saved
         commands = host.controller.update_config(effective_config(saved, host.net_active), host._clock())
-        if persist:
-            self.persist()
         self.changed()
         host._apply_commands(commands)
 
@@ -55,12 +58,22 @@ class ConfigPersistence:
         backup taken before a setting existed) get their defaults."""
         _logger.info("import_snapshot()")
         host = self._host
-        self.saved = config_from_snapshot(data)
-        host.controller.update_config(effective_config(self.saved, host.net_active), host._clock())
-        host.controller.set_macros(macros_from_snapshot(data))
-        host.scheduler.set_announcements(announcements_from_snapshot(data), host.wall_now())
-        self.persist()
-        self.changed()
+        saved = config_from_snapshot(data)
+        macros = macros_from_snapshot(data)
+        announcements = announcements_from_snapshot(data)
+        now = host.wall_now()
+        # Direct callers can import raw snapshots without HTTP model validation.
+        for announcement in announcements:
+            next_occurrence(announcement, now)
+        if host._state_store is not None:
+            host._state_store.save({
+                "config": saved.to_flat_dict(),
+                "macros": [dataclasses.asdict(macro) for macro in macros],
+                "announcements": [dataclasses.asdict(announcement) for announcement in announcements],
+            })
+        host.controller.set_macros(macros)
+        host.scheduler.set_announcements(announcements, now)
+        self.apply(saved)
 
     def changed(self) -> None:
         host = self._host

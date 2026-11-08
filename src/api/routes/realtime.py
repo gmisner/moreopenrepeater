@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import collections
+from contextlib import suppress
 from pathlib import Path
-from typing import Callable, Optional
+from typing import AsyncIterator, Callable, Optional
 from urllib.parse import urlsplit
 
+from anyio import CancelScope
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -21,6 +23,64 @@ from ..service import RepeaterService
 from playout.renderer import ClipRenderer
 
 PUBLIC_LISTENERS_PER_ADDRESS = 3
+ACCESS_CHECK_SECONDS = 0.25
+SEND_TIMEOUT_SECONDS = 5.0
+
+
+async def stream(
+    websocket: WebSocket,
+    frames: AsyncIterator[dict | bytes],
+    allowed: Callable[[], bool],
+) -> None:
+    async def send_frames() -> int:
+        async for frame in frames:
+            if not allowed():
+                return 1008
+            try:
+                async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
+                    if isinstance(frame, bytes):
+                        await websocket.send_bytes(frame)
+                    else:
+                        await websocket.send_json(frame)
+            except TimeoutError:
+                return 1013
+        return 1000
+
+    async def watch_disconnect() -> None:
+        while (await websocket.receive())["type"] != "websocket.disconnect":
+            pass
+
+    async def watch_access() -> int:
+        # Audio can remain silent indefinitely, including when the engine is off.
+        while allowed():
+            await asyncio.sleep(ACCESS_CHECK_SECONDS)
+        return 1008
+
+    try:
+        async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
+            await websocket.accept()
+    except (TimeoutError, WebSocketDisconnect):
+        return
+    receiver = asyncio.create_task(watch_disconnect())
+    access = asyncio.create_task(watch_access())
+    sender = asyncio.create_task(send_frames())
+    tasks = (receiver, access, sender)
+    try:
+        done, _pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        code = None if receiver in done else (access if access in done else sender).result()
+    except WebSocketDisconnect:
+        code = None
+    finally:
+        for task in tasks:
+            task.cancel()
+        # Let task cleanup finish even when the ASGI caller is cancelling.
+        with CancelScope(shield=True):
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    if code is not None:
+        with suppress(TimeoutError, WebSocketDisconnect):
+            async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
+                await websocket.close(code=code)
 
 
 def register(
@@ -33,6 +93,7 @@ def register(
     renderer: ClipRenderer,
     public_listeners: collections.Counter,
     identify: Callable,
+    bind_stream_identity: Callable,
     auth_enabled: Callable[[], bool],
     status_response: Callable[..., StatusResponse],
     web_dir: Path,
@@ -78,82 +139,79 @@ def register(
         origin = websocket.headers.get("origin")
         return not origin or urlsplit(origin).netloc == websocket.headers.get("host")
 
-    def websocket_allowed(websocket: WebSocket) -> bool:
-        if not auth_enabled():
-            return True
-        if not same_origin(websocket):
-            return False
-        identity = identify(websocket)
-        return identity is not None and identity.role != "listener"
+    async def private_access(websocket: WebSocket) -> Callable[[], bool]:
+        same_site = same_origin(websocket)
+        if auth_enabled() and not same_site:
+            return lambda: False
+        identity_now = await bind_stream_identity(websocket)
+        identity = identity_now()
+
+        def allowed() -> bool:
+            return (
+                (not auth_enabled() or same_site)
+                and identity is not None
+                and identity.role != "listener"
+                and identity_now() == identity
+            )
+
+        return allowed
+
+    async def audio_frames(queue: asyncio.Queue, **metadata: object) -> AsyncIterator[dict | bytes]:
+        yield {"sample_rate": renderer.sample_rate, **metadata}
+        while True:
+            frame = await queue.get()
+            queue.task_done()
+            yield frame
 
     @app.websocket("/ws/audio")
     async def ws_audio(websocket: WebSocket, source: ListenSource = "tx") -> None:
         """Binary frames of 16-bit little-endian mono PCM at the processing rate."""
-        if not websocket_allowed(websocket):
+        allowed = await private_access(websocket)
+        if not allowed():
             await websocket.close(code=1008)
             return
-        await websocket.accept()
         monitor: AudioMonitor = monitor_receiver.monitor if source == "monitor" else live_audio.monitor
         queue = monitor.subscribe("rx" if source == "monitor" else source)
-
-        async def send_frames() -> None:
-            await websocket.send_json({"sample_rate": renderer.sample_rate, "source": source})
-            while True:
-                await websocket.send_bytes(await queue.get())
-
-        # Frames may never come (engine off), so watch for the disconnect separately.
-        sender = asyncio.create_task(send_frames())
         try:
-            while (await websocket.receive())["type"] != "websocket.disconnect":
-                pass
+            await stream(websocket, audio_frames(queue, source=source), allowed)
         finally:
-            sender.cancel()
             monitor.unsubscribe(queue)
-
-    def client_address(websocket: WebSocket) -> str:
-        forwarded = websocket.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        return forwarded or (websocket.client.host if websocket.client else "")
 
     @app.websocket("/ws/public/audio")
     async def ws_public_audio(websocket: WebSocket) -> None:
         """What's on the air, for /listen. Capped in total; listeners who
         aren't signed in are also capped per address."""
-        config = service.saved_config
-        identity = listen_identity(websocket) if same_origin(websocket) else None
-        signed_in = identity is not None or not auth_enabled()
+        if same_origin(websocket):
+            identity_now = await bind_stream_identity(websocket)
+        else:
+            identity_now = lambda: None
+        identity = identity_now() if auth_enabled() else None
 
         def allowed() -> bool:
             config = service.saved_config
+            if identity is not None and identity_now() != identity:
+                return False
+            signed_in = identity is not None or not auth_enabled()
             mode = config.public_page_mode
             return config.public_page_audio and (mode == "anyone" or (mode == "signed_in" and signed_in))
 
         if not allowed():
             await websocket.close(code=1008)
             return
-        key = f"user:{identity.username}" if identity else client_address(websocket)
-        full = sum(public_listeners.values()) >= config.public_page_max_listeners
+        # The ASGI server resolves the client address through configured trusted
+        # proxies. Reading forwarding headers here would let callers choose it.
+        address = websocket.client.host if websocket.client else ""
+        key = f"user:{identity.username}" if identity else address
+        full = sum(public_listeners.values()) >= service.saved_config.public_page_max_listeners
         if full or (identity is None and public_listeners[key] >= PUBLIC_LISTENERS_PER_ADDRESS):
             await websocket.close(code=1013)
             return
         public_listeners[key] += 1
         try:
-            await websocket.accept()
             queue = live_audio.monitor.subscribe("tx")
-
-            async def send_frames() -> None:
-                await websocket.send_json({"sample_rate": renderer.sample_rate})
-                while True:
-                    await websocket.send_bytes(await queue.get())
-                    if not allowed():
-                        await websocket.close(code=1008)
-                        return
-
-            sender = asyncio.create_task(send_frames())
             try:
-                while (await websocket.receive())["type"] != "websocket.disconnect":
-                    pass
+                await stream(websocket, audio_frames(queue), allowed)
             finally:
-                sender.cancel()
                 live_audio.monitor.unsubscribe(queue)
         finally:
             public_listeners[key] -= 1
@@ -162,18 +220,21 @@ def register(
 
     @app.websocket("/ws/status")
     async def ws_status(websocket: WebSocket) -> None:
-        if not websocket_allowed(websocket):
+        allowed = await private_access(websocket)
+        if not allowed():
             await websocket.close(code=1008)
             return
-        await websocket.accept()
         queue = service.subscribe()
-        try:
-            await websocket.send_json(status_response(service.snapshot()).model_dump())
+        queue.put_nowait(service.snapshot())
+
+        async def status_frames() -> AsyncIterator[dict]:
             while True:
                 snapshot = await queue.get()
-                await websocket.send_json(status_response(snapshot).model_dump())
-        except WebSocketDisconnect:
-            pass
+                queue.task_done()
+                yield status_response(snapshot).model_dump()
+
+        try:
+            await stream(websocket, status_frames(), allowed)
         finally:
             service.unsubscribe(queue)
 
@@ -223,6 +284,7 @@ def register(
 
     for spa_path in (
         "dashboard",
+        "configs",
         "activity",
         "recordings",
         "timing",

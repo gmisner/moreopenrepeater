@@ -230,6 +230,7 @@ class HealthMonitor:
         self._throttle_seen = 0
         self._audio_down_since: Optional[float] = None
         self._audio_alerted = False
+        self._ptt_alerted = False
         self._link_audio_down_since: Optional[float] = None
         self._link_audio_alerted = False
         self._cm108_gone = False
@@ -360,8 +361,9 @@ class HealthMonitor:
         return [Alert(kind, stopped_title, f"{error} {stopped_detail}", "critical")], since, True
 
     def _audio(self, now: float) -> list[Alert]:
+        status = self._audio_status()
         alerts, self._audio_down_since, self._audio_alerted = self._engine_down(
-            self._audio_status(),
+            status,
             now=now,
             down_since=self._audio_down_since,
             alerted=self._audio_alerted,
@@ -370,6 +372,12 @@ class HealthMonitor:
             running_title="Live audio is running again",
             stopped_detail="The repeater can't hear or transmit until it's fixed.",
         )
+        ptt_error = status.get("ptt_error")
+        if ptt_error and not self._ptt_alerted:
+            alerts.append(Alert("audio", "Live audio PTT failed", ptt_error, "critical"))
+        elif not ptt_error and self._ptt_alerted:
+            alerts.append(Alert("audio", "Live audio PTT recovered", "The PTT output is responding again.", "info"))
+        self._ptt_alerted = bool(ptt_error)
         return alerts
 
     def _link_audio(self, now: float) -> list[Alert]:

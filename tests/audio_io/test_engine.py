@@ -37,7 +37,7 @@ class FakeStream48k(FakeStream):
     device_rate = 48000
 
 
-def make_engine(stream_class=FakeStream, **kwargs):
+def make_engine(stream_class=FakeStream, ptt_output=None, **kwargs):
     events, ptt = [], []
     streams = []
 
@@ -49,7 +49,7 @@ def make_engine(stream_class=FakeStream, **kwargs):
         AudioProcessor(ProcessorSettings(RATE, vox_threshold_db=-30, vox_attack=0.02)),
         BLOCK,
         on_events=events.extend,
-        ptt_output=ptt.append,
+        ptt_output=ptt_output or ptt.append,
         stream_factory=factory,
         **kwargs,
     )
@@ -155,3 +155,65 @@ def test_stream_death_callback_fires_when_stream_goes_inactive():
     assert deaths == [True]
     assert not engine.running
     engine.stop()
+
+
+def test_failed_ptt_assertion_is_not_reported_as_transmitting():
+    def ptt(active):
+        if active:
+            raise OSError("key write failed")
+
+    engine, _, _, _ = make_engine(ptt_output=ptt)
+    engine.processor.play(np.full(BLOCK, 0.1, dtype=np.float32))
+    engine.process_one(np.zeros(BLOCK, dtype=np.float32))
+
+    assert not engine.transmitting
+    assert "key write failed" in engine.ptt_error
+
+
+def test_failed_unkey_retries_without_waiting_for_an_audio_block():
+    writes = []
+
+    def ptt(active):
+        writes.append(active)
+        if writes == [True, False]:
+            raise OSError("unkey write failed")
+
+    engine, _, _, _ = make_engine(ptt_output=ptt)
+    engine.start()
+    try:
+        engine.processor.play(np.full(BLOCK, 0.1, dtype=np.float32))
+        engine.process_one(np.zeros(BLOCK, dtype=np.float32))
+        engine.process_one(np.zeros(BLOCK, dtype=np.float32))
+        assert engine.transmitting
+        assert "unkey write failed" in engine.ptt_error
+        deadline = time.monotonic() + 2
+        while engine.transmitting and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert writes == [True, False, False]
+        assert not engine.transmitting
+        assert engine.ptt_error is None
+    finally:
+        engine.stop()
+
+
+def test_shutdown_unkeys_even_when_stopping_the_stream_fails():
+    writes = []
+
+    def ptt(active):
+        writes.append(active)
+        if writes == [True, False]:
+            raise OSError("unkey write failed")
+
+    class BrokenStop(FakeStream):
+        def stop(self):
+            raise OSError("stream already disconnected")
+
+    engine, _, _, _ = make_engine(stream_class=BrokenStop, ptt_output=ptt)
+    engine.start()
+    engine.processor.play(np.full(BLOCK, 0.1, dtype=np.float32))
+    engine.process_one(np.zeros(BLOCK, dtype=np.float32))
+    engine.stop()
+
+    assert writes == [True, False, False]
+    assert not engine.transmitting
+    assert engine.ptt_error is None

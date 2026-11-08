@@ -2,6 +2,7 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from controller.macros import Macro
@@ -54,6 +55,43 @@ def test_service_persists_config_and_macro_changes_across_restart():
     assert restarted.config.hang_time == 7.5
     assert restarted.config.callsign == "W1AW"
     assert [m.pattern for m in restarted.list_macros()] == ["*81"]
+
+
+@pytest.mark.parametrize("restore", [False, True])
+def test_failed_config_write_leaves_running_config_and_listeners_unchanged(tmp_path, monkeypatch, restore):
+    store = StateStore(tmp_path / "state.json")
+    service = RepeaterService(state_store=store)
+    service.update_config(callsign="OLD1")
+    applied = []
+    service.add_config_listener(applied.append)
+
+    def disk_full(_snapshot):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store, "save", disk_full)
+    with pytest.raises(OSError, match="disk full"):
+        if restore:
+            service.import_snapshot({"config": {"callsign": "NEW1"}})
+        else:
+            service.update_config(callsign="NEW1")
+    assert service.saved_config.callsign == service.config.callsign == "OLD1"
+    assert store.load()["config"]["callsign"] == "OLD1"
+    assert applied == []
+
+
+def test_raw_restore_validates_schedule_before_saving(tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    service = RepeaterService(state_store=store)
+    service.update_config(callsign="OLD1")
+
+    with pytest.raises(ValueError):
+        service.import_snapshot({
+            "config": {"callsign": "NEW1"},
+            "announcements": [{"id": "weekly", "name": "Weekly", "kind": "weekly", "times": ["invalid"]}],
+        })
+
+    assert service.saved_config.callsign == store.load()["config"]["callsign"] == "OLD1"
+    assert service.scheduler.list() == []
 
 
 def test_service_persists_macro_deletion():

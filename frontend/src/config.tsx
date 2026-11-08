@@ -102,45 +102,38 @@ export function buildConfigPatch(values: Config, edited: Iterable<string>): Conf
 
 export function useConfigSlice<T extends Config>(keys: (keyof T & string)[], defaults: T) {
   const { config, save } = useConfig();
-  const [values, setValues] = useState<T>(defaults);
-  const [baseline, setBaseline] = useState<T>(defaults);
-  const [edited, setEdited] = useState<Set<string>>(new Set());
+  type Key = keyof T & string;
+  const [draft, setDraft] = useState<Map<Key, { value: T[Key] }>>(() => new Map());
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!config) return;
-    const next = { ...defaults };
+  const baseline = { ...defaults };
+  if (config) {
     for (const key of keys) {
-      if (key in config) (next as Config)[key] = config[key] as T[typeof key];
+      if (key in config) baseline[key] = config[key] as T[Key];
     }
-    setValues(next);
-    setBaseline(next);
-    setEdited(new Set());
-  }, [config]); // eslint-disable-line react-hooks/exhaustive-deps -- keys/defaults are stable per form
+  }
 
-  const setField = <K extends keyof T & string>(name: K, value: T[K]) => {
-    setValues((prev) => ({ ...prev, [name]: value }));
-    setEdited((prev) => new Set(prev).add(name));
+  const values = { ...baseline };
+  for (const [key, edit] of draft) values[key] = edit.value;
+
+  const setField = <K extends Key>(name: K, value: T[K]) => {
+    setDraft((previous) => new Map(previous).set(name, { value }));
   };
 
-  const dirty = edited.size > 0;
-
-  const reset = () => {
-    setValues(baseline);
-    setEdited(new Set());
-  };
+  const reset = () => setDraft(new Map());
 
   const submit = async () => {
     setSaving(true);
     try {
-      const next = await save(buildConfigPatch(values as Config, edited));
-      const filled = { ...defaults };
-      for (const key of keys) {
-        if (key in next) (filled as Config)[key] = next[key] as T[typeof key];
-      }
-      setValues(filled);
-      setBaseline(filled);
-      setEdited(new Set());
+      await save(buildConfigPatch(values, draft.keys()));
+      // Only clear the exact edits sent in this request. Newer edits stay in the draft.
+      setDraft((current) => {
+        const remaining = new Map(current);
+        for (const [key, submitted] of draft) {
+          if (remaining.get(key) === submitted) remaining.delete(key);
+        }
+        return remaining;
+      });
       notifySuccess("Saved");
       return true;
     } catch (error) {
@@ -151,5 +144,5 @@ export function useConfigSlice<T extends Config>(keys: (keyof T & string)[], def
     }
   };
 
-  return { values, setField, dirty, reset, submit, saving, baseline };
+  return { values, setField, dirty: draft.size > 0, reset, submit, saving, baseline };
 }

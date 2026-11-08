@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 // Live repeater snapshot from /ws/status. Keep consumers narrow so TX/RX
 // updates do not re-render the whole dashboard.
@@ -19,45 +19,68 @@ type StatusContextValue = {
   connected: boolean;
 };
 
+const STATUS_STALE_MS = 10000;
+const RECONNECT_MS = 2000;
+
 const StatusContext = createContext<StatusContextValue>({ status: null, connected: false });
 
 export function StatusProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<RepeaterStatus | null>(null);
   const [connected, setConnected] = useState(false);
-  const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let socket: WebSocket | null = null;
     let retry: number | undefined;
+    let stale: number | undefined;
 
     const connect = () => {
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(`${protocol}//${location.host}/ws/status`);
-      socketRef.current = ws;
+      socket = ws;
+
+      const disconnect = () => {
+        if (socket !== ws) return;
+        socket = null;
+        window.clearTimeout(stale);
+        setStatus(null);
+        setConnected(false);
+        retry = window.setTimeout(connect, RECONNECT_MS);
+      };
+      const expectFrame = () => {
+        window.clearTimeout(stale);
+        stale = window.setTimeout(() => {
+          disconnect();
+          ws.close();
+        }, STATUS_STALE_MS);
+      };
+
       ws.onopen = () => {
-        if (!cancelled) setConnected(true);
+        if (socket !== ws) return;
+        setConnected(true);
+        expectFrame();
       };
       ws.onmessage = (event) => {
+        if (socket !== ws) return;
         try {
-          setStatus(JSON.parse(event.data));
+          const snapshot = JSON.parse(event.data);
+          if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return;
+          setStatus(snapshot);
+          expectFrame();
         } catch {
           /* ignore malformed frames */
         }
       };
-      ws.onclose = () => {
-        if (cancelled) return;
-        // Drop last-known gauges so MiniStatus / Dashboard don't look live while offline.
-        setStatus(null);
-        setConnected(false);
-        retry = window.setTimeout(connect, 2000);
-      };
+      ws.onclose = disconnect;
+      expectFrame();
     };
 
     connect();
     return () => {
-      cancelled = true;
+      const ws = socket;
+      socket = null;
       window.clearTimeout(retry);
-      socketRef.current?.close();
+      window.clearTimeout(stale);
+      ws?.close();
     };
   }, []);
 

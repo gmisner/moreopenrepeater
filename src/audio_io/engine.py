@@ -31,6 +31,9 @@ _logger = logging.getLogger("moreopenrepeater.audio")
 QUEUE_BLOCKS = 10
 PRIME_BLOCKS = 2  # output cushion so the first callbacks aren't starved
 COS_POLL_SECONDS = 0.02
+PTT_RETRY_SECONDS = 0.05
+PTT_RETRY_MAX_SECONDS = 1.0
+PTT_RELEASE_DELAYS = (0, 0.05, 0.1, 0.2)
 # The stream's glitch counters, each reported to `on_glitch` as it goes up.
 GLITCH_COUNTERS = ("dropped_input_blocks", "starved_output_blocks", "input_overflows", "output_underflows")
 
@@ -49,6 +52,7 @@ class AudioEngine:
         on_audio: Optional[Callable[[np.ndarray, np.ndarray], None]] = None,
         on_glitch: Optional[Callable[[str, int], None]] = None,
         on_stream_dead: Optional[Callable[[], None]] = None,
+        ptt_allowed: Optional[Callable[[], bool]] = None,
     ) -> None:
         """`on_audio(received, transmitted)` sees every processing block, on
         the worker thread -- it must be quick. `on_glitch(counter, count)`
@@ -66,6 +70,7 @@ class AudioEngine:
         self._input_device = input_device
         self._output_device = output_device
         self._ptt_output = ptt_output
+        self._ptt_allowed = ptt_allowed
         self._cos_input = cos_input
         self._stream_factory = stream_factory
         self._input: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=QUEUE_BLOCKS)
@@ -73,6 +78,12 @@ class AudioEngine:
         self._stream: Optional[AudioStream] = None
         self._threads: list[threading.Thread] = []
         self._stop = threading.Event()
+        self._ptt_lock = threading.Lock()
+        self._ptt_inhibited = False
+        self._ptt_blocked = False
+        self._ptt_retry_at = 0.0
+        self._ptt_retry_delay = PTT_RETRY_SECONDS
+        self.ptt_error: Optional[str] = None
         self.transmitting = False
         self.last_block_at: Optional[float] = None  # time.monotonic(); the watchdog checks it
         self._configure_device(processor.settings.sample_rate, block_size)
@@ -112,6 +123,7 @@ class AudioEngine:
 
     def start(self) -> None:
         self._stop.clear()
+        self._ptt_inhibited = False
         self._stream_dead_reported = False
         rate = self.processor.settings.sample_rate
         self._stream = self._stream_factory(
@@ -142,9 +154,12 @@ class AudioEngine:
 
     def stop(self) -> None:
         self._stop.set()
+        self.release_ptt(force=False)
         if self._stream is not None:
             try:
                 self._stream.stop()
+            except Exception:
+                _logger.exception("couldn't close the audio stream")
             finally:
                 self._stream = None
         current = threading.current_thread()
@@ -152,7 +167,6 @@ class AudioEngine:
             if thread is not current:
                 thread.join(timeout=1.0)
         self._threads = []
-        self._set_transmitting(False)
         _logger.info("audio engine stopped")
 
     def process_one(self, block: np.ndarray) -> None:
@@ -186,6 +200,7 @@ class AudioEngine:
             try:
                 block = self._input.get(timeout=0.2)
             except queue.Empty:
+                self._retry_ptt()
                 continue
             try:
                 self.process_one(block)
@@ -221,12 +236,60 @@ class AudioEngine:
                 _logger.exception("reading hardware COS failed")
                 self._stop.wait(1.0)
 
-    def _set_transmitting(self, active: bool) -> None:
-        if active == self.transmitting:
-            return
-        self.transmitting = active
-        if self._ptt_output is not None:
-            try:
+    def _write_ptt(self, active: bool) -> bool:
+        """Record the last successful write. Caller holds the PTT lock."""
+        try:
+            if self._ptt_output is not None:
                 self._ptt_output(active)
-            except OSError:
-                _logger.exception("setting hardware PTT failed")
+        except OSError as error:
+            action = "key" if active else "release"
+            message = f"Couldn't {action} hardware PTT: {error}"
+            if message != self.ptt_error:
+                _logger.error("%s", message)
+            self.ptt_error = message
+            self._ptt_blocked |= active
+            self._ptt_retry_at = time.monotonic() + self._ptt_retry_delay
+            self._ptt_retry_delay = min(2 * self._ptt_retry_delay, PTT_RETRY_MAX_SECONDS)
+            return False
+        self.transmitting = active
+        self.ptt_error = None
+        self._ptt_retry_delay = PTT_RETRY_SECONDS
+        return True
+
+    def _retry_ptt(self) -> None:
+        with self._ptt_lock:
+            if self.ptt_error is not None and not self._ptt_inhibited and time.monotonic() >= self._ptt_retry_at:
+                self._write_ptt(False)
+
+    def _set_transmitting(self, active: bool) -> None:
+        with self._ptt_lock:
+            if self._ptt_inhibited:
+                return
+            if active and self._ptt_allowed is not None and not self._ptt_allowed():
+                active = False
+            if not active:
+                self._ptt_blocked = False
+            if self.ptt_error is not None:
+                self._ptt_blocked |= active
+                if time.monotonic() >= self._ptt_retry_at:
+                    self._write_ptt(False)
+            elif active != self.transmitting and not self._ptt_blocked:
+                self._write_ptt(active)
+
+    def confirm_ptt_idle(self) -> bool:
+        """Confirm an idle output before starting a replacement audio stream."""
+        with self._ptt_lock:
+            return self._write_ptt(False)
+
+    def release_ptt(self, *, force: bool = True) -> None:
+        """Inhibit further keying and try to release PTT before hardware closes."""
+        with self._ptt_lock:
+            self._ptt_inhibited = True
+            if not (force or self.transmitting or self.ptt_error is not None):
+                return
+            for delay in PTT_RELEASE_DELAYS:
+                if delay:
+                    time.sleep(delay)
+                if self._write_ptt(False):
+                    return
+            _logger.critical("hardware PTT release could not be confirmed: %s", self.ptt_error)

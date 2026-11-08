@@ -2,14 +2,15 @@
 
 No cloud service: a repeater site often has flaky internet, and an ID must
 never fail because an API is down. Supported engines, in preference order:
-`kokoro` (neural), macOS `say`, `espeak-ng`/`espeak` (the usual Raspberry Pi
-default), and `pico2wave` (SVOX Pico).
+`piper` (neural, Pi-friendly), `kokoro` (heavier neural), macOS `say`,
+`espeak-ng`/`espeak`, and `pico2wave` (SVOX Pico).
 
 Text is handed to `say`/`espeak` through a file rather than argv so that
 announcement text starting with "-" can't be parsed as a command-line flag;
 `pico2wave` has no file option, so its text is prefixed with a space
 instead (getopt only treats arguments *starting* with "-" as options).
-`kokoro` gets the text after `--` so argparse won't treat it as a flag.
+`kokoro` gets text after `--`; `piper` reads text from `-i` so flags in the
+announcement cannot break argv.
 """
 from __future__ import annotations
 
@@ -35,11 +36,15 @@ _logger = logging.getLogger("moreopenrepeater.tts")
 TIMEOUT_SECONDS = 30
 # Fail over to espeak before a slow Pi speaks long enough to starve the controller.
 KOKORO_SPEAK_TIMEOUT_SECONDS = 20
+PIPER_SPEAK_TIMEOUT_SECONDS = 30
 DEFAULT_TTS_SPEED = 1.0
 MIN_TTS_SPEED = 0.5
 MAX_TTS_SPEED = 2.0
 # Prefer the long-lived localhost service so each speak does not reload ONNX.
 KOKORO_SERVICE_MODE = "required"
+DEFAULT_PIPER_VOICE = "en_US-lessac-medium"
+# Piper voice ids look like en_US-lessac-medium (locale-name-quality).
+_PIPER_VOICE_RE = re.compile(r"^[a-z]{2}_[A-Z]{2}-[a-z0-9]+-(x_low|low|medium|high)$")
 
 ITU_PHONETIC = {
     "A": "Alpha", "B": "Bravo", "C": "Charlie", "D": "Delta", "E": "Echo", "F": "Foxtrot",
@@ -137,6 +142,21 @@ def sanitize_kokoro_voice(voice: str) -> str:
     return ""
 
 
+def default_piper_voice() -> str:
+    return os.environ.get("PIPER_VOICE", DEFAULT_PIPER_VOICE).strip() or DEFAULT_PIPER_VOICE
+
+
+def sanitize_piper_voice(voice: str) -> str:
+    """Accept Piper voice ids; map Kokoro leftovers to the configured default."""
+    voice = voice.strip()
+    if not voice:
+        return default_piper_voice()
+    if _PIPER_VOICE_RE.fullmatch(voice):
+        return voice
+    _logger.warning("ignoring TTS voice %r (not a Piper id like en_US-lessac-medium); using %s", voice, default_piper_voice())
+    return default_piper_voice()
+
+
 class TTSEngine(Protocol):
     name: str
 
@@ -156,36 +176,44 @@ class CommandTTS:
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run
     # Absolute path when the binary isn't on PATH (e.g. kokoro in the venv).
     binary: str = ""
-    # When Kokoro fails or times out on a hot Pi, use espeak/pico instead of silence.
+    # When neural TTS fails or times out on a hot Pi, use espeak/pico instead of silence.
     fallback: Optional["CommandTTS"] = None
-    # Serialize Kokoro speaks so a cold service does not get stampeded.
+    # Serialize neural speaks so a cold load does not get stampeded.
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def synthesize(
         self, text: str, voice: str = "", speed: float = DEFAULT_TTS_SPEED
     ) -> tuple[np.ndarray, int]:
+        if self.name == "piper":
+            voice = sanitize_piper_voice(voice)
+            with self._lock:
+                return self._synthesize_neural(text, voice, speed)
         if self.name == "kokoro":
             voice = sanitize_kokoro_voice(voice)
             with self._lock:
-                return self._synthesize_kokoro(text, voice, speed)
+                return self._synthesize_neural(text, voice, speed)
         return self._synthesize_once(text, voice, speed)
 
-    def _synthesize_kokoro(
+    def _synthesize_neural(
         self, text: str, voice: str, speed: float
     ) -> tuple[np.ndarray, int]:
         try:
             return self._synthesize_once(text, voice, speed)
         except TTSError as error:
-            # Unknown-but-plausible ids: retry the Kokoro default. Don't retry timeouts.
-            if voice and isinstance(error.__cause__, subprocess.CalledProcessError):
+            # Unknown-but-plausible Kokoro ids: retry the default. Don't retry timeouts.
+            if (
+                self.name == "kokoro"
+                and voice
+                and isinstance(error.__cause__, subprocess.CalledProcessError)
+            ):
                 _logger.warning("Kokoro voice %r failed; retrying with the default voice", voice)
                 try:
                     return self._synthesize_once(text, "", speed)
                 except TTSError as retry_error:
                     error = retry_error
             if self.fallback is not None:
-                _logger.warning("Kokoro failed (%s); falling back to %s", error, self.fallback.name)
-                # espeak voice names are not Kokoro ids — leave blank.
+                _logger.warning("%s failed (%s); falling back to %s", self.name, error, self.fallback.name)
+                # espeak voice names are not neural ids — leave blank.
                 return self.fallback.synthesize(text, "", speed=speed)
             raise error
 
@@ -199,13 +227,17 @@ class CommandTTS:
             argv = self.build_argv(text_file, out_wav, text, voice, clamp_tts_speed(speed))
             if self.binary:
                 argv = [self.binary, *argv[1:]]
-            timeout = KOKORO_SPEAK_TIMEOUT_SECONDS if self.name == "kokoro" else TIMEOUT_SECONDS
+            if self.name == "kokoro":
+                timeout = KOKORO_SPEAK_TIMEOUT_SECONDS
+            elif self.name == "piper":
+                timeout = PIPER_SPEAK_TIMEOUT_SECONDS
+            else:
+                timeout = TIMEOUT_SECONDS
             try:
                 self.run(argv, check=True, capture_output=True, timeout=timeout)
             except subprocess.TimeoutExpired as error:
-                raise TTSError(
-                    f"{self.name} timed out after {timeout}s (is kokoro serve running?)"
-                ) from error
+                hint = " (is kokoro serve running?)" if self.name == "kokoro" else ""
+                raise TTSError(f"{self.name} timed out after {timeout}s{hint}") from error
             except subprocess.CalledProcessError as error:
                 detail = (error.stderr or error.stdout or b"").decode("utf-8", "replace").strip()
                 message = f"{self.name} failed: {error}"
@@ -259,6 +291,25 @@ def _kokoro_argv(text_file: Path, out_wav: Path, text: str, voice: str, speed: f
     ]
 
 
+def _piper_argv(text_file: Path, out_wav: Path, text: str, voice: str, speed: float) -> list[str]:
+    # piper-tts (OHF): text via -i file so flags in the announcement can't break argv.
+    # length-scale is inverse of speaking rate (1.0 = normal).
+    length_scale = 1.0 / speed if speed else 1.0
+    data_dir = os.environ.get("PIPER_DATA_DIR", "").strip()
+    return [
+        "piper",
+        "-m",
+        voice or default_piper_voice(),
+        "-f",
+        str(out_wav),
+        "-i",
+        str(text_file),
+        "--length-scale",
+        f"{length_scale:g}",
+        *(["--data-dir", data_dir] if data_dir else []),
+    ]
+
+
 def resolve_tts_binary(name: str, which: Callable[[str], Optional[str]] = shutil.which) -> Optional[str]:
     """PATH first, then the binary next to this process's Python (the venv)."""
     found = which(name)
@@ -271,12 +322,15 @@ def resolve_tts_binary(name: str, which: Callable[[str], Optional[str]] = shutil
 
 
 _ENGINES: tuple[tuple[str, Callable[[str], CommandTTS]], ...] = (
+    ("piper", lambda path: CommandTTS("piper", _piper_argv, binary=path)),
     ("kokoro", lambda path: CommandTTS("kokoro", _kokoro_argv, binary=path)),
     ("say", lambda path: CommandTTS("say", _say_argv, binary=path)),
     ("espeak-ng", lambda path: CommandTTS("espeak-ng", _espeak_argv(path), binary=path)),
     ("espeak", lambda path: CommandTTS("espeak", _espeak_argv(path), binary=path)),
     ("pico2wave", lambda path: CommandTTS("pico2wave", _pico_argv, binary=path)),
 )
+
+_NEURAL_ENGINES = frozenset({"piper", "kokoro"})
 
 
 def detect_tts(which: Callable[[str], Optional[str]] = shutil.which) -> Optional[TTSEngine]:
@@ -287,12 +341,12 @@ def detect_tts(which: Callable[[str], Optional[str]] = shutil.which) -> Optional
             engines[name] = factory(path)
     if not engines:
         _logger.warning(
-            "no text-to-speech engine found (install kokoro-cli, espeak-ng, or libttspico-utils); voice IDs fall back to CW"
+            "no text-to-speech engine found (install piper-tts, espeak-ng, or libttspico-utils); voice IDs fall back to CW"
         )
         return None
     primary_name = next(name for name, _factory in _ENGINES if name in engines)
     primary = engines[primary_name]
-    if primary_name == "kokoro":
+    if primary_name in _NEURAL_ENGINES:
         for fallback_name in ("espeak-ng", "espeak", "pico2wave"):
             if fallback_name in engines:
                 primary.fallback = engines[fallback_name]
@@ -307,12 +361,26 @@ def detect_tts(which: Callable[[str], Optional[str]] = shutil.which) -> Optional
     return primary
 
 
-def list_tts_voices(engine: Optional[TTSEngine]) -> list[TTSVoiceInfo]:
-    """Voices the current engine can use. Only Kokoro is enumerated today.
+def describe_piper_voice(voice_id: str) -> TTSVoiceInfo:
+    parts = voice_id.split("-")
+    locale = parts[0] if parts else ""
+    name = parts[1].replace("_", " ").title() if len(parts) > 1 else voice_id
+    quality = parts[2] if len(parts) > 2 else ""
+    label = f"{name} ({quality})" if quality else name
+    locale_label = locale.replace("_", "-") if locale else "Other"
+    return TTSVoiceInfo(id=voice_id, label=label, locale=locale_label, locale_label=locale_label, gender="")
 
-    Uses a built-in id list instead of `kokoro voices`: spawning the CLI on a
-    Pi can peg the CPU for several seconds and starve the audio engine.
+
+def list_tts_voices(engine: Optional[TTSEngine]) -> list[TTSVoiceInfo]:
+    """Voices the current engine can use.
+
+    Piper and Kokoro use built-in id lists so we never spawn a CLI just to
+    populate the Identification dropdown (that pegged the Pi with Kokoro).
     """
-    if engine is None or engine.name != "kokoro":
+    if engine is None:
         return []
-    return [describe_kokoro_voice(voice_id) for voice_id in _KOKORO_BUILTIN_VOICES]
+    if engine.name == "piper":
+        return [describe_piper_voice(DEFAULT_PIPER_VOICE)]
+    if engine.name == "kokoro":
+        return [describe_kokoro_voice(voice_id) for voice_id in _KOKORO_BUILTIN_VOICES]
+    return []

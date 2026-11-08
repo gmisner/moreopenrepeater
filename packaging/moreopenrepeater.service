@@ -9,8 +9,8 @@ Wants=network-online.target
 # stop, systemd kills it and Restart= starts it again.
 Type=notify
 WatchdogSec=30
-# Kokoro may need a few minutes on first boot to load int8 weights into serve.
-TimeoutStartSec=300
+# Piper/Kokoro first speak can still take a while while ONNX loads.
+TimeoutStartSec=180
 User=moreopenrepeater
 Group=moreopenrepeater
 # Support bundles run journalctl -u moreopenrepeater from this process.
@@ -19,9 +19,12 @@ WorkingDirectory=/opt/moreopenrepeater
 # Multithreaded BLAS makes the audio worker's small matrix products late now
 # and then on a Pi (waking the other cores costs more than it saves).
 Environment=OPENBLAS_NUM_THREADS=1
-# venv first so `kokoro` (and other console scripts) resolve for TTS.
+# venv first so `piper` / `kokoro` (and other console scripts) resolve for TTS.
 Environment=PATH=/opt/moreopenrepeater/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
-# Kokoro models (~120 MB) live under data/ so the service user can read them.
+# Piper voices live under data/ so they survive venv swaps.
+Environment=PIPER_DATA_DIR=/opt/moreopenrepeater/data/piper
+Environment=PIPER_VOICE=en_US-lessac-medium
+# Kokoro models (~120 MB) when kokoro-cli is still installed on this site.
 Environment=KOKORO_HOME=/opt/moreopenrepeater/data/kokoro
 # The dashboard's Updates page asks moreopenrepeater-update.path for an
 # update by writing the request file, and reads progress from the updater's

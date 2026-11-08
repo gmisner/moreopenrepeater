@@ -6,13 +6,16 @@ import pytest
 
 from playout.tts import (
     CommandTTS,
+    DEFAULT_PIPER_VOICE,
     KOKORO_SPEAK_TIMEOUT_SECONDS,
+    PIPER_SPEAK_TIMEOUT_SECONDS,
     TTSError,
     describe_kokoro_voice,
     detect_tts,
     format_voice_id,
     list_tts_voices,
     sanitize_kokoro_voice,
+    sanitize_piper_voice,
     spell_callsign,
 )
 from playout.wav import encode_wav
@@ -46,6 +49,12 @@ def test_sanitize_kokoro_voice_drops_espeak_names():
     assert sanitize_kokoro_voice("af_heart") == "af_heart"
     assert sanitize_kokoro_voice("mb-us1") == ""
     assert sanitize_kokoro_voice("Alex") == ""
+
+
+def test_sanitize_piper_voice_maps_kokoro_leftovers_to_default():
+    assert sanitize_piper_voice("en_US-lessac-medium") == "en_US-lessac-medium"
+    assert sanitize_piper_voice("af_heart") == DEFAULT_PIPER_VOICE
+    assert sanitize_piper_voice("") == DEFAULT_PIPER_VOICE
 
 
 def test_kokoro_ignores_legacy_voice_and_uses_default():
@@ -155,18 +164,61 @@ def test_resolve_tts_binary_checks_venv_sibling(tmp_path, monkeypatch):
     assert tts_mod.resolve_tts_binary("kokoro", which=lambda _name: None) == str(kokoro)
 
 
-def test_detect_tts_prefers_kokoro_then_say_then_espeak_ng():
+def test_detect_tts_prefers_piper_then_kokoro_then_say_then_espeak_ng():
+    assert detect_tts(which=lambda b: b in ("piper", "kokoro", "espeak-ng")).name == "piper"
     assert detect_tts(which=lambda b: b in ("kokoro", "say", "espeak-ng")).name == "kokoro"
     assert detect_tts(which=lambda b: b in ("say", "espeak-ng")).name == "say"
     assert detect_tts(which=lambda b: b in ("espeak-ng", "pico2wave")).name == "espeak-ng"
     assert detect_tts(which=lambda b: None) is None
 
 
-def test_detect_tts_attaches_espeak_fallback_to_kokoro():
-    engine = detect_tts(which=lambda b: "/bin/" + b if b in ("kokoro", "espeak-ng") else None)
-    assert engine.name == "kokoro"
+def test_detect_tts_attaches_espeak_fallback_to_piper():
+    engine = detect_tts(which=lambda b: "/bin/" + b if b in ("piper", "espeak-ng") else None)
+    assert engine.name == "piper"
     assert engine.fallback is not None
     assert engine.fallback.name == "espeak-ng"
+
+
+def test_piper_speak_argv_and_timeout():
+    timeouts: list[float] = []
+    calls: list = []
+    engine = detect_tts(which=lambda b: "/usr/bin/piper" if b == "piper" else None)
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        timeouts.append(kwargs["timeout"])
+        out = Path(argv[argv.index("-f") + 1])
+        out.write_bytes(encode_wav(np.zeros(8, dtype=np.float32), 22050))
+        return subprocess.CompletedProcess(argv, 0)
+
+    engine.run = run
+    engine.synthesize("hello", voice="af_heart", speed=1.0)
+    argv = calls[0]
+    assert argv[:2] == ["/usr/bin/piper", "-m"]
+    assert argv[argv.index("-m") + 1] == DEFAULT_PIPER_VOICE  # kokoro leftover remapped
+    assert argv[argv.index("-f") + 1].endswith("speech.wav")
+    assert argv[argv.index("-i") + 1].endswith("text.txt")
+    assert timeouts == [PIPER_SPEAK_TIMEOUT_SECONDS]
+
+
+def test_piper_falls_back_to_espeak_on_timeout():
+    calls: list = []
+    engine = detect_tts(which=lambda b: "/bin/" + b if b in ("piper", "espeak-ng") else None)
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if argv[0].endswith("piper") or argv[1:2] == ["-m"]:
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        out = Path(argv[argv.index("-w") + 1])
+        out.write_bytes(encode_wav(np.zeros(20, dtype=np.float32), 16000))
+        return subprocess.CompletedProcess(argv, 0)
+
+    engine.run = run
+    engine.fallback.run = run
+    samples, rate = engine.synthesize("hello", voice="en_US-lessac-medium")
+    assert rate == 16000 and len(samples) == 20
+    assert any(a[0].endswith("piper") for a in calls)
+    assert any("espeak-ng" in a[0] for a in calls)
 
 
 def test_kokoro_falls_back_to_espeak_on_timeout():
@@ -195,6 +247,12 @@ def test_list_tts_voices_for_kokoro_uses_builtin_list():
     assert any(voice.id == "af_heart" for voice in voices)
     george = next(voice for voice in voices if voice.id == "bm_george")
     assert george.locale_label == "British English"
+
+
+def test_list_tts_voices_for_piper_lists_default_voice():
+    engine = detect_tts(which=lambda b: "/usr/bin/piper" if b == "piper" else None)
+    voices = list_tts_voices(engine)
+    assert voices and voices[0].id == DEFAULT_PIPER_VOICE
 
 
 def test_list_tts_voices_empty_for_other_engines():

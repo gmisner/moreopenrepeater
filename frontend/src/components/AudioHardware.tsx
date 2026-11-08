@@ -16,7 +16,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import {
@@ -29,9 +29,10 @@ import {
   type GpioSchedule,
   type GpioStatus,
 } from "../gpio";
-import { labeled } from "./FieldHint";
+import { labeled, InfoNote } from "./FieldHint";
 import { ConfigActions } from "./ConfigActions";
 import { soundAssignments, soundDeviceOptions } from "../deviceUsage";
+import { ActionsHeader } from "./ActionsHeader";
 
 type Asset = { id: string; kind: string; filename: string; uploaded_at: string };
 type AudioDevice = { name: string; inputs: number };
@@ -228,10 +229,10 @@ export function MonitorReceiverCard({ devices }: { devices: AudioDevice[] }) {
             {state.label}
           </Badge>
         </Group>
-        <Text c="dimmed" size="sm" maw="75ch">
+        <InfoNote>
           A second, listen-only receiver on its own sound input. Hear it on the dashboard and record it without ever
           transmitting it or putting it on the public listening page.
-        </Text>
+        </InfoNote>
         <Switch
           label="Turn on the monitor receiver"
           checked={monitor.values.monitor_enabled}
@@ -372,14 +373,21 @@ function emptySchedule(pin: number | undefined): GpioSchedule {
   return { pin: pin ?? 1, time: "", minutes: 60, days: [], enabled: true };
 }
 
+export type AudioHardwareParts = { pins: ReactNode; library: ReactNode };
+
+/** The GPIO, schedule, fan and library cards. Pass a render function as
+ * children to place the two groups separately (the Audio page puts them in
+ * different tabs); without one, both render in order. */
 export function AudioHardwareCards({
   assets,
   reloadAssets,
   canWrite,
+  children,
 }: {
   assets: Asset[];
   reloadAssets: () => Promise<void>;
   canWrite: boolean;
+  children?: (parts: AudioHardwareParts) => ReactNode;
 }) {
   const { config } = useConfig();
   const gpio = useConfigSlice<GpioValues>(GPIO_KEYS, GPIO_DEFAULTS);
@@ -489,7 +497,7 @@ export function AudioHardwareCards({
     }
   };
 
-  return (
+  const pins = (
     <>
       <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => void savePins(event)}>
         <Stack gap="md">
@@ -499,104 +507,109 @@ export function AudioHardwareCards({
               {status?.available ? "CM108 found" : "no CM108"}
             </Badge>
           </Group>
-          <Text c="dimmed" size="sm" maw="75ch">
+          <InfoNote>
             Spare interface pins for relays, alarms and similar hardware. Outputs can also be switched on the dashboard
             or by a DTMF macro. Inputs can say something or run a macro after changing state.
-          </Text>
-          <Stack gap="sm">
+          </InfoNote>
+          <div className="mor-gpio" role="group" aria-label="CM108 GPIO pins">
+            <div className="mor-gpio-head" aria-hidden="true">
+              <span>Pin</span>
+              <span>Use</span>
+              <span>Name</span>
+              <span>State</span>
+            </div>
             {SPARE_PINS.map((pin) => {
               const settings = gpio.values.gpio_pins[String(pin)] ?? {};
               const live = status?.pins.find((row) => row.pin === pin);
               const isFan = pin === fanPin;
               return (
-                <Card key={pin} withBorder padding="md" radius="sm" bg="var(--mantine-color-default)">
-                  <Stack gap="sm">
-                    <SimpleGrid cols={{ base: 1, sm: 4 }} spacing="md" style={{ alignItems: "end" }}>
-                      <Text fw={600} ff="monospace" pb={8}>GPIO{pin}</Text>
-                      {isFan ? (
-                        <Text size="sm" c="dimmed" style={{ gridColumn: "span 2" }} pb={8}>
-                          Transmitter fan (set up below)
-                        </Text>
-                      ) : (
-                        <>
-                          <Select
-                            label="Use"
-                            data={[
-                              { value: "", label: "Unused" },
-                              { value: "output", label: "Output" },
-                              { value: "input", label: "Input" },
-                            ]}
-                            value={settings.mode ?? ""}
-                            onChange={(value) =>
-                              updatePin(pin, value ? { ...settings, mode: value as "output" | "input" } : null)
-                            }
-                            allowDeselect={false}
-                          />
-                          <TextInput
-                            label="Name"
-                            maxLength={30}
-                            value={settings.name ?? ""}
-                            disabled={!settings.mode}
-                            onChange={(event) => updatePin(pin, { ...settings, name: event.currentTarget.value })}
-                          />
-                        </>
-                      )}
-                      <Group justify="flex-end" pb={isFan ? 0 : 1}>
-                        {live?.mode === "output" && status?.available && settings.mode === "output" && canWrite ? (
-                          <Button
-                            size="compact-sm"
-                            variant={live.on ? "filled" : "default"}
-                            loading={switchingPin === pin}
-                            onClick={() => void switchPin(pin, !live.on)}
-                          >
-                            {gpioStateText(live, status.available)}
-                          </Button>
-                        ) : (
-                          <Badge color={live?.on ? "green" : "gray"} variant="light">
-                            {live && status ? gpioStateText(live, status.available) : "–"}
-                          </Badge>
-                        )}
-                      </Group>
-                    </SimpleGrid>
-                    {settings.mode === "input" ? (
+                <div key={pin} className="mor-gpio-row">
+                  <div className="mor-gpio-cols">
+                    <span className="mor-gpio-pin mor-num">GPIO{pin}</span>
+                    {isFan ? (
+                      <Text size="sm" c="dimmed" className="mor-gpio-fan">
+                        Transmitter fan (set up below)
+                      </Text>
+                    ) : (
                       <>
-                        <Checkbox
-                          label="On when the pin reads low"
-                          checked={Boolean(settings.invert)}
-                          onChange={(event) => updatePin(pin, { ...settings, invert: event.currentTarget.checked })}
+                        <Select
+                          aria-label={`GPIO${pin} use`}
+                          data={[
+                            { value: "", label: "Unused" },
+                            { value: "output", label: "Output" },
+                            { value: "input", label: "Input" },
+                          ]}
+                          value={settings.mode ?? ""}
+                          onChange={(value) =>
+                            updatePin(pin, value ? { ...settings, mode: value as "output" | "input" } : null)
+                          }
+                          allowDeselect={false}
                         />
-                        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                          {(["on", "off"] as const).map((state) => (
-                            <Card key={state} withBorder padding="sm" radius="sm">
-                              <Stack gap="sm">
-                                <Text size="sm" fw={600}>When {state}</Text>
-                                <TextInput
-                                  label="Say"
-                                  maxLength={200}
-                                  value={settings[`${state}_say`] ?? ""}
-                                  onChange={(event) =>
-                                    updatePin(pin, { ...settings, [`${state}_say`]: event.currentTarget.value })
-                                  }
-                                />
-                                <Select
-                                  label="Run"
-                                  data={macroOptions(macros, settings[`${state}_macro`])}
-                                  value={settings[`${state}_macro`] ?? ""}
-                                  onChange={(value) => updatePin(pin, { ...settings, [`${state}_macro`]: value || "" })}
-                                  searchable
-                                  allowDeselect={false}
-                                />
-                              </Stack>
-                            </Card>
-                          ))}
-                        </SimpleGrid>
+                        <TextInput
+                          aria-label={`GPIO${pin} name`}
+                          placeholder={settings.mode ? "Name, such as Site light" : ""}
+                          maxLength={30}
+                          value={settings.name ?? ""}
+                          disabled={!settings.mode}
+                          onChange={(event) => updatePin(pin, { ...settings, name: event.currentTarget.value })}
+                        />
                       </>
-                    ) : null}
-                  </Stack>
-                </Card>
+                    )}
+                    <div className="mor-gpio-state">
+                      {live?.mode === "output" && status?.available && settings.mode === "output" && canWrite ? (
+                        <Button
+                          size="compact-sm"
+                          variant={live.on ? "filled" : "default"}
+                          loading={switchingPin === pin}
+                          onClick={() => void switchPin(pin, !live.on)}
+                        >
+                          {gpioStateText(live, status.available)}
+                        </Button>
+                      ) : (
+                        <Badge color={live?.on ? "green" : "gray"} variant="light">
+                          {live && status ? gpioStateText(live, status.available) : "–"}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  {settings.mode === "input" ? (
+                    <Stack gap="sm" className="mor-gpio-more">
+                      <Checkbox
+                        label="On when the pin reads low"
+                        checked={Boolean(settings.invert)}
+                        onChange={(event) => updatePin(pin, { ...settings, invert: event.currentTarget.checked })}
+                      />
+                      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                        {(["on", "off"] as const).map((state) => (
+                          <Stack key={state} gap="xs">
+                            <Text size="sm" fw={600}>
+                              When {state}
+                            </Text>
+                            <TextInput
+                              label="Say"
+                              maxLength={200}
+                              value={settings[`${state}_say`] ?? ""}
+                              onChange={(event) =>
+                                updatePin(pin, { ...settings, [`${state}_say`]: event.currentTarget.value })
+                              }
+                            />
+                            <Select
+                              label="Run"
+                              data={macroOptions(macros, settings[`${state}_macro`])}
+                              value={settings[`${state}_macro`] ?? ""}
+                              onChange={(value) => updatePin(pin, { ...settings, [`${state}_macro`]: value || "" })}
+                              searchable
+                              allowDeselect={false}
+                            />
+                          </Stack>
+                        ))}
+                      </SimpleGrid>
+                    </Stack>
+                  ) : null}
+                </div>
               );
             })}
-          </Stack>
+          </div>
           {status?.error ? <Text c="red" size="sm">{status.error}</Text> : null}
           <ConfigActions dirty={gpio.dirty} saving={gpio.saving} onReset={gpio.reset} />
         </Stack>
@@ -604,11 +617,8 @@ export function AudioHardwareCards({
 
       <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => void saveSchedules(event)}>
         <Stack gap="md">
-          <Title order={2}>Output schedules</Title>
-          <Text c="dimmed" size="sm" maw="75ch">
-            Switch an output on at a set time each week and off after the given number of minutes. Zero minutes leaves
-            it on until it is switched off.
-          </Text>
+          <Title order={2}>{labeled("Output schedules", <>Switch an output on at a set time each week and off after the given number of minutes. Zero minutes leaves
+            it on until it is switched off.</>)}</Title>
           {schedules.values.gpio_schedules.map((schedule, index) => {
             const live = status?.schedules[index];
             const outputOptions = outputs.map(({ pin, name }) => ({ value: String(pin), label: pinLabel(pin, name) }));
@@ -731,10 +741,10 @@ export function AudioHardwareCards({
               {status?.fan?.error ? "error" : status?.fan?.output === "none" ? "off" : fanText(status?.fan ?? null)}
             </Badge>
           </Group>
-          <Text c="dimmed" size="sm" maw="75ch">
+          <InfoNote>
             Run a cooling fan while the repeater transmits and for a while afterwards. Switch it through a relay or
             transistor; a pin cannot power a fan directly.
-          </Text>
+          </InfoNote>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <Select
               label="Fan output"
@@ -810,6 +820,10 @@ export function AudioHardwareCards({
         </Stack>
       </Card>
 
+    </>
+  );
+
+  const library = (
       <Card withBorder padding="lg" radius="md">
         <Stack gap="md">
           <Title order={2}>Library</Title>
@@ -821,7 +835,7 @@ export function AudioHardwareCards({
                   <Table.Th>Filename</Table.Th>
                   <Table.Th>Uploaded</Table.Th>
                   <Table.Th>Preview</Table.Th>
-                  <Table.Th />
+                  <ActionsHeader />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -881,6 +895,12 @@ export function AudioHardwareCards({
           ) : null}
         </Stack>
       </Card>
+  );
+
+  return children ? <>{children({ pins, library })}</> : (
+    <>
+      {pins}
+      {library}
     </>
   );
 }

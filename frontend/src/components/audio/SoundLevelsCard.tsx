@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { SIDE_LABELS } from "./constants";
 import { soundLevelText } from "./helpers";
 import type { SoundLevel } from "./types";
+import { labeled } from "../FieldHint";
 
 const SIDE_ORDER: SoundLevel["side"][] = ["input", "output", "link_input", "link_output"];
 
@@ -43,14 +44,11 @@ export function SoundLevelsCard({
   return (
     <Card withBorder padding="lg" radius="md">
       <Stack gap="md">
-        <Title order={2}>Sound card levels</Title>
-        <Text c="dimmed" size="sm" maw="75ch">
-          Each radio&apos;s USB interface volume controls (repeater and linked radio when its devices are set): how loud
+        <Title order={2}>{labeled("Sound card levels", <>Each radio&apos;s USB interface volume controls (repeater and linked radio when its devices are set): how loud
           receive comes in, and how loud audio goes out to the transmitter. A change takes effect right away and is
           saved here, then set again whenever that radio&apos;s audio starts. Auto Gain on a CM108 is listed under
           receive — leave it off for stable Digirig levels. A CM108 Mic playback control only loops receive audio and
-          isn&apos;t listed.
-        </Text>
+          isn&apos;t listed.</>)}</Title>
         {groups.length === 0 ? (
           <Text size="sm" c="dimmed">
             {levelNotes.join(" ") || "No mixer controls found for the selected devices."}

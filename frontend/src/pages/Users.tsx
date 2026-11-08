@@ -16,11 +16,13 @@ import {
 } from "@mantine/core";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
+import { EmptyState } from "../components/EmptyState";
 import { copyToClipboard } from "../clipboard";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
 import { labeled } from "../components/FieldHint";
+import { ActionsHeader } from "../components/ActionsHeader";
 
 const ROLES = [
   { value: "viewer", label: "Viewer" },
@@ -189,7 +191,7 @@ export function Users() {
   };
 
   return (
-    <Page title="Users" description="Who can sign in, and what each role can do.">
+    <Page title="Users">
       {!signInOn ? (
         <Card withBorder padding="md" radius="md">
           <Text c="dimmed">
@@ -206,7 +208,7 @@ export function Users() {
               <Table.Tr>
                 <Table.Th>User</Table.Th>
                 <Table.Th>Role</Table.Th>
-                <Table.Th />
+                <ActionsHeader />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -266,10 +268,11 @@ export function Users() {
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>
+        {users.length === 0 ? <EmptyState>No users yet. Add the first admin below.</EmptyState> : null}
       </Card>
 
       <Card withBorder padding="lg" radius="md" component="form" onSubmit={addUser}>
-        <Title order={2} c="dimmed" tt="uppercase" mb="md" style={{ letterSpacing: "0.06em" }}>
+        <Title order={2} mb="md">
           Add a user
         </Title>
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
@@ -308,14 +311,10 @@ export function Users() {
       {signInOn ? (
         <>
           <Card withBorder padding="lg" radius="md">
-            <Title order={2} c="dimmed" tt="uppercase" mb="sm" style={{ letterSpacing: "0.06em" }}>
-              API tokens
-            </Title>
-            <Text size="sm" c="dimmed" mb="md" maw="75ch">
-              For scripts and AI agents. A token acts as its user, with that user&apos;s role, and stops working when
+            <Title order={2} mb="sm">
+              {labeled("API tokens", <>For scripts and AI agents. A token acts as its user, with that user&apos;s role, and stops working when
               it&apos;s revoked or the user is deleted. Send it as{" "}
-              <Code>Authorization: Bearer &lt;token&gt;</Code>. Tokens can&apos;t manage users or other tokens.
-            </Text>
+              <Code>Authorization: Bearer &lt;token&gt;</Code>. Tokens can&apos;t manage users or other tokens.</>)}</Title>
             {tokens.length > 0 ? (
               <Table.ScrollContainer minWidth={560} mb="md">
                 <Table>
@@ -325,7 +324,7 @@ export function Users() {
                       <Table.Th>User</Table.Th>
                       <Table.Th>Created</Table.Th>
                       <Table.Th>Last used</Table.Th>
-                      <Table.Th />
+                      <ActionsHeader />
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
@@ -403,14 +402,10 @@ export function Users() {
           </Card>
 
           <Card withBorder padding="lg" radius="md">
-            <Title order={2} c="dimmed" tt="uppercase" mb="sm" style={{ letterSpacing: "0.06em" }}>
-              Agent access (MCP)
-            </Title>
-            <Text size="sm" c="dimmed" mb="md" maw="75ch">
-              AI agents such as Claude, Cursor or ChatGPT can connect to the repeater&apos;s MCP server with an API
+            <Title order={2} mb="sm">
+              {labeled("Agent access (MCP)", <>AI agents such as Claude, Cursor or ChatGPT can connect to the repeater&apos;s MCP server with an API
               token. They can read status, audio levels, settings, activity and logs, and an operator&apos;s token can
-              change settings. Every change is in the audit log under the token&apos;s name.
-            </Text>
+              change settings. Every change is in the audit log under the token&apos;s name.</>)}</Title>
             {agent && !agent.mcp_available ? (
               <Text size="sm" mb="md">
                 MCP support isn&apos;t installed on this controller. Update to the latest version to get it.

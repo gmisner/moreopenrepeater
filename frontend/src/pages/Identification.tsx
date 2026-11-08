@@ -14,7 +14,7 @@ import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
 import { useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
-import { labeled } from "../components/FieldHint";
+import { InfoNote, labeled } from "../components/FieldHint";
 
 type IdValues = {
   gmrs_mode: boolean;
@@ -104,6 +104,15 @@ const SPEED_OPTIONS = [
   { value: "1.5", label: "Fast (1.5×)" },
 ];
 
+/** 600 -> "10 min", 90 -> "1 min 30 s", 45 -> "45 s". */
+function intervalText(seconds: number) {
+  if (!seconds || seconds < 0) return "0 s";
+  const m = Math.floor(seconds / 60);
+  const r = Math.round(seconds % 60);
+  if (m === 0) return `${r} s`;
+  return r ? `${m} min ${r} s` : `${m} min`;
+}
+
 export function Identification() {
   const { values, setField, dirty, reset, submit, saving } = useConfigSlice<IdValues>(KEYS, DEFAULTS);
   const [tts, setTts] = useState<TTSInfo | null>(null);
@@ -154,7 +163,7 @@ export function Identification() {
     : [...SPEED_OPTIONS, { value: speedValue, label: `Custom (${speedValue}×)` }];
 
   return (
-    <Page title="Identification" description="Callsign and how often the station identifies.">
+    <Page title="Identification">
       <Card
         withBorder
         padding="lg"
@@ -175,6 +184,7 @@ export function Identification() {
             <TextInput
               label="Callsign"
               placeholder="e.g. W1AW"
+              classNames={{ input: "mor-callsign-input" }}
               value={values.callsign}
               onChange={(event) => setField("callsign", event.currentTarget.value.toUpperCase())}
             />
@@ -188,31 +198,45 @@ export function Identification() {
               onChange={(value) => setField("id_mode", value || "voice")}
             />
             <NumberInput
-              label="ID interval"
-              description="While the repeater is in use"
+              label={labeled("ID interval", "While the repeater is in use")}
               suffix=" s"
               min={1}
               value={values.id_interval}
               onChange={(value) => setField("id_interval", Number(value) || 0)}
               required
             />
-            <Switch
-              label={labeled("ID when idle", "Also ID on the interval when nobody is using the repeater")}
-              checked={values.idle_id}
-              onChange={(event) => setField("idle_id", event.currentTarget.checked)}
-              style={{ alignSelf: "end" }}
-            />
           </SimpleGrid>
+          <Switch
+            label={labeled("ID when idle", "Also ID on the interval when nobody is using the repeater")}
+            checked={values.idle_id}
+            onChange={(event) => setField("idle_id", event.currentTarget.checked)}
+          />
+          <InfoNote label="What this schedule means">
+            {values.callsign ? (
+              <>
+                Identifies as <span className="mor-num">{values.callsign}</span>
+              </>
+            ) : (
+              "No callsign set yet"
+            )}{" "}
+            {isCw ? "in Morse" : "by voice"} at least every{" "}
+            <span className="mor-num">{intervalText(values.id_interval)}</span> while the repeater is in use
+            {values.idle_id ? ", and on the same schedule when it is idle" : ""}.
+            {longOn ? (
+              <>
+                {" "}A long ID goes out every <span className="mor-num">{intervalText(values.long_id_interval)}</span>.
+              </>
+            ) : null}
+          </InfoNote>
 
           {isCw ? (
             <>
-              <Title order={2} c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>
+              <Title order={2}>
                 CW
               </Title>
               <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                 <NumberInput
-                  label="Speed"
-                  description="20 WPM typical"
+                  label={labeled("Speed", "20 WPM typical")}
                   suffix=" WPM"
                   min={1}
                   max={60}
@@ -221,8 +245,7 @@ export function Identification() {
                   required
                 />
                 <NumberInput
-                  label="Tone"
-                  description="600 Hz typical"
+                  label={labeled("Tone", "600 Hz typical")}
                   suffix=" Hz"
                   min={100}
                   max={3000}
@@ -231,8 +254,7 @@ export function Identification() {
                   required
                 />
                 <TextInput
-                  label="Suffix"
-                  description="Optional · e.g. /R"
+                  label={labeled("Suffix", "Optional · e.g. /R")}
                   placeholder=""
                   value={values.cw_id_suffix}
                   onChange={(event) => setField("cw_id_suffix", event.currentTarget.value)}
@@ -243,13 +265,12 @@ export function Identification() {
 
           {isVoice ? (
             <>
-              <Title order={2} c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>
+              <Title order={2}>
                 Voice
               </Title>
               <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                 <TextInput
-                  label="Spoken ID text"
-                  description="Use {callsign} and {time}"
+                  label={labeled("Spoken ID text", "Use {callsign} and {time}")}
                   placeholder="e.g. {callsign} repeater"
                   value={values.voice_id_text}
                   onChange={(event) => setField("voice_id_text", event.currentTarget.value)}
@@ -257,8 +278,7 @@ export function Identification() {
                 {kokoro ? (
                   <>
                     <Select
-                      label="Accent / locale"
-                      description="Filters the Kokoro voices below"
+                      label={labeled("Accent / locale", "Filters the Kokoro voices below")}
                       data={localeOptions}
                       value={selectedLocale || null}
                       onChange={(value) => {
@@ -271,8 +291,7 @@ export function Identification() {
                       searchable
                     />
                     <Select
-                      label="Voice"
-                      description="Kokoro speaker for IDs and announcements · clear for default"
+                      label={labeled("Voice", "Kokoro speaker for IDs and announcements · clear for default")}
                       data={voiceOptions}
                       value={values.tts_voice || null}
                       onChange={(value) => setField("tts_voice", value || "")}
@@ -281,8 +300,7 @@ export function Identification() {
                       placeholder="Default (af_heart)"
                     />
                     <Select
-                      label="Speech speed"
-                      description="How quickly Kokoro reads the text"
+                      label={labeled("Speech speed", "How quickly Kokoro reads the text")}
                       data={speedData}
                       value={speedValue}
                       onChange={(value) => setField("tts_speed", Number(value) || 1)}
@@ -290,12 +308,9 @@ export function Identification() {
                   </>
                 ) : (
                   <TextInput
-                    label="TTS voice"
-                    description={
-                      tts?.engine
+                    label={labeled("TTS voice", tts?.engine
                         ? `Optional · ${tts.engine} is active. Install kokoro-cli for locale and speed controls.`
-                        : "Optional · install kokoro-cli for selectable voices"
-                    }
+                        : "Optional · install kokoro-cli for selectable voices")}
                     placeholder=""
                     value={values.tts_voice}
                     onChange={(event) => setField("tts_voice", event.currentTarget.value)}
@@ -310,13 +325,12 @@ export function Identification() {
             </>
           ) : null}
 
-          <Title order={2} c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>
+          <Title order={2}>
             Long ID
           </Title>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <Select
-              label="Long ID"
-              description="Longer announcement on a slower interval"
+              label={labeled("Long ID", "Longer announcement on a slower interval")}
               data={[
                 { value: "off", label: "Off" },
                 { value: "voice", label: "Voice" },
@@ -339,8 +353,7 @@ export function Identification() {
             ) : null}
             {values.long_id_mode === "voice" ? (
               <TextInput
-                label="Long ID text"
-                description="Use {callsign} and {time}"
+                label={labeled("Long ID text", "Use {callsign} and {time}")}
                 placeholder="e.g. This is {callsign}. The time is {time}."
                 value={values.long_id_text}
                 onChange={(event) => setField("long_id_text", event.currentTarget.value)}
@@ -348,8 +361,7 @@ export function Identification() {
             ) : null}
             {values.long_id_mode === "clip" ? (
               <TextInput
-                label="Clip asset ID"
-                description="Upload clips under Audio & tones"
+                label={labeled("Clip asset ID", "Upload clips under Audio & tones")}
                 placeholder=""
                 value={values.long_id_asset_id}
                 onChange={(event) => setField("long_id_asset_id", event.currentTarget.value)}
@@ -363,8 +375,7 @@ export function Identification() {
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <NumberInput
-                    label="ID audio duration"
-                    description="Reserved airtime for the ID clip"
+                    label={labeled("ID audio duration", "Reserved airtime for the ID clip")}
                     suffix=" s"
                     min={0.1}
                     step={0.1}
@@ -374,8 +385,7 @@ export function Identification() {
                     required
                   />
                   <NumberInput
-                    label="Skip ID after short QSOs"
-                    description="0 = always ID after the interval"
+                    label={labeled("Skip ID after short QSOs", "0 = always ID after the interval")}
                     suffix=" s"
                     min={0}
                     max={10}

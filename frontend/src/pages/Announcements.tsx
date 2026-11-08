@@ -19,6 +19,8 @@ import { api, apiBlob } from "../api";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { labeled } from "../components/FieldHint";
+import { EmptyState } from "../components/EmptyState";
+import { ActionsHeader } from "../components/ActionsHeader";
 
 type Asset = { id: string; kind: string; filename: string; uploaded_at: string };
 
@@ -230,7 +232,7 @@ export function Announcements() {
   const usesClip = Boolean(form.asset_id);
 
   return (
-    <Page title="Announcements" description="Scheduled messages when the channel is clear.">
+    <Page title="Announcements">
       <Card withBorder padding="lg" radius="md">
         <Table.ScrollContainer minWidth={720}>
           <Table striped highlightOnHover>
@@ -240,7 +242,7 @@ export function Announcements() {
                 <Table.Th>Says</Table.Th>
                 <Table.Th>Schedule</Table.Th>
                 <Table.Th>Next</Table.Th>
-                <Table.Th />
+                <ActionsHeader />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -302,9 +304,7 @@ export function Announcements() {
           </Table>
         </Table.ScrollContainer>
         {rows.length === 0 ? (
-          <Text size="sm" c="dimmed" mt="sm">
-            No announcements yet.
-          </Text>
+          <EmptyState>No announcements yet.</EmptyState>
         ) : null}
       </Card>
 
@@ -392,7 +392,7 @@ export function Announcements() {
             onChange={(event) => setField("on_linked_radio", event.currentTarget.checked)}
           />
           <Group justify="space-between">
-            <Button type="button" variant="subtle" loading={previewBusy} onClick={() => void preview()}>
+            <Button type="button" variant="default" loading={previewBusy} onClick={() => void preview()}>
               Preview
             </Button>
             <Group>

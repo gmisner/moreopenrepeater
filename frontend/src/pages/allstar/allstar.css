@@ -1,0 +1,524 @@
+/* AllStar page: link diagram, connect bar, week timeline, setup checklist.
+   Colors come from the scheme-aware --mor-* tokens so light and dark keep contrast.
+   Green means a node is talking (RX), accent is neutral, amber is "needs attention". */
+
+.mor-as {
+  --as-accent: var(--mantine-primary-color-filled);
+  --as-green: var(--mor-green);
+  --as-amber: var(--mor-amber);
+  --as-off: var(--mor-control-off, #3a404a);
+  --as-mono: var(--mantine-font-family-monospace);
+}
+
+[data-mantine-color-scheme="light"] .mor-as {
+  --mor-control-off: #b9bfc8;
+}
+
+/* ---------- Status strip ---------- */
+
+.mor-as-strip {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mantine-spacing-xs) var(--mantine-spacing-lg);
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-lg);
+}
+
+.mor-as-strip-node {
+  font-family: var(--as-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.mor-as-strip-label {
+  font-size: 0.78rem;
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-as-strip-call {
+  font-family: var(--as-mono);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* ---------- Link diagram ---------- */
+
+.mor-as-links {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: var(--mantine-spacing-xl);
+  align-items: start;
+}
+
+.mor-map {
+  position: relative;
+  height: 340px;
+  border-radius: var(--mantine-radius-md);
+  background: var(--mor-panel-2);
+  border: 1px solid var(--mor-border);
+  overflow: hidden;
+}
+
+.mor-map-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The box is stretched to fit, so strokes stay a fixed width on screen. */
+.mor-map-lines path {
+  fill: none;
+  stroke: var(--as-off);
+  stroke-width: 2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.mor-map-lines path[data-mode="monitor"] { stroke-dasharray: 2 7; }
+.mor-map-lines path[data-keyed] { stroke: var(--as-green); stroke-width: 3; }
+.mor-map-lines path[data-hot] { stroke: var(--as-accent); }
+.mor-map-lines path[data-keyed][data-hot] { stroke: var(--as-green); }
+
+/* A node is just its dot, pinned to a point. The label hangs off the dot. */
+.mor-map-node {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.mor-map-dot {
+  position: absolute;
+  left: -8px;
+  top: -8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--as-off);
+  background: var(--mor-panel-2);
+  z-index: 1;
+}
+
+.mor-map-node[data-hot] .mor-map-dot { border-color: var(--as-accent); }
+
+.mor-map-node[data-keyed] .mor-map-dot {
+  background: var(--as-green);
+  border-color: var(--as-green);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--as-green) 24%, transparent);
+}
+
+.mor-map-node[data-ghost] .mor-map-dot {
+  border-style: dashed;
+  background: transparent;
+  opacity: 0.55;
+}
+
+.mor-map-label {
+  position: absolute;
+  left: 0;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 130px;
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.mor-map-node[data-side="down"] .mor-map-label { top: 14px; }
+.mor-map-node[data-side="up"] .mor-map-label { bottom: 14px; }
+
+/* This node: a solid pill the wires come out from under. */
+.mor-map-hub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 2px solid var(--as-accent);
+  background: var(--mor-panel);
+}
+
+.mor-map-hub[data-keyed] {
+  border-color: var(--as-green);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--as-green) 22%, transparent);
+}
+
+.mor-map-hub[data-idle] { border-color: var(--as-off); }
+
+.mor-map-hub-call {
+  font-size: 0.78rem;
+  color: var(--mantine-color-dimmed);
+  line-height: 1.2;
+}
+
+.mor-map-num {
+  font-family: var(--as-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.86rem;
+  color: var(--mantine-color-text);
+}
+
+.mor-map-sub {
+  font-size: 0.78rem;
+  line-height: 1.25;
+  color: var(--mantine-color-dimmed);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.mor-map-talk {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--as-green);
+}
+
+.mor-map-empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14px;
+  text-align: center;
+  font-size: 0.86rem;
+  color: var(--mantine-color-dimmed);
+}
+
+/* ---------- Link list ---------- */
+
+.mor-as-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--mantine-spacing-xs);
+}
+
+.mor-as-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border: 1px solid var(--mor-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mor-panel-2);
+}
+
+.mor-as-row[data-keyed] {
+  border-color: var(--as-green);
+  background: color-mix(in srgb, var(--as-green) 10%, transparent);
+}
+
+.mor-as-row[data-hot] { border-color: var(--as-accent); }
+
+.mor-as-row-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--as-off);
+}
+
+.mor-as-row[data-keyed] .mor-as-row-dot { background: var(--as-green); }
+
+.mor-as-row-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--mantine-spacing-sm);
+  min-width: 0;
+  font-size: 0.92rem;
+}
+
+.mor-as-row-node {
+  font-family: var(--as-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.mor-as-row-meta {
+  font-size: 0.78rem;
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-as-row-talk {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--as-green);
+}
+
+/* ---------- Connect bar ---------- */
+
+.mor-connect {
+  display: grid;
+  gap: var(--mantine-spacing-md);
+}
+
+.mor-connect-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--mantine-spacing-sm);
+}
+
+.mor-connect-form .mantine-TextInput-root { flex: 1 1 200px; }
+
+.mor-connect-input {
+  font-family: var(--as-mono);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  height: 48px;
+}
+
+.mor-connect-form .mantine-Button-root { height: 48px; }
+
+.mor-connect-input::placeholder {
+  font-family: var(--mantine-font-family);
+  font-weight: 400;
+  letter-spacing: normal;
+  font-size: 0.95rem;
+}
+
+.mor-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+}
+
+.mor-chips-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--mantine-color-dimmed);
+  min-width: 4.2rem;
+}
+
+/* ---------- Week timeline ---------- */
+
+.mor-week {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.6rem minmax(0, 1fr);
+  row-gap: 4px;
+  font-size: 0.78rem;
+}
+
+.mor-week-axis {
+  grid-column: 2;
+  position: relative;
+  height: 1.2rem;
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-week-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.mor-week-axis span:first-child { transform: none; }
+.mor-week-axis span:last-child { transform: translateX(-100%); }
+
+.mor-week-day {
+  align-self: center;
+  color: var(--mantine-color-dimmed);
+  font-weight: 600;
+}
+
+.mor-week-day[data-today] { color: var(--mantine-color-text); }
+
+.mor-week-track {
+  position: relative;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--mor-panel-2);
+  background-image: linear-gradient(to right, var(--mor-border) 1px, transparent 1px);
+  background-size: 25% 100%;
+}
+
+.mor-week-track[data-today] { outline: 1px solid var(--mor-border); }
+
+.mor-week-block {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  min-width: 6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--as-accent);
+  color: var(--mantine-primary-color-contrast, #0b0d10);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.mor-week-block[data-open] {
+  background: linear-gradient(to right, var(--as-accent) 55%, color-mix(in srgb, var(--as-accent) 15%, transparent));
+  border-radius: 4px 0 0 4px;
+}
+
+.mor-week-block[data-off] {
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  outline: 1px dashed var(--as-off);
+  outline-offset: -1px;
+}
+
+.mor-week-block[data-continued] { border-radius: 0 4px 4px 0; }
+
+.mor-week-block:focus-visible {
+  outline: 2px solid var(--mantine-color-text);
+  outline-offset: 1px;
+}
+
+.mor-week-tag {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--mantine-color-dimmed);
+  pointer-events: none;
+}
+
+.mor-week-now {
+  position: absolute;
+  top: 1.2rem;
+  bottom: 0;
+  width: 2px;
+  background: var(--as-amber);
+  pointer-events: none;
+}
+
+.mor-week-now::before {
+  content: "Now";
+  position: absolute;
+  top: -1.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--as-amber);
+}
+
+.mor-week-list {
+  list-style: none;
+  margin: var(--mantine-spacing-md) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 0.86rem;
+}
+
+.mor-week-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--mantine-spacing-sm);
+  align-items: baseline;
+}
+
+.mor-week-list b { font-family: var(--as-mono); font-variant-numeric: tabular-nums; }
+.mor-week-list small { color: var(--mantine-color-dimmed); }
+
+/* ---------- Setup checklist ---------- */
+
+.mor-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--mantine-spacing-md);
+}
+
+.mor-step {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: var(--mantine-spacing-md);
+  align-items: start;
+}
+
+.mor-step-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.86rem;
+  font-weight: 700;
+  border: 2px solid var(--as-off);
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-step[data-done] .mor-step-mark {
+  background: var(--as-green);
+  border-color: var(--as-green);
+  color: var(--mor-on-status);
+}
+
+.mor-step[data-current] .mor-step-mark {
+  border-color: var(--as-accent);
+  color: var(--mantine-color-text);
+}
+
+.mor-step-title { font-weight: 600; }
+.mor-step[data-done] .mor-step-title { color: var(--mantine-color-dimmed); }
+.mor-step-detail { margin: 2px 0 0; font-size: 0.86rem; color: var(--mantine-color-dimmed); max-width: 62ch; }
+
+.mor-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--mor-panel-2);
+  overflow: hidden;
+}
+
+.mor-progress span {
+  display: block;
+  height: 100%;
+  width: var(--fill, 0%);
+  background: var(--as-accent);
+  border-radius: inherit;
+}
+
+/* ---------- Narrow screens ---------- */
+
+.mor-as-links[data-empty] { grid-template-columns: 1fr; }
+
+@media (max-width: 53.75em) {
+  .mor-as-links { grid-template-columns: 1fr; gap: var(--mantine-spacing-lg); }
+}
+
+@media (max-width: 37.5em) {
+  .mor-map { height: 340px; }
+  .mor-map-label { max-width: 104px; }
+  .mor-week { grid-template-columns: 2.2rem minmax(0, 1fr); }
+  .mor-step { grid-template-columns: 28px minmax(0, 1fr); }
+  .mor-step > :last-child { grid-column: 2; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mor-map-dot,
+  .mor-map-lines line {
+    transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s, stroke 0.15s;
+  }
+}

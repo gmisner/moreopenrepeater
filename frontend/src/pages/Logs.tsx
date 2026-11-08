@@ -1,4 +1,5 @@
 import {
+  Badge,
   Button,
   Card,
   Group,
@@ -13,7 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
-import { labeled } from "../components/FieldHint";
+import { labeled, InfoNote } from "../components/FieldHint";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
@@ -25,9 +26,9 @@ const MAX_LIVE_LINES = 1000;
 const LEVEL_COLOR: Record<string, string> = {
   debug: "dimmed",
   info: "var(--mantine-color-text)",
-  warning: "var(--mantine-color-amber-4)",
-  error: "var(--mantine-color-red-4)",
-  critical: "var(--mantine-color-red-6)",
+  warning: "var(--mor-amber)",
+  error: "var(--mor-red)",
+  critical: "var(--mor-red)",
 };
 
 type ShippingSettings = {
@@ -233,7 +234,7 @@ export function Logs() {
     shipping?.secrets_set[key] && !cleared.has(key) ? "saved — type to replace" : undefined;
 
   return (
-    <Page title="Logs" description="Live controller log. Pause to freeze the view.">
+    <Page title="Logs">
       <Stack gap="lg">
         <Card withBorder padding="lg" radius="md">
           <Stack gap="md">
@@ -245,6 +246,7 @@ export function Logs() {
                 style={{ flex: "1 1 12rem" }}
               />
               <Select
+                aria-label="Minimum log level"
                 data={[
                   { value: "ALL", label: "All levels" },
                   { value: "INFO", label: "INFO+" },
@@ -257,21 +259,22 @@ export function Logs() {
                 allowDeselect={false}
               />
               <Switch label="Pause" checked={paused} onChange={(event) => setPaused(event.currentTarget.checked)} />
-              <Text size="sm" c="dimmed">
-                {paused ? "paused" : connected ? "live" : "connecting…"}
-              </Text>
+              <Badge variant="light" color={paused ? "amber" : connected ? "green" : "gray"}>
+                {paused ? "paused" : connected ? "live" : "connecting"}
+              </Badge>
               {isAdmin ? (
-                <Button component="a" href="/api/support-bundle" download variant="subtle" size="compact-sm">
-                  Download support bundle
-                </Button>
+                <Group gap="xs" wrap="nowrap" ml="auto">
+                  <Button component="a" href="/api/support-bundle" download variant="default">
+                    Download support bundle
+                  </Button>
+                  <InfoNote label="What's in it">
+                    A zip of recent logs, radio/audio settings, sound and serial devices, mixer levels, receiver
+                    openings, glitches and status for troubleshooting. No passwords, env file, users, tokens or
+                    recordings.
+                  </InfoNote>
+                </Group>
               ) : null}
             </Group>
-            {isAdmin ? (
-              <Text size="sm" c="dimmed" maw="75ch">
-                A zip of recent logs, radio/audio settings, sound and serial devices, mixer levels, receiver openings,
-                glitches and status for troubleshooting. No passwords, env file, users, tokens or recordings.
-              </Text>
-            ) : null}
             <Text
               component="pre"
               ref={viewRef}
@@ -319,11 +322,11 @@ export function Logs() {
             <Stack gap="md">
               <div>
                 <Text fw={600}>Remote logging</Text>
-                <Text size="sm" c="dimmed" maw="75ch">
+                <InfoNote>
                   Ship live controller log lines to an HTTPS ingest URL someone helping you provides (Axiom edge:
                   https://us-east-1.aws.edge.axiom.co/v1/ingest/… plus an xaat- API token). Off by default. The URL and
                   token are stored only on this Pi — not in backups.
-                </Text>
+                </InfoNote>
               </div>
               <Switch
                 label="Ship logs to a helper"

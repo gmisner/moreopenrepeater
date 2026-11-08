@@ -1,4 +1,5 @@
 import { Alert, Button, Group, Text } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { ackVersionSha, markVersionSeen, readAckedVersionSha, readSeenVersionSha } from "../prefs";
@@ -10,7 +11,6 @@ const POLL_MS = 30_000;
 export function ServerUpdatedBanner() {
   const [version, setVersion] = useState<VersionInfo | null>(null);
   const [reloadNeeded, setReloadNeeded] = useState(false);
-  const [whatsNew, setWhatsNew] = useState<VersionInfo | null>(null);
   const [dismissedReload, setDismissedReload] = useState(false);
 
   useEffect(() => {
@@ -21,14 +21,22 @@ export function ServerUpdatedBanner() {
         if (cancelled || !body?.sha) return;
         setVersion(body);
         const seen = readSeenVersionSha();
-        if (seen && seen !== body.sha) {
+        const stale = Boolean(seen && seen !== body.sha);
+        if (stale) {
           setReloadNeeded(true);
         } else {
           markVersionSeen(body.sha);
         }
-        const acked = readAckedVersionSha();
-        if (acked !== body.sha) {
-          setWhatsNew(body);
+        // A new version is announced once, as a toast, and counts as seen right away.
+        if (!stale && readAckedVersionSha() !== body.sha) {
+          notifications.show({
+            id: "whats-new",
+            title: "moreopenrepeater was updated",
+            message: body.subject,
+            autoClose: 12000,
+            withCloseButton: true,
+          });
+          ackVersionSha(body.sha);
         }
       } catch {
         /* ignore while signed out / offline */
@@ -58,32 +66,6 @@ export function ServerUpdatedBanner() {
                 Dismiss
               </Button>
             </Group>
-          </Group>
-        </Alert>
-      ) : null}
-      {whatsNew && !reloadNeeded ? (
-        <Alert color="accent" variant="light" m="md" radius="md">
-          <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
-            <div>
-              <Text size="sm" fw={600}>
-                What&apos;s new
-              </Text>
-              <Text size="sm" c="dimmed">
-                <Text span ff="monospace">
-                  {whatsNew.sha.slice(0, 7)}
-                </Text>{" "}
-                {whatsNew.subject}
-              </Text>
-            </div>
-            <Button
-              size="xs"
-              onClick={() => {
-                ackVersionSha(whatsNew.sha);
-                setWhatsNew(null);
-              }}
-            >
-              Got it
-            </Button>
           </Group>
         </Alert>
       ) : null}

@@ -1,0 +1,1 @@
+function e(e){return e<60?`${Math.round(e)}s`:e<3600?`${Math.floor(e/60)}m ${Math.round(e%60)}s`:`${Math.floor(e/3600)}h ${Math.round(e%3600/60)}m`}export{e as t};

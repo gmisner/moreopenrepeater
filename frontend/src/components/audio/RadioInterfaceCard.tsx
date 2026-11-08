@@ -19,7 +19,7 @@ import { Link } from "react-router-dom";
 import { ConfigActions } from "../ConfigActions";
 import { ConfigEditDrawer } from "../ConfigEditDrawer";
 import { ConfigSummaryCard } from "../ConfigSummaryCard";
-import { labeled } from "../FieldHint";
+import { labeled, InfoNote } from "../FieldHint";
 import {
   serialPortOptions,
   serialSelectValue,
@@ -225,9 +225,9 @@ export function RadioInterfaceCard({
                   ) : null}
                 </Group>
               ) : (
-                <Text size="sm" c="dimmed" maw="52ch">
+                <InfoNote>
                   Capture RX while keyed (or hiss) to A/B Mic gain — peak / RMS / CTCSS without waiting for a new opening.
-                </Text>
+                </InfoNote>
               )}
             </Group>
             {score?.notes.length ? (
@@ -438,8 +438,7 @@ export function RadioInterfaceCard({
                     {engine.values.cos_source === "vox" ? (
                       <>
                         <NumberInput
-                          label="VOX threshold"
-                          description="Typical around −40 to −25 dBFS"
+                          label={labeled("VOX threshold", "Typical around −40 to −25 dBFS")}
                           suffix=" dBFS"
                           min={-90}
                           max={0}
@@ -559,8 +558,7 @@ export function RadioInterfaceCard({
                       />
                     ) : null}
                     <NumberInput
-                      label={labeled("Transmit delay", "Key up, then wait this long before any audio. 0 = off.")}
-                      description="300 ms typical"
+                      label={labeled("Transmit delay", <>Key up, then wait this long before any audio. 0 = off.<br />300 ms typical</>)}
                       suffix=" ms"
                       min={0}
                       max={500}
@@ -620,21 +618,19 @@ export function RadioInterfaceCard({
               <Accordion.Item value="notes">
                 <Accordion.Control>Station notes · optional</Accordion.Control>
                 <Accordion.Panel>
-                  <Text c="dimmed" size="sm" mb="md" maw="75ch">
+                  <InfoNote label="Operator fields">
                     For operators only — the controller does not use these fields.
-                  </Text>
+                  </InfoNote>
                   <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                     <TextInput
-                      label="Radio model"
-                      description="Optional"
+                      label={labeled("Radio model", "Optional")}
                       placeholder="e.g. model or setup"
                       maxLength={80}
                       value={engine.values.radio_model}
                       onChange={(event) => engine.setField("radio_model", event.currentTarget.value)}
                     />
                     <TextInput
-                      label="Frequency"
-                      description="Optional pair or simplex"
+                      label={labeled("Frequency", "Optional pair or simplex")}
                       placeholder="e.g. 146.94 / 146.34"
                       maxLength={80}
                       value={engine.values.radio_frequency}
@@ -643,8 +639,7 @@ export function RadioInterfaceCard({
                   </SimpleGrid>
                   <Textarea
                     mt="md"
-                    label="Notes"
-                    description="Optional free-form note"
+                    label={labeled("Notes", "Optional free-form note")}
                     placeholder="Optional note for operators"
                     maxLength={500}
                     minRows={2}

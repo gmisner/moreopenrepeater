@@ -236,6 +236,8 @@ class RepeaterService:
     # --- status pubsub ---
 
     def snapshot(self) -> StatusSnapshot:
+        now = self._clock()
+        tot_remaining, hang_remaining, id_due_in = self.controller.timers(now)
         return StatusSnapshot(
             state=self.controller.state,
             ptt_active=self.ptt_active,
@@ -243,12 +245,15 @@ class RepeaterService:
             ctcss_hz=self.ctcss_hz,
             linked_nodes=sorted(self._links.nodes),
             last_clip=self.last_clip,
-            timestamp=self._clock(),
+            timestamp=now,
             transmitter_enabled=self.controller.config.transmitter_enabled,
             locked_out=self.controller.locked_out,
             net_active=self.net_active,
             gmrs_mode=self._config.saved.gmrs_mode,
             callsign=self._config.saved.callsign,
+            tot_remaining=tot_remaining,
+            hang_remaining=hang_remaining,
+            id_due_in=id_due_in,
         )
 
     def subscribe(self) -> "asyncio.Queue[StatusSnapshot]":

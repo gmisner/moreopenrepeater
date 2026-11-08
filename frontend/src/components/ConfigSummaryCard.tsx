@@ -1,5 +1,6 @@
 import { Badge, Button, Card, Group, Stack, Text, Title } from "@mantine/core";
 import type { ReactNode } from "react";
+import { labeled } from "./FieldHint";
 
 export type SummaryRow = { label: string; value: ReactNode };
 
@@ -9,6 +10,7 @@ export function ConfigSummaryCard({
   badge,
   badgeColor = "gray",
   blurb,
+  hint,
   rows,
   dirty = false,
   onEdit,
@@ -19,7 +21,10 @@ export function ConfigSummaryCard({
   title: string;
   badge?: string;
   badgeColor?: string;
+  /** Live status text that stays on the card. */
   blurb?: ReactNode;
+  /** Static explanation, shown in an info hover beside the title. */
+  hint?: ReactNode;
   rows?: SummaryRow[];
   dirty?: boolean;
   onEdit?: () => void;
@@ -33,7 +38,7 @@ export function ConfigSummaryCard({
         <Group justify="space-between" align="flex-start" wrap="wrap">
           <div>
             <Group gap="sm" align="center">
-              <Title order={2}>{title}</Title>
+              <Title order={2}>{labeled(title, hint)}</Title>
               {badge ? (
                 <Badge color={badgeColor} variant="light">
                   {badge}

@@ -19,7 +19,7 @@ import { api } from "../api";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
-import { labeled } from "../components/FieldHint";
+import { labeled, InfoNote } from "../components/FieldHint";
 
 const POLL_MS = 2000;
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -361,7 +361,7 @@ export function Updates() {
     (CHANNELS[channel]?.note || "") + (switching ? ` Updating moves this repeater to ${CHANNELS[channel]?.label}.` : "");
 
   return (
-    <Page title="Updates" description="Install new versions and choose a release channel.">
+    <Page title="Updates">
       {info && !info.available ? (
         <Card withBorder padding="md" radius="md">
           <Text c="dimmed">
@@ -373,7 +373,7 @@ export function Updates() {
 
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
         <Card withBorder padding="lg" radius="md">
-          <Title order={2} c="dimmed" tt="uppercase" mb="md" style={{ letterSpacing: "0.06em" }}>
+          <Title order={2} mb="md">
             Installed
           </Title>
           <Stack gap="xs">
@@ -407,7 +407,7 @@ export function Updates() {
         </Card>
 
         <Card withBorder padding="lg" radius="md">
-          <Title order={2} c="dimmed" tt="uppercase" mb="md" style={{ letterSpacing: "0.06em" }}>
+          <Title order={2} mb="md">
             Release channel
           </Title>
           <SegmentedControl
@@ -433,13 +433,9 @@ export function Updates() {
         <Group justify="space-between" mb="sm" wrap="wrap">
           <div>
             <Title order={2} style={{ margin: 0, fontSize: "1.1rem" }}>
-              Restart service
-            </Title>
-            <Text size="sm" c="dimmed" maw="60ch" mt={4}>
-              Restarts moreopenrepeater the same way as{" "}
+              {labeled("Restart service", <>Restarts moreopenrepeater the same way as{" "}
               <Code>sudo systemctl restart moreopenrepeater</Code>. Use this after editing{" "}
-              <Code>/etc/moreopenrepeater/env</Code> or when the controller needs a clean start.
-            </Text>
+              <Code>/etc/moreopenrepeater/env</Code> or when the controller needs a clean start.</>)}</Title>
           </div>
           <Button
             variant="default"
@@ -498,7 +494,7 @@ export function Updates() {
 
       <Card withBorder padding="lg" radius="md" component="form" onSubmit={saveAuto}>
         <Group justify="space-between" mb="sm">
-          <Title order={2} c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em", margin: 0 }}>
+          <Title order={2}>
             Automatic updates
           </Title>
           <Switch
@@ -507,11 +503,11 @@ export function Updates() {
             onChange={(event) => setAutoForm((prev) => ({ ...prev, enabled: event.currentTarget.checked }))}
           />
         </Group>
-        <Text size="sm" c="dimmed" mb="md" maw="75ch">
+        <InfoNote>
           Installs new versions from this repeater&apos;s channel during the hours below, once nobody has used the
           repeater (or a linked station, call or net) for a while. A version that doesn&apos;t start is rolled back and
           not tried again.
-        </Text>
+        </InfoNote>
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md" mb="md">
           <TextInput
             label="From"
@@ -565,7 +561,7 @@ export function Updates() {
       {status ? (
         <Card withBorder padding="lg" radius="md">
           <Group justify="space-between" mb="sm">
-            <Title order={2} c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em", margin: 0 }}>
+            <Title order={2}>
               Last update
             </Title>
             {statusBadge ? (

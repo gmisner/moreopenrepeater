@@ -14,7 +14,81 @@
 .mor-nav-link {
   border-radius: var(--mantine-radius-md);
   font-size: 0.92rem;
-  min-height: 44px;
+  min-height: 36px;
+  padding-block: 6px;
+}
+
+/* Touch screens keep the 44px target from MASTER. */
+@media (pointer: coarse) {
+  .mor-nav-link { min-height: 44px; }
+}
+
+button.mor-nav-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-md);
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--mor-muted, var(--mantine-color-dimmed));
+}
+
+.mor-nav-group:hover:not(:disabled) { color: var(--mantine-color-text); }
+.mor-nav-group:disabled { cursor: default; }
+
+.mor-nav-group-chevron { transition: transform 0.15s; }
+.mor-nav-group-chevron[data-open] { transform: rotate(90deg); }
+
+@media (pointer: coarse) {
+  .mor-nav-group { min-height: 44px; }
+}
+
+.mor-station {
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border: 1px solid var(--mor-border, var(--mantine-color-default-border));
+  border-radius: 10px;
+  background: var(--mor-panel, var(--mantine-color-body));
+}
+
+.mor-station-call {
+  display: block;
+  color: var(--mantine-color-text);
+  text-decoration: none;
+  letter-spacing: 0.02em;
+}
+
+.mor-conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mor-green);
+  flex: none;
+}
+
+.mor-conn[data-status="warn"] .mor-conn-dot { background: var(--mor-amber); }
+
+button.mor-usermenu {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  width: 100%;
+  min-height: 36px;
+  padding: 4px var(--mantine-spacing-sm);
+  border: 1px solid var(--mor-border, var(--mantine-color-default-border));
+  border-radius: var(--mantine-radius-md);
+  font-size: 0.86rem;
+}
+
+.mor-usermenu:hover { background: var(--mor-panel-2, var(--mantine-color-default-hover)); }
+.mor-usermenu-name { font-weight: 600; }
+.mor-usermenu-role { color: var(--mor-muted, var(--mantine-color-dimmed)); }
+.mor-usermenu-chevron { margin-left: auto; color: var(--mor-muted, var(--mantine-color-dimmed)); }
+
+@media (pointer: coarse) {
+  .mor-usermenu { min-height: 44px; }
 }
 
 .mor-nav-link .mantine-NavLink-section[data-position="left"] {
@@ -27,7 +101,7 @@
 
 .mor-nav-link[data-active] {
   background: color-mix(in srgb, var(--mantine-color-accent-4) 14%, transparent);
-  color: var(--mantine-color-accent-4);
+  color: light-dark(var(--mantine-color-accent-5), var(--mantine-color-accent-4));
   font-weight: 600;
 }
 
@@ -60,14 +134,23 @@
   letter-spacing: -0.01em;
 }
 
-/* Card section labels match vanilla h2 (MASTER --text-2xs uppercase muted). */
-.mantine-Title-root[data-order="2"] {
-  font-size: 0.72rem !important;
+/* Card titles are plain sentence-case headings, not tiny uppercase labels. */
+.mantine-Title-root[data-order="2"],
+.mantine-Title-root[data-order="3"],
+.mor-card-title {
+  font-size: 1rem !important;
   font-weight: 600 !important;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--mor-muted, var(--mantine-color-dimmed)) !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  color: var(--mantine-color-text) !important;
   line-height: 1.4 !important;
+  margin: 0;
+}
+
+/* Times, durations, frequencies and counts that update or line up in columns. */
+.mor-num {
+  font-family: var(--mantine-font-family-monospace);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Wizard / listen titles that need a real heading keep order=2 but opt out. */
@@ -83,4 +166,250 @@
 html {
   --mor-ui-scale: 1;
   font-size: calc(100% * var(--mor-ui-scale));
+}
+
+/* Save bar: quiet until something changes, then sticky above the tab bar. */
+.mor-savebar {
+  margin-top: var(--mantine-spacing-lg);
+}
+
+.mor-savebar[data-dirty] {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-inline: calc(var(--card-padding, 1.25rem) * -1);
+  margin-bottom: calc(var(--card-padding, 1.25rem) * -1);
+  padding: var(--mantine-spacing-sm) var(--card-padding, 1.25rem);
+  background: var(--mor-panel, var(--mantine-color-body));
+  border-top: 1px solid var(--mor-amber);
+  border-radius: 0 0 var(--mantine-radius-md) var(--mantine-radius-md);
+}
+
+.mor-savebar-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  color: var(--mor-amber);
+}
+
+.mor-savebar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mor-amber);
+}
+
+@media (max-width: 53.75em) {
+  .mor-savebar[data-dirty] {
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* CM108 GPIO pins as one table instead of a card per pin. */
+.mor-gpio { display: grid; border: 1px solid var(--mor-border); border-radius: var(--mantine-radius-md); overflow: hidden; }
+
+.mor-gpio-head,
+.mor-gpio-cols {
+  display: grid;
+  grid-template-columns: 5.5rem 11rem minmax(0, 1fr) 8rem;
+  gap: var(--mantine-spacing-md);
+  align-items: center;
+}
+
+.mor-gpio-head {
+  padding: 8px var(--mantine-spacing-md);
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--mantine-color-dimmed);
+  background: var(--mor-panel-2);
+}
+
+.mor-gpio-row { padding: 8px var(--mantine-spacing-md); border-top: 1px solid var(--mor-border); }
+.mor-gpio-pin { font-weight: 600; }
+.mor-gpio-fan { grid-column: span 2; }
+.mor-gpio-state { display: flex; justify-content: flex-end; }
+.mor-gpio-more { padding: var(--mantine-spacing-sm) 0 var(--mantine-spacing-xs); }
+
+@media (max-width: 37.5em) {
+  .mor-gpio-head { display: none; }
+  .mor-gpio-cols { grid-template-columns: 4.5rem minmax(0, 1fr) auto; }
+  .mor-gpio-cols > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
+  .mor-gpio-fan { grid-column: span 1; }
+}
+
+/* One-series column chart (Activity). One hue, no gridlines, baseline only. */
+.mor-chart {
+  position: relative;
+  padding-top: 18px;
+}
+
+.mor-chart-max {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 0.78rem;
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-chart-plot {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  height: 160px;
+  border-bottom: 1px solid var(--mor-border);
+}
+
+.mor-chart-cell {
+  appearance: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 100%;
+  min-width: 0;
+  padding: 0 1px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.mor-chart-cell:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+.mor-chart-bar {
+  display: block;
+  width: min(100%, 24px);
+  background: var(--mantine-primary-color-filled);
+  border-radius: 4px 4px 0 0;
+}
+
+.mor-chart-cell:hover .mor-chart-bar,
+.mor-chart-cell:focus-visible .mor-chart-bar {
+  filter: brightness(1.18);
+}
+
+.mor-chart-ticks {
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-chart-ticks span {
+  white-space: nowrap;
+  overflow: visible;
+  min-width: 0;
+}
+
+.mor-chart-tip {
+  position: absolute;
+  bottom: calc(100% - 20px);
+  z-index: 3;
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--mor-border);
+  border-radius: 6px;
+  background: var(--mor-panel-2);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.25);
+  font-size: 0.78rem;
+  color: var(--mantine-color-dimmed);
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.mor-chart-tip strong { color: var(--mantine-color-text); font-size: 0.92rem; }
+.mor-chart-tip[data-edge="start"] { transform: translateX(-8px); }
+.mor-chart-tip[data-edge="end"] { transform: translateX(calc(-100% + 8px)); }
+
+.mor-chart-table { margin-top: var(--mantine-spacing-md); font-size: 0.86rem; }
+.mor-chart-table summary { cursor: pointer; color: var(--mantine-color-dimmed); width: fit-content; }
+.mor-chart-table summary:hover { color: var(--mantine-color-text); }
+
+/* Activity summary: one lead figure with the rest beside it. */
+.mor-sum {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  gap: var(--mantine-spacing-xl);
+  align-items: center;
+}
+
+.mor-sum-hero-value {
+  display: block;
+  font-size: clamp(2.5rem, 6vw, 3.5rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.mor-sum-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--mantine-spacing-md) var(--mantine-spacing-lg);
+  margin: 0;
+  padding-left: var(--mantine-spacing-xl);
+  border-left: 1px solid var(--mor-border);
+}
+
+.mor-sum-list dt { font-size: 0.86rem; color: var(--mantine-color-dimmed); }
+.mor-sum-list dd { margin: 2px 0 0; font-size: 1.25rem; font-weight: 600; }
+.mor-sum-list small { display: block; font-size: 0.78rem; font-weight: 400; color: var(--mantine-color-dimmed); font-family: var(--mantine-font-family); }
+
+@media (max-width: 53.75em) {
+  .mor-sum { grid-template-columns: 1fr; gap: var(--mantine-spacing-lg); }
+  .mor-sum-list { padding-left: 0; border-left: 0; padding-top: var(--mantine-spacing-lg); border-top: 1px solid var(--mor-border); }
+}
+
+/* Callsigns read as identifiers, not prose. */
+.mor-callsign-input {
+  font-family: var(--mantine-font-family-monospace);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ---------- Empty state ---------- */
+
+.mor-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-xl) var(--mantine-spacing-md);
+  margin-top: var(--mantine-spacing-sm);
+  border: 1px dashed var(--mor-border);
+  border-radius: var(--mantine-radius-md);
+  text-align: center;
+  color: var(--mantine-color-dimmed);
+  font-size: 0.92rem;
+}
+
+.mor-empty p {
+  margin: 0;
+  max-width: 52ch;
+}
+
+/* Inline "How this works" trigger for explanations that have no label to attach to. */
+.mor-infonote {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  width: fit-content;
+  font-size: 0.86rem;
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-infonote:hover,
+.mor-infonote:focus-visible {
+  color: var(--mantine-color-text);
+}
+
+.mantine-Group-root > .mor-infonote {
+  align-self: center;
 }

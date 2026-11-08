@@ -4,6 +4,7 @@ import { api } from "../api";
 import { notifyError, notifySuccess } from "../config";
 import { useSession } from "../session";
 import { labeled } from "./FieldHint";
+import { ActionsHeader } from "./ActionsHeader";
 
 type HomeAssistantStatus = { token_set: boolean };
 type ControlCodeStatus = { enrolled: boolean; since: number | null; pending: boolean };
@@ -147,10 +148,7 @@ export function ControlCodesCard() {
   return (
     <Card withBorder padding="lg" radius="md">
       <Stack gap="md">
-        <Title order={2}>One-time control codes</Title>
-        <Text c="dimmed" size="sm" maw="75ch">
-          Protect sensitive DTMF macros with six-digit codes from an authenticator app. Each code works once.
-        </Text>
+        <Title order={2}>{labeled("One-time control codes", <>Protect sensitive DTMF macros with six-digit codes from an authenticator app. Each code works once.</>)}</Title>
         <Text size="sm">
           {status?.enrolled
             ? `Your codes are set up${status.since ? ` (since ${new Date(status.since * 1000).toLocaleString()})` : ""}.`
@@ -208,7 +206,7 @@ export function ControlCodesCard() {
             {users.length ? (
               <Table.ScrollContainer minWidth={480}>
                 <Table striped highlightOnHover>
-                  <Table.Thead><Table.Tr><Table.Th>User</Table.Th><Table.Th>Since</Table.Th><Table.Th /></Table.Tr></Table.Thead>
+                  <Table.Thead><Table.Tr><Table.Th>User</Table.Th><Table.Th>Since</Table.Th><ActionsHeader /></Table.Tr></Table.Thead>
                   <Table.Tbody>
                     {users.map((user) => (
                       <Table.Tr key={user.username}>

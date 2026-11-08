@@ -18,7 +18,9 @@ import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, notifySuccess, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
-import { labeled } from "../components/FieldHint";
+import { labeled, InfoNote } from "../components/FieldHint";
+import { EmptyState } from "../components/EmptyState";
+import { ActionsHeader } from "../components/ActionsHeader";
 
 type MailboxBox = {
   box: string;
@@ -167,7 +169,7 @@ export function Mailbox() {
   const names = Object.fromEntries(data.boxes.map((b) => [b.box, b.name]));
 
   return (
-    <Page title="Mailbox" description="Voice messages left over the air, played back with a PIN.">
+    <Page title="Mailbox">
       <Card
         withBorder
         padding="lg"
@@ -239,9 +241,9 @@ export function Mailbox() {
               onChange={(value) => setField("mailbox_reminder_minutes", Number(value) || 0)}
             />
           </SimpleGrid>
-          <Text c="dimmed" size="sm" maw="75ch">
+          <InfoNote>
             Messages need live audio. Anyone listening hears a PIN when it&apos;s keyed, so a mailbox is for convenience, not secrets. Five wrong PINs lock a mailbox for ten minutes.
-          </Text>
+          </InfoNote>
           <ConfigActions dirty={dirty} saving={saving} onReset={reset} />
         </Stack>
       </Card>
@@ -251,6 +253,7 @@ export function Mailbox() {
           <Card withBorder padding="lg" radius="md">
             <Stack gap="md">
               <Title order={2}>Mailboxes</Title>
+              {data.boxes.length > 0 ? (
               <Table.ScrollContainer minWidth={480}>
                 <Table striped highlightOnHover>
                   <Table.Thead>
@@ -258,7 +261,7 @@ export function Mailbox() {
                       <Table.Th>Number</Table.Th>
                       <Table.Th>Whose</Table.Th>
                       <Table.Th>Messages</Table.Th>
-                      <Table.Th />
+                      <ActionsHeader />
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
@@ -291,11 +294,9 @@ export function Mailbox() {
                   </Table.Tbody>
                 </Table>
               </Table.ScrollContainer>
-              {data.boxes.length === 0 ? (
-                <Text c="dimmed" size="sm">
-                  No mailboxes yet.
-                </Text>
-              ) : null}
+              ) : (
+                <EmptyState>No mailboxes yet.</EmptyState>
+              )}
 
               <Title order={3}>{editing ? `Change mailbox ${editing}` : "Add a mailbox"}</Title>
               <form onSubmit={(event) => void saveBox(event)}>
@@ -347,6 +348,7 @@ export function Mailbox() {
             <Title order={2} mb="md">
               Messages
             </Title>
+            {data.messages.length > 0 ? (
             <Table.ScrollContainer minWidth={640}>
               <Table striped highlightOnHover>
                 <Table.Thead>
@@ -355,7 +357,7 @@ export function Mailbox() {
                     <Table.Th>Left</Table.Th>
                     <Table.Th>Length</Table.Th>
                     <Table.Th>Listen</Table.Th>
-                    <Table.Th />
+                    <ActionsHeader />
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -402,11 +404,9 @@ export function Mailbox() {
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
-            {data.messages.length === 0 ? (
-              <Text c="dimmed" size="sm" mt="sm">
-                No messages waiting.
-              </Text>
-            ) : null}
+            ) : (
+              <EmptyState>No messages waiting.</EmptyState>
+            )}
           </Card>
         </>
       ) : null}

@@ -579,7 +579,7 @@ export function MapPage() {
   const setup = body ? setupText(body) : "";
 
   return (
-    <Page title="APRS map" description="Nearby APRS stations and weather alert areas.">
+    <Page title="APRS map">
       {setup ? (
         <Card withBorder padding="lg" radius="md">
           <Text c="dimmed" mb="sm">
@@ -630,7 +630,7 @@ export function MapPage() {
           <div
             ref={mapEl}
             className={`mor-map${offline ? " mor-map-offline" : ""}`}
-            role="img"
+            role="region"
             aria-label="APRS station map"
           />
           {tileNote ? (

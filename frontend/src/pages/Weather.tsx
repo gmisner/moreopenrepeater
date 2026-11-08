@@ -19,6 +19,8 @@ import { ConfigActions } from "../components/ConfigActions";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
 import { labeled } from "../components/FieldHint";
+import { EmptyState } from "../components/EmptyState";
+import { ActionsHeader } from "../components/ActionsHeader";
 
 type WeatherAlert = {
   id: string;
@@ -285,7 +287,7 @@ export function Weather() {
   const enabled = wx.values.wx_alerts_enabled;
 
   return (
-    <Page title="Weather" description="Speak NWS watches and warnings for this location, plus optional airport METARs on a schedule.">
+    <Page title="Weather">
       <Card
         withBorder
         padding="lg"
@@ -340,6 +342,9 @@ export function Weather() {
                 </Button>
               }
             />
+            <Button type="button" variant="default" onClick={useDeviceLocation} style={{ alignSelf: "end" }}>
+              Use this device&apos;s location
+            </Button>
             <Select
               label="Announce alerts that are at least"
               data={[
@@ -371,12 +376,9 @@ export function Weather() {
               required
             />
           </SimpleGrid>
-          <Title order={3}>Scheduled weather</Title>
-          <Text c="dimmed" size="sm" maw="75ch">
-            Speak airport weather and/or a summary of active alerts on a timer. Waits for a clear
+          <Title order={2} size="h3">{labeled("Scheduled weather", <>Speak airport weather and/or a summary of active alerts on a timer. Waits for a clear
             channel (and holds during a net when announcements are held). Separate from the NWS
-            alert pushes above.
-          </Text>
+            alert pushes above.</>)}</Title>
           <Switch
             label="Announce weather on a schedule"
             checked={wx.values.wx_schedule_enabled}
@@ -415,12 +417,7 @@ export function Weather() {
             onChange={(event) => wx.setField("wx_schedule_on_linked_radio", event.currentTarget.checked)}
             disabled={!wx.values.wx_schedule_enabled}
           />
-          <Group justify="space-between">
-            <Button type="button" variant="subtle" onClick={useDeviceLocation}>
-              Use this device&apos;s location
-            </Button>
-            <ConfigActions dirty={wx.dirty} saving={wx.saving} onReset={wx.reset} />
-          </Group>
+          <ConfigActions dirty={wx.dirty} saving={wx.saving} onReset={wx.reset} />
         </Stack>
       </Card>
 
@@ -442,7 +439,7 @@ export function Weather() {
                 <Table.Th>Severity</Table.Th>
                 <Table.Th>Until</Table.Th>
                 <Table.Th>What the repeater says</Table.Th>
-                <Table.Th />
+                <ActionsHeader />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -495,18 +492,15 @@ export function Weather() {
 
       <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => void saveAirports(event)}>
         <Stack gap="md">
-          <Title order={2}>Airport weather</Title>
-          <Text c="dimmed" size="sm" maw="75ch">
-            METARs for an &quot;Airport weather&quot; DTMF macro and for scheduled weather above. Fetched on
-            demand and kept 10 minutes.
-          </Text>
+          <Title order={2}>{labeled("Airport weather", <>METARs for an &quot;Airport weather&quot; DTMF macro and for scheduled weather above. Fetched on
+            demand and kept 10 minutes.</>)}</Title>
           <Table.ScrollContainer minWidth={480}>
             <Table>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>ICAO code</Table.Th>
                   <Table.Th>Spoken name</Table.Th>
-                  <Table.Th />
+                  <ActionsHeader />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -529,8 +523,7 @@ export function Weather() {
                     <Table.Td>
                       <TextInput
                         maxLength={40}
-                        description="Optional · blank spells the code"
-                        placeholder=""
+                        placeholder="Optional · blank spells the code"
                         value={airport.name}
                         onChange={(event) => {
                           const value = event.currentTarget.value;
@@ -564,9 +557,7 @@ export function Weather() {
             </Table>
           </Table.ScrollContainer>
           {airports.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              No airports yet.
-            </Text>
+            <EmptyState>No airports yet.</EmptyState>
           ) : null}
           {metarPreview ? (
             <Text size="sm" c="dimmed">
@@ -574,7 +565,7 @@ export function Weather() {
             </Text>
           ) : null}
           <Group justify="space-between">
-            <Button type="button" variant="subtle" onClick={() => setAirports((prev) => [...prev, { icao: "", name: "" }])}>
+            <Button type="button" variant="default" onClick={() => setAirports((prev) => [...prev, { icao: "", name: "" }])}>
               Add an airport
             </Button>
             <Button type="submit" loading={airportsSaving}>

@@ -136,6 +136,11 @@ export const theme = createTheme({
     xl: "88em",
   },
   components: {
+    Anchor: {
+      defaultProps: {
+        underline: "always",
+      },
+    },
     Input: {
       defaultProps: {
         variant: "default",
@@ -152,8 +157,10 @@ export const theme = createTheme({
     TextInput: {
       defaultProps: { variant: "default" },
     },
+    // Numeric fields hold a short value and a unit, so they don't need the
+    // full width of a form column. Pass maw to widen one.
     NumberInput: {
-      defaultProps: { variant: "default" },
+      defaultProps: { variant: "default", maw: 240 },
     },
     // Mantine's documented native-scroll Select recipe
     // (https://mantine.dev/core/select/#scrollable-dropdown): ScrollArea is the

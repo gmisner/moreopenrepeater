@@ -10,7 +10,6 @@ import {
   Stack,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
@@ -20,18 +19,10 @@ import { fanText, gpioStateText, shortTime, type GpioPinStatus, type GpioStatus 
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
 import { useStatus } from "../status";
-
-const STATE_COPY: Record<string, string> = {
-  idle: "Waiting for a signal.",
-  receiving: "Repeating a local signal.",
-  transmitting_id: "Sending the station ID.",
-  courtesy_tone: "Playing the courtesy tone.",
-  hang_time: "Hang time before dropping the transmitter.",
-  timeout: "Timed out.",
-  lockout: "Locked out.",
-  announcing: "Playing an announcement.",
-  patch: "Phone call on the air.",
-};
+import { useConfig } from "../config";
+import { OnAir } from "./dashboard/OnAir";
+import { RecentActivity, type Transmission } from "./dashboard/RecentActivity";
+import "./dashboard/dashboard.css";
 
 type LinkRow = {
   node: string;
@@ -76,8 +67,6 @@ type LinkRadioStatus = {
   rig_error?: string | null;
 };
 
-type Transmission = { started_at: string; duration: number; timed_out: boolean };
-
 type LinkEvent = {
   at: string;
   kind: "connected" | "disconnected" | "keyed" | "unkeyed";
@@ -91,12 +80,6 @@ const LINK_EVENT_LABELS: Record<LinkEvent["kind"], string> = {
   keyed: "keyed",
   unkeyed: "unkeyed",
 };
-
-function formatAirtime(seconds: number) {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
-  return `${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
-}
 
 function eventBadgeColor(kind: LinkEvent["kind"]) {
   if (kind === "connected" || kind === "keyed") return "green";
@@ -187,10 +170,7 @@ export function Dashboard() {
   const { status, connected } = useStatus();
   const { session } = useSession();
   const canWrite = session?.role !== "viewer";
-  const state = status?.state ?? "unknown";
-  const ptt = Boolean(status?.ptt_active);
-  const cos = Boolean(status?.cos_active);
-  const ctcss = status?.ctcss_hz;
+  const { config } = useConfig();
 
   const [links, setLinks] = useState<LinksStatus | null>(null);
   const [linkRadio, setLinkRadio] = useState<LinkRadioStatus | null>(null);
@@ -226,7 +206,7 @@ export function Dashboard() {
 
   const refreshRecentTx = useCallback(async () => {
     try {
-      setRecentTx(await api<Transmission[]>("/api/activity/transmissions?limit=12"));
+      setRecentTx(await api<Transmission[]>("/api/activity/transmissions?limit=20"));
     } catch {
       /* keep last */
     }
@@ -414,358 +394,307 @@ export function Dashboard() {
     };
   }, [listening, listenSource]);
 
+  const linkRadioOn = Boolean(linkRadio?.enabled);
+  const allstarReady = Boolean(links?.available || links?.links?.length);
+  const unused: { label: string; to: string }[] = [];
+  if (linkRadio && !linkRadioOn) unused.push({ label: "Linked radio is off", to: "/audio" });
+  if (links && !allstarReady) unused.push({ label: "AllStarLink isn't connected", to: "/allstar" });
+
   return (
-    <Page title="Dashboard" description="Live repeater state, pushed over WebSocket.">
-      {!connected ? (
-        <Card withBorder padding="md" radius="md" style={{ borderColor: "var(--mantine-color-amber-4)", background: "var(--mantine-color-amber-light)" }}>
-          <Text c="amber">Lost the connection to the controller. What&apos;s shown may be out of date. Reconnecting…</Text>
-        </Card>
-      ) : null}
-
-      {status?.locked_out ? (
-        <Card withBorder padding="md" radius="md" style={{ borderColor: "var(--mantine-color-red-4)", background: "var(--mantine-color-red-light)" }}>
-          <Group justify="space-between">
-            <div>
-              <Text fw={700} c="red">
-                Locked out: stuck carrier
-              </Text>
-              <Text size="sm" c="dimmed">
-                The receiver kept timing out, so the repeater has stopped repeating. IDs still go out.
-              </Text>
-            </div>
-            {canWrite ? (
-              <Button color="red" variant="outline" size="xs" onClick={() => void clearLockout()}>
-                Clear lockout
-              </Button>
-            ) : null}
-          </Group>
-        </Card>
-      ) : null}
-
-      <Grid>
-        <Grid.Col span={{ base: 12, md: 5 }}>
-          <Card withBorder padding="lg" radius="md" h="100%">
-            <Text size="xs" c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>
-              Controller state
+    <Page title="Dashboard">
+      <Stack gap="md" className="mor-dash">
+        {!connected ? (
+          <Card withBorder padding="md" radius="md" role="status" style={{ borderColor: "var(--mor-amber)", background: "color-mix(in srgb, var(--mor-amber) 12%, transparent)" }}>
+            <Text c="var(--mor-amber)" fw={600}>
+              Lost the connection to the controller. What&apos;s shown may be out of date. Reconnecting…
             </Text>
-            <Title order={1} c={state === "receiving" ? "green" : state === "timeout" || state === "lockout" ? "red" : undefined} style={{ fontSize: "1.9rem" }}>
-              {String(state).replaceAll("_", " ")}
-            </Title>
-            <Text c="dimmed">{STATE_COPY[state] ?? ""}</Text>
-            {status?.transmitter_enabled === false ? (
-              <Badge component={Link} to="/timing" color="red" variant="light" mt="sm" style={{ textDecoration: "none" }}>
-                dry-run · TX muted
-              </Badge>
-            ) : null}
           </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 7 }}>
-          <SimpleGrid cols={3} spacing="sm" h="100%">
-            <Indicator name="PTT" on={ptt} value={ptt ? "TX" : "off"} danger />
-            <Indicator name="COS" on={cos} value={cos ? "RX" : "off"} />
-            <Indicator name="CTCSS" on={ctcss != null} value={ctcss != null ? `${ctcss} Hz` : "none"} />
-          </SimpleGrid>
-        </Grid.Col>
-      </Grid>
+        ) : null}
 
-      {linkRadio ? (
-        <Card withBorder padding="lg" radius="md">
-          <Stack gap="md">
-            <Group justify="space-between" align="center">
+        {status?.locked_out ? (
+          <Card withBorder padding="md" radius="md" style={{ borderColor: "var(--mor-red)", background: "color-mix(in srgb, var(--mor-red) 10%, transparent)" }}>
+            <Group justify="space-between">
               <div>
-                <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-                  Linked Radio
+                <Text fw={700} c="var(--mor-red)">
+                  Locked out: stuck carrier
                 </Text>
                 <Text size="sm" c="dimmed">
-                  {linkRadio.name || "Linked Radio"}
-                  {linkRadio.mode === "remote_base" ? " · remote base" : ""}
-                  {!linkRadio.enabled ? " · off" : linkRadio.running ? "" : " · not running"}
+                  The receiver kept timing out, so the repeater has stopped repeating. IDs still go out.
                 </Text>
               </div>
+              {canWrite ? (
+                <Button color="red" variant="outline" size="xs" onClick={() => void clearLockout()}>
+                  Clear lockout
+                </Button>
+              ) : null}
+            </Group>
+          </Card>
+        ) : null}
+
+        <OnAir status={status} config={config} />
+
+        {unused.length ? (
+          <div className="mor-unused">
+            {unused.map((item) => (
+              <Link key={item.to} to={item.to}>
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+
+        {linkRadio && linkRadioOn ? (
+          <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-linkradio-title">
+            <Group justify="space-between" align="center" mb="sm" wrap="nowrap">
+              <h2 id="dash-linkradio-title" className="mor-card-title">
+                {linkRadio.name || "Linked radio"}
+                {linkRadio.mode === "remote_base" ? " (remote base)" : ""}
+              </h2>
               <Button component={Link} to="/audio" variant="subtle" size="xs">
-                Audio settings
+                Settings
               </Button>
             </Group>
-            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
-              <Indicator
-                name="Link"
-                on={linkRadio.enabled && linkRadio.running}
-                value={
-                  linkRadio.error
-                    ? "error"
-                    : !linkRadio.enabled
-                      ? "off"
-                      : linkRadio.running
-                        ? "running"
-                        : "stopped"
-                }
-                danger={Boolean(linkRadio.error)}
-              />
-              <Indicator name="RX" on={linkRadio.receiving} value={linkRadio.receiving ? "open" : "idle"} />
-              <Indicator
-                name="TX"
-                on={linkRadio.transmitting}
-                value={linkRadio.timed_out ? "timeout" : linkRadio.transmitting ? "keyed" : "idle"}
-                danger={linkRadio.timed_out}
-              />
-              <Indicator
-                name="Level"
-                on={linkRadio.running && linkRadio.rx_level_db > -80}
-                value={linkRadio.running ? `${linkRadio.rx_level_db.toFixed(0)} dB` : "–"}
-              />
-            </SimpleGrid>
+            <ul className="mor-mini-path">
+              <li data-lit={linkRadio.error ? "tx" : linkRadio.running ? "rx" : undefined}>
+                <span className="mor-mini-dot" aria-hidden="true" />
+                <b>Link</b> {linkRadio.error ? "error" : linkRadio.running ? "running" : "stopped"}
+              </li>
+              <li data-lit={linkRadio.receiving ? "rx" : undefined}>
+                <span className="mor-mini-dot" aria-hidden="true" />
+                <b>Receive</b> {linkRadio.receiving ? "open" : "quiet"}
+              </li>
+              <li data-lit={linkRadio.transmitting || linkRadio.timed_out ? "tx" : undefined}>
+                <span className="mor-mini-dot" aria-hidden="true" />
+                <b>Transmit</b> {linkRadio.timed_out ? "timed out" : linkRadio.transmitting ? "keyed" : "off"}
+              </li>
+              <li>
+                <b>Level</b> <span className="mor-dash-num">{linkRadio.running ? `${linkRadio.rx_level_db.toFixed(0)} dB` : "–"}</span>
+              </li>
+            </ul>
             {linkRadio.error || linkRadio.rig_error ? (
-              <Text c="red" size="sm">
+              <Text c="var(--mor-red)" size="sm" mt="sm">
                 {linkRadio.error || linkRadio.rig_error}
               </Text>
             ) : null}
-          </Stack>
-        </Card>
-      ) : null}
+          </Card>
+        ) : null}
 
-      {sensors && sensors.length > 0 ? (
-        <Card withBorder padding="lg" radius="md">
-          <Stack gap="md">
-            <Group justify="space-between">
-              <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-                Site sensors
-              </Text>
-              <Button component={Link} to="/sensors" variant="subtle" size="xs">
-                Manage
-              </Button>
-            </Group>
-            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
-              {sensors.map((sensor) => (
-                <Indicator
-                  key={sensor.id}
-                  name={sensor.name || sensor.id}
-                  on={sensor.value != null}
-                  value={
-                    sensor.value == null
-                      ? sensor.error || "unavailable"
-                      : `${Number.isInteger(sensor.value) ? sensor.value : sensor.value.toFixed(2)}${sensor.units ? ` ${sensor.units}` : ""}`
-                  }
-                />
-              ))}
-            </SimpleGrid>
-          </Stack>
-        </Card>
-      ) : null}
-
-      {gpio && (gpio.pins.some((pin) => pin.mode === "input" || pin.mode === "output") || gpio.fan?.output !== "none") ? (
-        <Card withBorder padding="lg" radius="md">
-          <Stack gap="md">
-            <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-              GPIO
-            </Text>
-            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
-              {gpio.fan && gpio.fan.output !== "none" ? (
-                <Indicator
-                  name="Transmitter fan"
-                  on={Boolean(gpio.fan.on)}
-                  value={gpio.fan.error ? "error" : fanText(gpio.fan)}
-                />
-              ) : null}
-              {gpio.pins
-                .filter((pin) => pin.mode === "input" || pin.mode === "output")
-                .map((pin) => (
-                  <GpioIndicator
-                    key={pin.pin}
-                    pin={pin}
-                    available={gpio.available}
-                    canSwitch={canWrite && gpio.available && pin.mode === "output"}
-                    busy={gpioBusy === pin.pin}
-                    onToggle={() => void switchGpio(pin)}
-                  />
-                ))}
-            </SimpleGrid>
-            {gpio.error || (!gpio.available && gpio.pins.some((pin) => pin.mode === "input" || pin.mode === "output")) ? (
-              <Text c={gpio.error ? "red" : "dimmed"} size="sm">
-                {gpio.error || "No CM108 interface is connected, so the pins cannot be read or switched."}
-              </Text>
-            ) : null}
-          </Stack>
-        </Card>
-      ) : null}
-
-      <Grid>
-        <Grid.Col span={{ base: 12, lg: 7 }}>
-          <Stack gap="md">
-            <Card withBorder padding="lg" radius="md">
-              <Group justify="space-between" mb="sm">
-                <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-                  Links
-                </Text>
-                {canWrite && links && links.links.length >= 2 ? (
-                  <Button color="red" variant="outline" size="xs" onClick={() => void disconnectAll()}>
-                    Disconnect all
-                  </Button>
-                ) : null}
-              </Group>
-              {links?.links?.length ? (
-                <Stack gap="xs">
-                  {links.links.map((link) => (
-                    <Group key={link.node} justify="space-between" p="sm" style={{ background: link.keyed ? "var(--mantine-color-green-light)" : "var(--mantine-color-default)", borderRadius: 8, border: "1px solid var(--mantine-color-default-border)" }}>
-                      <Group gap="sm">
-                        <Box w={10} h={10} style={{ borderRadius: "50%", background: link.keyed ? "var(--mantine-color-green-4)" : "var(--mantine-color-gray-5)" }} />
-                        <Text ff="monospace">{link.node}</Text>
-                        <Text size="sm">{[link.name, link.callsign].filter(Boolean).join(" · ")}</Text>
-                        {link.keyed ? <Badge color="green" variant="light">talking</Badge> : null}
-                        {link.mode ? <Badge variant="outline">{link.mode}</Badge> : null}
-                      </Group>
-                      {canWrite && links.available ? (
-                        <Button color="red" variant="outline" size="xs" onClick={() => void disconnect(link.node)}>
-                          Disconnect
-                        </Button>
-                      ) : null}
-                    </Group>
-                  ))}
-                </Stack>
-              ) : (
-                <Text c="dimmed" size="sm">
-                  No nodes are linked.
-                </Text>
-              )}
-              {canWrite && links?.available ? (
-                <Stack gap="sm" mt="md">
-                  {links.favorites.length > 0 ? (
-                    <Group gap="xs">
-                      {links.favorites.map((fav) => {
-                        const linked = links.links.some((link) => link.node === fav.node);
-                        const title = [fav.description, fav.monitor ? "monitor only" : ""].filter(Boolean).join(" · ");
-                        return (
-                          <Button
-                            key={fav.node}
-                            type="button"
-                            size="xs"
-                            variant={linked ? "light" : "default"}
-                            disabled={linked}
-                            title={title || undefined}
-                            onClick={() => void connectNode(fav.node, Boolean(fav.monitor))}
-                          >
-                            {favoriteTitle(fav)}
-                          </Button>
-                        );
-                      })}
-                    </Group>
-                  ) : null}
-                  <Group component="form" onSubmit={connect} align="flex-end" gap="sm">
-                    <TextInput label="Node number" value={node} onChange={(event) => setNode(event.currentTarget.value)} required maw={160} />
-                    <Button type="button" variant={monitor ? "light" : "default"} onClick={() => setMonitor((v) => !v)}>
-                      {monitor ? "Monitor on" : "Monitor only"}
-                    </Button>
-                    <Button type="submit">Connect</Button>
-                  </Group>
-                </Stack>
-              ) : null}
-              {links?.error || (!links?.available && !links?.links?.length) ? (
-                <Text c="dimmed" size="sm" mt="sm">
-                  {links?.error || "Connect the repeater to AllStarLink (see the AllStarLink page) to link nodes from here."}
-                </Text>
-              ) : null}
-            </Card>
-
-            <Card withBorder padding="lg" radius="md">
-              <Group justify="space-between" mb="sm">
-                <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-                  Link activity
-                </Text>
-                <Button component={Link} to="/allstar" size="xs" variant="subtle">
-                  AllStarLink
+        {sensors && sensors.length > 0 ? (
+          <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-sensors-title">
+            <Stack gap="md">
+              <Group justify="space-between">
+                <h2 id="dash-sensors-title" className="mor-card-title">
+                  Site sensors
+                </h2>
+                <Button component={Link} to="/sensors" variant="subtle" size="xs">
+                  Manage
                 </Button>
               </Group>
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
+                {sensors.map((sensor) => (
+                  <Indicator
+                    key={sensor.id}
+                    name={sensor.name || sensor.id}
+                    on={sensor.value != null}
+                    value={
+                      sensor.value == null
+                        ? sensor.error || "unavailable"
+                        : `${Number.isInteger(sensor.value) ? sensor.value : sensor.value.toFixed(2)}${sensor.units ? ` ${sensor.units}` : ""}`
+                    }
+                  />
+                ))}
+              </SimpleGrid>
+            </Stack>
+          </Card>
+        ) : null}
+
+        {gpio && (gpio.pins.some((pin) => pin.mode === "input" || pin.mode === "output") || gpio.fan?.output !== "none") ? (
+          <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-gpio-title">
+            <Stack gap="md">
+              <h2 id="dash-gpio-title" className="mor-card-title">
+                Outputs and inputs
+              </h2>
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
+                {gpio.fan && gpio.fan.output !== "none" ? (
+                  <Indicator name="Transmitter fan" on={Boolean(gpio.fan.on)} value={gpio.fan.error ? "error" : fanText(gpio.fan)} />
+                ) : null}
+                {gpio.pins
+                  .filter((pin) => pin.mode === "input" || pin.mode === "output")
+                  .map((pin) => (
+                    <GpioIndicator
+                      key={pin.pin}
+                      pin={pin}
+                      available={gpio.available}
+                      canSwitch={canWrite && gpio.available && pin.mode === "output"}
+                      busy={gpioBusy === pin.pin}
+                      onToggle={() => void switchGpio(pin)}
+                    />
+                  ))}
+              </SimpleGrid>
+              {gpio.error || (!gpio.available && gpio.pins.some((pin) => pin.mode === "input" || pin.mode === "output")) ? (
+                <Text c={gpio.error ? "var(--mor-red)" : "dimmed"} size="sm">
+                  {gpio.error || "No CM108 interface is connected, so the pins can't be read or switched."}
+                </Text>
+              ) : null}
+            </Stack>
+          </Card>
+        ) : null}
+
+        <Grid>
+          <Grid.Col span={{ base: 12, lg: 7 }}>
+            <Stack gap="md">
+              {allstarReady ? (
+                <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-links-title">
+                  <Group justify="space-between" mb="sm">
+                    <h2 id="dash-links-title" className="mor-card-title">
+                      Links
+                    </h2>
+                    {canWrite && links && links.links.length >= 2 ? (
+                      <Button color="red" variant="outline" size="xs" onClick={() => void disconnectAll()}>
+                        Disconnect all
+                      </Button>
+                    ) : null}
+                  </Group>
+                  {links?.links?.length ? (
+                    <Stack gap="xs">
+                      {links.links.map((link) => (
+                        <Group
+                          key={link.node}
+                          justify="space-between"
+                          p="sm"
+                          style={{
+                            background: link.keyed ? "color-mix(in srgb, var(--mor-green) 12%, transparent)" : "var(--mor-panel-2)",
+                            borderRadius: 8,
+                            border: `1px solid ${link.keyed ? "var(--mor-green)" : "var(--mor-border)"}`,
+                          }}
+                        >
+                          <Group gap="sm">
+                            <Box w={10} h={10} style={{ borderRadius: "50%", background: link.keyed ? "var(--mor-green)" : "var(--mor-control-off, #3a404a)" }} />
+                            <Text ff="monospace">{link.node}</Text>
+                            <Text size="sm">{[link.name, link.callsign].filter(Boolean).join(", ")}</Text>
+                            {link.keyed ? <Text size="sm" fw={600} c="var(--mor-green)">Talking</Text> : null}
+                            {link.mode ? <Badge variant="outline" color="gray">{link.mode}</Badge> : null}
+                          </Group>
+                          {canWrite && links.available ? (
+                            <Button color="red" variant="outline" size="xs" onClick={() => void disconnect(link.node)}>
+                              Disconnect
+                            </Button>
+                          ) : null}
+                        </Group>
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Text c="dimmed" size="sm">
+                      No nodes are linked.
+                    </Text>
+                  )}
+                  {canWrite && links?.available ? (
+                    <Stack gap="sm" mt="md">
+                      {links.favorites.length > 0 ? (
+                        <Group gap="xs">
+                          {links.favorites.map((fav) => {
+                            const linked = links.links.some((link) => link.node === fav.node);
+                            const title = [fav.description, fav.monitor ? "monitor only" : ""].filter(Boolean).join(", ");
+                            return (
+                              <Button
+                                key={fav.node}
+                                type="button"
+                                size="xs"
+                                variant={linked ? "light" : "default"}
+                                disabled={linked}
+                                title={title || undefined}
+                                onClick={() => void connectNode(fav.node, Boolean(fav.monitor))}
+                              >
+                                {favoriteTitle(fav)}
+                              </Button>
+                            );
+                          })}
+                        </Group>
+                      ) : null}
+                      <Group component="form" onSubmit={connect} align="flex-end" gap="sm">
+                        <TextInput label="Node number" value={node} onChange={(event) => setNode(event.currentTarget.value)} required maw={160} />
+                        <Button type="button" variant={monitor ? "light" : "default"} onClick={() => setMonitor((v) => !v)} aria-pressed={monitor}>
+                          Monitor only
+                        </Button>
+                        <Button type="submit">Connect</Button>
+                      </Group>
+                    </Stack>
+                  ) : null}
+                  {links?.error ? (
+                    <Text c="dimmed" size="sm" mt="sm">
+                      {links.error}
+                    </Text>
+                  ) : null}
+                </Card>
+              ) : null}
+
               {linkEvents.length ? (
-                <Stack gap={6}>
-                  {linkEvents.slice(0, 12).map((event, index) => (
-                    <Group key={`${event.at}-${event.node}-${event.kind}-${index}`} justify="space-between" gap="sm" wrap="nowrap">
-                      <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
-                        <Badge color={eventBadgeColor(event.kind)} variant="light" style={{ flex: "0 0 auto" }}>
-                          {LINK_EVENT_LABELS[event.kind]}
-                        </Badge>
-                        <Text size="sm" ff="monospace" style={{ flex: "0 0 auto" }}>
-                          {event.node === "link-radio" ? "RF" : event.node}
-                        </Text>
-                        <Text size="sm" c="dimmed" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {event.label || (event.node === "link-radio" ? "Linked radio" : "")}
+                <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-linkevents-title">
+                  <Group justify="space-between" mb="sm">
+                    <h2 id="dash-linkevents-title" className="mor-card-title">
+                      Link activity
+                    </h2>
+                    <Button component={Link} to="/allstar" size="xs" variant="subtle">
+                      AllStarLink
+                    </Button>
+                  </Group>
+                  <Stack gap={6}>
+                    {linkEvents.slice(0, 12).map((event, index) => (
+                      <Group key={`${event.at}-${event.node}-${event.kind}-${index}`} justify="space-between" gap="sm" wrap="nowrap">
+                        <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+                          <Badge color={eventBadgeColor(event.kind)} variant="light" style={{ flex: "0 0 auto" }}>
+                            {LINK_EVENT_LABELS[event.kind]}
+                          </Badge>
+                          <Text size="sm" ff="monospace" style={{ flex: "0 0 auto" }}>
+                            {event.node === "link-radio" ? "RF" : event.node}
+                          </Text>
+                          <Text size="sm" c="dimmed" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {event.label || (event.node === "link-radio" ? "Linked radio" : "")}
+                          </Text>
+                        </Group>
+                        <Text size="xs" c="dimmed" className="mor-dash-num" style={{ flex: "0 0 auto" }}>
+                          {shortTime(event.at)}
                         </Text>
                       </Group>
-                      <Text size="xs" c="dimmed" style={{ flex: "0 0 auto" }}>
-                        {shortTime(event.at)}
-                      </Text>
-                    </Group>
-                  ))}
-                </Stack>
-              ) : (
-                <Text c="dimmed" size="sm">
-                  Connects, disconnects, and key-ups show up here once AllStar or the linked radio is active.
-                </Text>
-              )}
-            </Card>
+                    ))}
+                  </Stack>
+                </Card>
+              ) : null}
 
-            <Card withBorder padding="lg" radius="md">
-              <Group justify="space-between" mb="sm" wrap="wrap">
-                <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-                  Listen live
-                </Text>
-                <Group gap="sm">
-                  <SegmentedControl
-                    size="xs"
-                    value={listenSource}
-                    onChange={setListenSource}
-                    data={[
-                      { label: "On air", value: "tx" },
-                      { label: "Receiver", value: "rx" },
-                    ]}
-                  />
-                  <Button size="xs" variant={listening ? "light" : "default"} onClick={() => setListening((v) => !v)}>
-                    {listening ? "Stop" : "Listen"}
-                  </Button>
-                </Group>
-              </Group>
-              <Text size="sm" c="dimmed">
-                {listenNote}
-              </Text>
-            </Card>
-          </Stack>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, lg: 5 }}>
-          <Card withBorder padding="lg" radius="md">
-            <Group justify="space-between" mb="sm">
-              <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-                Recent activity
-              </Text>
-              <Button component={Link} to="/activity" size="xs" variant="subtle">
-                Activity
-              </Button>
-            </Group>
-            {recentTx.length ? (
-              <Stack gap={6}>
-                {recentTx.map((row) => (
-                  <Group key={row.started_at} justify="space-between" gap="sm" wrap="nowrap">
-                    <Group gap="sm" wrap="nowrap">
-                      <Text size="sm">{shortTime(row.started_at)}</Text>
-                      <Text size="sm" ff="monospace" fw={600}>
-                        {formatAirtime(row.duration)}
-                      </Text>
-                      {row.timed_out ? (
-                        <Badge color="red" variant="light">
-                          timeout
-                        </Badge>
-                      ) : row.duration < 1.5 ? (
-                        <Badge variant="outline">kerchunk</Badge>
-                      ) : null}
-                    </Group>
+              <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-listen-title">
+                <Group justify="space-between" wrap="wrap" gap="sm">
+                  <div>
+                    <h2 id="dash-listen-title" className="mor-card-title">
+                      Listen live
+                    </h2>
+                    <Text size="sm" c="dimmed">
+                      {listenNote}
+                    </Text>
+                  </div>
+                  <Group gap="sm">
+                    <SegmentedControl
+                      size="xs"
+                      value={listenSource}
+                      onChange={setListenSource}
+                      aria-label="Audio to listen to"
+                      data={[
+                        { label: "On air", value: "tx" },
+                        { label: "Receiver", value: "rx" },
+                      ]}
+                    />
+                    <Button size="xs" variant={listening ? "light" : "default"} onClick={() => setListening((v) => !v)}>
+                      {listening ? "Stop" : "Listen"}
+                    </Button>
                   </Group>
-                ))}
-              </Stack>
-            ) : (
-              <Text c="dimmed" size="sm">
-                No transmissions recorded yet. Try the Simulator, or wait for on-air traffic.
-              </Text>
-            )}
-          </Card>
-        </Grid.Col>
-      </Grid>
+                </Group>
+              </Card>
+            </Stack>
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, lg: 5 }}>
+            <RecentActivity rows={recentTx} />
+          </Grid.Col>
+        </Grid>
+      </Stack>
     </Page>
   );
 }

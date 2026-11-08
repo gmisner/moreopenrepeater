@@ -1,12 +1,16 @@
 export type NavItem = { id: string; label: string; icon: string; adminOnly?: boolean };
-export type NavGroup = { label?: string; items: NavItem[] };
+export type NavGroup = { label: string; items: NavItem[] };
 
+// Grouped by what the operator is doing, not by how the software is built.
 export const NAV: NavGroup[] = [
   {
+    label: "Operate",
     items: [
       { id: "dashboard", label: "Dashboard", icon: "dashboard" },
       { id: "activity", label: "Activity", icon: "activity" },
       { id: "recordings", label: "Recordings", icon: "play" },
+      { id: "net", label: "Net", icon: "net" },
+      { id: "map", label: "APRS map", icon: "pin" },
     ],
   },
   {
@@ -15,29 +19,27 @@ export const NAV: NavGroup[] = [
       { id: "timing", label: "Timing", icon: "timing" },
       { id: "identification", label: "Identification", icon: "id" },
       { id: "audio", label: "Audio & tones", icon: "audio" },
+      { id: "macros", label: "DTMF macros", icon: "macros" },
+      { id: "announcements", label: "Announcements", icon: "announce" },
+      { id: "simulator", label: "Simulator", icon: "simulator" },
+      { id: "configs", label: "Known configs", icon: "info" },
     ],
   },
   {
-    label: "Features",
+    label: "Integrations",
     items: [
-      { id: "macros", label: "DTMF macros", icon: "macros" },
-      { id: "net", label: "Net", icon: "net" },
-      { id: "mailbox", label: "Mailbox", icon: "mail" },
-      { id: "announcements", label: "Announcements", icon: "announce" },
-      { id: "weather", label: "Weather", icon: "weather" },
-      { id: "sensors", label: "Site sensors", icon: "thermometer" },
-      { id: "autopatch", label: "Autopatch", icon: "phone" },
       { id: "allstar", label: "AllStarLink", icon: "links" },
       { id: "aprs", label: "APRS", icon: "radio" },
-      { id: "map", label: "APRS map", icon: "pin" },
+      { id: "autopatch", label: "Autopatch", icon: "phone" },
+      { id: "weather", label: "Weather", icon: "weather" },
+      { id: "sensors", label: "Site sensors", icon: "thermometer" },
+      { id: "mailbox", label: "Mailbox", icon: "mail" },
       { id: "public", label: "Public listening", icon: "headphones" },
     ],
   },
   {
-    label: "Tools",
+    label: "System",
     items: [
-      { id: "simulator", label: "Simulator", icon: "simulator" },
-      { id: "configs", label: "Known configs", icon: "info" },
       { id: "logs", label: "Logs", icon: "logs" },
       { id: "backup", label: "Backup & restore", icon: "backup" },
       { id: "users", label: "Users", icon: "users", adminOnly: true },

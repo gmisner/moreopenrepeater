@@ -30,6 +30,10 @@ const CLEARABLE_FIELDS = new Set([
 type ConfigContextValue = {
   config: Config | null;
   loading: boolean;
+  /** Message from the last failed load, when there is no config to show. */
+  error?: string | null;
+  /** Try the initial load again. */
+  reload?: () => void;
   refresh: () => Promise<Config>;
   save: (patch: Config) => Promise<Config>;
 };
@@ -51,6 +55,7 @@ export function notifySuccess(message: string) {
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const next = await api<Config>("/api/config");
@@ -64,13 +69,22 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     return next;
   }, []);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
     refresh()
-      .catch(notifyError)
+      .catch((failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure)))
       .finally(() => setLoading(false));
   }, [refresh]);
 
-  const value = useMemo(() => ({ config, loading, refresh, save }), [config, loading, refresh, save]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const value = useMemo(
+    () => ({ config, loading, error, reload: load, refresh, save }),
+    [config, loading, error, load, refresh, save],
+  );
   return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;
 }
 

@@ -351,7 +351,7 @@ export function Alerts() {
       : "stopped unexpectedly";
 
   return (
-    <Page title="Alerts & health" description="Phone alerts when the repeater needs attention.">
+    <Page title="Alerts & health">
       <Group justify="flex-end">
         <Button variant="subtle" loading={refreshing} onClick={() => void refresh()}>
           Refresh
@@ -473,8 +473,7 @@ export function Alerts() {
               <Accordion.Panel>
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
                   <TextInput
-                    label="Topic address"
-                    description="Install the ntfy app and subscribe to a private topic"
+                    label={labeled("Topic address", "Install the ntfy app and subscribe to a private topic")}
                     placeholder="e.g. https://ntfy.sh/your-topic"
                     value={form.ntfy_url}
                     onChange={(event) => setField("ntfy_url", event.currentTarget.value)}
@@ -531,8 +530,7 @@ export function Alerts() {
                     ) : null}
                   </Stack>
                   <TextInput
-                    label="Chat ID"
-                    description="Numeric chat or group ID"
+                    label={labeled("Chat ID", "Numeric chat or group ID")}
                     placeholder="e.g. 123456789"
                     inputMode="numeric"
                     value={form.telegram_chat_id}
@@ -564,8 +562,7 @@ export function Alerts() {
                       onChange={(event) => setField("email_to", event.currentTarget.value)}
                     />
                     <TextInput
-                      label="From"
-                      description="Optional · blank uses the SMTP username"
+                      label={labeled("From", "Optional · blank uses the SMTP username")}
                       placeholder=""
                       value={form.email_from}
                       onChange={(event) => setField("email_from", event.currentTarget.value)}
@@ -583,8 +580,7 @@ export function Alerts() {
                             onChange={(event) => setField("smtp_host", event.currentTarget.value)}
                           />
                           <NumberInput
-                            label="Port"
-                            description="587 for STARTTLS · 465 for SSL"
+                            label={labeled("Port", "587 for STARTTLS · 465 for SSL")}
                             min={1}
                             max={65535}
                             value={form.smtp_port}
@@ -739,7 +735,7 @@ export function Alerts() {
                     <Table.Td style={{ whiteSpace: "nowrap" }}>{formatTimestamp(alert.at)}</Table.Td>
                     <Table.Td>
                       <Group gap="xs" align="flex-start" wrap="nowrap">
-                        <Badge size="sm" color={SEVERITY_COLOR[alert.severity] || "gray"} variant="light">
+                        <Badge size="sm" color={SEVERITY_COLOR[alert.severity] || "gray"} variant="light" style={{ flex: "none", overflow: "visible" }}>
                           {alert.severity}
                         </Badge>
                         <div>
@@ -750,7 +746,7 @@ export function Alerts() {
                         </div>
                       </Group>
                     </Table.Td>
-                    <Table.Td>
+                    <Table.Td style={{ minWidth: 110 }}>
                       {alert.sent.length ? (
                         alert.sent.map((c) => CHANNEL_LABELS[c] || c).join(", ")
                       ) : (

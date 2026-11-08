@@ -91,15 +91,7 @@
   color: var(--mor-text) !important;
 }
 
-/* Status pills: solid MASTER green/amber with dark ink (vanilla .pill-on). */
-.mor-status-pill[data-status="live"] {
-  background: var(--mor-green) !important;
-  border-color: var(--mor-green) !important;
-  color: var(--mor-on-status) !important;
-}
-
-.mor-status-pill[data-status="warn"] {
-  background: var(--mor-amber) !important;
-  border-color: var(--mor-amber) !important;
-  color: var(--mor-on-status) !important;
+/* Dark mode uses lighter fills (accent-4, red-4, ...), so filled buttons need dark text. */
+[data-mantine-color-scheme="dark"] :where(.mantine-Button-root:not([data-variant]), .mantine-Button-root[data-variant="filled"]) {
+  --button-color: var(--mor-on-status) !important;
 }

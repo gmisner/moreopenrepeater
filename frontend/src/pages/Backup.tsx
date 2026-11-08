@@ -13,10 +13,14 @@ import {
   Title,
 } from "@mantine/core";
 import { useEffect, useState, type FormEvent } from "react";
+import { ConfigActions } from "../components/ConfigActions";
 import { api } from "../api";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
+import { EmptyState } from "../components/EmptyState";
+import { labeled } from "../components/FieldHint";
+import { ActionsHeader } from "../components/ActionsHeader";
 
 type BackupContents = {
   macros?: number;
@@ -180,7 +184,7 @@ function ScheduledBackups({ folder, setFolder }: { folder: BackupFolder | null; 
         void submit();
       }}
     >
-      <Title order={2} c="dimmed" tt="uppercase" mb="sm" style={{ letterSpacing: "0.06em" }}>
+      <Title order={2} mb="sm">
         Backups on the repeater
       </Title>
       <Text size="sm" c="dimmed" mb="sm">
@@ -226,26 +230,17 @@ function ScheduledBackups({ folder, setFolder }: { folder: BackupFolder | null; 
           checked={values.backup_include_recordings}
           onChange={(event) => setField("backup_include_recordings", event.currentTarget.checked)}
         />
-        <Group justify="space-between" align="center" mt="md">
-          <Button type="button" variant="subtle" loading={busyNow} disabled={!folder?.enabled} onClick={() => void backupNow()}>
-            Back up now
-          </Button>
-          <Group gap="sm">
-            {dirty ? (
-              <Text size="sm" c="amber">
-                Unsaved changes
-              </Text>
-            ) : null}
-            {dirty ? (
-              <Button type="button" variant="subtle" onClick={reset}>
-                Discard
-              </Button>
-            ) : null}
-            <Button type="submit" loading={saving}>
-              Save
-            </Button>
-          </Group>
-        </Group>
+        <Button
+          type="button"
+          variant="default"
+          loading={busyNow}
+          disabled={!folder?.enabled}
+          onClick={() => void backupNow()}
+          style={{ alignSelf: "flex-start" }}
+        >
+          Back up now
+        </Button>
+        <ConfigActions dirty={dirty} saving={saving} onReset={reset} />
       </Stack>
 
       <Table.ScrollContainer minWidth={560} mt="md">
@@ -255,7 +250,7 @@ function ScheduledBackups({ folder, setFolder }: { folder: BackupFolder | null; 
               <Table.Th>Made</Table.Th>
               <Table.Th>Size</Table.Th>
               <Table.Th>Contents</Table.Th>
-              <Table.Th />
+              <ActionsHeader />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -292,9 +287,7 @@ function ScheduledBackups({ folder, setFolder }: { folder: BackupFolder | null; 
         </Table>
       </Table.ScrollContainer>
       {!folder?.backups.length ? (
-        <Text size="sm" c="dimmed" mt="sm">
-          No backups saved on the repeater yet.
-        </Text>
+        <EmptyState>No backups saved on the repeater yet.</EmptyState>
       ) : null}
     </Card>
   );
@@ -386,16 +379,12 @@ export function Backup() {
   };
 
   return (
-    <Page title="Backup & restore" description="Download or restore settings, and schedule backups on the repeater.">
+    <Page title="Backup & restore">
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
         {isAdmin ? (
           <Card withBorder padding="lg" radius="md">
-            <Title order={2} c="dimmed" tt="uppercase" mb="sm" style={{ letterSpacing: "0.06em" }}>
-              Full backup
-            </Title>
-            <Text size="sm" c="dimmed" mb="md">
-              A .zip file. It holds the dashboard users&apos; password hashes, so keep it somewhere private.
-            </Text>
+            <Title order={2} mb="sm">
+              {labeled("Full backup", <>A .zip file. It holds the dashboard users&apos; password hashes, so keep it somewhere private.</>)}</Title>
             <Switch
               label="Include recordings"
               checked={includeRecordings}
@@ -409,25 +398,17 @@ export function Backup() {
         ) : null}
 
         <Card withBorder padding="lg" radius="md">
-          <Title order={2} c="dimmed" tt="uppercase" mb="sm" style={{ letterSpacing: "0.06em" }}>
-            Settings only
-          </Title>
-          <Text size="sm" c="dimmed" mb="md">
-            The configuration, macros and announcements as a JSON file, without audio clips, users or history.
-          </Text>
+          <Title order={2} mb="sm">
+            {labeled("Settings only", <>The configuration, macros and announcements as a JSON file, without audio clips, users or history.</>)}</Title>
           <Button loading={snapshotBusy} onClick={() => void downloadSnapshot()}>
             Download settings
           </Button>
         </Card>
 
         <Card withBorder padding="lg" radius="md">
-          <Title order={2} c="dimmed" tt="uppercase" mb="sm" style={{ letterSpacing: "0.06em" }}>
-            Restore
-          </Title>
-          <Text size="sm" c="dimmed" mb="md">
-            A full backup (.zip) replaces everything it holds, except that recordings are added to the ones already
-            here. A settings file (.json) replaces the configuration, macros and announcements.
-          </Text>
+          <Title order={2} mb="sm">
+            {labeled("Restore", <>A full backup (.zip) replaces everything it holds, except that recordings are added to the ones already
+            here. A settings file (.json) replaces the configuration, macros and announcements.</>)}</Title>
           <FileButton onChange={(file) => void restoreFile(file)} accept=".zip,.json,application/zip,application/json">
             {(props) => (
               <Button {...props} variant="default">

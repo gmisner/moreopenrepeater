@@ -1,8 +1,11 @@
-import { Badge, Button, Card, Group, Table, Text } from "@mantine/core";
+import { Badge, Button, Card, Group, Switch, Table, Text } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import { EmptyState } from "../components/EmptyState";
+import { ErrorCard } from "../components/StateCards";
 import { notifyError } from "../config";
 import { Page } from "../layout/AppShell";
+import { ActionsHeader } from "../components/ActionsHeader";
 
 type Entry = { at: string; actor: string; action: string; detail: string; status?: number };
 
@@ -33,11 +36,15 @@ function describe(entry: Entry) {
 
 export function Audit() {
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [showSimulator, setShowSimulator] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setEntries(await api<Entry[]>("/api/audit?limit=300"));
+      setFailed(false);
     } catch (error) {
+      setFailed(true);
       notifyError(error);
     }
   }, []);
@@ -46,15 +53,32 @@ export function Audit() {
     void load();
   }, [load]);
 
+  const isSimulator = (entry: Entry) => entry.action.startsWith("POST /api/simulate/");
+  const shown = showSimulator ? entries : entries.filter((entry) => !isSimulator(entry));
+  const hidden = entries.length - shown.length;
+
   return (
-    <Page title="Audit log" description="Who changed what on this controller.">
-      <Group justify="flex-end">
-        <Button variant="default" onClick={() => void load()}>
-          Refresh
-        </Button>
-      </Group>
+    <Page
+      title="Audit log"
+      actions={
+        <Group gap="md">
+          <Switch
+            label="Show simulator events"
+            checked={showSimulator}
+            onChange={(event) => setShowSimulator(event.currentTarget.checked)}
+          />
+          <Button variant="default" onClick={() => void load()}>
+            Refresh
+          </Button>
+        </Group>
+      }
+    >
       <Card withBorder padding="lg" radius="md">
-        {entries.length ? (
+        {failed && entries.length === 0 ? (
+          <ErrorCard title="Couldn't load the audit log" onRetry={() => void load()}>
+            The repeater didn't answer, so this isn't the same as an empty log.
+          </ErrorCard>
+        ) : shown.length ? (
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
@@ -62,11 +86,11 @@ export function Audit() {
                 <Table.Th>Who</Table.Th>
                 <Table.Th>Action</Table.Th>
                 <Table.Th>Detail</Table.Th>
-                <Table.Th />
+                <ActionsHeader />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {entries.map((entry, index) => (
+              {shown.map((entry, index) => (
                 <Table.Tr key={`${entry.at}-${index}`}>
                   <Table.Td>
                     <Text size="sm" c="dimmed">
@@ -76,7 +100,9 @@ export function Audit() {
                   <Table.Td>{entry.actor}</Table.Td>
                   <Table.Td title={entry.action}>{decodeURIComponent(describe(entry))}</Table.Td>
                   <Table.Td>
-                    <Text size="sm">{entry.detail}</Text>
+                    <Text size="sm" c={entry.detail ? undefined : "dimmed"}>
+                      {entry.detail || "—"}
+                    </Text>
                   </Table.Td>
                   <Table.Td>
                     {entry.status && entry.status >= 400 && entry.action !== "POST /api/login" ? (
@@ -90,7 +116,7 @@ export function Audit() {
             </Table.Tbody>
           </Table>
         ) : (
-          <Text c="dimmed">No audit entries yet.</Text>
+          <EmptyState>{hidden ? "Only simulator events so far. Turn them on above to see them." : "No audit entries yet."}</EmptyState>
         )}
       </Card>
     </Page>

@@ -23,7 +23,9 @@ import { ControlCodesCard, HomeAssistantTest } from "../components/MacroExtras";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { pinLabel, SPARE_PINS } from "../gpio";
 import { Page } from "../layout/AppShell";
-import { labeled } from "../components/FieldHint";
+import { labeled, InfoNote } from "../components/FieldHint";
+import { EmptyState } from "../components/EmptyState";
+import { ActionsHeader } from "../components/ActionsHeader";
 
 type Macro = {
   pattern: string;
@@ -324,14 +326,11 @@ export function Macros() {
   const action = form.action;
 
   return (
-    <Page title="DTMF macros" description="Digit patterns users can key in over the air.">
+    <Page title="DTMF macros">
       <Card withBorder padding="lg" radius="md">
         <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
           <div>
-            <Title order={2}>Macros</Title>
-            <Text c="dimmed" size="sm" mt={4}>
-              For control-operator functions, require a one-time code or put a PIN in the pattern.
-            </Text>
+            <Title order={2}>{labeled("Macros", <>For control-operator functions, require a one-time code or put a PIN in the pattern.</>)}</Title>
           </div>
           <Button onClick={startAdd}>Add macro</Button>
         </Group>
@@ -343,7 +342,7 @@ export function Macros() {
                 <Table.Th>Description</Table.Th>
                 <Table.Th>Action</Table.Th>
                 <Table.Th>Details</Table.Th>
-                <Table.Th />
+                <ActionsHeader />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -383,9 +382,7 @@ export function Macros() {
           </Table>
         </Table.ScrollContainer>
         {sorted.length === 0 ? (
-          <Text c="dimmed" size="sm" mt="sm">
-            No macros defined yet.
-          </Text>
+          <EmptyState>No macros defined yet.</EmptyState>
         ) : null}
       </Card>
 
@@ -399,8 +396,7 @@ export function Macros() {
           <Stack gap="md">
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
               <TextInput
-                label="Pattern"
-                description="Digits, A–D, *, #"
+                label={labeled("Pattern", "Digits, A–D, *, #")}
                 placeholder="e.g. *81"
                 required
                 pattern="[0-9A-Da-d*#]+"
@@ -415,8 +411,7 @@ export function Macros() {
                 allowDeselect={false}
               />
               <TextInput
-                label="Description"
-                description="Spoken help reads this after the digits"
+                label={labeled("Description", "Spoken help reads this after the digits")}
                 placeholder=""
                 value={form.description}
                 onChange={(event) => setField("description", event.currentTarget.value)}
@@ -440,8 +435,7 @@ export function Macros() {
                     onChange={(event) => setField("command", event.currentTarget.value)}
                   />
                   <TextInput
-                    label="Node ID"
-                    description="Optional"
+                    label={labeled("Node ID", "Optional")}
                     placeholder=""
                     value={form.node_id}
                     onChange={(event) => setField("node_id", event.currentTarget.value)}
@@ -460,8 +454,7 @@ export function Macros() {
               ) : null}
               {action === "say" ? (
                 <TextInput
-                  label="Text to say"
-                  description="Spoken over the air"
+                  label={labeled("Text to say", "Spoken over the air")}
                   placeholder=""
                   required
                   value={form.say_text}
@@ -544,14 +537,14 @@ export function Macros() {
               ) : null}
             </SimpleGrid>
             {action === "remote_tune" ? (
-              <Text c="dimmed" size="sm">
+              <InfoNote>
                 After the pattern, key the frequency in MHz with * as the decimal point, then #: 146*94#. Six digits work too (146940#).
-              </Text>
+              </InfoNote>
             ) : null}
             {action === "remote_tone" ? (
-              <Text c="dimmed" size="sm">
+              <InfoNote>
                 After the pattern, key the tone with * as the decimal point, then #: 100*0# or 1000#. 0# turns the tone off.
-              </Text>
+              </InfoNote>
             ) : null}
             <Checkbox
               label="Needs a one-time code, keyed right after the pattern"
@@ -594,13 +587,12 @@ export function Macros() {
               <Accordion.Control>Advanced · Home Assistant</Accordion.Control>
               <Accordion.Panel>
                 <Stack gap="md">
-                  <Text c="dimmed" size="sm" maw="75ch">
+                  <InfoNote>
                     A Home Assistant macro calls a webhook or fires an event. Protect these macros with a one-time code or PIN.
-                  </Text>
+                  </InfoNote>
                   <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                     <TextInput
-                      label="Home Assistant address"
-                      description="As this controller reaches it"
+                      label={labeled("Home Assistant address", "As this controller reaches it")}
                       placeholder="e.g. http://homeassistant.local:8123"
                       pattern="https?://\S+"
                       value={ha.values.homeassistant_url}

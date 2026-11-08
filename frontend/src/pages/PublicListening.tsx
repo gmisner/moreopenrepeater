@@ -195,7 +195,7 @@ export function PublicListening() {
   const listenUrl = `${window.location.origin}/listen`;
 
   return (
-    <Page title="Public listening" description="A listen page and/or Broadcastify feed for people outside the dashboard.">
+    <Page title="Public listening">
       <Card
         withBorder
         padding="lg"
@@ -231,9 +231,8 @@ export function PublicListening() {
             </Text>
           ) : null}
           <TextInput
-            label={labeled("Text on the page", "Shown under the callsign · also shows on-air and net status")}
+            label={labeled("Text on the page", <>Shown under the callsign · also shows on-air and net status<br />Optional · frequency, offset, tone, etc.</>)}
             maxLength={500}
-            description="Optional · frequency, offset, tone, etc."
             placeholder=""
             value={page.values.public_page_text}
             onChange={(event) => page.setField("public_page_text", event.currentTarget.value)}
@@ -262,10 +261,7 @@ export function PublicListening() {
       {isAdmin ? (
         <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => void saveStream(event)}>
           <Stack gap="md">
-            <Title order={2}>Broadcastify / Icecast feed</Title>
-            <Text c="dimmed" size="sm" maw="75ch">
-              Streams what&apos;s on the air as 16 kbps MP3. Needs ffmpeg (<Code>sudo apt install ffmpeg</Code>).
-            </Text>
+            <Title order={2}>{labeled("Broadcastify / Icecast feed", <>Streams what&apos;s on the air as 16 kbps MP3. Needs ffmpeg (<Code>sudo apt install ffmpeg</Code>).</>)}</Title>
             <Group gap="sm">
               <Badge color={STATE_COLORS[streamStatus?.state ?? ""] ?? "gray"} variant="light">
                 {STATE_LABELS[streamStatus?.state ?? ""] ?? streamStatus?.state ?? "off"}
@@ -307,13 +303,9 @@ export function PublicListening() {
                 onChange={(event) => setStreamField("username", event.currentTarget.value)}
               />
               <TextInput
-                label={labeled(
-                  "Password",
-                  passwordSet
+                label={labeled("Password", <>{passwordSet
                     ? "Saved on this controller only, out of backups"
-                    : "Kept on this controller only, out of backups",
-                )}
-                description={passwordSet ? "Leave blank to keep the saved password" : undefined}
+                    : "Kept on this controller only, out of backups"}<br />{passwordSet ? "Leave blank to keep the saved password" : undefined}</>)}
                 placeholder=""
                 value={streamForm.password}
                 onChange={(event) => setStreamField("password", event.currentTarget.value)}

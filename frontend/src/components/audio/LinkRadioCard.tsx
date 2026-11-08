@@ -16,7 +16,7 @@ import { useState } from "react";
 import { ConfigActions } from "../ConfigActions";
 import { ConfigEditDrawer } from "../ConfigEditDrawer";
 import { ConfigSummaryCard } from "../ConfigSummaryCard";
-import { labeled } from "../FieldHint";
+import { labeled, InfoNote } from "../FieldHint";
 import {
   serialPortOptions,
   serialSelectValue,
@@ -312,8 +312,7 @@ export function LinkRadioCard({
                     ) : null}
                     {link.values.link_radio_cos === "vox" ? (
                       <NumberInput
-                        label="VOX threshold"
-                        description="Typical around −40 to −25 dBFS"
+                        label={labeled("VOX threshold", "Typical around −40 to −25 dBFS")}
                         suffix=" dBFS"
                         min={-90}
                         max={0}
@@ -409,8 +408,7 @@ export function LinkRadioCard({
                     ) : null}
                     {link.values.link_radio_ptt !== "none" ? (
                       <NumberInput
-                        label={labeled("Transmit delay", "Key up, then wait this long before any audio. 0 = off.")}
-                        description="300 ms typical"
+                        label={labeled("Transmit delay", <>Key up, then wait this long before any audio. 0 = off.<br />300 ms typical</>)}
                         suffix=" ms"
                         min={0}
                         max={500}
@@ -472,21 +470,19 @@ export function LinkRadioCard({
               <Accordion.Item value="notes">
                 <Accordion.Control>Station notes · optional</Accordion.Control>
                 <Accordion.Panel>
-                  <Text c="dimmed" size="sm" mb="md" maw="75ch">
+                  <InfoNote label="Operator fields">
                     For operators only — the controller does not use these fields.
-                  </Text>
+                  </InfoNote>
                   <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                     <TextInput
-                      label="Radio model"
-                      description="Optional"
+                      label={labeled("Radio model", "Optional")}
                       placeholder="e.g. model"
                       maxLength={80}
                       value={link.values.link_radio_model}
                       onChange={(event) => link.setField("link_radio_model", event.currentTarget.value)}
                     />
                     <TextInput
-                      label="Frequency"
-                      description="Optional note for a fixed link"
+                      label={labeled("Frequency", "Optional note for a fixed link")}
                       placeholder="e.g. 146.94 / 146.34"
                       maxLength={80}
                       value={link.values.link_radio_frequency}
@@ -495,8 +491,7 @@ export function LinkRadioCard({
                   </SimpleGrid>
                   <Textarea
                     mt="md"
-                    label="Notes"
-                    description="Optional free-form note"
+                    label={labeled("Notes", "Optional free-form note")}
                     placeholder="Optional note for operators"
                     maxLength={500}
                     minRows={2}

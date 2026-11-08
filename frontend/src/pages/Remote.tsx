@@ -202,7 +202,7 @@ export function Remote() {
   };
 
   return (
-    <Page title="Remote access" description="Reach this dashboard from other devices over Tailscale.">
+    <Page title="Remote access">
       {info && !info.available ? (
         <Card withBorder padding="md" radius="md">
           <Text c="dimmed" size="sm">

@@ -1,0 +1,1 @@
+import{C as e}from"./BrandMark-CqUj2_No.js";var t=e();function n({children:e,action:n}){return(0,t.jsxs)(`div`,{className:`mor-empty`,children:[(0,t.jsx)(`p`,{children:e}),n]})}export{n as t};

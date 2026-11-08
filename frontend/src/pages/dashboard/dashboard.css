@@ -1,0 +1,367 @@
+/* Dashboard: on-air panel, signal path, timers, activity list.
+   Status colors come from the scheme-aware --mor-* tokens (field-contrast.css)
+   so light and dark both keep AA contrast. */
+
+.mor-dash {
+  --dash-accent: var(--mantine-primary-color-filled);
+  --dash-green: var(--mor-green);
+  --dash-red: var(--mor-red);
+  --dash-amber: var(--mor-amber);
+  --dash-off: var(--mor-control-off, #3a404a);
+  --dash-mono: var(--mantine-font-family-monospace);
+}
+
+[data-mantine-color-scheme="light"] .mor-dash {
+  --mor-control-off: #b9bfc8;
+}
+
+.mor-dash-num {
+  font-family: var(--dash-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- On-air panel ---------- */
+
+.mor-onair {
+  padding: var(--mantine-spacing-xl);
+  display: grid;
+  gap: var(--mantine-spacing-xl);
+}
+
+.mor-onair[data-tone="rx"] { border-color: color-mix(in srgb, var(--dash-green) 55%, var(--mor-border)); }
+.mor-onair[data-tone="tx"] { border-color: color-mix(in srgb, var(--dash-accent) 55%, var(--mor-border)); }
+.mor-onair[data-tone="alert"] { border-color: color-mix(in srgb, var(--dash-red) 60%, var(--mor-border)); }
+
+.mor-onair-station {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  color: var(--mantine-color-dimmed);
+  font-size: 0.92rem;
+}
+
+.mor-onair-callsign {
+  font-family: var(--dash-mono);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--mantine-color-text);
+  letter-spacing: 0.02em;
+}
+
+.mor-onair-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: var(--mantine-spacing-xl);
+  align-items: center;
+}
+
+.mor-onair-state {
+  margin: 0;
+  font-size: clamp(2rem, 4.2vw, 2.75rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--mantine-color-text);
+}
+
+.mor-onair-state[data-tone="rx"] { color: var(--dash-green); }
+.mor-onair-state[data-tone="tx"] { color: var(--dash-accent); }
+.mor-onair-state[data-tone="alert"] { color: var(--dash-red); }
+.mor-onair-state[data-tone="idle"] { color: var(--mantine-color-text); }
+
+.mor-onair-copy {
+  margin-top: var(--mantine-spacing-xs);
+  color: var(--mantine-color-dimmed);
+  max-width: 60ch;
+}
+
+/* ---------- Timers ---------- */
+
+.mor-timers {
+  display: grid;
+  gap: var(--mantine-spacing-sm);
+  margin: 0;
+}
+
+.mor-timer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  row-gap: 6px;
+  align-items: baseline;
+}
+
+.mor-timer dt {
+  font-size: 0.86rem;
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-timer dd {
+  margin: 0;
+  font-family: var(--dash-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: right;
+  color: var(--mantine-color-text);
+}
+
+.mor-timer[data-idle] dd {
+  color: var(--mantine-color-dimmed);
+  font-weight: 400;
+  font-size: 0.92rem;
+  font-family: inherit;
+}
+
+.mor-timer-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--mor-panel-2);
+  overflow: hidden;
+}
+
+.mor-timer-bar span {
+  display: block;
+  height: 100%;
+  width: var(--fill, 0%);
+  background: var(--dash-accent);
+  border-radius: inherit;
+}
+
+.mor-timer[data-warn] .mor-timer-bar span { background: var(--dash-amber); }
+.mor-timer[data-warn] dd { color: var(--dash-amber); }
+.mor-timer[data-danger] .mor-timer-bar span { background: var(--dash-red); }
+.mor-timer[data-danger] dd { color: var(--dash-red); }
+
+/* ---------- Signal path ---------- */
+
+.mor-path {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--mor-border);
+  padding-top: var(--mantine-spacing-lg);
+}
+
+.mor-path-node {
+  position: relative;
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  padding-right: var(--mantine-spacing-md);
+}
+
+/* The wire to the next stage: runs from just right of this dot to the next. */
+.mor-path-node:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: 22px;
+  right: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--dash-off);
+}
+
+.mor-path-node[data-wire="rx"]::after { background: var(--dash-green); }
+.mor-path-node[data-wire="tx"]::after { background: var(--dash-red); }
+
+.mor-path-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--dash-off);
+  background: var(--mor-panel);
+  position: relative;
+  z-index: 1;
+}
+
+.mor-path-node[data-lit="rx"] .mor-path-dot {
+  background: var(--dash-green);
+  border-color: var(--dash-green);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--dash-green) 22%, transparent);
+}
+
+.mor-path-node[data-lit="tx"] .mor-path-dot {
+  background: var(--dash-red);
+  border-color: var(--dash-red);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--dash-red) 22%, transparent);
+}
+
+.mor-path-node[data-lit="busy"] .mor-path-dot {
+  background: var(--dash-accent);
+  border-color: var(--dash-accent);
+}
+
+.mor-path-name {
+  margin-top: 6px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--mantine-color-text);
+}
+
+.mor-path-value {
+  font-size: 0.86rem;
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-path-node[data-lit="rx"] .mor-path-value { color: var(--dash-green); }
+.mor-path-node[data-lit="tx"] .mor-path-value { color: var(--dash-red); }
+
+/* ---------- Quiet "not in use" line ---------- */
+
+.mor-unused {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mantine-spacing-xs) var(--mantine-spacing-lg);
+  align-items: center;
+  font-size: 0.86rem;
+  color: var(--mantine-color-dimmed);
+  padding: 0 var(--mantine-spacing-xs);
+}
+
+.mor-unused a {
+  color: var(--mantine-color-dimmed);
+  text-decoration: underline;
+  text-decoration-color: var(--mor-border);
+  text-underline-offset: 3px;
+}
+
+.mor-unused a:hover {
+  color: var(--mantine-color-text);
+  text-decoration-color: currentColor;
+}
+
+/* ---------- Linked radio, compact ---------- */
+
+.mor-mini-path {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mantine-spacing-xs) var(--mantine-spacing-lg);
+}
+
+.mor-mini-path li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-mini-path b {
+  font-weight: 600;
+  color: var(--mantine-color-text);
+}
+
+.mor-mini-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--dash-off);
+}
+
+.mor-mini-path li[data-lit="rx"] .mor-mini-dot { background: var(--dash-green); }
+.mor-mini-path li[data-lit="tx"] .mor-mini-dot { background: var(--dash-red); }
+
+/* ---------- Recent activity ---------- */
+
+.mor-act-day {
+  margin: var(--mantine-spacing-md) 0 var(--mantine-spacing-xs);
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--mantine-color-dimmed);
+}
+
+.mor-act-day:first-of-type { margin-top: 0; }
+
+.mor-act-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mor-act-row {
+  display: grid;
+  grid-template-columns: 4.6rem minmax(0, 1fr) 3.4rem;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  min-height: 28px;
+  font-size: 0.86rem;
+}
+
+.mor-act-time {
+  color: var(--mantine-color-dimmed);
+  font-family: var(--dash-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mor-act-track {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+}
+
+.mor-act-bar {
+  height: 8px;
+  min-width: 3px;
+  width: var(--len, 3px);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--dash-green) 70%, transparent);
+  flex: none;
+}
+
+.mor-act-row[data-kind="kerchunk"] .mor-act-bar { background: var(--dash-off); }
+.mor-act-row[data-kind="timeout"] .mor-act-bar { background: var(--dash-red); }
+
+.mor-act-note {
+  font-size: 0.78rem;
+  color: var(--mantine-color-dimmed);
+  white-space: nowrap;
+}
+
+.mor-act-row[data-kind="timeout"] .mor-act-note { color: var(--dash-red); font-weight: 600; }
+
+.mor-act-dur {
+  text-align: right;
+  font-family: var(--dash-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.mor-act-summary {
+  font-size: 0.86rem;
+  color: var(--mantine-color-dimmed);
+}
+
+/* ---------- Narrow screens ---------- */
+
+@media (max-width: 53.75em) {
+  .mor-onair-main { grid-template-columns: 1fr; gap: var(--mantine-spacing-lg); }
+}
+
+@media (max-width: 37.5em) {
+  .mor-onair { padding: var(--mantine-spacing-md); gap: var(--mantine-spacing-lg); }
+  .mor-path { padding-top: var(--mantine-spacing-md); }
+  .mor-path-node { padding-right: 4px; }
+  .mor-path-name { font-size: 0.86rem; }
+  .mor-path-value { font-size: 0.78rem; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mor-path-dot,
+  .mor-path-node::after,
+  .mor-timer-bar span,
+  .mor-onair {
+    transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  }
+}

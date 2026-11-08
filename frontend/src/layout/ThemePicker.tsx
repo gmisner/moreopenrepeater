@@ -25,19 +25,24 @@ export const ThemePicker = memo(function ThemePicker() {
 
   return (
     <Stack gap={6}>
+      <Text size="sm" fw={600}>
+        Theme
+      </Text>
       <SegmentedControl
         size="xs"
         fullWidth
+        aria-label="Theme"
         value={colorScheme}
         onChange={(value) => setColorScheme(value as "auto" | "light" | "dark")}
         data={[...THEME_OPTIONS]}
       />
-      <Text size="xs" c="dimmed">
+      <Text size="sm" fw={600} mt={6}>
         Display size
       </Text>
       <SegmentedControl
         size="xs"
         fullWidth
+        aria-label="Display size"
         value={density}
         onChange={(value) => setDensity(value as UiDensity)}
         data={DENSITY_OPTIONS}

@@ -66,3 +66,6 @@ class StatusSnapshot:
     net_active: bool = False
     gmrs_mode: bool = False
     callsign: str = ""
+    tot_remaining: Optional[float] = None
+    hang_remaining: Optional[float] = None
+    id_due_in: Optional[float] = None

@@ -69,19 +69,19 @@ export function Simulator() {
   };
 
   return (
-    <Page title="Simulator" description="Inject synthetic hardware events for testing.">
+    <Page title="Simulator">
       <Card withBorder padding="lg" radius="md">
         <Group gap="sm">
-          <Text size="xs" c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>
+          <Text size="sm" c="dimmed">
             State
           </Text>
           <Badge size="lg" variant="light">
             {String(state).replaceAll("_", " ")}
           </Badge>
-          <Badge variant={ptt ? "filled" : "outline"} color={ptt ? "red" : "gray"}>
+          <Badge variant={ptt ? "filled" : "outline"} color={ptt ? "red" : "gray"} style={ptt ? undefined : { color: "var(--mor-muted)" }}>
             PTT
           </Badge>
-          <Badge variant={cos ? "filled" : "outline"} color={cos ? "green" : "gray"}>
+          <Badge variant={cos ? "filled" : "outline"} color={cos ? "green" : "gray"} style={cos ? undefined : { color: "var(--mor-muted)" }}>
             COS
           </Badge>
         </Group>
@@ -150,7 +150,7 @@ export function Simulator() {
             <Title order={2}>DTMF</Title>
             <SimpleGrid cols={4} spacing="xs">
               {DTMF_KEYS.map((digit) => (
-                <Button key={digit} variant="default" onClick={() => void sendDigit(digit)}>
+                <Button key={digit} variant="default" ff="monospace" h={44} onClick={() => void sendDigit(digit)}>
                   {digit}
                 </Button>
               ))}

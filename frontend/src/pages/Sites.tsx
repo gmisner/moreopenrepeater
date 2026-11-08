@@ -14,8 +14,11 @@ import {
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { labeled } from "../components/FieldHint";
+import { EmptyState } from "../components/EmptyState";
+import { ErrorCard } from "../components/StateCards";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
+import { ActionsHeader } from "../components/ActionsHeader";
 
 type HubSite = {
   id: string;
@@ -61,9 +64,16 @@ export function Sites() {
   const [apiToken, setApiToken] = useState("");
   const [adding, setAdding] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const loadSites = useCallback(async () => {
-    setSites(await api<HubSite[]>("/api/hub/sites"));
+    try {
+      setSites(await api<HubSite[]>("/api/hub/sites"));
+      setLoadFailed(false);
+    } catch (error) {
+      setLoadFailed(true);
+      throw error;
+    }
   }, []);
 
   const refreshStatus = useCallback(async () => {
@@ -117,22 +127,30 @@ export function Sites() {
   };
 
   return (
-    <Page title="Sites" description="Hub view of other moreopenrepeater instances.">
+    <Page
+      title="Sites"
+      actions={
+        <Button variant="default" loading={refreshing} onClick={() => refreshStatus().catch(notifyError)}>
+          Refresh status
+        </Button>
+      }
+    >
       <Stack gap="lg">
-        <Group justify="space-between" align="flex-end">
-          <div>
-            <Title order={3}>Configured sites</Title>
-            <Text c="dimmed" size="sm">
-              Create a viewer or admin token on each remote under Users, then add it here.
-            </Text>
-          </div>
-          <Button variant="light" loading={refreshing} onClick={() => refreshStatus().catch(notifyError)}>
-            Refresh status
-          </Button>
-        </Group>
+        <Title order={2} size="h3">{labeled("Configured sites", <>Create a viewer or admin token on each remote under Users, then add it here.</>)}</Title>
 
-        {sites.length === 0 ? (
-          <Text c="dimmed">No remote sites yet. Add one below.</Text>
+        {loadFailed && sites.length === 0 ? (
+          <ErrorCard
+            title="Couldn't load your sites"
+            onRetry={() =>
+              loadSites()
+                .then(() => refreshStatus())
+                .catch(notifyError)
+            }
+          >
+            The repeater didn't answer, so this isn't the same as having no sites.
+          </ErrorCard>
+        ) : sites.length === 0 ? (
+          <EmptyState>No remote sites yet. Add one below.</EmptyState>
         ) : (
           <Table.ScrollContainer minWidth={720}>
             <Table striped highlightOnHover>
@@ -144,7 +162,7 @@ export function Sites() {
                   <Table.Th>Version</Table.Th>
                   <Table.Th>Last activity</Table.Th>
                   <Table.Th>Alerts</Table.Th>
-                  <Table.Th />
+                  <ActionsHeader />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -201,7 +219,7 @@ export function Sites() {
 
         <Card withBorder padding="md" radius="md" component="form" onSubmit={addSite}>
           <Stack gap="sm">
-            <Title order={4}>Add a site</Title>
+            <Title order={2} size="h4">Add a site</Title>
             <TextInput
               label={labeled("Name", "A label for this hub.")}
               value={name}

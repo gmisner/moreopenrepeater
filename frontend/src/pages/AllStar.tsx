@@ -12,20 +12,29 @@ import {
   SimpleGrid,
   Stack,
   Table,
+  Tabs,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
+import { EmptyState } from "../components/EmptyState";
 import { labeled } from "../components/FieldHint";
 import { notifyError, notifySuccess, useConfig } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
+import { ConnectBar } from "./allstar/ConnectBar";
+import { LinkMap } from "./allstar/LinkMap";
+import { ScheduleWeek } from "./allstar/ScheduleWeek";
+import { SetupChecklist } from "./allstar/SetupChecklist";
+import { isReady, recentNodes, setupSteps, type LinkEvent, type LinkRow } from "./allstar/model";
+import "./allstar/allstar.css";
+import { ActionsHeader } from "../components/ActionsHeader";
 
 const REFRESH_MS = 2000;
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const ALLSTAR_TABS = ["links", "schedule", "node"];
 
 type AllStarNode = { number: string; rxchannel: string; duplex: string; controlled: boolean };
 type AllStarIdentity = { node: string; callsign: string; has_password: boolean };
@@ -155,26 +164,6 @@ function scheduleText(row: ScheduleStatus | undefined, active: string) {
   return row.next_start ? `Next: ${shortTime(row.next_start)}` : "";
 }
 
-function scheduleDays(days: number[]) {
-  if (days.length === 7) return "Every day";
-  if (days.length === 0) return "No days";
-  return days.map((d) => DAY_NAMES[d]).join(" · ");
-}
-
-function scheduleDuration(minutes: number) {
-  if (minutes <= 0) return "until disconnect";
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const rem = minutes % 60;
-  return rem ? `${hours}h ${rem}m` : `${hours}h`;
-}
-
-function heroTitleColor(kind?: string) {
-  if (kind === "on") return "green";
-  if (kind === "warn") return "amber";
-  return undefined;
-}
-
 function emptyFavorite(): Favorite {
   return { node: "", name: "", monitor: false };
 }
@@ -231,6 +220,18 @@ export function AllStar() {
   const { session } = useSession();
   const { config, save: saveConfig } = useConfig();
   const isAdmin = session?.role === "admin";
+  const canWrite = session?.role !== "viewer";
+  const [tab, setTab] = useState<string>(() => {
+    const fromHash = window.location.hash.slice(1);
+    return ALLSTAR_TABS.includes(fromHash) ? fromHash : "links";
+  });
+  const changeTab = (value: string | null) => {
+    if (!value) return;
+    setTab(value);
+    window.history.replaceState(null, "", `#${value}`);
+  };
+  const [linkRows, setLinkRows] = useState<LinkRow[]>([]);
+  const [linkEvents, setLinkEvents] = useState<LinkEvent[]>([]);
 
   const [status, setStatus] = useState<AllStarStatus | null>(null);
   const [selectedNode, setSelectedNode] = useState("");
@@ -273,22 +274,63 @@ export function AllStar() {
   }, []);
 
   const refreshLinks = useCallback(async () => {
-    const links = await api<{ favorites: FavoriteInfo[]; schedules: ScheduleStatus[] }>("/api/links");
+    const links = await api<{ favorites: FavoriteInfo[]; schedules: ScheduleStatus[]; links?: LinkRow[] }>("/api/links");
     setScheduleStatus(links.schedules ?? []);
+    setLinkRows(links.links ?? []);
   }, []);
+
+  const refreshLinkEvents = useCallback(async () => {
+    const data = await api<{ events: LinkEvent[] }>("/api/links/events?limit=30");
+    setLinkEvents(data.events ?? []);
+  }, []);
+
+  const connectNode = async (target: string, monitorOnly: boolean) => {
+    try {
+      const next = await api<{ links?: LinkRow[] }>("/api/links", { method: "POST", json: { node: target, monitor: monitorOnly } });
+      setLinkRows(next.links ?? []);
+      notifySuccess(`Connecting node ${target}`);
+    } catch (error) {
+      notifyError(error);
+    }
+  };
+
+  const disconnectNode = async (target: string) => {
+    try {
+      const next = await api<{ links?: LinkRow[] }>(`/api/links/${encodeURIComponent(target)}`, { method: "DELETE" });
+      setLinkRows(next.links ?? []);
+      notifySuccess(`Disconnecting node ${target}`);
+    } catch (error) {
+      notifyError(error);
+    }
+  };
+
+  const disconnectAll = async () => {
+    if (!window.confirm("Disconnect every link?")) return;
+    try {
+      const next = await api<{ links?: LinkRow[] }>("/api/links", { method: "DELETE" });
+      setLinkRows(next.links ?? []);
+      notifySuccess("Disconnecting all links");
+    } catch (error) {
+      notifyError(error);
+    }
+  };
 
   useEffect(() => {
     refresh().catch(notifyError);
     refreshEcho().catch(notifyError);
     refreshLinks().catch(() => {});
-  }, [refresh, refreshEcho, refreshLinks]);
+    refreshLinkEvents().catch(() => {});
+  }, [refresh, refreshEcho, refreshLinks, refreshLinkEvents]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
-      if (!document.hidden) refresh().catch(() => {});
+      if (document.hidden) return;
+      refresh().catch(() => {});
+      refreshLinks().catch(() => {});
+      refreshLinkEvents().catch(() => {});
     }, REFRESH_MS);
     return () => window.clearInterval(id);
-  }, [refresh]);
+  }, [refresh, refreshLinks, refreshLinkEvents]);
 
   useEffect(() => {
     const list = (config?.link_favorites as Favorite[] | undefined) ?? [];
@@ -531,60 +573,183 @@ export function AllStar() {
     status?.identity?.callsign || (config?.callsign ? String(config.callsign).toUpperCase() : "");
   const savedFavorites = favorites.filter((f) => f.node.trim());
   const canEditNode = Boolean(showIdentityForm || showNodeForm);
+  const ready = isReady(status);
+  const steps = setupSteps(status, savedFavorites.length);
+  const recents = recentNodes(
+    linkEvents,
+    savedFavorites.map((f) => f.node),
+    linkRows.map((l) => l.node),
+  ).map((r) => ({ node: r.node, name: r.label }));
 
   return (
-    <Page title="AllStarLink" description="Link this repeater to other AllStarLink nodes.">
-      <Card withBorder padding="lg" radius="md">
-        <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
-          <div>
-            <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em" }}>
-              This machine&apos;s node
-            </Text>
-            <Title
-              order={1}
-              c={heroTitleColor(view?.pill?.[1])}
-              style={{ fontSize: "1.9rem", fontVariantNumeric: "tabular-nums" }}
-            >
-              {status?.node || (status ? "Not linked" : "…")}
-            </Title>
-            <Group gap="sm" mt={4} wrap="wrap">
-              {callsign ? (
-                <Text size="sm" fw={600}>
-                  {callsign}
-                </Text>
-              ) : null}
-              {view?.pill ? (
-                <Badge color={pillColor(view.pill[1])} variant="light">
-                  {view.pill[0]}
-                </Badge>
-              ) : null}
-              {status?.audio?.keyed ? (
-                <Badge color="green" variant="light">
-                  node keyed
-                </Badge>
-              ) : null}
-            </Group>
-            <Text c="dimmed" size="sm" maw="70ch" mt="sm">
-              {view?.text ?? "Loading…"}
-            </Text>
-          </div>
-          {canEditNode ? (
-            <Button variant="light" onClick={() => setEditingNode(true)}>
-              {status?.node ? "Edit…" : "Set up…"}
-            </Button>
-          ) : null}
-        </Group>
+    <Page title="AllStarLink">
+      <Card withBorder radius="md" className="mor-as mor-as-strip" component="section" aria-label="This node">
+        <div>
+          <div className="mor-as-strip-label">This machine&apos;s node</div>
+          <div className="mor-as-strip-node">{status?.node || (status ? "Not set" : "…")}</div>
+        </div>
+        {callsign ? <span className="mor-as-strip-call">{callsign}</span> : null}
+        {view?.pill ? (
+          <Badge color={pillColor(view.pill[1])} variant="light">
+            {view.pill[0]}
+          </Badge>
+        ) : null}
+        {status?.audio?.keyed ? (
+          <Badge color="green" variant="light">
+            Node keyed
+          </Badge>
+        ) : null}
       </Card>
 
-      <Grid>
-        <Grid.Col span={{ base: 12, md: 5 }}>
+      <Tabs value={tab} onChange={changeTab} variant="default">
+        <Tabs.List style={{ overflowX: "auto", flexWrap: "nowrap" }}>
+          <Tabs.Tab value="links">Links</Tabs.Tab>
+          <Tabs.Tab value="schedule">Favorites and schedule</Tabs.Tab>
+          <Tabs.Tab value="node">Node and EchoLink</Tabs.Tab>
+        </Tabs.List>
+
+        <Tabs.Panel value="links" pt="md">
           <Stack gap="md">
-            {showEcho ? (
-              <Card withBorder padding="lg" radius="md" h="100%">
+            {ready ? (
+              <>
+                <Card withBorder padding="lg" radius="md" component="section" aria-label="Linked nodes">
+                  <LinkMap
+                    hub={status?.node || "—"}
+                    callsign={callsign}
+                    hubKeyed={Boolean(status?.audio?.keyed)}
+                    links={linkRows}
+                    canWrite={canWrite}
+                    onDisconnect={(n) => void disconnectNode(n)}
+                    onDisconnectAll={() => void disconnectAll()}
+                  />
+                </Card>
+                {canWrite ? (
+                  <Card withBorder padding="lg" radius="md" component="section" aria-label="Connect to a node">
+                    <ConnectBar
+                      favorites={savedFavorites}
+                      recent={recents}
+                      linked={linkRows.map((l) => l.node)}
+                      onConnect={connectNode}
+                    />
+                  </Card>
+                ) : null}
+              </>
+            ) : (
+              <Card withBorder padding="lg" radius="md" component="section" aria-label="Setup">
+                <SetupChecklist
+                  steps={steps}
+                  canAct={(action) => (action === "node" ? Boolean(canEditNode) : isAdmin)}
+                  onAction={(action) => (action === "node" ? setEditingNode(true) : setEditingFavorites(true))}
+                />
+                {status && !status.available && !status.manual ? (
+                  <Text size="xs" c="dimmed" mt="md">
+                    {status.error ?? "AllStarLink wasn't found on this machine (no /etc/asterisk/rpt.conf)."}
+                  </Text>
+                ) : null}
+              </Card>
+            )}
+          </Stack>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="schedule" pt="md">
+          <Stack gap="md">
+            <Card withBorder padding="lg" radius="md" component="section" aria-label="Favorite nodes">
+              <Group justify="space-between" align="flex-start" wrap="wrap" mb="sm">
+                <div>
+                  <h2 className="mor-card-title">{labeled("Favorite nodes", <>One-click buttons on the Links tab and the dashboard. EchoLink: 3 plus the six-digit number.</>)}</h2>
+                </div>
+                <Button variant="default" size="xs" onClick={() => setEditingFavorites(true)}>
+                  Edit favorites
+                </Button>
+              </Group>
+              {savedFavorites.length ? (
+                <Group gap="xs">
+                  {savedFavorites.map((favorite) => (
+                    <Badge
+                      key={`${favorite.node}-${favorite.name}`}
+                      size="lg"
+                      variant="light"
+                      color={favorite.monitor ? "gray" : "accent"}
+                      style={{ textTransform: "none", fontWeight: 500 }}
+                    >
+                      <Text span ff="monospace" size="sm">
+                        {favorite.node}
+                      </Text>
+                      {favorite.name.trim() ? ` · ${favorite.name.trim()}` : ""}
+                      {favorite.monitor ? " · monitor" : ""}
+                    </Badge>
+                  ))}
+                </Group>
+              ) : (
+                <EmptyState
+                  action={
+                    <Button size="xs" variant="default" onClick={() => setEditingFavorites(true)}>
+                      Add a favorite
+                    </Button>
+                  }
+                >
+                  No favorites yet. Save the nodes you link to often and they become one-click buttons.
+                </EmptyState>
+              )}
+            </Card>
+
+            <Card withBorder padding="lg" radius="md" component="section" aria-label="Scheduled links">
+              <Group justify="space-between" align="flex-start" wrap="wrap" mb="sm">
+                <div>
+                  <h2 className="mor-card-title">{labeled("Scheduled links", <>Connect automatically each week, then drop after a set time.</>)}</h2>
+                </div>
+                <Button variant="default" size="xs" onClick={() => setEditingSchedules(true)}>
+                  Edit schedules
+                </Button>
+              </Group>
+              <ScheduleWeek schedules={schedules} live={scheduleStatus} onEdit={() => setEditingSchedules(true)} />
+            </Card>
+          </Stack>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="node" pt="md">
+          <Grid>
+            <Grid.Col span={{ base: 12, md: 6 }}>
+              <Card withBorder padding="lg" radius="md" h="100%" component="section" aria-label="Node">
                 <Stack gap="md">
                   <Group justify="space-between" align="flex-start" wrap="wrap">
                     <div>
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
+                      <h2 className="mor-card-title">AllStarLink node</h2>
+                      <Group gap="sm" mt={6} wrap="wrap">
+                        <Text ff="monospace" fw={700}>
+                          {status?.node || "Not set"}
+                        </Text>
+                        {callsign ? (
+                          <Text size="sm" fw={600}>
+                            {callsign}
+                          </Text>
+                        ) : null}
+                        {view?.pill ? (
+                          <Badge color={pillColor(view.pill[1])} variant="light">
+                            {view.pill[0]}
+                          </Badge>
+                        ) : null}
+                      </Group>
+                    </div>
+                    {canEditNode ? (
+                      <Button variant="default" size="xs" onClick={() => setEditingNode(true)}>
+                        {status?.node ? "Edit node" : "Set up node"}
+                      </Button>
+                    ) : null}
+                  </Group>
+                  <Text c="dimmed" size="sm">
+                    {view?.text ?? "Loading…"}
+                  </Text>
+                </Stack>
+              </Card>
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, md: 6 }}>
+              {showEcho ? (
+              <Card withBorder padding="lg" radius="md" h="100%" component="section" aria-label="EchoLink">
+                <Stack gap="md">
+                  <Group justify="space-between" align="flex-start" wrap="wrap">
+                    <div>
+                      <Text className="mor-card-title">
                         EchoLink
                       </Text>
                       <Group gap="sm" mt={6} wrap="wrap">
@@ -639,155 +804,13 @@ export function AllStar() {
                   ) : null}
                 </Stack>
               </Card>
-            ) : (
-              <Card withBorder padding="lg" radius="md">
-                <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em" }}>
-                  Identity
-                </Text>
-                <Text c="dimmed" size="sm" mt="sm">
-                  EchoLink setup appears here once AllStar is available on this machine.
-                </Text>
-              </Card>
-            )}
-          </Stack>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, md: 7 }}>
-          <Stack gap="md">
-            <Card withBorder padding="lg" radius="md">
-              <Stack gap="md">
-                <Group justify="space-between" align="flex-start" wrap="wrap">
-                  <div>
-                    <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-                      Favorite nodes
-                    </Text>
-                    <Text c="dimmed" size="sm" mt={4}>
-                      One-click links on the dashboard. EchoLink: 3 + six-digit number.
-                    </Text>
-                  </div>
-                  <Button variant="light" size="xs" onClick={() => setEditingFavorites(true)}>
-                    Edit…
-                  </Button>
-                </Group>
-                {savedFavorites.length ? (
-                  <Group gap="xs">
-                    {savedFavorites.map((favorite) => (
-                      <Badge
-                        key={`${favorite.node}-${favorite.name}`}
-                        size="lg"
-                        variant="light"
-                        color={favorite.monitor ? "gray" : "accent"}
-                        title={favorite.monitor ? "Monitor only" : undefined}
-                        style={{ textTransform: "none", fontWeight: 500 }}
-                      >
-                        <Text span ff="monospace" size="sm">
-                          {favorite.node}
-                        </Text>
-                        {favorite.name.trim() ? (
-                          <Text span size="sm">
-                            {" "}
-                            · {favorite.name.trim()}
-                          </Text>
-                        ) : null}
-                        {favorite.monitor ? (
-                          <Text span size="xs" c="dimmed">
-                            {" "}
-                            · mon
-                          </Text>
-                        ) : null}
-                      </Badge>
-                    ))}
-                  </Group>
-                ) : (
-                  <Text c="dimmed" size="sm">
-                    No favorites yet. Add remote nodes for the dashboard Links card.
-                  </Text>
-                )}
-              </Stack>
-            </Card>
-
-            <Card withBorder padding="lg" radius="md">
-              <Stack gap="md">
-                <Group justify="space-between" align="flex-start" wrap="wrap">
-                  <div>
-                    <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-                      Scheduled links
-                    </Text>
-                    <Text c="dimmed" size="sm" mt={4}>
-                      Weekly auto-connect, then drop after a set time (0 = until disconnect).
-                    </Text>
-                  </div>
-                  <Button variant="light" size="xs" onClick={() => setEditingSchedules(true)}>
-                    Edit…
-                  </Button>
-                </Group>
-                {schedules.length ? (
-                  <Stack gap="xs">
-                    {schedules.map((schedule, index) => {
-                      const live = scheduleText(scheduleStatus[index], "Linked");
-                      return (
-                        <Group
-                          key={`${schedule.node}-${schedule.time}-${index}`}
-                          justify="space-between"
-                          align="flex-start"
-                          wrap="wrap"
-                          p="sm"
-                          style={{
-                            borderRadius: 8,
-                            border: "1px solid var(--mantine-color-default-border)",
-                            background: schedule.enabled
-                              ? undefined
-                              : "var(--mantine-color-default-hover)",
-                            opacity: schedule.enabled ? 1 : 0.72,
-                          }}
-                        >
-                          <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
-                            <Group gap="sm" wrap="wrap">
-                              <Text fw={600} style={{ fontVariantNumeric: "tabular-nums" }}>
-                                {schedule.time || "—:—"}
-                              </Text>
-                              <Text size="sm" c="dimmed">
-                                {scheduleDays(schedule.days)}
-                              </Text>
-                              {!schedule.enabled ? (
-                                <Badge size="sm" color="gray" variant="outline">
-                                  off
-                                </Badge>
-                              ) : null}
-                              {schedule.monitor ? (
-                                <Badge size="sm" color="gray" variant="light">
-                                  monitor
-                                </Badge>
-                              ) : null}
-                            </Group>
-                            <Text size="sm">
-                              <Text span ff="monospace">
-                                {schedule.node || "—"}
-                              </Text>
-                              {schedule.name.trim() ? ` · ${schedule.name.trim()}` : ""}
-                              {" · "}
-                              {scheduleDuration(schedule.minutes)}
-                            </Text>
-                            {live ? (
-                              <Text size="xs" c="dimmed">
-                                {live}
-                              </Text>
-                            ) : null}
-                          </Stack>
-                        </Group>
-                      );
-                    })}
-                  </Stack>
-                ) : (
-                  <Text c="dimmed" size="sm">
-                    No scheduled links yet.
-                  </Text>
-                )}
-              </Stack>
-            </Card>
-          </Stack>
-        </Grid.Col>
-      </Grid>
+              ) : (
+                <EmptyState>EchoLink setup appears here once AllStarLink is available on this machine.</EmptyState>
+              )}
+            </Grid.Col>
+          </Grid>
+        </Tabs.Panel>
+      </Tabs>
 
       <ConfigEditDrawer
         opened={editingNode}
@@ -850,11 +873,10 @@ export function AllStar() {
                     onChange={(event) => setIdentityField("callsign", event.currentTarget.value)}
                   />
                   <TextInput
-                    label="Node password"
+                    label={labeled("Node password", status?.identity?.has_password ? "Leave blank to keep the saved password" : "From the portal")}
                     type="password"
                     autoComplete="new-password"
                     required={Number(identityForm.node) >= 2000 && !status?.identity?.has_password}
-                    description={status?.identity?.has_password ? "Leave blank to keep the saved password" : "From the portal"}
                     placeholder=""
                     value={identityForm.password}
                     onChange={(event) => setIdentityField("password", event.currentTarget.value)}
@@ -928,7 +950,7 @@ export function AllStar() {
                     <Table.Th>Node</Table.Th>
                     <Table.Th>Name</Table.Th>
                     <Table.Th>Monitor only</Table.Th>
-                    <Table.Th />
+                    <ActionsHeader />
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -1058,8 +1080,7 @@ export function AllStar() {
                     }}
                   />
                   <NumberInput
-                    label="Minutes linked"
-                    description="0 = until disconnected"
+                    label={labeled("Minutes linked", "0 = until disconnected")}
                     min={0}
                     max={720}
                     required
@@ -1162,11 +1183,10 @@ export function AllStar() {
                   onChange={(event) => setEchoField("callsign", event.currentTarget.value)}
                 />
                 <TextInput
-                  label="Password"
+                  label={labeled("Password", echo.settings.has_password ? "Leave blank to keep the saved password" : undefined)}
                   type="password"
                   autoComplete="new-password"
                   required={!echo.settings.has_password}
-                  description={echo.settings.has_password ? "Leave blank to keep the saved password" : undefined}
                   placeholder=""
                   value={echoForm.password}
                   onChange={(event) => setEchoField("password", event.currentTarget.value)}

@@ -2,6 +2,7 @@ import {
   AppShell as MantineAppShell,
   Box,
   Burger,
+  Collapse,
   Group,
   NavLink,
   Stack,
@@ -10,17 +11,19 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
-import { useEffect, type ReactNode } from "react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState, type ReactNode } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "../icons/Icon";
 import { NAV, PAGE_TITLES, TABBAR } from "../nav";
-import { roleLabel, useSession } from "../session";
+import { useSession } from "../session";
 import { useStatus } from "../status";
+import { ConnectionBanner } from "../components/ConnectionBanner";
 import { ServerUpdatedBanner } from "../components/ServerUpdatedBanner";
 import { BrandMark } from "./BrandMark";
-import { ConnectionPill } from "./ConnectionPill";
+import { ConnectionStatus } from "./ConnectionStatus";
 import { MiniStatus } from "./MiniStatus";
-import { ThemePicker } from "./ThemePicker";
+import { RouteBoundary } from "./RouteBoundary";
+import { UserMenu } from "./UserMenu";
 import "./shell.css";
 
 export function AppShell() {
@@ -38,32 +41,56 @@ export function AppShell() {
     window.scrollTo(0, 0);
   }, [title]);
 
+  // Operate and Repeater start open; a group also opens when the current page is in it.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(["Operate", "Repeater"]));
+  const toggleGroup = (label: string) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+
   const nav = (
-    <Stack gap={4} px="xs">
-      {NAV.map((group) => (
-        <Box key={group.label ?? "top"} mb={group.label ? 8 : 0}>
-          {group.label ? (
-            <Text size="xs" c="dimmed" tt="uppercase" fw={600} px="sm" mb={4} style={{ letterSpacing: "0.08em" }}>
-              {group.label}
-            </Text>
-          ) : null}
-          {group.items
-            .filter((item) => !item.adminOnly || session?.role === "admin")
-            .map((item) => (
-              <NavLink
-                key={item.id}
-                className="mor-nav-link"
-                component={Link}
-                to={`/${item.id}`}
-                label={item.label}
-                leftSection={<Icon name={item.icon} size={18} />}
-                active={view === item.id}
-                onClick={close}
-                variant="subtle"
-              />
-            ))}
-        </Box>
-      ))}
+    <Stack gap={2} px="xs">
+      {NAV.map((group) => {
+        const items = group.items.filter((item) => !item.adminOnly || session?.role === "admin");
+        if (!items.length) return null;
+        const hasActive = items.some((item) => item.id === view);
+        const open = hasActive || openGroups.has(group.label);
+        const panelId = `nav-group-${group.label.toLowerCase()}`;
+        return (
+          <Box key={group.label} mb={4}>
+            <UnstyledButton
+              className="mor-nav-group"
+              onClick={() => toggleGroup(group.label)}
+              aria-expanded={open}
+              aria-controls={panelId}
+              disabled={hasActive}
+            >
+              <span>{group.label}</span>
+              <svg className="mor-nav-group-chevron" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" data-open={open || undefined}>
+                <path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </UnstyledButton>
+            <Collapse expanded={open} id={panelId}>
+              {items.map((item) => (
+                <NavLink
+                  key={item.id}
+                  className="mor-nav-link"
+                  component={Link}
+                  to={`/${item.id}`}
+                  label={item.label}
+                  leftSection={<Icon name={item.icon} size={18} />}
+                  active={view === item.id}
+                  onClick={close}
+                  variant="subtle"
+                />
+              ))}
+            </Collapse>
+          </Box>
+        );
+      })}
     </Stack>
   );
 
@@ -93,45 +120,29 @@ export function AppShell() {
             <BrandMark size={26} />
             <Text fw={700}>moreopenrepeater</Text>
           </Group>
-          <Box
-            p="sm"
-            style={{
-              border: "1px solid var(--mor-border, var(--mantine-color-default-border))",
-              borderRadius: "10px",
-              background: "var(--mor-panel, var(--mantine-color-body))",
-            }}
-          >
-            <Text size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.08em" }}>
-              Station
-            </Text>
-            <Text ff="monospace" fw={700} size="md">
-              {status?.callsign || "(no callsign)"}
-            </Text>
+          <Box className="mor-station">
+            {status?.callsign ? (
+              <Text ff="monospace" fw={700} size="lg" component={Link} to="/identification" className="mor-station-call">
+                {status.callsign}
+              </Text>
+            ) : (
+              <Text size="sm" component={Link} to="/identification" className="mor-station-call">
+                Set a callsign
+              </Text>
+            )}
           </Box>
           <Box style={{ flex: 1, overflow: "auto" }}>{nav}</Box>
-          <Stack gap="sm">
-            <ThemePicker />
-            <ConnectionPill connected={connected} />
-            {session?.auth_required ? (
-              <Box>
-                <Text size="sm" c="dimmed">
-                  Signed in as <Text span fw={600}>{session.username}</Text>{" "}
-                  <Text span size="xs" c="dimmed">
-                    {roleLabel(session.role)}
-                  </Text>
-                </Text>
-                <UnstyledButton mt={4} onClick={() => logout()} style={{ color: "var(--mantine-color-dimmed)" }}>
-                  Sign out
-                </UnstyledButton>
-              </Box>
-            ) : null}
+          <Stack gap="xs">
+            <ConnectionStatus connected={connected} />
+            <UserMenu session={session} onSignOut={() => void logout()} />
           </Stack>
         </Stack>
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>
         <ServerUpdatedBanner />
-        <Outlet />
+        <ConnectionBanner />
+        <RouteBoundary />
       </MantineAppShell.Main>
 
       <MantineAppShell.Footer hiddenFrom="md" px={0}>
@@ -182,19 +193,32 @@ export function AppShell() {
   );
 }
 
-export function Page({ title, children, description }: { title: string; description?: string; children?: ReactNode }) {
+export function Page({
+  title,
+  children,
+  description,
+  actions,
+}: {
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+  children?: ReactNode;
+}) {
   return (
     <Stack gap="md">
-      <Box>
-        <Title order={1} className="mor-page-title" tabIndex={-1}>
-          {title}
-        </Title>
-        {description ? (
-          <Text c="dimmed" maw="75ch">
-            {description}
-          </Text>
-        ) : null}
-      </Box>
+      <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
+        <Box>
+          <Title order={1} className="mor-page-title" tabIndex={-1}>
+            {title}
+          </Title>
+          {description ? (
+            <Text c="dimmed" maw="75ch">
+              {description}
+            </Text>
+          ) : null}
+        </Box>
+        {actions}
+      </Group>
       {children}
     </Stack>
   );

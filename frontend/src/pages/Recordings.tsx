@@ -24,6 +24,9 @@ import { labeled } from "../components/FieldHint";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
+import { Stat } from "../components/Stat";
+import { formatAirtime } from "../format";
+import { ActionsHeader } from "../components/ActionsHeader";
 
 type Recording = {
   id: string;
@@ -69,12 +72,6 @@ const TRANSCRIPTION_DEFAULTS: TranscriptionValues = {
   transcription_model: "whisper-1",
 };
 
-function formatAirtime(seconds: number) {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
-  return `${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
-}
-
 function dayStartIso(date: string) {
   return new Date(`${date}T00:00:00`).toISOString();
 }
@@ -83,16 +80,6 @@ function dayAfterIso(date: string) {
   const next = new Date(`${date}T00:00:00`);
   next.setDate(next.getDate() + 1);
   return next.toISOString();
-}
-
-function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
-  return (
-    <Card withBorder padding="md" radius="md">
-      <Text size="xs" c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>{label}</Text>
-      <Text fw={700} style={{ fontSize: "1.5rem", fontVariantNumeric: "tabular-nums" }}>{value}</Text>
-      {note ? <Text size="xs" c="dimmed">{note}</Text> : null}
-    </Card>
-  );
 }
 
 function isOpenAiHost(url: string) {
@@ -232,7 +219,7 @@ export function Recordings() {
   const filtersActive = Boolean(search || callsign || afterDate || beforeDate);
 
   return (
-    <Page title="Recordings" description="Saved transmissions and transcripts.">
+    <Page title="Recordings">
       <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => { event.preventDefault(); void rec.submit(); }}>
         <Stack gap="md">
           <Title order={2}>Save transmissions</Title>
@@ -379,7 +366,7 @@ export function Recordings() {
                   <Table.Th>Callsign</Table.Th>
                   <Table.Th>Length</Table.Th>
                   <Table.Th>Listen</Table.Th>
-                  <Table.Th />
+                  <ActionsHeader />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -482,10 +469,7 @@ export function Recordings() {
         }}
       >
         <Stack gap="md">
-          <Title order={2}>Transcripts</Title>
-          <Text c="dimmed" size="sm" maw="75ch">
-            Turn recordings and mailbox messages into searchable text, with callsigns picked out. Recordings need to be turned on above.
-          </Text>
+          <Title order={2}>{labeled("Transcripts", <>Turn recordings and mailbox messages into searchable text, with callsigns picked out. Recordings need to be turned on above.</>)}</Title>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <Select
               label="Transcribe with"

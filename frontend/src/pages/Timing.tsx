@@ -11,10 +11,12 @@ import {
   Title,
 } from "@mantine/core";
 import { Link } from "react-router-dom";
+import { CtcssToneSelect } from "../components/audio/CtcssToneSelect";
+import { CTCSS_TONES } from "../components/audio/constants";
 import { ConfigActions } from "../components/ConfigActions";
 import { useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
-import { labeled } from "../components/FieldHint";
+import { labeled, InfoNote } from "../components/FieldHint";
 
 type TimingValues = {
   transmitter_enabled: boolean;
@@ -69,9 +71,11 @@ export function Timing() {
   const lockoutOn = values.lockout_timeouts > 0;
   const isSimplex = values.node_mode === "simplex";
   const needsToneBurst = values.access_mode === "tone_burst";
+  const standardTone = values.require_ctcss_hz === "" || CTCSS_TONES.includes(Number(values.require_ctcss_hz));
+  const lastSeconds = (values.courtesy_tone_duration + values.hang_time).toFixed(1);
 
   return (
-    <Page title="Timing" description="How long the repeater stays keyed, and what opens it.">
+    <Page title="Timing">
       <Card
         withBorder
         padding="lg"
@@ -84,23 +88,16 @@ export function Timing() {
       >
         <Stack gap="md">
           <Switch
-            label={labeled(
-              "Transmitter enabled",
-              "Off is dry-run: the receiver, COS, DTMF and logic keep running, but PTT never keys. Distinct from the Simulator (fake inputs).",
-            )}
-            description={
-              values.transmitter_enabled
+            label={labeled("Transmitter enabled", <>{"Off is dry-run: the receiver, COS, DTMF and logic keep running, but PTT never keys. Distinct from the Simulator (fake inputs)."}<br />{values.transmitter_enabled
                 ? undefined
-                : "Dry-run active — PTT stays down. Turn back on before putting the repeater on the air."
-            }
+                : "Dry-run active — PTT stays down. Turn back on before putting the repeater on the air."}</>)}
             checked={values.transmitter_enabled}
             onChange={(event) => setField("transmitter_enabled", event.currentTarget.checked)}
           />
 
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <NumberInput
-              label="Hang time"
-              description="Seconds after the courtesy tone"
+              label={labeled("Hang time", "Seconds after the courtesy tone")}
               suffix=" s"
               min={0.1}
               step={0.1}
@@ -110,8 +107,7 @@ export function Timing() {
               required
             />
             <NumberInput
-              label="Timeout timer (TOT)"
-              description="Max continuous transmission"
+              label={labeled("Time-out timer (TOT)", "Max continuous transmission")}
               suffix=" s"
               min={1}
               step={1}
@@ -120,8 +116,7 @@ export function Timing() {
               required
             />
             <NumberInput
-              label="Courtesy tone duration"
-              description="How long the courtesy tone plays"
+              label={labeled("Courtesy tone duration", "How long the courtesy tone plays")}
               suffix=" s"
               min={0.1}
               step={0.1}
@@ -131,8 +126,7 @@ export function Timing() {
               required
             />
             <Select
-              label="Access"
-              description="What opens the repeater"
+              label={labeled("Access", "What opens the repeater")}
               data={[
                 { value: "carrier", label: "Every transmission" },
                 { value: "ctcss_open", label: "CTCSS opens, then carrier" },
@@ -141,23 +135,29 @@ export function Timing() {
               value={values.access_mode}
               onChange={(value) => setField("access_mode", value || "carrier")}
             />
-            <NumberInput
-              label="Required CTCSS tone"
-              description="Optional · blank = none"
-              suffix=" Hz"
-              min={0}
-              step={0.1}
-              decimalScale={1}
-              placeholder=""
-              value={values.require_ctcss_hz === "" ? undefined : values.require_ctcss_hz}
-              onChange={(value) =>
-                setField("require_ctcss_hz", value === "" || value === undefined ? "" : Number(value))
-              }
-            />
+            {standardTone ? (
+              <CtcssToneSelect
+                label={labeled("Required CTCSS tone", "Optional. Leave empty to accept any signal.")}
+                placeholder="Any signal"
+                value={values.require_ctcss_hz === "" ? null : String(values.require_ctcss_hz)}
+                onChange={(value) => setField("require_ctcss_hz", value ? Number(value) : "")}
+              />
+            ) : (
+              <NumberInput
+                label={labeled("Required CTCSS tone", "Custom tone. Clear it to accept any signal.")}
+                suffix=" Hz"
+                min={0}
+                step={0.1}
+                decimalScale={1}
+                value={values.require_ctcss_hz === "" ? undefined : values.require_ctcss_hz}
+                onChange={(value) =>
+                  setField("require_ctcss_hz", value === "" || value === undefined ? "" : Number(value))
+                }
+              />
+            )}
             {needsToneBurst ? (
               <NumberInput
-                label="Tone burst length"
-                description="Shortest 1750 Hz burst that opens it · 500 ms typical"
+                label={labeled("Tone burst length", "Shortest 1750 Hz burst that opens it · 500 ms typical")}
                 suffix=" ms"
                 min={100}
                 max={2000}
@@ -169,9 +169,15 @@ export function Timing() {
             ) : null}
           </SimpleGrid>
 
-          <Title order={2} c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>
-            Mode
-          </Title>
+          <InfoNote label="What these timers add up to">
+            When someone stops talking, the repeater plays the courtesy tone for{" "}
+            <span className="mor-num">{values.courtesy_tone_duration} s</span>, holds for{" "}
+            <span className="mor-num">{values.hang_time} s</span> in case of a reply, then drops the transmitter. That is{" "}
+            <span className="mor-num">{lastSeconds} s</span> from the end of the last transmission. A transmission
+            longer than <span className="mor-num">{values.tot_duration} s</span> times out.
+          </InfoNote>
+
+          <Title order={2}>Mode</Title>
           <Select
             label="This station is a"
             maw={320}
@@ -183,12 +189,12 @@ export function Timing() {
             onChange={(value) => setField("node_mode", value || "repeater")}
           />
           {isSimplex ? (
-            <Text c="dimmed" size="sm" maw="75ch">
+            <InfoNote>
               One radio on one frequency. Locals go to the links but aren&apos;t repeated; linked stations go out when
               nobody local is talking.
-            </Text>
+            </InfoNote>
           ) : (
-            <Alert color="gray" title="Half-duplex radios">
+            <Alert color="gray" variant="light" title="Half-duplex radios">
               A single Digirig + HT cannot hear while it transmits. For that hardware use Simplex node, or separate RX
               and TX radios. See{" "}
               <Text span component={Link} to="/audio" fw={600} style={{ color: "inherit" }}>
@@ -211,8 +217,7 @@ export function Timing() {
               <Accordion.Panel>
                 <Stack gap="md">
                   <NumberInput
-                    label="Kerchunk filter"
-                    description="Key-up must last this long before the repeater comes up · 0 = off"
+                    label={labeled("Kerchunk filter", "Key-up must last this long before the repeater comes up · 0 = off")}
                     suffix=" s"
                     min={0}
                     max={3}
@@ -222,17 +227,12 @@ export function Timing() {
                     onChange={(value) => setField("kerchunk_delay", Number(value) || 0)}
                     required
                   />
-                  <Title order={3} size="h5" c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>
-                    Stuck-carrier lockout
-                  </Title>
-                  <Text c="dimmed" size="sm" maw="75ch">
-                    After enough timeouts the repeater stops repeating until the channel has been quiet. IDs still go
-                    out.
-                  </Text>
+                  <Title order={3} className="mor-card-title">
+                    {labeled("Stuck-carrier lockout", <>After enough timeouts the repeater stops repeating until the channel has been quiet. IDs still go
+                    out.</>)}</Title>
                   <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                     <NumberInput
-                      label="Lock out after"
-                      description="0 turns lockout off"
+                      label={labeled("Lock out after", "0 turns lockout off")}
                       suffix=" timeouts"
                       min={0}
                       max={20}
@@ -252,8 +252,7 @@ export function Timing() {
                           required
                         />
                         <NumberInput
-                          label="Clear after quiet for"
-                          description="Or clear from the dashboard / a DTMF macro"
+                          label={labeled("Clear after quiet for", "Or clear from the dashboard / a DTMF macro")}
                           suffix=" s"
                           min={5}
                           max={3600}

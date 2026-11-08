@@ -1,18 +1,12 @@
-import {
-  Badge,
-  Button,
-  Card,
-  Group,
-  SegmentedControl,
-  SimpleGrid,
-  Table,
-  Text,
-} from "@mantine/core";
+import { Button, Card, Group, SegmentedControl, SimpleGrid, Text } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { BarChart, type Bar } from "../components/BarChart";
 import { notifyError } from "../config";
+import { formatAirtime } from "../format";
 import { Page } from "../layout/AppShell";
+import { RecentActivity, type Transmission } from "./dashboard/RecentActivity";
 
 type UsageSummary = {
   rx_seconds: number;
@@ -29,22 +23,20 @@ type UsageSummary = {
   by_day: { date: string; rx_seconds: number; tx_seconds: number; rx_count?: number }[];
 };
 
-type Transmission = { started_at: string; duration: number; timed_out: boolean };
+const RANGES = [
+  { label: "24 hours", value: "1", phrase: "in the last 24 hours" },
+  { label: "7 days", value: "7", phrase: "in the last 7 days" },
+  { label: "30 days", value: "30", phrase: "in the last 30 days" },
+  { label: "90 days", value: "90", phrase: "in the last 90 days" },
+];
 
-function formatAirtime(seconds: number) {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
-  return `${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
+function hourLabel(hour: number) {
+  const h = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h} ${hour < 12 ? "AM" : "PM"}`;
 }
 
-function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
-  return (
-    <Card withBorder padding="md" radius="md">
-      <Text size="xs" c="dimmed" tt="uppercase" style={{ letterSpacing: "0.06em" }}>{label}</Text>
-      <Text fw={700} style={{ fontSize: "1.5rem", fontVariantNumeric: "tabular-nums" }}>{value}</Text>
-      {note ? <Text size="xs" c="dimmed">{note}</Text> : null}
-    </Card>
-  );
+function dayText(iso: string) {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 export function Activity() {
@@ -74,50 +66,114 @@ export function Activity() {
   }, [loadActivity]);
 
   const s = summary;
-  const kerchunkNote = s == null ? "" : `under 1.5 s${s.rx_count ? ` · ${Math.round((100 * s.kerchunks) / s.rx_count)}%` : ""}${s.kerchunks_filtered ? ` · ${s.kerchunks_filtered} more filtered out` : ""}`;
+  const range = RANGES.find((r) => r.value === days) ?? RANGES[1];
+  const kerchunkNote =
+    s == null
+      ? ""
+      : `${s.rx_count ? `${Math.round((100 * s.kerchunks) / s.rx_count)}% of transmissions` : "Under 1.5 s"}${
+          s.kerchunks_filtered ? `, ${s.kerchunks_filtered} more filtered out` : ""
+        }`;
+
+  const hourBars: Bar[] = (s?.by_hour ?? []).map((value, hour) => ({
+    key: String(hour),
+    label: hourLabel(hour),
+    value,
+  }));
+  const dayBars: Bar[] = (s?.by_day ?? []).map((row) => ({
+    key: row.date,
+    label: dayText(row.date),
+    value: row.rx_seconds,
+  }));
+  const dayStep = Math.max(1, Math.ceil(dayBars.length / 6));
 
   return (
-    <Page title="Activity" description="How much the repeater gets used.">
+    <Page title="Activity">
       <Group justify="space-between" wrap="wrap">
-        <Button component={Link} to="/recordings" variant="light" size="sm">
+        <SegmentedControl
+          value={days}
+          onChange={setDays}
+          aria-label="Time range"
+          data={RANGES.map(({ label, value }) => ({ label, value }))}
+        />
+        <Button component={Link} to="/recordings" variant="default" size="sm">
           Open recordings
         </Button>
-        <SegmentedControl value={days} onChange={setDays} data={[
-          { label: "24 h", value: "1" },
-          { label: "7 days", value: "7" },
-          { label: "30 days", value: "30" },
-          { label: "90 days", value: "90" },
-        ]} />
       </Group>
 
       {s ? (
-        <SimpleGrid cols={{ base: 2, sm: 3, lg: 6 }} spacing="sm">
-          <Stat label="User airtime" value={formatAirtime(s.rx_seconds)} note={`${s.rx_count} transmissions`} />
-          <Stat label="Transmitter on" value={formatAirtime(s.tx_seconds)} note="incl. tails, IDs, announcements" />
-          <Stat label="Longest" value={formatAirtime(s.longest_rx_seconds)} note="single transmission" />
-          <Stat label="Kerchunks" value={String(s.kerchunks)} note={kerchunkNote} />
-          <Stat label="Timeouts" value={String(s.timeouts)} note={s.lockouts ? `${s.lockouts} stuck-carrier lockouts` : "timeout timer tripped"} />
-          <Stat label="IDs / announcements" value={`${s.ids} / ${s.announcements}`} />
-        </SimpleGrid>
+        <>
+          <Card withBorder padding="lg" radius="md" component="section" aria-label="Summary">
+            <div className="mor-sum">
+              <div>
+                <Text size="sm" c="dimmed">
+                  User airtime
+                </Text>
+                <span className="mor-sum-hero-value mor-num">{formatAirtime(s.rx_seconds)}</span>
+                <Text size="sm" c="dimmed">
+                  {s.rx_count} {s.rx_count === 1 ? "transmission" : "transmissions"} {range.phrase}
+                </Text>
+              </div>
+              <dl className="mor-sum-list">
+                <div>
+                  <dt>Transmitter on</dt>
+                  <dd className="mor-num">
+                    {formatAirtime(s.tx_seconds)}
+                    <small>Includes tails, IDs and announcements</small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Longest</dt>
+                  <dd className="mor-num">
+                    {formatAirtime(s.longest_rx_seconds)}
+                    <small>Single transmission</small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Kerchunks</dt>
+                  <dd className="mor-num">
+                    {s.kerchunks}
+                    <small>{kerchunkNote}</small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Time-outs</dt>
+                  <dd className="mor-num">
+                    {s.timeouts}
+                    <small>{s.lockouts ? `${s.lockouts} stuck-carrier lockouts` : "Time-out timer tripped"}</small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>IDs and announcements</dt>
+                  <dd className="mor-num">
+                    {s.ids} and {s.announcements}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </Card>
+
+          <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
+            <BarChart
+              title="Airtime by hour"
+              hint="When people use the repeater, by hour of day on the controller's clock."
+              bars={hourBars}
+              format={formatAirtime}
+              tickLabel={(_, i) => (i % 6 === 0 ? hourLabel(i) : null)}
+              emptyText="No user airtime in this range."
+            />
+            <BarChart
+              title="Airtime by day"
+              hint="User airtime on each day."
+              bars={dayBars}
+              format={formatAirtime}
+              tickLabel={(bar, i) => (i % dayStep === 0 ? bar.label : null)}
+              emptyText="No user airtime in this range."
+            />
+          </SimpleGrid>
+        </>
       ) : null}
 
-      <Card withBorder padding="lg" radius="md">
-        <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} mb="sm" style={{ letterSpacing: "0.06em" }}>Recent transmissions</Text>
-        {recent.length ? (
-          <Table striped highlightOnHover>
-            <Table.Thead><Table.Tr><Table.Th>When</Table.Th><Table.Th>Length</Table.Th><Table.Th /></Table.Tr></Table.Thead>
-            <Table.Tbody>
-              {recent.map((row) => (
-                <Table.Tr key={row.started_at}>
-                  <Table.Td>{new Date(row.started_at).toLocaleString()}</Table.Td>
-                  <Table.Td>{formatAirtime(row.duration)}</Table.Td>
-                  <Table.Td>{row.timed_out ? <Badge color="red" variant="light">timed out</Badge> : row.duration < 1.5 ? <Badge variant="outline">kerchunk</Badge> : null}</Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        ) : <Text c="dimmed" size="sm">No transmissions recorded yet. Try the Simulator.</Text>}
-      </Card>
+      <RecentActivity rows={recent} showLink={false} />
     </Page>
   );
 }

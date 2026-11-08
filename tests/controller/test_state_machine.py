@@ -789,3 +789,30 @@ def test_announcement_waits_while_a_key_up_is_pending():
     assert controller.state == IDLE
     controller.tick(now=0.3)
     assert controller.state == RECEIVING
+
+
+def test_timers_report_time_left_for_the_dashboard():
+    controller = RepeaterController(make_config(), now=0.0)
+    assert controller.timers(0.0) == (None, None, None)  # idle, no ID owed
+
+    controller.handle_event(COSChanged(active=True), now=0.0)
+    tot, hang, next_id = controller.timers(2.0)
+    assert tot == 3.0  # tot_duration 5
+    assert hang is None
+    assert next_id is not None and next_id > 0  # transmitting makes an ID owed
+
+    controller.handle_event(COSChanged(active=False), now=2.5)
+    controller.tick(now=2.7)  # courtesy tone ends, hang time starts
+    assert controller.state == HANG_TIME
+    tot, hang, _ = controller.timers(3.0)
+    assert tot is None
+    assert hang is not None and 0 < hang <= 1.0
+
+
+def test_status_includes_timers():
+    import dataclasses
+
+    from api.service.snapshot import StatusSnapshot
+
+    fields = {f.name for f in dataclasses.fields(StatusSnapshot)}
+    assert {"tot_remaining", "hang_remaining", "id_due_in"} <= fields

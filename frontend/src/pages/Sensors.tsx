@@ -13,6 +13,7 @@ import {
   Title,
 } from "@mantine/core";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { EmptyState } from "../components/EmptyState";
 import { api } from "../api";
 import { ConfigActions } from "../components/ConfigActions";
 import { labeled } from "../components/FieldHint";
@@ -189,7 +190,7 @@ export function Sensors() {
   const readingFor = (id: string) => status?.sensors.find((sensor) => sensor.id === id);
 
   return (
-    <Page title="Site sensors" description="Temperature and voltage probes, with optional threshold alerts.">
+    <Page title="Site sensors">
       <Card
         withBorder
         padding="lg"
@@ -201,7 +202,7 @@ export function Sensors() {
         }}
       >
         <Stack gap="md">
-          <Title order={3} size="h4">
+          <Title order={2} size="h4">
             Polling
           </Title>
           <Switch
@@ -210,8 +211,7 @@ export function Sensors() {
             onChange={(event) => settings.setField("sensors_enabled", event.currentTarget.checked)}
           />
           <NumberInput
-            label="Poll interval"
-            description="Seconds between reads when polling is on"
+            label={labeled("Poll interval", "Seconds between reads when polling is on")}
             min={5}
             max={3600}
             value={settings.values.sensors_poll_interval}
@@ -224,7 +224,7 @@ export function Sensors() {
       <Card withBorder padding="lg" radius="md" component="form" onSubmit={(event) => void saveSensors(event)}>
         <Stack gap="md">
           <Group justify="space-between">
-            <Title order={3} size="h4">
+            <Title order={2} size="h4">
               Sensors
             </Title>
             <Button variant="light" onClick={addSensor} type="button">
@@ -233,10 +233,10 @@ export function Sensors() {
           </Group>
 
           {sensors.length === 0 ? (
-            <Text c="dimmed" size="sm">
+            <EmptyState>
               No sensors yet. Add a DS18B20 for temperature, or an ADS1115 channel with scale and offset for a
               voltage divider.
-            </Text>
+            </EmptyState>
           ) : (
             <Stack gap="lg">
               {sensors.map((sensor, index) => {
@@ -260,8 +260,7 @@ export function Sensors() {
                     </Group>
                     <Group grow align="flex-start">
                       <TextInput
-                        label="Id"
-                        description="Used by the sensor DTMF macro"
+                        label={labeled("Id", "Used by the sensor DTMF macro")}
                         value={sensor.id}
                         onChange={(event) => updateSensor(index, { id: event.currentTarget.value })}
                         required
@@ -294,8 +293,7 @@ export function Sensors() {
                     </Group>
                     {sensor.type === "ds18b20" ? (
                       <TextInput
-                        label="1-wire device"
-                        description="Optional · blank uses the first sensor found"
+                        label={labeled("1-wire device", "Optional · blank uses the first sensor found")}
                         placeholder="e.g. 28-…"
                         value={sensor.device}
                         onChange={(event) => updateSensor(index, { device: event.currentTarget.value })}
@@ -310,8 +308,7 @@ export function Sensors() {
                           onChange={(value) => updateSensor(index, { bus: Number(value) || 1 })}
                         />
                         <NumberInput
-                          label="Address"
-                          description="0x48–0x4B as decimal"
+                          label={labeled("Address", "0x48–0x4B as decimal")}
                           min={0x48}
                           max={0x4b}
                           value={sensor.address}
@@ -328,8 +325,7 @@ export function Sensors() {
                     )}
                     <Group grow>
                       <NumberInput
-                        label="High threshold"
-                        description="Optional"
+                        label={labeled("High threshold", "Optional")}
                         decimalScale={3}
                         value={sensor.high ?? ""}
                         onChange={(value) =>
@@ -337,8 +333,7 @@ export function Sensors() {
                         }
                       />
                       <NumberInput
-                        label="Low threshold"
-                        description="Optional"
+                        label={labeled("Low threshold", "Optional")}
                         decimalScale={3}
                         value={sensor.low ?? ""}
                         onChange={(value) =>

@@ -12,7 +12,7 @@ import { useState } from "react";
 import { ConfigActions } from "../ConfigActions";
 import { ConfigEditDrawer } from "../ConfigEditDrawer";
 import { ConfigSummaryCard } from "../ConfigSummaryCard";
-import { labeled } from "../FieldHint";
+import { labeled, InfoNote } from "../FieldHint";
 import { TONE_STYLES, TONE_VARIANT_STYLES } from "./constants";
 import { assetOptions } from "./helpers";
 import type { Asset, ConfigSlice, SoundValues } from "./types";
@@ -106,8 +106,7 @@ export function SoundsCard({
                 allowDeselect={false}
               />
               <Select
-                label="Courtesy tone clip"
-                description="Overrides the built-in tone when set"
+                label={labeled("Courtesy tone clip", "Overrides the built-in tone when set")}
                 data={assetOptions(assets, "courtesy_tone")}
                 value={sounds.values.courtesy_tone_asset_id || null}
                 onChange={(value) => sounds.setField("courtesy_tone_asset_id", value || "")}
@@ -139,9 +138,9 @@ export function SoundsCard({
               <Accordion.Item value="link">
                 <Accordion.Control>After a linked station</Accordion.Control>
                 <Accordion.Panel>
-                  <Text c="dimmed" size="sm" mb="md" maw="75ch">
+                  <InfoNote>
                     Optional different tone so listeners know a linked station just spoke.
-                  </Text>
+                  </InfoNote>
                   <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                     <Select
                       label="Built-in tone"
@@ -204,10 +203,10 @@ export function SoundsCard({
               <Accordion.Item value="custom">
                 <Accordion.Control>Custom tone</Accordion.Control>
                 <Accordion.Panel>
-                  <Text c="dimmed" size="sm" mb="md" maw="75ch">
+                  <InfoNote>
                     Up to four parts. Pick &quot;Custom&quot; in a tone list to use it. Pitch 0 is a pause; empty parts are
                     skipped.
-                  </Text>
+                  </InfoNote>
                   <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                     {customParts.map((part, index) => (
                       <Group key={index} grow align="flex-end">

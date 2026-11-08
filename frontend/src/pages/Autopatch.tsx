@@ -7,7 +7,6 @@ import {
   SimpleGrid,
   Stack,
   Switch,
-  Text,
   TextInput,
 } from "@mantine/core";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -18,7 +17,7 @@ import { ConfigSummaryCard } from "../components/ConfigSummaryCard";
 import { notifyError, notifySuccess, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
-import { labeled } from "../components/FieldHint";
+import { labeled, InfoNote } from "../components/FieldHint";
 
 const REFRESH_MS = 1000;
 const TRUNK_REFRESH_MS = 5000;
@@ -514,7 +513,16 @@ export function Autopatch() {
   const settingsDirty = patch.dirty || incoming.dirty;
 
   return (
-    <Page title="Autopatch" description="Place and answer phone calls through the repeater.">
+    <Page title="Autopatch">
+      {status && !status.configured ? (
+        <ConfigSummaryCard
+          title="Connect Asterisk first"
+          badge="Not connected"
+          badgeColor="gray"
+          blurb="Autopatch places and answers phone calls through Asterisk. Set MOREOPENREPEATER_AMI_HOST, MOREOPENREPEATER_AMI_USER and MOREOPENREPEATER_AMI_SECRET in the service's environment and restart it. The call and phone line settings show up here once it can reach Asterisk (see the setup guide)."
+        />
+      ) : (
+        <>
       <ConfigSummaryCard
         title="Call"
         badge={status?.call ? "In call" : undefined}
@@ -546,9 +554,9 @@ export function Autopatch() {
             </Button>
           ) : null}
         </Group>
-        <Text c="dimmed" size="sm">
+        <InfoNote>
           A test call goes out over the air like a DTMF-dialed one.
-        </Text>
+        </InfoNote>
       </ConfigSummaryCard>
 
       <ConfigSummaryCard
@@ -585,6 +593,8 @@ export function Autopatch() {
           ) : undefined
         }
       />
+        </>
+      )}
 
       <ConfigEditDrawer
         opened={editingTrunk}
@@ -627,11 +637,10 @@ export function Autopatch() {
                   onChange={(event) => setTrunkField("username", event.currentTarget.value)}
                 />
                 <TextInput
-                  label="Password"
+                  label={labeled("Password", trunk?.trunk?.has_password ? "Leave blank to keep the saved password" : undefined)}
                   type="password"
                   autoComplete="new-password"
                   required={!trunk?.trunk?.has_password}
-                  description={trunk?.trunk?.has_password ? "Leave blank to keep the saved password" : undefined}
                   placeholder={trunk?.trunk?.has_password ? "Saved" : undefined}
                   value={trunkForm.password}
                   onChange={(event) => setTrunkField("password", event.currentTarget.value)}
@@ -659,8 +668,7 @@ export function Autopatch() {
                   <Accordion.Panel>
                     <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                       <TextInput
-                        label="Login name"
-                        description="Leave blank to use the username"
+                        label={labeled("Login name", "Leave blank to use the username")}
                         autoComplete="off"
                         spellCheck={false}
                         placeholder=""
@@ -686,11 +694,7 @@ export function Autopatch() {
                         allowDeselect={false}
                       />
                       <TextInput
-                        label={labeled(
-                          "Calls in come from",
-                          "Addresses or networks, separated by spaces, that your provider sends calls from besides the server.",
-                        )}
-                        description="Leave blank to use the server only"
+                        label={labeled("Calls in come from", <>Addresses or networks, separated by spaces, that your provider sends calls from besides the server.<br />Leave blank to use the server only</>)}
                         autoComplete="off"
                         spellCheck={false}
                         placeholder=""
@@ -713,10 +717,10 @@ export function Autopatch() {
                   Save phone line
                 </Button>
               </Group>
-              <Text c="dimmed" size="sm">
+              <InfoNote>
                 Saving writes the line to Asterisk&apos;s pjsip.conf and points autopatch at it. The first save also restarts
                 Asterisk.
-              </Text>
+              </InfoNote>
             </Stack>
           </form>
         ) : null}
@@ -725,7 +729,7 @@ export function Autopatch() {
       <ConfigSummaryCard
         title="Settings"
         dirty={settingsDirty}
-        blurb="Access codes, call limits, and whether inbound calls are answered."
+        hint="Access codes, call limits, and whether inbound calls are answered."
         onEdit={() => setEditingSettings(true)}
         rows={[
           { label: "Autopatch", value: patch.values.autopatch_enabled ? "On" : "Off" },
@@ -790,8 +794,7 @@ export function Autopatch() {
             />
             {incoming.values.autopatch_incoming_enabled ? (
               <TextInput
-                label={labeled("Inbound access code", "Callers key it in, then #. Calls aren't answered without one.")}
-                description="4 to 8 digits"
+                label={labeled("Inbound access code", <>Callers key it in, then #. Calls aren't answered without one.<br />4 to 8 digits</>)}
                 inputMode="numeric"
                 autoComplete="off"
                 placeholder="e.g. 1234"
@@ -864,8 +867,7 @@ export function Autopatch() {
                       onChange={(event) => patch.setField("autopatch_dial_string", event.currentTarget.value)}
                     />
                     <TextInput
-                      label="Caller ID"
-                      description='Optional · e.g. "Repeater" <+15551234567>'
+                      label={labeled("Caller ID", 'Optional · e.g. "Repeater" <+15551234567>')}
                       placeholder=""
                       autoComplete="off"
                       value={patch.values.autopatch_caller_id}

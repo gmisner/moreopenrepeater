@@ -218,7 +218,7 @@ export function Aprs() {
     : [...SYMBOLS, { value: beacon.values.aprs_symbol, label: beacon.values.aprs_symbol }];
 
   return (
-    <Page title="APRS" description="Beacon the station's position to APRS-IS, and optionally map nearby stations.">
+    <Page title="APRS">
       <Card
         withBorder
         padding="lg"
@@ -263,9 +263,11 @@ export function Aprs() {
               onChange={(event) => beacon.setField("aprs_comment", event.currentTarget.value)}
               style={{ gridColumn: "1 / -1" }}
             />
+            <Title order={2} size="h3" style={{ gridColumn: "1 / -1" }}>
+              Position
+            </Title>
             <NumberInput
-              label="Latitude"
-              description="Optional · blank = status beacon"
+              label={labeled("Latitude", "Optional · blank = status beacon")}
               placeholder=""
               min={-90}
               max={90}
@@ -277,8 +279,7 @@ export function Aprs() {
               }
             />
             <NumberInput
-              label="Longitude"
-              description="Optional · blank = status beacon"
+              label={labeled("Longitude", "Optional · blank = status beacon")}
               placeholder=""
               min={-180}
               max={180}
@@ -308,6 +309,18 @@ export function Aprs() {
                 </Button>
               }
             />
+            <Button
+              type="button"
+              variant="default"
+              loading={locating}
+              onClick={useDeviceLocation}
+              style={{ alignSelf: "end" }}
+            >
+              Use this device&apos;s location
+            </Button>
+            <Title order={2} size="h3" style={{ gridColumn: "1 / -1" }}>
+              On the air
+            </Title>
             <Select
               label="Map symbol"
               data={symbolData}
@@ -317,9 +330,8 @@ export function Aprs() {
               searchable
             />
             <NumberInput
-              label={labeled("Output frequency", "Lets APRS radios tune the repeater with one button")}
+              label={labeled("Output frequency", <>Lets APRS radios tune the repeater with one button<br />Optional</>)}
               suffix=" MHz"
-              description="Optional"
               placeholder=""
               min={28}
               max={1300}
@@ -344,13 +356,10 @@ export function Aprs() {
               }
             />
             <NumberInput
-              label="Access tone"
-              suffix=" Hz"
-              description={
-                requiredTone
+              label={labeled("Access tone", requiredTone
                   ? `Optional · blank uses required CTCSS (${requiredTone} Hz)`
-                  : "Optional · blank = none"
-              }
+                  : "Optional · blank = none")}
+              suffix=" Hz"
               placeholder=""
               min={60}
               max={260}
@@ -387,12 +396,7 @@ export function Aprs() {
             </Accordion.Item>
           </Accordion>
 
-          <Group justify="space-between" wrap="wrap">
-            <Button type="button" variant="subtle" loading={locating} onClick={useDeviceLocation}>
-              Use this device&apos;s location
-            </Button>
-            <ConfigActions dirty={beacon.dirty} saving={beacon.saving} onReset={beacon.reset} />
-          </Group>
+          <ConfigActions dirty={beacon.dirty} saving={beacon.saving} onReset={beacon.reset} />
         </Stack>
       </Card>
 

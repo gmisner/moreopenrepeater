@@ -1,0 +1,1 @@
+import{t as e}from"./Table-DDEPxMVC.js";import{K as t}from"./AppShell-JTxptKEe.js";import{C as n}from"./BrandMark-CqUj2_No.js";var r=n();function i(){return(0,r.jsx)(e.Th,{children:(0,r.jsx)(t,{children:`Actions`})})}export{i as t};

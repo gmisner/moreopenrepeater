@@ -116,7 +116,6 @@ export function Configs() {
   return (
     <Page
       title="Known configs"
-      description="Community-tested radio and interface recipes. Trim levels on Audio & tones after applying a board preset."
     >
       <Card withBorder padding="lg" radius="md">
         <Stack gap="sm">
@@ -141,7 +140,7 @@ export function Configs() {
           <Card key={entry.id} withBorder padding="lg" radius="md" id={entry.id}>
             <Stack gap="sm">
               <Group justify="space-between" align="flex-start" wrap="wrap">
-                <Title order={3} size="h4">
+                <Title order={2} size="h4">
                   {entry.title}
                 </Title>
                 <Text size="sm" c="dimmed">

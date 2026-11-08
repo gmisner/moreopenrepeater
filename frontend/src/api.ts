@@ -1,3 +1,5 @@
+import { setReachable } from "./connection";
+
 export class ApiError extends Error {
   status: number;
 
@@ -29,7 +31,14 @@ async function request(path: string, { method = "GET", json, body }: { method?: 
   } else if (body !== undefined) {
     init.body = body;
   }
-  const response = await fetch(path, init);
+  let response: Response;
+  try {
+    response = await fetch(path, init);
+  } catch (error) {
+    setReachable(false);
+    throw error;
+  }
+  setReachable(true);
   if (response.status === 401 && path !== "/api/login") {
     location.replace("/login");
     throw new ApiError(401, "Your session has expired");

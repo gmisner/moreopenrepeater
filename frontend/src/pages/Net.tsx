@@ -24,6 +24,8 @@ import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config
 import { Page } from "../layout/AppShell";
 import { useStatus } from "../status";
 import { labeled } from "../components/FieldHint";
+import { EmptyState } from "../components/EmptyState";
+import { ActionsHeader } from "../components/ActionsHeader";
 
 type Checkin = { id: string; at: number; callsign: string; notes: string };
 
@@ -329,7 +331,7 @@ export function Net() {
   const linkNodeNeeded = settings.values.net_links === "connect";
 
   return (
-    <Page title="Net" description="Run a net with longer timeouts, check-ins, and optional schedules.">
+    <Page title="Net">
       <Card withBorder padding="lg" radius="md">
         <Group justify="space-between" align="flex-start">
           <div>
@@ -358,8 +360,7 @@ export function Net() {
           <form onSubmit={(event) => void startNet(event)}>
             <Group align="flex-end" mt="md" wrap="wrap">
               <TextInput
-                label="Name"
-                description="Optional · blank uses the default name"
+                label={labeled("Name", "Optional · blank uses the default name")}
                 style={{ flex: 1, minWidth: 180 }}
                 maxLength={60}
                 placeholder=""
@@ -399,8 +400,7 @@ export function Net() {
                 onChange={(event) => setCheckinCallsign(event.currentTarget.value)}
               />
               <TextInput
-                label="Notes"
-                description="Optional"
+                label={labeled("Notes", "Optional")}
                 style={{ flex: 1, minWidth: 200 }}
                 maxLength={300}
                 placeholder=""
@@ -420,7 +420,7 @@ export function Net() {
                   <Table.Th>Time</Table.Th>
                   <Table.Th>Callsign</Table.Th>
                   <Table.Th>Notes</Table.Th>
-                  <Table.Th />
+                  <ActionsHeader />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -523,7 +523,7 @@ export function Net() {
                 <Table.Th>Started</Table.Th>
                 <Table.Th>Length</Table.Th>
                 <Table.Th>Check-ins</Table.Th>
-                <Table.Th />
+                <ActionsHeader />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -555,16 +555,14 @@ export function Net() {
           </Table>
         </Table.ScrollContainer>
         {past.length === 0 ? (
-          <Text c="dimmed" size="sm" mt="sm">
-            No nets yet.
-          </Text>
+          <EmptyState>No nets yet.</EmptyState>
         ) : null}
       </Card>
 
       <ConfigSummaryCard
         title="Net settings"
         dirty={settings.dirty}
-        blurb="Defaults when a net starts: timeouts, holds, and what to say."
+        hint="Defaults when a net starts: timeouts, holds, and what to say."
         onEdit={() => setEditingSettings(true)}
         rows={[
           { label: "Default name", value: settings.values.net_name || "—" },
@@ -608,8 +606,7 @@ export function Net() {
                 onChange={(event) => settings.setField("net_name", event.currentTarget.value)}
               />
               <NumberInput
-                label="End by itself after"
-                description="In case nobody ends it"
+                label={labeled("End by itself after", "In case nobody ends it")}
                 suffix=" minutes"
                 min={10}
                 max={1440}
@@ -638,16 +635,14 @@ export function Net() {
                 required
               />
               <Select
-                label="Built-in courtesy tone"
-                description="Replaces every courtesy tone while the net runs"
+                label={labeled("Built-in courtesy tone", "Replaces every courtesy tone while the net runs")}
                 data={TONE_STYLES}
                 value={settings.values.net_courtesy_tone_style}
                 onChange={(value) => settings.setField("net_courtesy_tone_style", value || "same")}
                 allowDeselect={false}
               />
               <TextInput
-                label="Courtesy tone clip"
-                description="Asset id · blank = built-in tone"
+                label={labeled("Courtesy tone clip", "Asset id · blank = built-in tone")}
                 placeholder=""
                 value={settings.values.net_courtesy_tone_asset_id}
                 onChange={(event) => settings.setField("net_courtesy_tone_asset_id", event.currentTarget.value)}
@@ -683,8 +678,7 @@ export function Net() {
                       />
                       {linkNodeNeeded ? (
                         <TextInput
-                          label="Node"
-                          description="Dropped again when the net ends"
+                          label={labeled("Node", "Dropped again when the net ends")}
                           inputMode="numeric"
                           pattern="[0-9]{0,10}"
                           placeholder="e.g. 2000"
@@ -693,16 +687,14 @@ export function Net() {
                         />
                       ) : null}
                       <TextInput
-                        label="When the net starts"
-                        description="Spoken · blank = none"
+                        label={labeled("When the net starts", "Spoken · blank = none")}
                         placeholder=""
                         maxLength={500}
                         value={settings.values.net_start_say}
                         onChange={(event) => settings.setField("net_start_say", event.currentTarget.value)}
                       />
                       <TextInput
-                        label="When it ends"
-                        description="Spoken · {name} is the net's name · blank = none"
+                        label={labeled("When it ends", "Spoken · {name} is the net's name · blank = none")}
                         placeholder=""
                         maxLength={500}
                         value={settings.values.net_end_say}
@@ -721,7 +713,7 @@ export function Net() {
 
       <ConfigSummaryCard
         title="Scheduled nets"
-        blurb="Start net mode at a set time each week."
+        hint="Start net mode at a set time each week."
         onEdit={() => setEditingSchedules(true)}
         rows={[
           { label: "Schedules", value: scheduleSummary(schedules) },
@@ -759,8 +751,7 @@ export function Net() {
                       }}
                     />
                     <NumberInput
-                      label="Minutes"
-                      description="0 = until ended manually"
+                      label={labeled("Minutes", "0 = until ended manually")}
                       min={0}
                       max={720}
                       required
@@ -820,7 +811,7 @@ export function Net() {
               </Text>
             ) : null}
             <Group justify="space-between">
-              <Button type="button" variant="subtle" onClick={() => setSchedules([...schedules, emptySchedule()])}>
+              <Button type="button" variant="default" onClick={() => setSchedules([...schedules, emptySchedule()])}>
                 Add a schedule
               </Button>
               <Button type="submit" loading={schedulesSaving}>

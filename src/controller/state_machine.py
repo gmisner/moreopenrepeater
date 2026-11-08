@@ -132,6 +132,19 @@ class RepeaterController:
     def locked_out(self) -> bool:
         return self._locked_out
 
+    def timers(self, now: float) -> tuple[Optional[float], Optional[float], Optional[float]]:
+        """Seconds left on the running timers, for the dashboard: the time-out
+        timer, hang time, and the next station ID. Each is None when that
+        timer isn't running (no ID is owed and idle IDs are off, say)."""
+
+        def left(deadline: Optional[float]) -> Optional[float]:
+            return None if deadline is None else max(0.0, deadline - now)
+
+        tot = left(self._tot_deadline)
+        hang = left(self._state_deadline) if self.state == HANG_TIME else None
+        next_id = left(self._id_due_at) if (self._id_owed or self.config.idle_id) else None
+        return tot, hang, next_id
+
     def clear_lockout(self, now: float) -> list[ControllerCommand]:
         """End a stuck-carrier lockout early (it also clears by itself once
         the channel has been quiet for `lockout_clear_after`)."""

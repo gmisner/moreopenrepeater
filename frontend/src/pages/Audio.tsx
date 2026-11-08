@@ -1,4 +1,4 @@
-import { Anchor, Badge, Card, Group, Stack, Table, Text } from "@mantine/core";
+import { Anchor, Badge, Card, Group, Stack, Table, Tabs, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -42,8 +42,20 @@ import {
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
 import { useSetupWizard } from "../wizard/SetupWizard";
+import { labeled } from "../components/FieldHint";
+
+const AUDIO_TABS = ["sounds", "radio", "linked", "pins"];
 
 export function Audio() {
+  const [tab, setTab] = useState<string>(() => {
+    const fromHash = window.location.hash.slice(1);
+    return AUDIO_TABS.includes(fromHash) ? fromHash : "sounds";
+  });
+  const changeTab = (value: string | null) => {
+    if (!value) return;
+    setTab(value);
+    window.history.replaceState(null, "", `#${value}`);
+  };
   const { session } = useSession();
   const { config } = useConfig();
   const isViewer = session?.role === "viewer";
@@ -333,7 +345,6 @@ export function Audio() {
   return (
     <Page
       title="Audio & tones"
-      description="Sounds, radio interface, and linked radio."
     >
       <Text size="sm" c="dimmed">
         Looking for a starting recipe? See{" "}
@@ -342,111 +353,136 @@ export function Audio() {
         </Anchor>{" "}
         for Digirig, CM108, AIOC, and SVXLink board settings.
       </Text>
-      <SoundsCard
-        sounds={sounds}
-        assets={assets}
-        customParts={customParts}
-        previewBusy={previewBusy}
-        preview={preview}
-        setCustomPart={setCustomPart}
-      />
-      <RadioInterfaceCard
-        engine={engine}
-        devices={devices}
-        devicesError={devicesError}
-        onReloadDevices={() => void loadDevices()}
-        serialPorts={serialPorts}
-        soundUsage={soundUsage}
-        serialUsage={serialUsage}
-        engineStatus={engineStatus}
-        state={state}
-        boardPreset={boardPreset}
-        nodeMode={(config?.node_mode as string) || "repeater"}
-        cosHardware={cosHardware}
-        health={health}
-        showSilenceHint={showSilenceHint}
-        isViewer={isViewer}
-        openWizard={openWizard}
-        onTestId={isViewer ? undefined : () => void sendTestId()}
-        testIdBusy={testIdBusy}
-        score={score}
-        scoreBusy={scoreBusy}
-        onRecordScore={isViewer ? undefined : () => void recordAndScore()}
-        onScoreWav={isViewer ? undefined : (file) => void scoreUploadedWav(file)}
-      />
-      <Card withBorder padding="lg" radius="md">
-        <Stack gap="sm">
-          <Group justify="space-between" align="baseline">
-            <Text component="h2" size="xs" c="dimmed" tt="uppercase" fw={600} style={{ letterSpacing: "0.06em", margin: 0 }}>
-              Receiver openings
-            </Text>
-            <Text size="sm" c="dimmed">
-              Live score of what opened COS — level, peak, CTCSS, DTMF
-            </Text>
-          </Group>
-          {openings.length ? (
-            <Table striped highlightOnHover withTableBorder={false}>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>When</Table.Th>
-                  <Table.Th>Length</Table.Th>
-                  <Table.Th>Open</Table.Th>
-                  <Table.Th>Peak</Table.Th>
-                  <Table.Th>CTCSS</Table.Th>
-                  <Table.Th>DTMF</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {openings.map((row) => (
-                  <Table.Tr key={row.started_at}>
-                    <Table.Td>{new Date(row.started_at * 1000).toLocaleTimeString()}</Table.Td>
-                    <Table.Td>{row.duration.toFixed(1)} s</Table.Td>
-                    <Table.Td>{row.open_db.toFixed(0)} dB</Table.Td>
-                    <Table.Td>{row.peak_db.toFixed(0)} dB</Table.Td>
-                    <Table.Td>
-                      {row.ctcss_hz != null ? <Badge variant="light">{row.ctcss_hz} Hz</Badge> : "—"}
-                    </Table.Td>
-                    <Table.Td ff="monospace">{row.dtmf_digits || "—"}</Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          ) : (
-            <Text size="sm" c="dimmed">
-              No openings yet. Key a radio into the repeater (or use the Simulator) and watch open/peak levels to
-              set VOX and Mic gain. Aim for idle a few dB below the VOX threshold, and keyed peaks well under 0
-              dBFS.
-            </Text>
+      <Tabs value={tab} onChange={changeTab} keepMounted variant="default">
+        <Tabs.List style={{ overflowX: "auto", flexWrap: "nowrap" }}>
+          <Tabs.Tab value="sounds">Sounds</Tabs.Tab>
+          <Tabs.Tab value="radio">Radio interface</Tabs.Tab>
+          <Tabs.Tab value="linked">Linked radio</Tabs.Tab>
+          <Tabs.Tab value="pins">Pins and outputs</Tabs.Tab>
+        </Tabs.List>
+        <AudioHardwareCards assets={assets} reloadAssets={loadAssets} canWrite={!isViewer}>
+          {({ pins, library }) => (
+            <>
+              <Tabs.Panel value="sounds" pt="md">
+                <Stack gap="md">
+              <SoundsCard
+                sounds={sounds}
+                assets={assets}
+                customParts={customParts}
+                previewBusy={previewBusy}
+                preview={preview}
+                setCustomPart={setCustomPart}
+              />
+                  {library}
+                </Stack>
+              </Tabs.Panel>
+              <Tabs.Panel value="radio" pt="md">
+                <Stack gap="md">
+              <RadioInterfaceCard
+                engine={engine}
+                devices={devices}
+                devicesError={devicesError}
+                onReloadDevices={() => void loadDevices()}
+                serialPorts={serialPorts}
+                soundUsage={soundUsage}
+                serialUsage={serialUsage}
+                engineStatus={engineStatus}
+                state={state}
+                boardPreset={boardPreset}
+                nodeMode={(config?.node_mode as string) || "repeater"}
+                cosHardware={cosHardware}
+                health={health}
+                showSilenceHint={showSilenceHint}
+                isViewer={isViewer}
+                openWizard={openWizard}
+                onTestId={isViewer ? undefined : () => void sendTestId()}
+                testIdBusy={testIdBusy}
+                score={score}
+                scoreBusy={scoreBusy}
+                onRecordScore={isViewer ? undefined : () => void recordAndScore()}
+                onScoreWav={isViewer ? undefined : (file) => void scoreUploadedWav(file)}
+              />
+              <Card withBorder padding="lg" radius="md">
+                <Stack gap="sm">
+                  <Group justify="space-between" align="baseline">
+                    <Text component="h2" className="mor-card-title">
+                      {labeled("Receiver openings", <>Live score of what opened COS — level, peak, CTCSS, DTMF</>)}</Text>
+                  </Group>
+                  {openings.length ? (
+                    <Table striped highlightOnHover withTableBorder={false}>
+                      <Table.Thead>
+                        <Table.Tr>
+                          <Table.Th>When</Table.Th>
+                          <Table.Th>Length</Table.Th>
+                          <Table.Th>Open</Table.Th>
+                          <Table.Th>Peak</Table.Th>
+                          <Table.Th>CTCSS</Table.Th>
+                          <Table.Th>DTMF</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {openings.map((row) => (
+                          <Table.Tr key={row.started_at}>
+                            <Table.Td>{new Date(row.started_at * 1000).toLocaleTimeString()}</Table.Td>
+                            <Table.Td>{row.duration.toFixed(1)} s</Table.Td>
+                            <Table.Td>{row.open_db.toFixed(0)} dB</Table.Td>
+                            <Table.Td>{row.peak_db.toFixed(0)} dB</Table.Td>
+                            <Table.Td>
+                              {row.ctcss_hz != null ? <Badge variant="light">{row.ctcss_hz} Hz</Badge> : "—"}
+                            </Table.Td>
+                            <Table.Td ff="monospace">{row.dtmf_digits || "—"}</Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      No openings yet. Key a radio into the repeater (or use the Simulator) and watch open/peak levels to
+                      set VOX and Mic gain. Aim for idle a few dB below the VOX threshold, and keyed peaks well under 0
+                      dBFS.
+                    </Text>
+                  )}
+                </Stack>
+              </Card>
+              <SoundLevelsCard
+                levels={levels}
+                levelNotes={levelNotes}
+                unsavedLevels={unsavedLevels}
+                levelsSaving={levelsSaving}
+                isViewer={isViewer}
+                setLevels={setLevels}
+                setLevel={setLevel}
+                saveUnsavedLevels={saveUnsavedLevels}
+              />
+                </Stack>
+              </Tabs.Panel>
+              <Tabs.Panel value="linked" pt="md">
+                <Stack gap="md">
+              <LinkRadioCard
+                link={link}
+                devices={devices}
+                devicesError={devicesError}
+                onReloadDevices={() => void loadDevices()}
+                serialPorts={serialPorts}
+                soundUsage={soundUsage}
+                serialUsage={serialUsage}
+                linkStatus={linkStatus}
+                linkRemoteBase={linkRemoteBase}
+                linkCosHardware={linkCosHardware}
+                linkTxCtcss={linkTxCtcss}
+                remoteOffset={remoteOffset}
+                remoteTone={remoteTone}
+              />
+              <MonitorReceiverCard devices={devices} />
+                </Stack>
+              </Tabs.Panel>
+              <Tabs.Panel value="pins" pt="md">
+                <Stack gap="md">{pins}</Stack>
+              </Tabs.Panel>
+            </>
           )}
-        </Stack>
-      </Card>
-      <LinkRadioCard
-        link={link}
-        devices={devices}
-        devicesError={devicesError}
-        onReloadDevices={() => void loadDevices()}
-        serialPorts={serialPorts}
-        soundUsage={soundUsage}
-        serialUsage={serialUsage}
-        linkStatus={linkStatus}
-        linkRemoteBase={linkRemoteBase}
-        linkCosHardware={linkCosHardware}
-        linkTxCtcss={linkTxCtcss}
-        remoteOffset={remoteOffset}
-        remoteTone={remoteTone}
-      />
-      <MonitorReceiverCard devices={devices} />
-      <SoundLevelsCard
-        levels={levels}
-        levelNotes={levelNotes}
-        unsavedLevels={unsavedLevels}
-        levelsSaving={levelsSaving}
-        isViewer={isViewer}
-        setLevels={setLevels}
-        setLevel={setLevel}
-        saveUnsavedLevels={saveUnsavedLevels}
-      />
-      <AudioHardwareCards assets={assets} reloadAssets={loadAssets} canWrite={!isViewer} />
+        </AudioHardwareCards>
+      </Tabs>
     </Page>
   );
 }

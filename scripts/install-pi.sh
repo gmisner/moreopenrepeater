@@ -78,6 +78,16 @@ set_env() {
 
 env_value() { sed -nE "s/^$1=(.*)/\1/p" "$ENV_FILE" | tail -n 1; }
 
+# True when int8 model + voices are already on disk (sizes from kokoro-cli 0.4).
+# Size-only so updates don't re-hash ~120 MB or hit the network again.
+kokoro_models_ready() {
+  local home="$1"
+  local model="$home/models/kokoro-v1.0.int8.onnx"
+  local voices="$home/models/voices-v1.0.bin"
+  [ -f "$model" ] && [ "$(stat -c%s "$model")" -eq 92361271 ] &&
+    [ -f "$voices" ] && [ "$(stat -c%s "$voices")" -eq 28214398 ]
+}
+
 # ASL3's apt repository package for this Debian release.
 asl_repo_package() {
   local codename
@@ -328,29 +338,37 @@ rm -rf "$INSTALL_DIR/.cache"  # pip's cache from when it ran as the service user
 step "Installing Python dependencies (this can take a few minutes on a Pi)"
 venv_root="$INSTALL_DIR/.venvs"
 install -d -m 755 "$venv_root"
+# Survive across atomic venv swaps so updates don't re-download onnxruntime / kokoro-cli.
+PIP_CACHE_DIR="${PIP_CACHE_DIR:-/var/cache/moreopenrepeater/pip}"
+install -d -m 755 "$PIP_CACHE_DIR"
 previous_venv="$(readlink "$INSTALL_DIR/.venv-current" || true)"
 venv="$(mktemp -d "$venv_root/$commit.XXXXXX")"
 # Keep a published environment until the updater has finished using it.
 trap 'if [ "$(readlink "$INSTALL_DIR/.venv-current" || true)" != "$venv" ]; then rm -rf -- "$venv"; fi' EXIT
 chmod 755 "$venv"
 python3 -m venv "$venv"
-"$venv/bin/python" -m pip install -q --no-cache-dir --upgrade pip setuptools wheel
+"$venv/bin/python" -m pip install -q --cache-dir "$PIP_CACHE_DIR" --upgrade pip setuptools wheel
 dependencies=("kokoro-cli>=0.4")
 installed_venv="${previous_venv:-$INSTALL_DIR/.venv}"
 if [ -x "$installed_venv/bin/python" ] &&
     "$installed_venv/bin/python" -m pip show vosk >/dev/null 2>&1; then
   dependencies+=("vosk>=0.3.45")
 fi
-"$venv/bin/python" -m pip install -q --no-cache-dir -e "$candidate" "${dependencies[@]}"
+"$venv/bin/python" -m pip install -q --cache-dir "$PIP_CACHE_DIR" -e "$candidate" "${dependencies[@]}"
 
-step "Downloading Kokoro voice models (~120 MB, once)"
+step "Ensuring Kokoro voice models"
 KOKORO_HOME="$INSTALL_DIR/data/kokoro"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$KOKORO_HOME"
-# Run as the service user so ownership of the models matches the unit.
-if ! sudo -u "$SERVICE_USER" env "KOKORO_HOME=$KOKORO_HOME" \
-    "$venv/bin/kokoro" setup --model int8; then
-  echo "Warning: Kokoro model download failed; voice IDs will use espeak-ng until setup succeeds."
-  echo "         Retry later with: sudo -u $SERVICE_USER env KOKORO_HOME=$KOKORO_HOME $INSTALL_DIR/.venv-current/bin/kokoro setup"
+# Models live under data/ and survive updates; only fetch when missing or the wrong size.
+if kokoro_models_ready "$KOKORO_HOME"; then
+  echo "Kokoro models already present under $KOKORO_HOME; skipping download."
+else
+  # Run as the service user so ownership of the models matches the unit.
+  if ! sudo -u "$SERVICE_USER" env "KOKORO_HOME=$KOKORO_HOME" \
+      "$venv/bin/kokoro" setup --model int8; then
+    echo "Warning: Kokoro model download failed; voice IDs will use espeak-ng until setup succeeds."
+    echo "         Retry later with: sudo -u $SERVICE_USER env KOKORO_HOME=$KOKORO_HOME $INSTALL_DIR/.venv-current/bin/kokoro setup"
+  fi
 fi
 chown -R "$SERVICE_USER:$SERVICE_USER" "$KOKORO_HOME"
 

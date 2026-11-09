@@ -4,7 +4,7 @@
   --mor-brand-orange: #ff7a00;
   --mor-brand-mark: #0b1f2e;
 }
-:root[data-theme="dark"] { --mor-brand-mark: #f5f7fa; }
+[data-mantine-color-scheme="dark"] { --mor-brand-mark: #f5f7fa; }
 .mor-brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .mor-brand-name { font-weight: 900; font-size: 1.4rem; letter-spacing: -.045em; line-height: 1; }
 .mor-brand-expanded { font-size: .69rem; color: var(--mantine-color-dimmed); letter-spacing: .01em; white-space: nowrap; }
@@ -31,3 +31,32 @@
 .mor-login .mantine-Input-input { background: #0b1f2e; border-color: #475569; color: #f5f7fa; }
 .mor-login .mantine-Input-input::placeholder { color: #a8b8c6; }
 .mor-login .mantine-Input-input:focus { border-color: #ff9638; }
+
+/* MOR control center: subtle branded shell, without recoloring RF telemetry. */
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar {
+  background: linear-gradient(165deg, #102638 0%, #0b1f2e 62%, #101c29 100%);
+  border-inline-end: 1px solid #294052;
+}
+[data-mantine-color-scheme="dark"] .mantine-AppShell-header,
+[data-mantine-color-scheme="dark"] .mantine-AppShell-footer {
+  background: #0b1f2e;
+  border-color: #294052;
+}
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-brand-name { color: #f5f7fa; }
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-brand-expanded { color: #bac9d5; }
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-group { color: #bac9d5; }
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-link { color: #dce5ed; }
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-link:hover { background: #1a3548; }
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-link[data-active] {
+  background: #243d4c;
+  color: #fff;
+}
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-station {
+  background: #132e42;
+  border-color: #294052;
+}
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-station-call { color: #f5f7fa; }
+.mor-nav-link:focus-visible { outline: 2px solid var(--mor-brand-orange); outline-offset: 2px; }
+.mor-login .mantine-Text-root { color: #bac9d5; }
+.mor-login .mor-brand-open { color: #ff9638; }
+.mor-login .mantine-InputWrapper-error { color: #ffb0b0; }

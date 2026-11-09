@@ -87,7 +87,7 @@ export function Activity() {
   const dayStep = Math.max(1, Math.ceil(dayBars.length / 6));
 
   return (
-    <Page title="Activity">
+    <Page title="Activity" description="Explore repeater usage, airtime, and recent transmissions.">
       <Group justify="space-between" wrap="wrap">
         <SegmentedControl
           value={days}

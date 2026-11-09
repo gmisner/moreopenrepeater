@@ -6,7 +6,7 @@ import { ThemePicker } from "./ThemePicker";
 export function UserMenu({ session, onSignOut }: { session: Session | null; onSignOut: () => void }) {
   const signedIn = Boolean(session?.auth_required);
   return (
-    <Menu position="top-start" width={248} withinPortal shadow="md" keepMounted={false}>
+    <Menu position="bottom-end" width={248} withinPortal shadow="md" keepMounted={false}>
       <Menu.Target>
         <UnstyledButton className="mor-usermenu" aria-label="Display settings and account">
           <span className="mor-usermenu-name">{signedIn ? session?.username : "Display"}</span>

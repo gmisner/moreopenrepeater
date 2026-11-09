@@ -1,1 +1,0 @@
-import{t as e}from"./Table-WTmpsZPI.js";import{K as t}from"./AppShell-Bebc77Ky.js";import{C as n}from"./BrandMark-_rTiNe56.js";var r=n();function i(){return(0,r.jsx)(e.Th,{children:(0,r.jsx)(t,{children:`Actions`})})}export{i as t};

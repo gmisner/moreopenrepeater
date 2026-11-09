@@ -17,3 +17,17 @@
 @media (prefers-reduced-motion: reduce) {
   .mor-nav-link { transition: none; }
 }
+
+/* Shared MOR surfaces; existing semantic radio indicators remain unchanged. */
+.mor-brand-open { color: #ff7a00; }
+.mor-login { background: radial-gradient(circle at 50% 0%, #173449 0, #0b1f2e 48%, #081521 100%); }
+.mor-login .mantine-Card-root { border-color: #294052; background: #102538; color: #f5f7fa; }
+.mor-login .mantine-InputWrapper-label { color: #e6e8eb; }
+.mor-login .mantine-Text-root[data-c] { color: #bac9d5; }
+.mor-login-wordmark { font-size: 3rem; line-height: 1; letter-spacing: -.055em; color: #f5f7fa; }
+.mor-login .mantine-Button-root[type="submit"] { background: #ff7a00; color: #0b1f2e; font-weight: 800; }
+.mor-login .mantine-Button-root[type="submit"]:hover { background: #ff9638; }
+.mor-login .mantine-Button-root[type="submit"]:focus-visible { outline: 2px solid #f5f7fa; outline-offset: 2px; }
+.mor-login .mantine-Input-input { background: #0b1f2e; border-color: #475569; color: #f5f7fa; }
+.mor-login .mantine-Input-input::placeholder { color: #a8b8c6; }
+.mor-login .mantine-Input-input:focus { border-color: #ff9638; }

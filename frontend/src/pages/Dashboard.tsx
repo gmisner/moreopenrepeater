@@ -21,6 +21,7 @@ import { useSession } from "../session";
 import { useStatus } from "../status";
 import { useConfig } from "../config";
 import { OnAir } from "./dashboard/OnAir";
+import { ControlOverview } from "./dashboard/ControlOverview";
 import { RecentActivity, type Transmission } from "./dashboard/RecentActivity";
 import "./dashboard/dashboard.css";
 
@@ -430,6 +431,8 @@ export function Dashboard() {
             </Group>
           </Card>
         ) : null}
+
+        <ControlOverview status={status} connected={connected} links={links ? links.links.length : null} transmissions={recentTx} />
 
         <OnAir status={status} config={config} />
 

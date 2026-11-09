@@ -97,29 +97,48 @@ export function AppShell() {
 
   return (
     <MantineAppShell
-      header={{ height: isPhone ? 56 : 0 }}
-      navbar={{ width: 240, breakpoint: "md", collapsed: { mobile: !opened } }}
+      className="mor-shell"
+      layout="alt"
+      header={{ height: isPhone ? 56 : 72 }}
+      navbar={{ width: 248, breakpoint: "md", collapsed: { mobile: !opened } }}
       footer={{ height: isPhone ? 56 : 0 }}
       padding="lg"
     >
-      <MantineAppShell.Header hiddenFrom="md" px="md">
-        <Group h="100%" justify="space-between">
-          <Group gap="sm">
+      <MantineAppShell.Header className="mor-shell-header" px="md">
+        <Group h="100%" justify="space-between" wrap="nowrap">
+          <Group gap="sm" wrap="nowrap" hiddenFrom="md">
             <Burger opened={opened} onClick={toggle} size="sm" aria-label="Open menu" />
             <BrandMark size={32} />
-            <Text fw={900} visibleFrom="xs" className="mor-brand-name">MOR</Text>
+            <Text fw={900} visibleFrom="xs" className="mor-brand-name">
+              MOR
+            </Text>
           </Group>
-          <MiniStatus status={status} />
+          <Box visibleFrom="md" className="mor-shell-title">
+            <Text className="mor-shell-eyebrow">MOR · MoreOpenRepeater</Text>
+            <Title order={2} className="mor-shell-heading">
+              {title}
+            </Title>
+          </Box>
+          <Group gap="sm" wrap="nowrap">
+            <Box hiddenFrom="md">
+              <MiniStatus status={status} />
+            </Box>
+            <Box visibleFrom="md" className="mor-shell-header-actions">
+              <UserMenu session={session} onSignOut={() => void logout()} />
+            </Box>
+          </Group>
         </Group>
       </MantineAppShell.Header>
 
-      <MantineAppShell.Navbar p={0}>
+      <MantineAppShell.Navbar p={0} className="mor-shell-nav">
         <Stack gap="md" p="md" style={{ height: "100%" }}>
-          <Group gap="sm" visibleFrom="md" wrap="nowrap">
+          <Group gap="sm" visibleFrom="md" wrap="nowrap" className="mor-brand-lockup">
             <BrandMark size={44} />
             <Box>
               <Text className="mor-brand-name">MOR</Text>
-              <Text className="mor-brand-expanded">More<strong>Open</strong>Repeater</Text>
+              <Text className="mor-brand-expanded">
+                More<strong>Open</strong>Repeater
+              </Text>
             </Box>
           </Group>
           <Box className="mor-station">
@@ -136,12 +155,17 @@ export function AppShell() {
           <Box style={{ flex: 1, overflow: "auto" }}>{nav}</Box>
           <Stack gap="xs">
             <ConnectionStatus connected={connected} />
-            <UserMenu session={session} onSignOut={() => void logout()} />
+            <Text size="xs" c="dimmed" className="mor-shell-version">
+              RADIO. REIMAGINED.
+            </Text>
+            <Box hiddenFrom="md">
+              <UserMenu session={session} onSignOut={() => void logout()} />
+            </Box>
           </Stack>
         </Stack>
       </MantineAppShell.Navbar>
 
-      <MantineAppShell.Main>
+      <MantineAppShell.Main className="mor-shell-main">
         <ServerUpdatedBanner />
         <ConnectionBanner />
         <RouteBoundary />
@@ -208,7 +232,7 @@ export function Page({
 }) {
   return (
     <Stack gap="md" className="mor-page">
-      <Group className="mor-page-header" justify="space-between" align="flex-end" wrap="wrap" gap="sm">
+      <Group className="mor-page-header" justify="space-between" align="flex-end" wrap="wrap" gap="sm" hiddenFrom="md">
         <Box>
           <Title order={1} className="mor-page-title" tabIndex={-1}>
             {title}
@@ -219,6 +243,16 @@ export function Page({
             </Text>
           ) : null}
         </Box>
+        {actions}
+      </Group>
+      <Group className="mor-page-header mor-page-header-desktop" justify="space-between" align="flex-end" wrap="wrap" gap="sm" visibleFrom="md">
+        {description ? (
+          <Text c="dimmed" maw="75ch">
+            {description}
+          </Text>
+        ) : (
+          <span />
+        )}
         {actions}
       </Group>
       {children}

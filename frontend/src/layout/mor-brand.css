@@ -2,20 +2,92 @@
 :root {
   --mor-brand-navy: #0b1f2e;
   --mor-brand-orange: #ff7a00;
+  --mor-brand-slate: #475569;
+  --mor-brand-cloud: #e5e7eb;
+  --mor-brand-snow: #f5f7fa;
   --mor-brand-mark: #0b1f2e;
+  --mor-glass-bg: color-mix(in srgb, #0b1f2e 72%, transparent);
+  --mor-glass-border: color-mix(in srgb, #e5e7eb 16%, transparent);
 }
 [data-mantine-color-scheme="dark"] { --mor-brand-mark: #f5f7fa; }
+[data-mantine-color-scheme="light"] {
+  --mor-glass-bg: color-mix(in srgb, #ffffff 82%, transparent);
+  --mor-glass-border: color-mix(in srgb, #0b1f2e 12%, transparent);
+}
 .mor-brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.mor-brand-name { font-weight: 900; font-size: 1.4rem; letter-spacing: -.045em; line-height: 1; }
+.mor-brand-name {
+  font-family: Montserrat, Inter, "Avenir Next", "Segoe UI", sans-serif;
+  font-weight: 900;
+  font-size: 1.4rem;
+  letter-spacing: -.045em;
+  line-height: 1;
+}
 .mor-brand-expanded { font-size: .69rem; color: var(--mantine-color-dimmed); letter-spacing: .01em; white-space: nowrap; }
 .mor-brand-expanded strong { color: var(--mor-brand-orange); font-weight: 700; }
 .mor-nav-link[data-active] {
-  border-inline-start: 3px solid var(--mor-brand-orange);
-  padding-inline-start: calc(var(--mantine-spacing-sm) - 3px);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--mor-brand-orange) 88%, #fff), var(--mor-brand-orange));
+  color: #0b1f2e !important;
+  border-radius: 10px;
+  font-weight: 800;
 }
-.mor-page-title { letter-spacing: -.025em; }
+.mor-nav-link[data-active] .mantine-NavLink-section { color: #0b1f2e; }
+.mor-page-title { letter-spacing: -.025em; font-family: Montserrat, Inter, "Avenir Next", "Segoe UI", sans-serif; }
 @media (prefers-reduced-motion: reduce) {
   .mor-nav-link { transition: none; }
+}
+
+/* Shell: mountain backdrop + glass surfaces (keeps existing NAV grouping). */
+.mor-shell .mantine-AppShell-main.mor-shell-main {
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #0b1f2e 55%, transparent), color-mix(in srgb, #0b1f2e 88%, transparent)),
+    url("/mor-backdrop.svg") center / cover no-repeat;
+  min-height: 100dvh;
+}
+[data-mantine-color-scheme="light"] .mor-shell .mantine-AppShell-main.mor-shell-main {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #f5f7fa 70%, transparent), color-mix(in srgb, #e5e7eb 92%, transparent)),
+    url("/mor-backdrop.svg") center / cover no-repeat;
+}
+.mor-shell-header {
+  backdrop-filter: blur(16px);
+  background: var(--mor-glass-bg) !important;
+  border-bottom: 1px solid var(--mor-glass-border) !important;
+}
+.mor-shell-nav {
+  backdrop-filter: blur(18px);
+  background: color-mix(in srgb, #0b1f2e 86%, transparent) !important;
+  border-inline-end: 1px solid var(--mor-glass-border) !important;
+}
+[data-mantine-color-scheme="light"] .mor-shell-nav {
+  background: color-mix(in srgb, #0b1f2e 94%, transparent) !important;
+}
+.mor-shell-eyebrow {
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--mor-brand-orange);
+}
+.mor-shell-heading {
+  margin: 0;
+  font-family: Montserrat, Inter, "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -.03em;
+}
+.mor-shell-version {
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  font-size: .62rem !important;
+  text-align: center;
+}
+.mor-glass-card {
+  backdrop-filter: blur(14px);
+  background: var(--mor-glass-bg) !important;
+  border-color: var(--mor-glass-border) !important;
+  box-shadow: 0 12px 40px rgb(0 0 0 / .18);
 }
 
 /* Shared MOR surfaces; existing semantic radio indicators remain unchanged. */
@@ -32,30 +104,23 @@
 .mor-login .mantine-Input-input::placeholder { color: #a8b8c6; }
 .mor-login .mantine-Input-input:focus { border-color: #ff9638; }
 
-/* MOR control center: subtle branded shell, without recoloring RF telemetry. */
-[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar {
-  background: linear-gradient(165deg, #102638 0%, #0b1f2e 62%, #101c29 100%);
-  border-inline-end: 1px solid #294052;
+/* MOR control center: glass nav, without recoloring RF telemetry. */
+.mor-shell-nav .mor-brand-name { color: #f5f7fa; }
+.mor-shell-nav .mor-brand-expanded { color: #bac9d5; }
+.mor-shell-nav .mor-nav-group { color: #bac9d5; }
+.mor-shell-nav .mor-nav-link { color: #dce5ed; border-radius: 10px; }
+.mor-shell-nav .mor-nav-link:hover { background: color-mix(in srgb, #ffffff 8%, transparent); }
+.mor-shell-nav .mor-station {
+  background: color-mix(in srgb, #ffffff 6%, transparent);
+  border: 1px solid var(--mor-glass-border);
+  border-radius: 12px;
+  padding: 8px 12px;
 }
-[data-mantine-color-scheme="dark"] .mantine-AppShell-header,
+.mor-shell-nav .mor-station-call { color: #f5f7fa; }
 [data-mantine-color-scheme="dark"] .mantine-AppShell-footer {
   background: #0b1f2e;
   border-color: #294052;
 }
-[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-brand-name { color: #f5f7fa; }
-[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-brand-expanded { color: #bac9d5; }
-[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-group { color: #bac9d5; }
-[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-link { color: #dce5ed; }
-[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-link:hover { background: #1a3548; }
-[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-link[data-active] {
-  background: #243d4c;
-  color: #fff;
-}
-[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-station {
-  background: #132e42;
-  border-color: #294052;
-}
-[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-station-call { color: #f5f7fa; }
 .mor-nav-link:focus-visible { outline: 2px solid var(--mor-brand-orange); outline-offset: 2px; }
 .mor-login .mantine-Text-root { color: #bac9d5; }
 .mor-login .mor-brand-open { color: #ff9638; }

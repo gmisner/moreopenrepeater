@@ -19,8 +19,9 @@ them in `frontend/src/theme.ts`.
    (see below). Never use them decoratively.
 3. **Never color alone.** Every colored state also has a word or an icon: "TX",
    "talking", "Severe", a filled dot.
-4. **System fonts, no web fonts.** The controller often runs on a Raspberry Pi with
-   no internet connection. Nothing may load from a CDN.
+4. **No CDN fonts.** The controller often runs on a Raspberry Pi with no internet
+   connection. Prefer Montserrat (headings) and Inter (UI) when present locally;
+   otherwise fall back to system sans. Nothing may load from a CDN.
 5. **One set of components, two themes.** Components never contain raw colors, so
    the light theme is only a second set of token values.
 

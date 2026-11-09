@@ -386,35 +386,81 @@
   .mor-dash .mor-onair { border-radius: 12px; }
 }
 
-/* MOR control overview — uses actual controller state and fetched transmissions. */
+/* MOR control overview — glass panels over the mountain shell. */
 .mor-control-overview { min-width: 0; }
-.mor-overview-hero {
-  padding: clamp(18px, 3vw, 32px);
-  border-radius: 16px;
-  border: 1px solid var(--mor-border);
-  background: linear-gradient(110deg, #0b1f2e 0%, #173449 65%, #2c3948 100%);
-  color: #f5f7fa;
-  overflow: hidden;
+.mor-status-strip { border-radius: 16px; padding: 18px 20px; }
+.mor-status-metric { min-width: 7.5rem; }
+.mor-pulse {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--mor-amber); flex: none;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--mor-amber) 22%, transparent);
 }
-.mor-overview-hero .mantine-Text-root { color: #bac9d5; }
-.mor-overview-eyebrow { font-size: .7rem; font-weight: 800; letter-spacing: .18em; color: #ff9638 !important; }
-.mor-overview-heading { color: #f5f7fa; font-size: clamp(1.25rem, 2vw, 1.8rem); letter-spacing: -.035em; }
-.mor-overview-metric { border-radius: 12px; min-width: 0; padding: 16px; }
-.mor-overview-metric[data-tone="rx"] { border-color: var(--mor-green); }
-.mor-overview-metric[data-tone="tx"] { border-color: var(--mor-red); }
-.mor-overview-value { font-size: clamp(1.05rem, 2vw, 1.6rem); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mor-pulse[data-ok] {
+  background: var(--mor-green);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--mor-green) 22%, transparent);
+}
+.mor-kpi { border-radius: 14px; min-width: 0; padding: 16px; }
+.mor-kpi[data-tone="rx"] { border-color: var(--mor-green) !important; }
+.mor-kpi[data-tone="tx"] { border-color: var(--mor-red) !important; }
+.mor-kpi[data-tone="ok"] { border-color: color-mix(in srgb, var(--mor-brand-orange) 55%, var(--mor-border)) !important; }
+.mor-kpi-label { letter-spacing: .06em; }
+.mor-kpi-value {
+  font-family: Montserrat, Inter, "Avenir Next", "Segoe UI", sans-serif;
+  font-size: clamp(1.1rem, 2vw, 1.55rem);
+  letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.mor-overview-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+  gap: var(--mantine-spacing-md);
+  min-width: 0;
+}
 .mor-airtime-card { min-width: 0; }
-.mor-airtime-chart {
-  height: 150px; display: flex; align-items: end; gap: 4px;
-  padding: 12px 8px 0; border-bottom: 1px solid var(--mor-border);
-  background: repeating-linear-gradient(to top, transparent 0, transparent 36px, var(--mor-border) 37px);
+.mor-health-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 10px;
 }
-.mor-airtime-bar { background: #5aa5ff; border-radius: 4px 4px 0 0; flex: 1; max-width: 36px; min-width: 3px; }
-.mor-airtime-bar[data-timeout] { background: var(--mor-red); }
+.mor-health-list li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  font-size: .9rem;
+}
+.mor-health-mark {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: .72rem; font-weight: 800;
+  background: color-mix(in srgb, var(--mor-amber) 22%, transparent);
+  color: var(--mor-amber);
+}
+.mor-health-list li[data-ok] .mor-health-mark {
+  background: color-mix(in srgb, var(--mor-green) 22%, transparent);
+  color: var(--mor-green);
+}
+.mor-health-label { color: var(--mantine-color-text); font-weight: 600; }
+.mor-health-value { color: var(--mantine-color-dimmed); text-align: right; }
+.mor-quick-link {
+  border-radius: 14px;
+  padding: 18px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform .15s ease, border-color .15s ease;
+}
+.mor-quick-link:hover {
+  border-color: color-mix(in srgb, var(--mor-brand-orange) 55%, var(--mor-border)) !important;
+  transform: translateY(-1px);
+}
+@media (max-width: 53.75em) {
+  .mor-overview-split { grid-template-columns: 1fr; }
+}
 @media (max-width: 37.5em) {
-  .mor-overview-hero { border-radius: 12px; }
-  .mor-overview-metric { padding: 12px; }
-  .mor-airtime-chart { gap: 2px; }
+  .mor-status-strip, .mor-kpi, .mor-quick-link { border-radius: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mor-quick-link { transition: none; }
 }
 
 /* Rolling 24-hour paired RX/TX airtime bars */

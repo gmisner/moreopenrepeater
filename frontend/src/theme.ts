@@ -90,8 +90,13 @@ const dark: MantineColorsTuple = [
   "#0b0c0f", // 9 deepest
 ];
 
+// Brand guidelines prefer Montserrat (display) + Inter (UI). Controllers are
+// often offline, so nothing loads from a CDN — use local/system fallbacks.
+const uiSans = 'Inter, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const displaySans = 'Montserrat, Inter, "Avenir Next", "Segoe UI", sans-serif';
+
 export const theme = createTheme({
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  fontFamily: uiSans,
   fontFamilyMonospace: "ui-monospace, SFMono-Regular, Menlo, monospace",
   primaryColor: "accent",
   defaultRadius: "md",
@@ -118,7 +123,7 @@ export const theme = createTheme({
     xl: "1.2rem",
   },
   headings: {
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily: displaySans,
     sizes: {
       h1: { fontSize: "1.5rem", fontWeight: "700", lineHeight: "1.3" },
       h2: {

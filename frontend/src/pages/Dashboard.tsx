@@ -443,7 +443,37 @@ export function Dashboard() {
           </Card>
         ) : null}
 
-        <ControlOverview status={status} connected={connected} links={links ? links.links.length : null} history={history24h} />
+        <ControlOverview
+          status={status}
+          connected={connected}
+          links={links ? links.links.length : null}
+          history={history24h}
+          config={config}
+          linkRadioOnline={linkRadio ? Boolean(linkRadio.enabled && linkRadio.running) : null}
+          health={[
+            { label: "Controller", value: connected ? "Operational" : "Disconnected", ok: connected },
+            {
+              label: "Radio",
+              value: !connected ? "Unknown" : status?.transmitter_enabled === false ? "Muted" : "Online",
+              ok: connected && status?.transmitter_enabled !== false,
+            },
+            {
+              label: "Linking",
+              value: links == null ? "Unavailable" : `${links.links.length} connected`,
+              ok: links != null,
+            },
+            {
+              label: "APRS frequency",
+              value: typeof config?.aprs_frequency_mhz === "number" ? "Configured" : "Not set",
+              ok: true,
+            },
+            {
+              label: "Linked radio",
+              value: !linkRadio ? "Unavailable" : linkRadio.enabled && linkRadio.running ? "Online" : "Off",
+              ok: linkRadio == null ? true : !linkRadio.enabled || Boolean(linkRadio.running),
+            },
+          ]}
+        />
 
         <OnAir status={status} config={config} />
 

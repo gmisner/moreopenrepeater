@@ -385,3 +385,34 @@
 @media (max-width: 37.5em) {
   .mor-dash .mor-onair { border-radius: 12px; }
 }
+
+/* MOR control overview — uses actual controller state and fetched transmissions. */
+.mor-control-overview { min-width: 0; }
+.mor-overview-hero {
+  padding: clamp(18px, 3vw, 32px);
+  border-radius: 16px;
+  border: 1px solid var(--mor-border);
+  background: linear-gradient(110deg, #0b1f2e 0%, #173449 65%, #2c3948 100%);
+  color: #f5f7fa;
+  overflow: hidden;
+}
+.mor-overview-hero .mantine-Text-root { color: #bac9d5; }
+.mor-overview-eyebrow { font-size: .7rem; font-weight: 800; letter-spacing: .18em; color: #ff9638 !important; }
+.mor-overview-heading { color: #f5f7fa; font-size: clamp(1.25rem, 2vw, 1.8rem); letter-spacing: -.035em; }
+.mor-overview-metric { border-radius: 12px; min-width: 0; padding: 16px; }
+.mor-overview-metric[data-tone="rx"] { border-color: var(--mor-green); }
+.mor-overview-metric[data-tone="tx"] { border-color: var(--mor-red); }
+.mor-overview-value { font-size: clamp(1.05rem, 2vw, 1.6rem); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mor-airtime-card { min-width: 0; }
+.mor-airtime-chart {
+  height: 150px; display: flex; align-items: end; gap: 4px;
+  padding: 12px 8px 0; border-bottom: 1px solid var(--mor-border);
+  background: repeating-linear-gradient(to top, transparent 0, transparent 36px, var(--mor-border) 37px);
+}
+.mor-airtime-bar { background: #5aa5ff; border-radius: 4px 4px 0 0; flex: 1; max-width: 36px; min-width: 3px; }
+.mor-airtime-bar[data-timeout] { background: var(--mor-red); }
+@media (max-width: 37.5em) {
+  .mor-overview-hero { border-radius: 12px; }
+  .mor-overview-metric { padding: 12px; }
+  .mor-airtime-chart { gap: 2px; }
+}

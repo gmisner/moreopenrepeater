@@ -345,6 +345,7 @@ export function Audio() {
   return (
     <Page
       title="Audio & tones"
+      description="Configure radio interfaces, audio devices, linked radios, and station sounds."
     >
       <Text size="sm" c="dimmed">
         Looking for a starting recipe? See{" "}
@@ -353,7 +354,7 @@ export function Audio() {
         </Anchor>{" "}
         for Digirig, CM108, AIOC, and SVXLink board settings.
       </Text>
-      <Tabs value={tab} onChange={changeTab} keepMounted variant="default">
+      <Tabs className="mor-radio-workspace" value={tab} onChange={changeTab} keepMounted variant="default">
         <Tabs.List style={{ overflowX: "auto", flexWrap: "nowrap" }}>
           <Tabs.Tab value="sounds">Sounds</Tabs.Tab>
           <Tabs.Tab value="radio">Radio interface</Tabs.Tab>

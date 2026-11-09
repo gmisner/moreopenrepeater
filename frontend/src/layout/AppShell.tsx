@@ -163,7 +163,7 @@ export function AppShell() {
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                color: view === item.id ? "var(--mantine-color-accent-4)" : "var(--mantine-color-dimmed)",
+                color: view === item.id ? "var(--mor-brand-orange)" : "var(--mantine-color-dimmed)",
                 fontSize: "0.72rem",
                 fontWeight: 600,
               }}
@@ -181,7 +181,7 @@ export function AppShell() {
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              color: opened ? "var(--mantine-color-accent-4)" : "var(--mantine-color-dimmed)",
+              color: opened ? "var(--mor-brand-orange)" : "var(--mantine-color-dimmed)",
               fontSize: "0.72rem",
               fontWeight: 600,
             }}
@@ -207,8 +207,8 @@ export function Page({
   children?: ReactNode;
 }) {
   return (
-    <Stack gap="md">
-      <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
+    <Stack gap="md" className="mor-page">
+      <Group className="mor-page-header" justify="space-between" align="flex-end" wrap="wrap" gap="sm">
         <Box>
           <Title order={1} className="mor-page-title" tabIndex={-1}>
             {title}

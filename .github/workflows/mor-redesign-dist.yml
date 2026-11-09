@@ -1,0 +1,45 @@
+name: Build MOR redesign assets
+
+# This temporary workflow produces the committed frontend bundle required by
+# the Pi installer. Remove it once the redesign PR has a passing build.
+on:
+  push:
+    branches: [feature/mor-brand-redesign]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mor-redesign-dist
+  cancel-in-progress: false
+
+jobs:
+  build-dist:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build distribution
+        working-directory: frontend
+        run: npm run build
+      - name: Commit rebuilt assets
+        run: |
+          if [ -z "$(git status --porcelain -- web/dist)" ]; then
+            echo "Distribution already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A web/dist
+          git commit -m "build(frontend): refresh MOR distribution bundle"
+          git push origin HEAD:feature/mor-brand-redesign

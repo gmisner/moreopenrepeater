@@ -21,7 +21,7 @@ import { useSession } from "../session";
 import { useStatus } from "../status";
 import { useConfig } from "../config";
 import { OnAir } from "./dashboard/OnAir";
-import { ControlOverview } from "./dashboard/ControlOverview";
+import { ControlOverview, type History24h } from "./dashboard/ControlOverview";
 import { RecentActivity, type Transmission } from "./dashboard/RecentActivity";
 import "./dashboard/dashboard.css";
 
@@ -186,6 +186,7 @@ export function Dashboard() {
     { id: string; name: string; units: string; value: number | null; error: string | null }[] | null
   >(null);
   const [recentTx, setRecentTx] = useState<Transmission[]>([]);
+  const [history24h, setHistory24h] = useState<History24h | null>(null);
   const [linkEvents, setLinkEvents] = useState<LinkEvent[]>([]);
 
   const refreshLinks = useCallback(async () => {
@@ -222,6 +223,16 @@ export function Dashboard() {
     }, 3000);
     return () => window.clearInterval(timer);
   }, [refreshLinks, refreshLinkEvents]);
+
+  useEffect(() => {
+    const refresh = async () => {
+      try { setHistory24h(await api<History24h>("/api/activity/history24h")); }
+      catch { setHistory24h(null); }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     void refreshRecentTx();
@@ -432,7 +443,7 @@ export function Dashboard() {
           </Card>
         ) : null}
 
-        <ControlOverview status={status} connected={connected} links={links ? links.links.length : null} transmissions={recentTx} />
+        <ControlOverview status={status} connected={connected} links={links ? links.links.length : null} history={history24h} />
 
         <OnAir status={status} config={config} />
 

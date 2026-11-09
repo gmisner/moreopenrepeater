@@ -47,6 +47,10 @@ _CTCSS_ANALYZE_EVERY_BLOCKS = 5  # CTCSS needs a 1 s window anyway; ~100 ms deci
 _DTMF_MUTE_BLOCKS = 3
 _DTMF_MUTE_HANG_BLOCKS = 2  # the tones' tail, and the gap before a next digit
 _AFTER_TX_LIMIT_SECONDS = 60.0
+# After a clip (courtesy, ID) ends, keep VOX deaf briefly so TX echo into the
+# mic cannot reopen COS on simplex/half-duplex. Short: long enough for the
+# tail, not so long it eats a quick re-key.
+_VOX_DEAF_AFTER_CLIP_SECONDS = 0.15
 
 
 @dataclass
@@ -154,6 +158,8 @@ class AudioProcessor:
         self._was_keyed = False
         self._lead_blocks = 0
         self._samples_since_tx: Optional[int] = None
+        self._was_playing = False
+        self._vox_deaf_samples = 0
         self._opening = OpeningTracker(settings.sample_rate)
         # Called on the audio thread when the carrier drops.
         self.on_opening: Optional[Callable[[ReceiverOpening], None]] = None
@@ -222,6 +228,9 @@ class AudioProcessor:
             events.append(CTCSSChanged(tone_hz=tone))
 
         self._delay.append(block)
+        if self._was_playing and not self.playing:
+            self._vox_deaf_samples = int(_VOX_DEAF_AFTER_CLIP_SECONDS * self.settings.sample_rate)
+        self._was_playing = self.playing
         cos = self._carrier(block)
         if cos != self.cos_open:
             self.cos_open = cos
@@ -368,6 +377,14 @@ class AudioProcessor:
             return self._external_cos
         if source == "ctcss":
             return self.ctcss_hz is not None
+        # Clips key the TX; on VOX their audio (or echo into RX) must not look
+        # like a local user, or courtesy/ID on simplex loops forever.
+        if self.playing or self._vox_deaf_samples > 0:
+            if self._vox_deaf_samples > 0:
+                self._vox_deaf_samples = max(0, self._vox_deaf_samples - len(block))
+            self._above = 0.0
+            self._below = 0.0
+            return False
         block_seconds = len(block) / self.settings.sample_rate
         threshold = self.settings.vox_threshold_db - (_VOX_HYSTERESIS_DB if self.cos_open else 0.0)
         if self.rx_level_db >= threshold:

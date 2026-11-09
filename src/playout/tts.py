@@ -50,13 +50,14 @@ MIN_TTS_SPEED = 0.5
 MAX_TTS_SPEED = 2.0
 # Prefer the long-lived localhost service so each speak does not reload ONNX.
 KOKORO_SERVICE_MODE = "required"
-DEFAULT_PIPER_VOICE = "en_GB-cori-high"
+# Medium is the Pi default: high quality voices take tens of seconds per phrase.
+DEFAULT_PIPER_VOICE = "en_GB-cori-medium"
 # Piper voice ids look like en_GB-cori-high (locale-name-quality).
 _PIPER_VOICE_RE = re.compile(r"^[a-z]{2}_[A-Z]{2}-[a-z0-9_]+-(x_low|low|medium|high)$")
 # Curated English set for the Identification picker (download on first use).
 _PIPER_BUILTIN_VOICES = (
-    "en_GB-cori-high",
     "en_GB-cori-medium",
+    "en_GB-cori-high",
     "en_GB-alan-medium",
     "en_GB-alba-medium",
     "en_GB-jenny_dioco-medium",

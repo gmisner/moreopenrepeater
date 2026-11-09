@@ -108,16 +108,16 @@ def _kokoro_service_for(renderer: ClipRenderer) -> Optional[KokoroService]:
     return KokoroService(binary=binary)
 
 
-def _piper_service_for(renderer: ClipRenderer) -> Optional[PiperService]:
+def _piper_service_for(renderer: ClipRenderer, voice: str = "") -> Optional[PiperService]:
     """Build an HTTP serve manager when the clip renderer is using Piper."""
     tts = getattr(renderer, "tts", None)
     if tts is None or getattr(tts, "name", None) != "piper":
         return None
-    from playout.tts import piper_service_url
+    from playout.tts import piper_service_url, sanitize_piper_voice
 
     if not piper_service_url():
         return None
-    return PiperService()
+    return PiperService(voice=sanitize_piper_voice(voice))
 
 
 def _resolve_data_root(env: dict, repo_data_dir: Path) -> Path:
@@ -1123,7 +1123,7 @@ class AppRuntime:
                             "Kokoro service failed to become ready; voice IDs fall back to CW until it works"
                         )
                         await loop.run_in_executor(None, kokoro_service.stop)
-                piper_service = _piper_service_for(renderer)
+                piper_service = _piper_service_for(renderer, voice=service.config.tts_voice)
                 if piper_service is not None:
                     try:
                         await loop.run_in_executor(None, piper_service.start_and_wait)

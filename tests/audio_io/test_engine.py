@@ -101,15 +101,21 @@ def test_resamples_when_the_device_runs_at_another_rate():
         while not stream.output_queue.empty():
             stream.output_queue.get_nowait()
         engine.processor.play(np.full(RATE, 0.25, dtype=np.float32))
+        # 1 s clip at 16 kHz ≈ 50 device blocks at 48 kHz; VOX is deaf while it plays.
+        silence = np.zeros(960 * 55, dtype=np.float32)
+        for start in range(0, len(silence), 960):
+            engine.process_one(silence[start : start + 960])
+
+        out = [stream.output_queue.get_nowait() for _ in range(stream.output_queue.qsize())]
+        assert len(out) >= 9 and all(block.shape == (960, 1) for block in out)
+        assert abs(float(np.median(np.concatenate(out))) - 0.25) < 0.01  # the clip, upsampled
+
+        events.clear()
         t = np.arange(960 * 10) / 48000
         loud = (0.3 * np.sin(2 * np.pi * 1000 * t)).astype(np.float32)
         for start in range(0, len(loud), 960):
             engine.process_one(loud[start : start + 960])
-
         assert COSChanged(active=True) in events
-        out = [stream.output_queue.get_nowait() for _ in range(stream.output_queue.qsize())]
-        assert len(out) >= 9 and all(block.shape == (960, 1) for block in out)
-        assert abs(float(np.median(np.concatenate(out))) - 0.25) < 0.01  # the clip, upsampled
     finally:
         engine.stop()
 

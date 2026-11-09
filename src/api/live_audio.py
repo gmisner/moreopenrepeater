@@ -313,8 +313,11 @@ class LiveAudio:
         now = self._clock()
         if repeating:
             armed_at = self._parrot_armed_at
-            self._parrot_armed_at = None
+            # Keep the arm until a long-enough capture succeeds: a kerchunk or
+            # post-prompt TX echo must not burn the one-shot parrot.
             self._parrot_recording = armed_at is not None and now - armed_at < PARROT_ARMED_SECONDS
+            if armed_at is not None and not self._parrot_recording:
+                self._parrot_armed_at = None
             capture, self._capture_armed = self._capture_armed, None
             if self._parrot_recording:
                 processor.start_capture(MAX_PARROT_SECONDS)
@@ -338,6 +341,8 @@ class LiveAudio:
         samples = processor.stop_capture()
         if len(samples) < MIN_RECORDING_SECONDS * self._renderer.sample_rate:
             return
+        if parrot:
+            self._parrot_armed_at = None
         if self._loop is None:
             return
         if callback is not None:

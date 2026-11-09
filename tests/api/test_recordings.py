@@ -167,6 +167,32 @@ def test_parrot_gives_up_if_nobody_keys_up():
     assert recordings.list() == []
 
 
+def test_parrot_survives_short_carrier_after_ready_clip():
+    """TX echo / kerchunk after the ready prompt must not burn the one-shot arm.
+
+    On Digirig HT / simplex+VOX, the ready TTS keys the radio; a short RX open
+    after the clip (echo, squelch tail) used to clear parrot before the user
+    keyed up for real.
+    """
+    live, service, recordings, clock = make_live()
+    service._run_action(RunAction("parrot"))
+    service.controller._announcements.clear()
+
+    live.engine.processor.play(np.full(RATE, 0.2, dtype=np.float32))
+    feed(live, np.zeros(RATE + BLOCK * 10, dtype=np.float32))  # drain clip + VOX deaf
+
+    feed(live, transmission(0.4))  # shorter than MIN_RECORDING_SECONDS
+    assert recordings.list() == []
+    settle(service, clock, live)  # courtesy/hang from the blip; parrot must stay armed
+
+    feed(live, transmission(1.5)[: BLOCK * 5])
+    assert live.engine.processor._repeating is False
+    feed(live, transmission(1.5)[BLOCK * 5 :])
+
+    [saved] = recordings.list()
+    assert service.controller.queued_announcements == [f"recording:{saved.id}"]
+
+
 def test_parrot_needs_running_audio():
     live, service, _recordings, _clock = make_live()
     service.update_config(audio_enabled=False)

@@ -372,8 +372,8 @@
   box-shadow: 0 8px 28px rgb(0 0 0 / 0.08);
 }
 [data-mantine-color-scheme="dark"] .mor-dash .mor-onair {
-  background: linear-gradient(145deg, #162c3c, #111e2a 75%);
-  border-color: #294052;
+  background: var(--mor-panel);
+  border-color: var(--mor-border);
 }
 [data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="rx"] { border-color: var(--dash-green); }
 [data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="tx"] { border-color: var(--dash-red); }
@@ -386,7 +386,7 @@
   .mor-dash .mor-onair { border-radius: 12px; }
 }
 
-/* MOR control overview — glass panels over the mountain shell. */
+/* MOR control overview — same gray panels as the rest of the app. */
 .mor-control-overview {
   min-width: 0;
   display: grid;
@@ -409,7 +409,7 @@
 .mor-status-metric {
   min-width: 8.2rem;
   padding: 2px 18px;
-  border-inline-start: 1px solid var(--mor-glass-border);
+  border-inline-start: 1px solid var(--mor-border);
 }
 .mor-status-metric:first-child { border-inline-start: 0; padding-inline-start: 0; }
 .mor-pulse {
@@ -453,7 +453,6 @@
   font-size: .68rem !important;
 }
 .mor-kpi-value {
-  font-family: Montserrat, Inter, "Avenir Next", "Segoe UI", sans-serif;
   font-size: clamp(1.2rem, 2.1vw, 1.7rem);
   letter-spacing: -.035em;
   font-variant-numeric: tabular-nums;
@@ -478,7 +477,7 @@
   align-items: center;
   font-size: .9rem;
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--mor-glass-border);
+  border-bottom: 1px solid var(--mor-border);
 }
 .mor-health-list li:last-child { border-bottom: 0; padding-bottom: 0; }
 .mor-health-mark {
@@ -522,7 +521,7 @@
   .mor-status-metrics { margin-inline-start: 0; width: 100%; }
   .mor-status-metric {
     border-inline-start: 0;
-    border-top: 1px solid var(--mor-glass-border);
+    border-top: 1px solid var(--mor-border);
     padding: 10px 0 0;
     min-width: 0;
     flex: 1 1 30%;

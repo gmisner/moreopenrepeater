@@ -582,7 +582,7 @@ export function AllStar() {
   ).map((r) => ({ node: r.node, name: r.label }));
 
   return (
-    <Page title="AllStarLink">
+    <Page title="AllStarLink" description="Monitor connected nodes, manage links, and configure your network.">
       <Card withBorder radius="md" className="mor-as mor-as-strip" component="section" aria-label="This node">
         <div>
           <div className="mor-as-strip-label">This machine&apos;s node</div>
@@ -601,7 +601,7 @@ export function AllStar() {
         ) : null}
       </Card>
 
-      <Tabs value={tab} onChange={changeTab} variant="default">
+      <Tabs className="mor-link-workspace" value={tab} onChange={changeTab} variant="default">
         <Tabs.List style={{ overflowX: "auto", flexWrap: "nowrap" }}>
           <Tabs.Tab value="links">Links</Tabs.Tab>
           <Tabs.Tab value="schedule">Favorites and schedule</Tabs.Tab>

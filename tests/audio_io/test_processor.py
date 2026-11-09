@@ -175,6 +175,18 @@ def test_clip_plays_and_holds_transmit_until_it_finishes():
     assert not p.playing
 
 
+def test_vox_ignores_loud_audio_while_a_clip_is_playing():
+    """Courtesy/ID on simplex+VOX must not reopen COS from our own TX audio."""
+    p = AudioProcessor(ProcessorSettings(RATE, vox_threshold_db=-40, vox_attack=0.02, vox_hold=0.1))
+    p.play(np.full(BLOCK * 5, 0.5, dtype=np.float32))
+
+    results, events = run(p, tone(1000, 0.2, amplitude=0.5))
+
+    assert all(r.transmitting for r in results[:5])
+    assert not any(isinstance(e, COSChanged) and e.active for e in events)
+    assert not p.cos_open
+
+
 def test_external_cos_source():
     p = AudioProcessor(ProcessorSettings(RATE, cos_source="external"))
 

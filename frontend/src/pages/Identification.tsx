@@ -302,7 +302,7 @@ export function Identification() {
                       onChange={(value) => setField("tts_voice", value || "")}
                       searchable
                       clearable
-                      placeholder={tts?.engine === "piper" ? "Default (en_GB-cori-medium)" : "Default (af_heart)"}
+                      placeholder={tts?.engine === "piper" ? "Default (en_US-amy-low)" : "Default (af_heart)"}
                     />
                     <Select
                       label={labeled("Speech speed", "How quickly the voice reads the text")}

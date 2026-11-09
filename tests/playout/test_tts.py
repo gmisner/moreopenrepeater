@@ -327,10 +327,10 @@ def test_list_tts_voices_for_piper_lists_curated_set():
     assert "en_US-lessac-medium" in ids
     assert "en_GB-alan-medium" in ids
     assert len(ids) > 5
-    cori = next(voice for voice in voices if voice.id == DEFAULT_PIPER_VOICE)
-    assert cori.locale == "en-GB"
-    assert cori.locale_label == "British English"
-    assert "Cori" in cori.label
+    amy = next(voice for voice in voices if voice.id == DEFAULT_PIPER_VOICE)
+    assert amy.locale == "en-US"
+    assert amy.locale_label == "American English"
+    assert "Amy" in amy.label
 
 
 def test_list_tts_voices_empty_for_other_engines():

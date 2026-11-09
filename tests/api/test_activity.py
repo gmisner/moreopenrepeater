@@ -192,3 +192,26 @@ def test_reads_include_rows_not_written_yet(tmp_path):
 
     assert [r.started_at for r in store.rows(0, 100)] == [10.0]
     assert len(store.recent("rx", 5)) == 1
+
+
+def test_24h_history_splits_cross_hour_airtime_and_excludes_old_events():
+    store = ActivityStore()
+    client, service, clock = make_client(store)
+    # Current time is 09:00. The rolling window starts yesterday at 09:00.
+    start = START - timedelta(hours=24)
+    store.add(ActivityRow("rx", ts(start + timedelta(minutes=59, seconds=30)), 90.0))
+    store.add(ActivityRow("tx", ts(start + timedelta(minutes=59, seconds=50)), 40.0))
+    store.add(ActivityRow("rx", ts(start - timedelta(hours=2)), 15.0))
+    store.add(ActivityRow("id", ts(start + timedelta(hours=1)), 10.0))
+
+    response = client.get("/api/activity/history24h")
+    assert response.status_code == 200
+    bins = response.json()["bins"]
+    assert len(bins) == 24
+    assert bins[0]["rx_seconds"] == 30.0
+    assert bins[1]["rx_seconds"] == 60.0
+    assert bins[0]["tx_seconds"] == 10.0
+    assert bins[1]["tx_seconds"] == 30.0
+    assert sum(bin["rx_count"] for bin in bins) == 1
+    assert sum(bin["rx_seconds"] for bin in bins) == 90.0
+    assert sum(bin["tx_seconds"] for bin in bins) == 40.0

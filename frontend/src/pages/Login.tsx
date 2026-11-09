@@ -1,4 +1,4 @@
-import { Alert, Button, Card, PasswordInput, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Box, Button, Card, Group, PasswordInput, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useState } from "react";
 import { ApiError, api } from "../api";
@@ -12,14 +12,17 @@ export function Login() {
   });
 
   return (
-    <Stack mih="100dvh" align="center" justify="center" p="md">
+    <Stack mih="100dvh" align="center" justify="center" p="md" className="mor-login">
       <Card withBorder shadow="lg" padding="xl" radius="lg" w="100%" maw={380}>
         <Stack gap="md">
-          <BrandMark size={32} />
-          <div>
-            <Title order={1}>moreopenrepeater</Title>
-            <Text c="dimmed">Sign in to manage the repeater.</Text>
-          </div>
+          <Group gap="md" wrap="nowrap">
+            <BrandMark size={72} />
+            <Box>
+              <Title order={1} className="mor-login-wordmark">MOR</Title>
+              <Text size="sm" fw={600}>More<Text span className="mor-brand-open">Open</Text>Repeater</Text>
+            </Box>
+          </Group>
+          <Text c="dimmed">Sign in to manage your repeater.</Text>
           <form
             onSubmit={form.onSubmit(async (values) => {
               setBusy(true);

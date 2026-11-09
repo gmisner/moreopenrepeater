@@ -234,7 +234,7 @@ export function Logs() {
     shipping?.secrets_set[key] && !cleared.has(key) ? "saved — type to replace" : undefined;
 
   return (
-    <Page title="Logs">
+    <Page title="Logs" description="Review controller events and troubleshoot system activity.">
       <Stack gap="lg">
         <Card withBorder padding="lg" radius="md">
           <Stack gap="md">

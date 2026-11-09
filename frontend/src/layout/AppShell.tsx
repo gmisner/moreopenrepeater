@@ -25,6 +25,7 @@ import { MiniStatus } from "./MiniStatus";
 import { RouteBoundary } from "./RouteBoundary";
 import { UserMenu } from "./UserMenu";
 import "./shell.css";
+import "./mor-brand.css";
 
 export function AppShell() {
   const { session, logout } = useSession();
@@ -37,7 +38,7 @@ export function AppShell() {
   const title = PAGE_TITLES[view] ?? "Dashboard";
 
   useEffect(() => {
-    document.title = `${title} · moreopenrepeater`;
+    document.title = `${title} · MOR | MoreOpenRepeater`;
     window.scrollTo(0, 0);
   }, [title]);
 
@@ -105,10 +106,8 @@ export function AppShell() {
         <Group h="100%" justify="space-between">
           <Group gap="sm">
             <Burger opened={opened} onClick={toggle} size="sm" aria-label="Open menu" />
-            <BrandMark size={26} />
-            <Text fw={700} visibleFrom="xs">
-              moreopenrepeater
-            </Text>
+            <BrandMark size={32} />
+            <Text fw={900} visibleFrom="xs" className="mor-brand-name">MOR</Text>
           </Group>
           <MiniStatus status={status} />
         </Group>
@@ -116,9 +115,12 @@ export function AppShell() {
 
       <MantineAppShell.Navbar p={0}>
         <Stack gap="md" p="md" style={{ height: "100%" }}>
-          <Group gap="sm" visibleFrom="md">
-            <BrandMark size={26} />
-            <Text fw={700}>moreopenrepeater</Text>
+          <Group gap="sm" visibleFrom="md" wrap="nowrap">
+            <BrandMark size={44} />
+            <Box>
+              <Text className="mor-brand-name">MOR</Text>
+              <Text className="mor-brand-expanded">More<strong>Open</strong>Repeater</Text>
+            </Box>
           </Group>
           <Box className="mor-station">
             {status?.callsign ? (
@@ -161,7 +163,7 @@ export function AppShell() {
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                color: view === item.id ? "var(--mantine-color-accent-4)" : "var(--mantine-color-dimmed)",
+                color: view === item.id ? "var(--mor-brand-orange)" : "var(--mantine-color-dimmed)",
                 fontSize: "0.72rem",
                 fontWeight: 600,
               }}
@@ -179,7 +181,7 @@ export function AppShell() {
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              color: opened ? "var(--mantine-color-accent-4)" : "var(--mantine-color-dimmed)",
+              color: opened ? "var(--mor-brand-orange)" : "var(--mantine-color-dimmed)",
               fontSize: "0.72rem",
               fontWeight: 600,
             }}
@@ -205,8 +207,8 @@ export function Page({
   children?: ReactNode;
 }) {
   return (
-    <Stack gap="md">
-      <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
+    <Stack gap="md" className="mor-page">
+      <Group className="mor-page-header" justify="space-between" align="flex-end" wrap="wrap" gap="sm">
         <Box>
           <Title order={1} className="mor-page-title" tabIndex={-1}>
             {title}

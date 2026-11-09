@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="MOR mountain and radio signal logo">
+<rect width="256" height="256" rx="48" fill="#0B1F2E"/>
+<g fill="none" stroke="#FF7A00" stroke-width="12" stroke-linecap="round">
+<path d="M44 115 A84 84 0 0 1 212 115"/>
+<path d="M69 115 A59 59 0 0 1 187 115"/>
+<path d="M94 115 A34 34 0 0 1 162 115"/>
+</g>
+<path fill="#F5F7FA" d="M23 192 82 124 108 149 146 99 234 192 191 166 170 179 145 144 126 170 108 156 81 184 69 165Z"/>
+</svg>

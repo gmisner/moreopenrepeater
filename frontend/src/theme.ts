@@ -16,6 +16,12 @@ const accent: MantineColorsTuple = [
   "#08111f",
 ];
 
+// MOR Orange is for identity and non-operational decoration only.
+const morOrange: MantineColorsTuple = [
+  "#fff3e8", "#ffe1c2", "#ffc18a", "#ffa34d", "#ff7a00",
+  "#e56d00", "#bd5800", "#944400", "#6e3200", "#482100",
+];
+
 const green: MantineColorsTuple = [
   "#e6f9ef",
   "#c6f0d8",
@@ -92,6 +98,7 @@ export const theme = createTheme({
   cursorType: "pointer",
   colors: {
     accent,
+    morOrange,
     green,
     red,
     amber,

@@ -29,7 +29,7 @@
 }
 
 .mor-onair[data-tone="rx"] { border-color: color-mix(in srgb, var(--dash-green) 55%, var(--mor-border)); }
-.mor-onair[data-tone="tx"] { border-color: color-mix(in srgb, var(--dash-accent) 55%, var(--mor-border)); }
+.mor-onair[data-tone="tx"] { border-color: color-mix(in srgb, var(--dash-red) 55%, var(--mor-border)); }
 .mor-onair[data-tone="alert"] { border-color: color-mix(in srgb, var(--dash-red) 60%, var(--mor-border)); }
 
 .mor-onair-station {
@@ -66,7 +66,7 @@
 }
 
 .mor-onair-state[data-tone="rx"] { color: var(--dash-green); }
-.mor-onair-state[data-tone="tx"] { color: var(--dash-accent); }
+.mor-onair-state[data-tone="tx"] { color: var(--dash-red); }
 .mor-onair-state[data-tone="alert"] { color: var(--dash-red); }
 .mor-onair-state[data-tone="idle"] { color: var(--mantine-color-text); }
 
@@ -365,3 +365,65 @@
     transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
   }
 }
+
+/* MOR dashboard visual rhythm; these selectors only affect presentation. */
+.mor-dash .mor-onair {
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.08);
+}
+[data-mantine-color-scheme="dark"] .mor-dash .mor-onair {
+  background: linear-gradient(145deg, #162c3c, #111e2a 75%);
+  border-color: #294052;
+}
+[data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="rx"] { border-color: var(--dash-green); }
+[data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="tx"] { border-color: var(--dash-red); }
+[data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="alert"] { border-color: var(--dash-red); }
+.mor-dash .mor-onair-callsign { letter-spacing: .06em; }
+.mor-dash .mor-onair-state { letter-spacing: -.035em; }
+.mor-dash .mor-path-node { min-width: 0; }
+.mor-dash .mor-path-value { overflow-wrap: anywhere; }
+@media (max-width: 37.5em) {
+  .mor-dash .mor-onair { border-radius: 12px; }
+}
+
+/* MOR control overview — uses actual controller state and fetched transmissions. */
+.mor-control-overview { min-width: 0; }
+.mor-overview-hero {
+  padding: clamp(18px, 3vw, 32px);
+  border-radius: 16px;
+  border: 1px solid var(--mor-border);
+  background: linear-gradient(110deg, #0b1f2e 0%, #173449 65%, #2c3948 100%);
+  color: #f5f7fa;
+  overflow: hidden;
+}
+.mor-overview-hero .mantine-Text-root { color: #bac9d5; }
+.mor-overview-eyebrow { font-size: .7rem; font-weight: 800; letter-spacing: .18em; color: #ff9638 !important; }
+.mor-overview-heading { color: #f5f7fa; font-size: clamp(1.25rem, 2vw, 1.8rem); letter-spacing: -.035em; }
+.mor-overview-metric { border-radius: 12px; min-width: 0; padding: 16px; }
+.mor-overview-metric[data-tone="rx"] { border-color: var(--mor-green); }
+.mor-overview-metric[data-tone="tx"] { border-color: var(--mor-red); }
+.mor-overview-value { font-size: clamp(1.05rem, 2vw, 1.6rem); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mor-airtime-card { min-width: 0; }
+.mor-airtime-chart {
+  height: 150px; display: flex; align-items: end; gap: 4px;
+  padding: 12px 8px 0; border-bottom: 1px solid var(--mor-border);
+  background: repeating-linear-gradient(to top, transparent 0, transparent 36px, var(--mor-border) 37px);
+}
+.mor-airtime-bar { background: #5aa5ff; border-radius: 4px 4px 0 0; flex: 1; max-width: 36px; min-width: 3px; }
+.mor-airtime-bar[data-timeout] { background: var(--mor-red); }
+@media (max-width: 37.5em) {
+  .mor-overview-hero { border-radius: 12px; }
+  .mor-overview-metric { padding: 12px; }
+  .mor-airtime-chart { gap: 2px; }
+}
+
+/* Rolling 24-hour paired RX/TX airtime bars */
+.mor-history-chart { display: grid; grid-template-columns: repeat(24,minmax(0,1fr)); gap: 3px; min-width: 0; }
+.mor-history-hour { display: flex; flex-direction: column; min-width: 0; text-align: center; gap: 5px; }
+.mor-history-hour .mantine-Text-root { font-size: .65rem; white-space: nowrap; }
+.mor-history-pair { height: 160px; display: flex; align-items: flex-end; gap: 1px; border-bottom: 1px solid var(--mor-border); }
+.mor-history-pair span { flex: 1; min-width: 0; border-radius: 3px 3px 0 0; }
+.mor-history-rx { background: #5aa5ff; }
+.mor-history-tx { background: #ff7a00; }
+.mor-history-key { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+@media (max-width: 37.5em) { .mor-history-chart { gap: 1px; } .mor-history-pair { height: 110px; } }

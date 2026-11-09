@@ -33,7 +33,7 @@ export function ConfigSummaryCard({
   children?: ReactNode;
 }) {
   return (
-    <Card withBorder padding="lg" radius="md">
+    <Card withBorder padding="lg" radius="md" className="mor-config-card">
       <Stack gap="md">
         <Group justify="space-between" align="flex-start" wrap="wrap">
           <div>

@@ -1,0 +1,158 @@
+/* MOR identity: brand orange is navigation only, never an operational TX/RX state. */
+:root {
+  --mor-brand-navy: #0b1f2e;
+  --mor-brand-orange: #ff7a00;
+  --mor-brand-mark: #0b1f2e;
+}
+[data-mantine-color-scheme="dark"] { --mor-brand-mark: #f5f7fa; }
+.mor-brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mor-brand-name { font-weight: 900; font-size: 1.4rem; letter-spacing: -.045em; line-height: 1; }
+.mor-brand-expanded { font-size: .69rem; color: var(--mantine-color-dimmed); letter-spacing: .01em; white-space: nowrap; }
+.mor-brand-expanded strong { color: var(--mor-brand-orange); font-weight: 700; }
+.mor-nav-link[data-active] {
+  border-inline-start: 3px solid var(--mor-brand-orange);
+  padding-inline-start: calc(var(--mantine-spacing-sm) - 3px);
+}
+.mor-page-title { letter-spacing: -.025em; }
+@media (prefers-reduced-motion: reduce) {
+  .mor-nav-link { transition: none; }
+}
+
+/* Shared MOR surfaces; existing semantic radio indicators remain unchanged. */
+.mor-brand-open { color: #ff7a00; }
+.mor-login { background: radial-gradient(circle at 50% 0%, #173449 0, #0b1f2e 48%, #081521 100%); }
+.mor-login .mantine-Card-root { border-color: #294052; background: #102538; color: #f5f7fa; }
+.mor-login .mantine-InputWrapper-label { color: #e6e8eb; }
+.mor-login .mantine-Text-root[data-c] { color: #bac9d5; }
+.mor-login-wordmark { font-size: 3rem; line-height: 1; letter-spacing: -.055em; color: #f5f7fa; }
+.mor-login .mantine-Button-root[type="submit"] { background: #ff7a00; color: #0b1f2e; font-weight: 800; }
+.mor-login .mantine-Button-root[type="submit"]:hover { background: #ff9638; }
+.mor-login .mantine-Button-root[type="submit"]:focus-visible { outline: 2px solid #f5f7fa; outline-offset: 2px; }
+.mor-login .mantine-Input-input { background: #0b1f2e; border-color: #475569; color: #f5f7fa; }
+.mor-login .mantine-Input-input::placeholder { color: #a8b8c6; }
+.mor-login .mantine-Input-input:focus { border-color: #ff9638; }
+
+/* MOR control center: subtle branded shell, without recoloring RF telemetry. */
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar {
+  background: linear-gradient(165deg, #102638 0%, #0b1f2e 62%, #101c29 100%);
+  border-inline-end: 1px solid #294052;
+}
+[data-mantine-color-scheme="dark"] .mantine-AppShell-header,
+[data-mantine-color-scheme="dark"] .mantine-AppShell-footer {
+  background: #0b1f2e;
+  border-color: #294052;
+}
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-brand-name { color: #f5f7fa; }
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-brand-expanded { color: #bac9d5; }
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-group { color: #bac9d5; }
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-link { color: #dce5ed; }
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-link:hover { background: #1a3548; }
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-nav-link[data-active] {
+  background: #243d4c;
+  color: #fff;
+}
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-station {
+  background: #132e42;
+  border-color: #294052;
+}
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar .mor-station-call { color: #f5f7fa; }
+.mor-nav-link:focus-visible { outline: 2px solid var(--mor-brand-orange); outline-offset: 2px; }
+.mor-login .mantine-Text-root { color: #bac9d5; }
+.mor-login .mor-brand-open { color: #ff9638; }
+.mor-login .mantine-InputWrapper-error { color: #ffb0b0; }
+
+/* Shared MOR page system: one visual language across every route. */
+.mor-page { min-width: 0; }
+.mor-page-header {
+  padding: 4px 0 16px;
+  border-bottom: 1px solid var(--mor-border, var(--mantine-color-default-border));
+}
+.mor-page-title {
+  font-size: clamp(1.45rem, 2.5vw, 1.85rem);
+  font-weight: 800;
+  letter-spacing: -.035em;
+}
+.mor-page .mantine-Card-root,
+.mor-config-card, .mor-stat-card {
+  border-radius: 12px;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.mor-config-card { border-inline-start: 3px solid var(--mor-brand-orange); }
+.mor-stat-card .mor-num { letter-spacing: -.035em; }
+.mor-empty-branded {
+  border: 1px dashed var(--mor-border, var(--mantine-color-default-border));
+  border-radius: 12px;
+  padding: clamp(16px, 3vw, 28px);
+}
+[data-mantine-color-scheme="dark"] .mor-page .mantine-Card-root {
+  border-color: #294052;
+}
+[data-mantine-color-scheme="dark"] .mor-config-card {
+  border-inline-start-color: var(--mor-brand-orange) !important;
+}
+[data-mantine-color-scheme="dark"] .mor-page .mantine-Card-root:hover {
+  border-color: #3b5b70;
+}
+[data-mantine-color-scheme="dark"] .mor-page .mantine-Table-tr:hover {
+  background: #172d40;
+}
+[data-mantine-color-scheme="dark"] .mor-page .mantine-Table-th {
+  color: #bac9d5;
+  font-size: .75rem;
+  letter-spacing: .035em;
+}
+.mor-page .mantine-Button-root:focus-visible,
+.mor-page .mantine-ActionIcon-root:focus-visible {
+  outline: 2px solid var(--mor-brand-orange);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mor-page .mantine-Card-root { transition: none; }
+}
+
+/* Radio + linking workspaces share navigation and operational surfaces. */
+.mor-radio-workspace, .mor-link-workspace { min-width: 0; }
+.mor-radio-workspace .mantine-Tabs-list,
+.mor-link-workspace .mantine-Tabs-list {
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--mor-border, var(--mantine-color-default-border));
+  border-radius: 12px;
+  background: var(--mor-panel-2, var(--mantine-color-default-hover));
+  scrollbar-width: thin;
+}
+.mor-radio-workspace .mantine-Tabs-tab,
+.mor-link-workspace .mantine-Tabs-tab {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-height: 42px;
+  font-weight: 600;
+  transition: background .15s ease;
+}
+.mor-radio-workspace .mantine-Tabs-tab[data-active],
+.mor-link-workspace .mantine-Tabs-tab[data-active] {
+  background: var(--mor-brand-navy);
+  color: #fff;
+  box-shadow: inset 0 -2px var(--mor-brand-orange);
+}
+[data-mantine-color-scheme="dark"] .mor-radio-workspace .mantine-Tabs-tab[data-active],
+[data-mantine-color-scheme="dark"] .mor-link-workspace .mantine-Tabs-tab[data-active] {
+  background: #294052;
+}
+.mor-radio-workspace .mantine-Tabs-tab:focus-visible,
+.mor-link-workspace .mantine-Tabs-tab:focus-visible {
+  outline: 2px solid var(--mor-brand-orange);
+  outline-offset: -2px;
+}
+.mor-radio-workspace .mantine-Tabs-panel,
+.mor-link-workspace .mantine-Tabs-panel { min-width: 0; }
+.mor-link-workspace .mor-as-strip {
+  border-inline-start: 3px solid var(--mor-brand-orange);
+  border-radius: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mor-radio-workspace .mantine-Tabs-tab,
+  .mor-link-workspace .mantine-Tabs-tab { transition: none; }
+}

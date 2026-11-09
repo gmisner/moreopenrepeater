@@ -1,0 +1,19 @@
+/* MOR identity: brand orange is navigation only, never an operational TX/RX state. */
+:root {
+  --mor-brand-navy: #0b1f2e;
+  --mor-brand-orange: #ff7a00;
+  --mor-brand-mark: #0b1f2e;
+}
+:root[data-theme="dark"] { --mor-brand-mark: #f5f7fa; }
+.mor-brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mor-brand-name { font-weight: 900; font-size: 1.4rem; letter-spacing: -.045em; line-height: 1; }
+.mor-brand-expanded { font-size: .69rem; color: var(--mantine-color-dimmed); letter-spacing: .01em; white-space: nowrap; }
+.mor-brand-expanded strong { color: var(--mor-brand-orange); font-weight: 700; }
+.mor-nav-link[data-active] {
+  border-inline-start: 3px solid var(--mor-brand-orange);
+  padding-inline-start: calc(var(--mantine-spacing-sm) - 3px);
+}
+.mor-page-title { letter-spacing: -.025em; }
+@media (prefers-reduced-motion: reduce) {
+  .mor-nav-link { transition: none; }
+}

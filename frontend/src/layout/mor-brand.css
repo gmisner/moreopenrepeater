@@ -6,22 +6,10 @@
   --mor-brand-cloud: #e5e7eb;
   --mor-brand-snow: #f5f7fa;
   --mor-brand-mark: #0b1f2e;
-  /* Opaque enough that mountain photo never washes out body text. */
-  --mor-glass-bg: color-mix(in srgb, #0b1f2e 88%, transparent);
-  --mor-glass-bg-strong: color-mix(in srgb, #081521 92%, transparent);
-  --mor-glass-border: color-mix(in srgb, #e5e7eb 22%, transparent);
-  --mor-glass-highlight: color-mix(in srgb, #ffffff 8%, transparent);
 }
 [data-mantine-color-scheme="dark"] { --mor-brand-mark: #f5f7fa; }
-[data-mantine-color-scheme="light"] {
-  --mor-glass-bg: color-mix(in srgb, #ffffff 90%, transparent);
-  --mor-glass-bg-strong: color-mix(in srgb, #f8fafc 94%, transparent);
-  --mor-glass-border: color-mix(in srgb, #0b1f2e 14%, transparent);
-  --mor-glass-highlight: color-mix(in srgb, #ffffff 55%, transparent);
-}
 .mor-brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .mor-brand-name {
-  font-family: Montserrat, Inter, "Avenir Next", "Segoe UI", sans-serif;
   font-weight: 900;
   font-size: 1.4rem;
   letter-spacing: -.045em;
@@ -36,44 +24,23 @@
   font-weight: 800;
 }
 .mor-nav-link[data-active] .mantine-NavLink-section { color: #0b1f2e; }
-.mor-page-title { letter-spacing: -.025em; font-family: Montserrat, Inter, "Avenir Next", "Segoe UI", sans-serif; }
+.mor-page-title { letter-spacing: -.025em; }
 @media (prefers-reduced-motion: reduce) {
   .mor-nav-link { transition: none; }
 }
 
-/* Shell: photo mountain backdrop + glass surfaces (keeps existing NAV grouping). */
+/* Shell: same gray page bg as the rest of the app; navy stays in the nav chrome. */
 .mor-shell .mantine-AppShell-main.mor-shell-main {
-  position: relative;
-  isolation: isolate;
-  background-color: #0b1f2e;
-  background-image:
-    linear-gradient(165deg, color-mix(in srgb, #0b1f2e 42%, transparent) 0%, color-mix(in srgb, #0b1f2e 78%, transparent) 48%, #081521 100%),
-    url("/mor-backdrop.jpg");
-  background-position: center top, center 18%;
-  background-size: cover, cover;
-  background-repeat: no-repeat;
+  background: var(--mor-bg, var(--mantine-color-body));
   min-height: 100dvh;
 }
-[data-mantine-color-scheme="light"] .mor-shell .mantine-AppShell-main.mor-shell-main {
-  background-color: #e8eef3;
-  background-image:
-    linear-gradient(165deg, color-mix(in srgb, #f5f7fa 55%, transparent) 0%, color-mix(in srgb, #e5e7eb 82%, transparent) 55%, #dbe3ea 100%),
-    url("/mor-backdrop.jpg");
-}
 .mor-shell-header {
-  backdrop-filter: blur(18px) saturate(1.15);
-  background: var(--mor-glass-bg-strong) !important;
-  border-bottom: 1px solid var(--mor-glass-border) !important;
-  box-shadow: inset 0 -1px 0 var(--mor-glass-highlight);
+  background: var(--mor-sidebar, var(--mantine-color-body)) !important;
+  border-bottom: 1px solid var(--mor-border, var(--mantine-color-default-border)) !important;
 }
 .mor-shell-nav {
-  backdrop-filter: blur(20px) saturate(1.1);
-  background: color-mix(in srgb, #0b1f2e 94%, transparent) !important;
-  border-inline-end: 1px solid var(--mor-glass-border) !important;
-  box-shadow: inset -1px 0 0 var(--mor-glass-highlight);
-}
-[data-mantine-color-scheme="light"] .mor-shell-nav {
-  background: color-mix(in srgb, #0b1f2e 96%, transparent) !important;
+  background: var(--mor-brand-navy) !important;
+  border-inline-end: 1px solid #294052 !important;
 }
 .mor-shell-eyebrow {
   font-size: .68rem;
@@ -84,7 +51,6 @@
 }
 .mor-shell-heading {
   margin: 0;
-  font-family: Montserrat, Inter, "Avenir Next", "Segoe UI", sans-serif;
   font-size: 1.35rem;
   font-weight: 800;
   letter-spacing: -.03em;
@@ -95,13 +61,11 @@
   font-size: .62rem !important;
   text-align: center;
 }
+/* Dashboard cards share the app panel gray — no navy glass tint. */
 .mor-glass-card {
-  backdrop-filter: blur(16px) saturate(1.12);
-  background: var(--mor-glass-bg) !important;
-  border-color: var(--mor-glass-border) !important;
-  box-shadow:
-    0 14px 36px rgb(0 0 0 / .28),
-    inset 0 1px 0 var(--mor-glass-highlight);
+  background: var(--mor-panel) !important;
+  border-color: var(--mor-border) !important;
+  box-shadow: none;
 }
 
 /* Shared MOR surfaces; existing semantic radio indicators remain unchanged. */
@@ -126,14 +90,14 @@
 .mor-shell-nav .mor-nav-link:hover { background: color-mix(in srgb, #ffffff 8%, transparent); }
 .mor-shell-nav .mor-station {
   background: color-mix(in srgb, #ffffff 6%, transparent);
-  border: 1px solid var(--mor-glass-border);
+  border: 1px solid #294052;
   border-radius: 12px;
   padding: 8px 12px;
 }
 .mor-shell-nav .mor-station-call { color: #f5f7fa; }
 [data-mantine-color-scheme="dark"] .mantine-AppShell-footer {
-  background: #0b1f2e;
-  border-color: #294052;
+  background: var(--mor-sidebar);
+  border-color: var(--mor-border);
 }
 .mor-nav-link:focus-visible { outline: 2px solid var(--mor-brand-orange); outline-offset: 2px; }
 .mor-login .mantine-Text-root { color: #bac9d5; }
@@ -164,19 +128,19 @@
   padding: clamp(16px, 3vw, 28px);
 }
 [data-mantine-color-scheme="dark"] .mor-page .mantine-Card-root {
-  border-color: #294052;
+  border-color: var(--mor-border);
 }
 [data-mantine-color-scheme="dark"] .mor-config-card {
   border-inline-start-color: var(--mor-brand-orange) !important;
 }
 [data-mantine-color-scheme="dark"] .mor-page .mantine-Card-root:hover {
-  border-color: #3b5b70;
+  border-color: color-mix(in srgb, var(--mor-border) 70%, #8a919c);
 }
 [data-mantine-color-scheme="dark"] .mor-page .mantine-Table-tr:hover {
-  background: #172d40;
+  background: var(--mor-panel-2);
 }
 [data-mantine-color-scheme="dark"] .mor-page .mantine-Table-th {
-  color: #bac9d5;
+  color: var(--mor-muted);
   font-size: .75rem;
   letter-spacing: .035em;
 }

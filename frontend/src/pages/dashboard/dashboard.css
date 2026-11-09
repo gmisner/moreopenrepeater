@@ -29,7 +29,7 @@
 }
 
 .mor-onair[data-tone="rx"] { border-color: color-mix(in srgb, var(--dash-green) 55%, var(--mor-border)); }
-.mor-onair[data-tone="tx"] { border-color: color-mix(in srgb, var(--dash-accent) 55%, var(--mor-border)); }
+.mor-onair[data-tone="tx"] { border-color: color-mix(in srgb, var(--dash-red) 55%, var(--mor-border)); }
 .mor-onair[data-tone="alert"] { border-color: color-mix(in srgb, var(--dash-red) 60%, var(--mor-border)); }
 
 .mor-onair-station {
@@ -66,7 +66,7 @@
 }
 
 .mor-onair-state[data-tone="rx"] { color: var(--dash-green); }
-.mor-onair-state[data-tone="tx"] { color: var(--dash-accent); }
+.mor-onair-state[data-tone="tx"] { color: var(--dash-red); }
 .mor-onair-state[data-tone="alert"] { color: var(--dash-red); }
 .mor-onair-state[data-tone="idle"] { color: var(--mantine-color-text); }
 

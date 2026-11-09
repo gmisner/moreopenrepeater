@@ -4,7 +4,7 @@ import type { RepeaterStatus } from "../../status";
 import { formatAirtime } from "./activity";
 
 export type History24h = { since: string; until: string; bins: { started_at: string; rx_seconds: number; tx_seconds: number; rx_count: number }[] };
-\ntype Props = {
+type Props = {
   status: RepeaterStatus | null;
   connected: boolean;
   links: number | null;
@@ -18,8 +18,8 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
   </Card>;
 }
 
-/** Only charts fetched transmissions, never fabricated 24h traffic. */
-export function ControlOverview({ status, connected, links, transmissions, history }: Props) {
+/** Displays recorded rolling-hour airtime; no simulated readings. */
+export function ControlOverview({ status, connected, links, history }: Props) {
   const bins = history?.bins ?? [];
   const max = Math.max(1, ...bins.flatMap((bin) => [bin.rx_seconds, bin.tx_seconds]));
   const ptt = Boolean(status?.ptt_active);

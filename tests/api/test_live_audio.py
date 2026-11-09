@@ -547,15 +547,17 @@ def test_each_receiver_opening_is_logged_and_listed_newest_first(caplog):
     with caplog.at_level("INFO", logger="moreopenrepeater.receiver"):
         feed(live.engine, tone(blocks=25, hz=1000.0))
         feed(live.engine, tone(level=0.0, blocks=10))
-        feed(live.engine, tone(blocks=5, hz=700.0))
+        # Drain the courtesy clip: VOX ignores carriers while clips play.
+        feed(live.engine, tone(level=0.0, blocks=100))
+        feed(live.engine, tone(blocks=25, hz=700.0))
         feed(live.engine, tone(level=0.0, blocks=10))
 
     assert len(live.openings) == 2
-    first = live.openings[0]
+    first = live.openings[0]  # oldest; the HTTP list is newest-first
     assert first["strongest_hz"] == pytest.approx(1000, abs=10) and first["tone_share"] > 0.9
     assert first["started_at"] == pytest.approx(1000.0 - first["duration"])
     logged = [r.getMessage() for r in caplog.records if r.name == "moreopenrepeater.receiver"]
-    assert "strongest 1000 Hz" in logged[0] and "while the repeater was transmitting" in logged[1]
+    assert "strongest 1000 Hz" in logged[0] and "strongest 700 Hz" in logged[1]
 
     tmp = Path(tempfile.mkdtemp())
     client = TestClient(create_app(service=service, live_audio=live, start_background_tick=False, log_path=tmp / "t.log"))

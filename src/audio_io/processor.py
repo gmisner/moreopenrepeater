@@ -47,9 +47,10 @@ _CTCSS_ANALYZE_EVERY_BLOCKS = 5  # CTCSS needs a 1 s window anyway; ~100 ms deci
 _DTMF_MUTE_BLOCKS = 3
 _DTMF_MUTE_HANG_BLOCKS = 2  # the tones' tail, and the gap before a next digit
 _AFTER_TX_LIMIT_SECONDS = 60.0
-# After a clip (courtesy, ID) ends, keep VOX deaf briefly so our own TX audio
-# (or its echo into the mic) cannot reopen COS on simplex/half-duplex.
-_VOX_DEAF_AFTER_CLIP_SECONDS = 0.75
+# After a clip (courtesy, ID) ends, keep VOX deaf briefly so TX echo into the
+# mic cannot reopen COS on simplex/half-duplex. Short: long enough for the
+# tail, not so long it eats a quick re-key.
+_VOX_DEAF_AFTER_CLIP_SECONDS = 0.15
 
 
 @dataclass

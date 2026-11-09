@@ -74,11 +74,18 @@ def feed(live, signal):
         live.engine.process_one(signal[start : start + BLOCK])
 
 
-def settle(service, clock):
-    """Let the courtesy tone and hang time run out."""
+def settle(service, clock, live=None):
+    """Let the courtesy tone and hang time run out, and drain any clip audio.
+
+    Clips keep `processor.playing` true until their samples are consumed;
+    VOX ignores carriers while a clip is playing, so tests must drain them
+    before the next key-up.
+    """
     for _ in range(3):
         clock["now"] += 5
         service.tick()
+    if live is not None:
+        feed(live, np.zeros(RATE * 2, dtype=np.float32))
 
 
 def test_store_saves_lists_newest_first_and_prunes(tmp_path):
@@ -114,7 +121,7 @@ def test_disabled_store_is_empty_and_saves_nothing():
 def test_transmissions_recorded_only_when_turned_on():
     live, service, recordings, clock = make_live()
     feed(live, transmission(1.5))
-    settle(service, clock)
+    settle(service, clock, live)
     assert recordings.list() == []
 
     service.update_config(record_transmissions=True)
@@ -144,7 +151,7 @@ def test_parrot_records_next_transmission_without_repeating_and_plays_it_back():
     assert len(live._renderer.render(f"recording:{saved.id}", service.config)) >= RATE
 
     service.controller._announcements.clear()
-    settle(service, clock)
+    settle(service, clock, live)
     second = transmission(1.5)  # parrot is one-shot
     feed(live, second[: BLOCK * 5])
     assert live.engine.processor._repeating is True

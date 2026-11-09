@@ -365,3 +365,23 @@
     transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
   }
 }
+
+/* MOR dashboard visual rhythm; these selectors only affect presentation. */
+.mor-dash .mor-onair {
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.08);
+}
+[data-mantine-color-scheme="dark"] .mor-dash .mor-onair {
+  background: linear-gradient(145deg, #162c3c, #111e2a 75%);
+  border-color: #294052;
+}
+[data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="rx"] { border-color: var(--dash-green); }
+[data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="tx"] { border-color: var(--dash-red); }
+[data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="alert"] { border-color: var(--dash-red); }
+.mor-dash .mor-onair-callsign { letter-spacing: .06em; }
+.mor-dash .mor-onair-state { letter-spacing: -.035em; }
+.mor-dash .mor-path-node { min-width: 0; }
+.mor-dash .mor-path-value { overflow-wrap: anywhere; }
+@media (max-width: 37.5em) {
+  .mor-dash .mor-onair { border-radius: 12px; }
+}

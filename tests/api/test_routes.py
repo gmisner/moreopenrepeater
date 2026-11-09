@@ -147,7 +147,8 @@ def test_index_serves_dashboard_html():
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "moreopenrepeater" in response.text
+    assert "MOR | MoreOpenRepeater" in response.text
+    assert 'id="root"' in response.text
 
 
 def test_list_macros_starts_empty():

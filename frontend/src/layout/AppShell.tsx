@@ -230,6 +230,9 @@ export function Page({
   actions?: ReactNode;
   children?: ReactNode;
 }) {
+  // Desktop title lives in the shell header. Skip an empty page-header row so
+  // pages without description/actions (e.g. Dashboard) don't leave a dead gap.
+  const desktopHeader = Boolean(description || actions);
   return (
     <Stack gap="md" className="mor-page">
       <Group className="mor-page-header" justify="space-between" align="flex-end" wrap="wrap" gap="sm" hiddenFrom="md">
@@ -245,16 +248,18 @@ export function Page({
         </Box>
         {actions}
       </Group>
-      <Group className="mor-page-header mor-page-header-desktop" justify="space-between" align="flex-end" wrap="wrap" gap="sm" visibleFrom="md">
-        {description ? (
-          <Text c="dimmed" maw="75ch">
-            {description}
-          </Text>
-        ) : (
-          <span />
-        )}
-        {actions}
-      </Group>
+      {desktopHeader ? (
+        <Group className="mor-page-header mor-page-header-desktop" justify="space-between" align="flex-end" wrap="wrap" gap="sm" visibleFrom="md">
+          {description ? (
+            <Text c="dimmed" maw="75ch">
+              {description}
+            </Text>
+          ) : (
+            <span />
+          )}
+          {actions}
+        </Group>
+      ) : null}
       {children}
     </Stack>
   );

@@ -22,17 +22,17 @@ Operational semantics stay unchanged: blue primary actions, green RX, red TX, am
 
 ## Current stage
 
-Shell + dashboard pass toward the approved mockup:
+Shell + dashboard polish toward the approved mockup:
 
-- Mountain SVG backdrop with glass nav/header/cards
+- Photo mountain backdrop (`frontend/public/mor-backdrop.jpg`, cropped from brand guidelines)
+- Stronger glass panels (higher opacity + inset highlight) for readable contrast over the photo
+- Status strip / KPI / quick-link spacing tuned to the mockup rhythm
 - Desktop header with page title; existing Operate / Repeater / Integrations / System nav groups kept
-- Orange filled active nav item
-- Dashboard status strip (online + TX/RX/offset from APRS config when set)
-- KPI cards, RF activity chart, system health, quick links — all from live controller data (no invented user counts)
+- Metrics stay live controller/config data only (no invented user counts)
 
 ## Next stages
 
 - Bundle Montserrat/Inter locally if operators want exact faces offline
 - Refine logo geometry against the guidelines lockup
 - Carry glass surfaces through remaining pages
-- Accessibility/contrast pass on glass + mountain backdrop
+- Optional: swap backdrop for a site-specific tower photo

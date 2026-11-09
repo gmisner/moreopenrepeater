@@ -1,4 +1,4 @@
-import { Badge, Card, Group, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Badge, Card, Group, Text, Title } from "@mantine/core";
 import { Link } from "react-router-dom";
 import type { Config } from "../../config";
 import type { RepeaterStatus } from "../../status";
@@ -82,7 +82,7 @@ export function ControlOverview({ status, connected, links, history, config, lin
   const txAir = history ? bins.reduce((sum, bin) => sum + bin.tx_seconds, 0) : null;
 
   return (
-    <Stack gap="md" className="mor-control-overview">
+    <div className="mor-control-overview">
       <Card withBorder className="mor-glass-card mor-status-strip" component="section" aria-label="Repeater status">
         <Group justify="space-between" align="center" wrap="wrap" gap="md">
           <Group gap="sm" wrap="nowrap">
@@ -95,7 +95,7 @@ export function ControlOverview({ status, connected, links, history, config, lin
               </Text>
             </div>
           </Group>
-          <Group gap="xl" wrap="wrap">
+          <div className="mor-status-metrics">
             <div className="mor-status-metric">
               <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                 TX Frequency
@@ -120,11 +120,11 @@ export function ControlOverview({ status, connected, links, history, config, lin
                 {offset != null ? `${offset > 0 ? "+" : ""}${offset.toFixed(4)} MHz` : "Not set"}
               </Text>
             </div>
-          </Group>
+          </div>
         </Group>
       </Card>
 
-      <SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }} spacing="sm">
+      <div className="mor-kpi-grid">
         <Kpi
           label="Receiving (RX)"
           value={!connected ? "Unknown" : cos ? "Receiving" : "Quiet"}
@@ -150,7 +150,7 @@ export function ControlOverview({ status, connected, links, history, config, lin
           detail={linkRadioOnline ? "Audio path ready" : "Not running"}
           tone={linkRadioOnline ? "ok" : undefined}
         />
-      </SimpleGrid>
+      </div>
 
       <div className="mor-overview-split">
         <Card
@@ -251,7 +251,7 @@ export function ControlOverview({ status, connected, links, history, config, lin
         </Card>
       </div>
 
-      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+      <div className="mor-quick-row">
         <Card component={Link} to="/simulator" withBorder className="mor-glass-card mor-quick-link">
           <Text fw={800}>Quick Actions</Text>
           <Text size="sm" c="dimmed">
@@ -270,7 +270,7 @@ export function ControlOverview({ status, connected, links, history, config, lin
             Airtime history and controller log stream
           </Text>
         </Card>
-      </SimpleGrid>
-    </Stack>
+      </div>
+    </div>
   );
 }

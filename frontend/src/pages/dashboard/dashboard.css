@@ -387,9 +387,31 @@
 }
 
 /* MOR control overview — glass panels over the mountain shell. */
-.mor-control-overview { min-width: 0; }
-.mor-status-strip { border-radius: 16px; padding: 18px 20px; }
-.mor-status-metric { min-width: 7.5rem; }
+.mor-control-overview {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+.mor-status-strip {
+  border-radius: 18px;
+  padding: 18px 22px;
+}
+.mor-status-strip .mantine-Group-root {
+  gap: clamp(16px, 2.5vw, 28px);
+}
+.mor-status-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0;
+  margin-inline-start: auto;
+}
+.mor-status-metric {
+  min-width: 8.2rem;
+  padding: 2px 18px;
+  border-inline-start: 1px solid var(--mor-glass-border);
+}
+.mor-status-metric:first-child { border-inline-start: 0; padding-inline-start: 0; }
 .mor-pulse {
   width: 12px; height: 12px; border-radius: 50%;
   background: var(--mor-amber); flex: none;
@@ -397,30 +419,57 @@
 }
 .mor-pulse[data-ok] {
   background: var(--mor-green);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--mor-green) 22%, transparent);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--mor-green) 24%, transparent),
+    0 0 18px color-mix(in srgb, var(--mor-green) 45%, transparent);
 }
-.mor-kpi { border-radius: 14px; min-width: 0; padding: 16px; }
+@media (prefers-reduced-motion: no-preference) {
+  .mor-pulse[data-ok] { animation: mor-pulse 2.4s ease-in-out infinite; }
+}
+@keyframes mor-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--mor-green) 24%, transparent), 0 0 12px color-mix(in srgb, var(--mor-green) 35%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--mor-green) 18%, transparent), 0 0 20px color-mix(in srgb, var(--mor-green) 55%, transparent); }
+}
+.mor-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.mor-kpi {
+  border-radius: 16px;
+  min-width: 0;
+  min-height: 112px;
+  padding: 16px 16px 14px;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
 .mor-kpi[data-tone="rx"] { border-color: var(--mor-green) !important; }
 .mor-kpi[data-tone="tx"] { border-color: var(--mor-red) !important; }
 .mor-kpi[data-tone="ok"] { border-color: color-mix(in srgb, var(--mor-brand-orange) 55%, var(--mor-border)) !important; }
-.mor-kpi-label { letter-spacing: .06em; }
+.mor-kpi-label {
+  letter-spacing: .08em;
+  font-size: .68rem !important;
+}
 .mor-kpi-value {
   font-family: Montserrat, Inter, "Avenir Next", "Segoe UI", sans-serif;
-  font-size: clamp(1.1rem, 2vw, 1.55rem);
-  letter-spacing: -.03em;
+  font-size: clamp(1.2rem, 2.1vw, 1.7rem);
+  letter-spacing: -.035em;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+  line-height: 1.15;
 }
 .mor-overview-split {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
-  gap: var(--mantine-spacing-md);
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr);
+  gap: 14px;
   min-width: 0;
 }
 .mor-airtime-card { min-width: 0; }
 .mor-health-list {
   list-style: none; margin: 0; padding: 0;
-  display: grid; gap: 10px;
+  display: grid; gap: 12px;
 }
 .mor-health-list li {
   display: grid;
@@ -428,7 +477,10 @@
   gap: 10px;
   align-items: center;
   font-size: .9rem;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--mor-glass-border);
 }
+.mor-health-list li:last-child { border-bottom: 0; padding-bottom: 0; }
 .mor-health-mark {
   width: 22px; height: 22px; border-radius: 50%;
   display: grid; place-items: center;
@@ -442,25 +494,48 @@
 }
 .mor-health-label { color: var(--mantine-color-text); font-weight: 600; }
 .mor-health-value { color: var(--mantine-color-dimmed); text-align: right; }
+.mor-quick-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
 .mor-quick-link {
-  border-radius: 14px;
-  padding: 18px;
+  border-radius: 16px;
+  padding: 18px 18px 16px;
   text-decoration: none;
   color: inherit;
-  transition: transform .15s ease, border-color .15s ease;
+  min-height: 92px;
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 .mor-quick-link:hover {
   border-color: color-mix(in srgb, var(--mor-brand-orange) 55%, var(--mor-border)) !important;
   transform: translateY(-1px);
+  box-shadow: 0 16px 34px rgb(0 0 0 / .28);
+}
+@media (max-width: 75em) {
+  .mor-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 53.75em) {
   .mor-overview-split { grid-template-columns: 1fr; }
+  .mor-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mor-quick-row { grid-template-columns: 1fr; }
+  .mor-status-metrics { margin-inline-start: 0; width: 100%; }
+  .mor-status-metric {
+    border-inline-start: 0;
+    border-top: 1px solid var(--mor-glass-border);
+    padding: 10px 0 0;
+    min-width: 0;
+    flex: 1 1 30%;
+  }
+  .mor-status-metric:first-child { border-top: 0; padding-top: 0; }
 }
 @media (max-width: 37.5em) {
-  .mor-status-strip, .mor-kpi, .mor-quick-link { border-radius: 12px; }
+  .mor-status-strip, .mor-kpi, .mor-quick-link { border-radius: 14px; }
+  .mor-kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .mor-quick-link { transition: none; }
+  .mor-pulse[data-ok] { animation: none; }
 }
 
 /* Rolling 24-hour paired RX/TX airtime bars */

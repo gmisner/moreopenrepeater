@@ -1,14 +1,14 @@
 import { Badge, Card, Group, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { Link } from "react-router-dom";
 import type { RepeaterStatus } from "../../status";
-import type { Transmission } from "./activity";
 import { formatAirtime } from "./activity";
 
-type Props = {
+export type History24h = { since: string; until: string; bins: { started_at: string; rx_seconds: number; tx_seconds: number; rx_count: number }[] };
+\ntype Props = {
   status: RepeaterStatus | null;
   connected: boolean;
   links: number | null;
-  transmissions: Transmission[];
+  history: History24h | null;
 };
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: "rx" | "tx" }) {
@@ -19,10 +19,9 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
 }
 
 /** Only charts fetched transmissions, never fabricated 24h traffic. */
-export function ControlOverview({ status, connected, links, transmissions }: Props) {
-  const rows = transmissions.filter((row) => Number.isFinite(row.duration) && row.duration >= 0);
-  const total = rows.reduce((sum, row) => sum + row.duration, 0);
-  const max = Math.max(1, ...rows.map((row) => row.duration));
+export function ControlOverview({ status, connected, links, transmissions, history }: Props) {
+  const bins = history?.bins ?? [];
+  const max = Math.max(1, ...bins.flatMap((bin) => [bin.rx_seconds, bin.tx_seconds]));
   const ptt = Boolean(status?.ptt_active);
   const cos = Boolean(status?.cos_active);
   const state = !connected ? "Disconnected" : !status ? "Waiting for status" : status.locked_out ? "Locked out" : ptt ? "Transmitting" : cos ? "Receiving" : "Standby";
@@ -44,26 +43,37 @@ export function ControlOverview({ status, connected, links, transmissions }: Pro
         <Metric label="Receiver" value={!connected ? "Unknown" : cos ? "Carrier" : "Quiet"} tone={connected && cos ? "rx" : undefined} />
         <Metric label="Transmitter" value={!connected ? "Unknown" : ptt ? "Keyed" : "Off"} tone={connected && ptt ? "tx" : undefined} />
         <Metric label="Linked nodes" value={links === null ? "Unavailable" : String(links)} />
-        <Metric label="Recent airtime" value={rows.length ? formatAirtime(total) : "No samples"} />
+        <Metric label="24h RX airtime" value={history ? formatAirtime(bins.reduce((sum, bin) => sum + bin.rx_seconds, 0)) : "Unavailable"} />
       </SimpleGrid>
       <Card withBorder radius="lg" padding="lg" component="section" aria-labelledby="mor-airtime-title" className="mor-airtime-card">
         <Group justify="space-between" mb="md" align="center">
           <div>
-            <Title order={3} id="mor-airtime-title" size="md">Recent RF activity</Title>
-            <Text size="xs" c="dimmed">Durations of the latest {rows.length} recorded transmissions (up to 20)</Text>
+            <Title order={3} id="mor-airtime-title" size="md">24-hour RF activity</Title>
+            <Text size="xs" c="dimmed">Rolling 24 hours · recorded RX and TX airtime per hour</Text>
           </div>
           <Text component={Link} to="/activity" size="sm">View activity</Text>
         </Group>
-        {rows.length ? (
-          <div className="mor-airtime-chart" role="img" aria-label={`Durations of ${rows.length} recent transmissions, longest ${Math.round(max)} seconds`}>
-            {rows.slice().reverse().map((row, index) => (
-              <span key={`${row.started_at}-${index}`} className="mor-airtime-bar" data-timeout={row.timed_out || undefined}
-                style={{ height: `${Math.max(4, row.duration / max * 100)}%` }}
-                title={`${new Date(row.started_at).toLocaleString()}: ${row.duration.toFixed(1)} seconds${row.timed_out ? " (timeout)" : ""}`} />
-            ))}
-          </div>
-        ) : <Text c="dimmed" size="sm">No transmission samples available yet.</Text>}
-        <Text size="xs" c="dimmed" mt="sm">Showing recorded airtime, not a continuous 24-hour RF measurement.</Text>
+        {history && bins.length === 24 ? (
+          <>
+            <Group gap="md" mb="sm">
+              <Text size="xs"><span className="mor-history-key mor-history-rx" /> RX airtime</Text>
+              <Text size="xs"><span className="mor-history-key mor-history-tx" /> TX airtime</Text>
+            </Group>
+            <div className="mor-history-chart" role="img" aria-label="Hourly recorded receiver and transmitter airtime for the last 24 hours">
+              {bins.map((bin, index) => (
+                <div className="mor-history-hour" key={bin.started_at}
+                  title={`${new Date(bin.started_at).toLocaleString()}: RX ${formatAirtime(bin.rx_seconds)}, TX ${formatAirtime(bin.tx_seconds)}`}>
+                  <div className="mor-history-pair">
+                    <span className="mor-history-rx" style={{ height: `${bin.rx_seconds > 0 ? Math.max(2, bin.rx_seconds / max * 100) : 0}%` }} />
+                    <span className="mor-history-tx" style={{ height: `${bin.tx_seconds > 0 ? Math.max(2, bin.tx_seconds / max * 100) : 0}%` }} />
+                  </div>
+                  {index % 4 === 0 ? <Text size="xs" c="dimmed">{new Date(bin.started_at).toLocaleTimeString([], { hour: "numeric" })}</Text> : <span aria-hidden="true" />}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : <Text c="dimmed" size="sm">24-hour history is not available yet.</Text>}
+        <Text size="xs" c="dimmed" mt="sm">Historical RX/TX airtime is recorded on completed events; it is not a continuous signal-strength measurement.</Text>
       </Card>
     </Stack>
   );

@@ -46,7 +46,7 @@ class PiperService:
         env: Optional[dict[str, str]] = None,
     ) -> None:
         self.python = python
-        self.voice = (voice if voice is not None else os.environ.get("PIPER_VOICE", "")).strip() or "en_GB-cori-medium"
+        self.voice = (voice if voice is not None else os.environ.get("PIPER_VOICE", "")).strip() or "en_US-amy-low"
         self.data_dir = data_dir if data_dir is not None else os.environ.get("PIPER_DATA_DIR", "").strip()
         self.url = url.rstrip("/")
         self._popen = popen

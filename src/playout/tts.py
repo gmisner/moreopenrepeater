@@ -50,27 +50,30 @@ MIN_TTS_SPEED = 0.5
 MAX_TTS_SPEED = 2.0
 # Prefer the long-lived localhost service so each speak does not reload ONNX.
 KOKORO_SERVICE_MODE = "required"
-# Medium is the Pi default: high quality voices take tens of seconds per phrase.
-DEFAULT_PIPER_VOICE = "en_GB-cori-medium"
+# Low US female is the Pi default: high/medium voices can take many seconds per phrase.
+DEFAULT_PIPER_VOICE = "en_US-amy-low"
 # Piper voice ids look like en_GB-cori-high (locale-name-quality).
 _PIPER_VOICE_RE = re.compile(r"^[a-z]{2}_[A-Z]{2}-[a-z0-9_]+-(x_low|low|medium|high)$")
 # Curated English set for the Identification picker (download on first use).
 _PIPER_BUILTIN_VOICES = (
+    "en_US-amy-low",
+    "en_US-amy-medium",
+    "en_US-kathleen-low",
+    "en_US-lessac-low",
+    "en_US-lessac-medium",
+    "en_US-lessac-high",
+    "en_US-kristin-medium",
+    "en_US-hfc_female-medium",
+    "en_US-joe-medium",
+    "en_US-bryce-medium",
+    "en_US-ryan-medium",
+    "en_US-ryan-high",
+    "en_US-hfc_male-medium",
     "en_GB-cori-medium",
     "en_GB-cori-high",
     "en_GB-alan-medium",
     "en_GB-alba-medium",
     "en_GB-jenny_dioco-medium",
-    "en_US-lessac-high",
-    "en_US-lessac-medium",
-    "en_US-amy-medium",
-    "en_US-ryan-high",
-    "en_US-ryan-medium",
-    "en_US-joe-medium",
-    "en_US-kristin-medium",
-    "en_US-bryce-medium",
-    "en_US-hfc_female-medium",
-    "en_US-hfc_male-medium",
 )
 
 ITU_PHONETIC = {

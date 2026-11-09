@@ -53,10 +53,11 @@ sudo apt install -y python3-venv python3-dev libportaudio2 espeak-ng alsa-utils
 `libportaudio2` is PortAudio's runtime library, needed by `sounddevice`
 (`audio_io`'s stream layer) even before any real audio hardware is
 attached. The installer puts **Piper** (`piper-tts[http]`) in the venv and
-downloads the `en_GB-cori-medium` voice under `data/piper/` on first
+downloads the `en_US-amy-low` voice under `data/piper/` on first
 install — that is the default neural voice for IDs and announcements on a
-Pi (much lighter than Kokoro; `high` voices are selectable but often take
-tens of seconds per phrase on a Pi). The API keeps a localhost
+Pi (American female, low quality so speaks stay fast; `medium`/`high`
+voices are selectable but often take many seconds per phrase on a Pi). The
+API keeps a localhost
 `piper.http_server` running so the ONNX model stays loaded; one-shot
 `piper` CLI invokes reload the model every time and often time out on a
 Pi. Later updates reuse those files and a pip wheel cache under

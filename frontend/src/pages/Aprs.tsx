@@ -218,7 +218,7 @@ export function Aprs() {
     : [...SYMBOLS, { value: beacon.values.aprs_symbol, label: beacon.values.aprs_symbol }];
 
   return (
-    <Page title="APRS">
+    <Page title="APRS" description="Configure APRS beaconing and station position reporting.">
       <Card
         withBorder
         padding="lg"

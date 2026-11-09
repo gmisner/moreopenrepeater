@@ -109,3 +109,50 @@
 @media (prefers-reduced-motion: reduce) {
   .mor-page .mantine-Card-root { transition: none; }
 }
+
+/* Radio + linking workspaces share navigation and operational surfaces. */
+.mor-radio-workspace, .mor-link-workspace { min-width: 0; }
+.mor-radio-workspace .mantine-Tabs-list,
+.mor-link-workspace .mantine-Tabs-list {
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--mor-border, var(--mantine-color-default-border));
+  border-radius: 12px;
+  background: var(--mor-panel-2, var(--mantine-color-default-hover));
+  scrollbar-width: thin;
+}
+.mor-radio-workspace .mantine-Tabs-tab,
+.mor-link-workspace .mantine-Tabs-tab {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-height: 42px;
+  font-weight: 600;
+  transition: background .15s ease;
+}
+.mor-radio-workspace .mantine-Tabs-tab[data-active],
+.mor-link-workspace .mantine-Tabs-tab[data-active] {
+  background: var(--mor-brand-navy);
+  color: #fff;
+  box-shadow: inset 0 -2px var(--mor-brand-orange);
+}
+[data-mantine-color-scheme="dark"] .mor-radio-workspace .mantine-Tabs-tab[data-active],
+[data-mantine-color-scheme="dark"] .mor-link-workspace .mantine-Tabs-tab[data-active] {
+  background: #294052;
+}
+.mor-radio-workspace .mantine-Tabs-tab:focus-visible,
+.mor-link-workspace .mantine-Tabs-tab:focus-visible {
+  outline: 2px solid var(--mor-brand-orange);
+  outline-offset: -2px;
+}
+.mor-radio-workspace .mantine-Tabs-panel,
+.mor-link-workspace .mantine-Tabs-panel { min-width: 0; }
+.mor-link-workspace .mor-as-strip {
+  border-inline-start: 3px solid var(--mor-brand-orange);
+  border-radius: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mor-radio-workspace .mantine-Tabs-tab,
+  .mor-link-workspace .mantine-Tabs-tab { transition: none; }
+}

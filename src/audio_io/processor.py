@@ -151,6 +151,7 @@ class AudioProcessor:
         self._patch: Optional[PatchAudio] = None
         self._link: Optional[LinkAudio] = None
         self._port: Optional[LinkAudio] = None
+        self._dmr: Optional[LinkAudio] = None
         self._delay = _DelayLine()
         self._dtmf_hang = 0
         self._blocks_since_digit = math.inf
@@ -194,6 +195,10 @@ class AudioProcessor:
     def set_port(self, port: Optional[LinkAudio]) -> None:
         """The same exchange with the link radio (api.link_radio)."""
         self._port = port
+
+    def set_dmr(self, dmr: Optional[LinkAudio]) -> None:
+        """Exchange audio with Analog_Bridge (api.dmr_audio) for DMR talkgroups."""
+        self._dmr = dmr
 
     def start_capture(self, max_seconds: float) -> None:
         """Keep a copy of received audio (for recording or parrot)."""
@@ -263,10 +268,11 @@ class AudioProcessor:
         patch = self._patch
         link = self._link
         port = self._port
+        dmr = self._dmr
         # Filtered continuously (not just while repeating) so the filter's
         # history is warm the moment repeating starts. The phone and the
         # node never get the user's CTCSS tone either.
-        voice = self._subaudible_filter.process(block) if encode_hz or patch or link or port else block
+        voice = self._subaudible_filter.process(block) if encode_hz or patch or link or port or dmr else block
         repeat_audio = voice if encode_hz else block
         out = np.zeros_like(block)
         if self._ptt and self._repeating and self.settings.local_repeat:
@@ -285,6 +291,10 @@ class AudioProcessor:
             far_end = port.exchange(voice, self.repeating_voice)
             if self._ptt:
                 out += far_end
+        if dmr is not None:
+            bridge = dmr.exchange(voice, self.repeating_voice)
+            if self._ptt:
+                out += bridge
         # A clip keeps the transmitter keyed until it finishes, even if the
         # controller already dropped PTT (e.g. the timeout tone).
         transmitting = self._ptt or self.playing

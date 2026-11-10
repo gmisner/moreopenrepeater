@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from controller.events import ControllerEvent, LinkStateChanged, RemoteKeyed
 
-from .snapshot import LINK_AUDIO_NODE, LINK_RADIO_NODE
+from .snapshot import LINK_AUDIO_NODE, LINK_DMR_NODE, LINK_RADIO_NODE
 
 if TYPE_CHECKING:
     from .facade import RepeaterService
@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 _logger = logging.getLogger("moreopenrepeater.service")
 
 LINK_EVENT_LIMIT = 100
+# USRP/RF peers whose own key-up is authoritative while AllStar audio is up.
+_AUDIO_KEY_NODES = frozenset({LINK_AUDIO_NODE, LINK_DMR_NODE, LINK_RADIO_NODE})
 
 
 class LinkSupport:
@@ -53,9 +55,10 @@ class LinkSupport:
         network layer instead of a dashboard button."""
         _logger.info("handle_link_event(%r)", event)
         host = self._host
-        if isinstance(event, RemoteKeyed) and self.audio and event.node_id != LINK_AUDIO_NODE:
+        if isinstance(event, RemoteKeyed) and self.audio and event.node_id not in _AUDIO_KEY_NODES:
             # The node's own key-up (with its audio) says when to transmit;
             # a linked station can be keyed without the node sending it.
+            # Parallel bridges (DMR, Linked Radio) keep their own key path.
             return
         if isinstance(event, LinkStateChanged):
             if event.linked:

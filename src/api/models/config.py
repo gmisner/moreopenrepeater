@@ -112,6 +112,14 @@ class LinkFavorite(BaseModel):
     monitor: bool = False
 
 
+class DmrTalkgroupFavorite(BaseModel):
+    """One-click DMR talkgroup (not an AllStar node number)."""
+
+    talkgroup: int = Field(ge=1, le=9_999_999)
+    name: str = Field(default="", max_length=40)
+    slot: int = Field(default=2, ge=1, le=2)
+
+
 class LinkSchedule(BaseModel):
     node: NodeNumber
     name: str = Field(default="", max_length=40)
@@ -389,6 +397,7 @@ class ConfigUpdateRequest(BaseModel):
     # --- facet: linking ---
     link_favorites: Optional[list[LinkFavorite]] = Field(default=None, max_length=50)
     link_schedules: Optional[list[LinkSchedule]] = Field(default=None, max_length=50)
+    dmr_talkgroup_favorites: Optional[list[DmrTalkgroupFavorite]] = Field(default=None, max_length=50)
     gmrs_mode: Optional[bool] = None
     # --- facet: net ---
     net_name: Optional[str] = Field(default=None, min_length=1, max_length=60)

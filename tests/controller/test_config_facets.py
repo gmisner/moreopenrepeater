@@ -34,13 +34,13 @@ def test_facet_counts_match_inventory():
         "net": 13,
         "gpio_fan": 8,
         "homeassistant": 2,
-        "linking": 3,
+        "linking": 4,
         "backup": 4,
         "transcription": 3,
         "public_page": 4,
         "sensors": 3,
     }
-    assert sum(counts.values()) == 203
+    assert sum(counts.values()) == 204
 
 
 def test_flat_dict_round_trip_preserves_values():

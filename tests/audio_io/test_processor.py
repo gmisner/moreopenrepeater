@@ -328,6 +328,21 @@ def test_dtmf_is_muted_in_recordings_and_what_the_links_get():
     assert offered and dtmf_energy(np.concatenate(offered)) < 0.01
 
 
+def test_dmr_link_gets_repeated_voice_beside_allstar():
+    from audio_io.patch import LinkAudio
+
+    p = repeating_processor(dtmf_mute=False)
+    link = LinkAudio(RATE)
+    dmr = LinkAudio(RATE)
+    p.set_link(link)
+    p.set_dmr(dmr)
+
+    transmitted(p, tone(400, 0.1))
+
+    assert link.take_radio() is not None
+    assert dmr.take_radio() is not None
+
+
 def test_repeat_audio_is_delayed_three_blocks_for_dtmf_muting():
     p = repeating_processor()
 

@@ -1,0 +1,8 @@
+[Unit]
+Description=Restart DVSwitch DMR bridges when the dashboard asks
+# Started by moreopenrepeater-dmr-restart.path; see scripts/dmr-restart.sh.
+
+[Service]
+Type=oneshot
+ExecStart=/opt/moreopenrepeater/scripts/dmr-restart.sh
+TimeoutStartSec=2min

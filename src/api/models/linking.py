@@ -191,3 +191,83 @@ class EchoLinkStatusResponse(BaseModel):
     loaded: Optional[bool]
     error: Optional[str]
     settings: Optional[EchoLinkStationInfo]
+
+
+class DmrStationInfo(BaseModel):
+    callsign: str
+    dmr_id: str
+    repeater_ssid: str
+    has_password: bool
+    network: Literal["brandmeister", "tgif", "custom"]
+    host: str
+    port: int
+    talkgroup: int
+    slot: int
+    color_code: int
+    location: str
+    description: str
+    use_emulator: bool
+
+
+class DmrLastHeard(BaseModel):
+    radio_id: int
+    callsign: str
+    name: str = ""
+    talkgroup: int
+    slot: int
+    started_at: float
+    ended_at: Optional[float] = None
+    active: bool = False
+
+
+class DmrAudioStatus(BaseModel):
+    configured: bool
+    running: bool
+    error: Optional[str]
+    peer: Optional[str]
+    listen: Optional[str]
+    keyed: bool
+    last_heard: Optional[DmrLastHeard] = None
+
+
+class DmrServicesStatus(BaseModel):
+    analog_bridge: Optional[bool]
+    mmdvm_bridge: Optional[bool]
+    md380_emu: Optional[bool]
+
+
+class DmrRestartStatus(BaseModel):
+    available: bool
+    requested: bool
+    last_action: Optional[str] = None
+
+
+class DmrStatusResponse(BaseModel):
+    available: bool
+    enabled: bool
+    error: Optional[str]
+    settings: Optional[DmrStationInfo]
+    audio: DmrAudioStatus
+    services: DmrServicesStatus
+    restart: DmrRestartStatus
+
+
+class DmrRequest(BaseModel):
+    callsign: str = Field(min_length=3, max_length=10, pattern=r"^[A-Za-z0-9]{3,10}$")
+    dmr_id: str = Field(pattern=r"^[0-9]{7}$")
+    repeater_ssid: str = Field(default="01", pattern=r"^[0-9]{2}$")
+    password: str = Field(default="", max_length=64, pattern=r"^[^\s;]*$")
+    network: Literal["brandmeister", "tgif", "custom"] = "brandmeister"
+    host: str = Field(default="", max_length=120, pattern=r"^[A-Za-z0-9._:-]*$")
+    port: int = Field(default=62031, ge=1, le=65535)
+    talkgroup: int = Field(default=9, ge=1, le=9999999)
+    slot: int = Field(default=2, ge=1, le=2)
+    color_code: int = Field(default=1, ge=0, le=15)
+    location: str = Field(default="", max_length=80)
+    description: str = Field(default="moreopenrepeater", max_length=80)
+    use_emulator: bool = True
+
+
+class DmrTalkgroupRequest(BaseModel):
+    talkgroup: int = Field(ge=1, le=9_999_999)
+    slot: Optional[int] = Field(default=None, ge=1, le=2)

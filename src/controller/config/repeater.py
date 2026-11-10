@@ -48,7 +48,7 @@ FACET_FIELD_NAMES: dict[str, tuple[str, ...]] = {
     'net': ('net_name', 'net_tot_duration', 'net_hang_time', 'net_courtesy_tone_style', 'net_courtesy_tone_asset_id', 'net_hold_autopatch', 'net_hold_announcements', 'net_links', 'net_link_node', 'net_start_say', 'net_end_say', 'net_max_minutes', 'net_schedules'),
     'gpio_fan': ('gpio_pins', 'gpio_schedules', 'fan_output', 'fan_cm108_pin', 'fan_gpio_pin', 'fan_polarity', 'fan_run_on_minutes', 'fan_temp_c'),
     'homeassistant': ('homeassistant_url', 'homeassistant_say_result'),
-    'linking': ('link_favorites', 'link_schedules', 'gmrs_mode'),
+    'linking': ('link_favorites', 'link_schedules', 'dmr_talkgroup_favorites', 'gmrs_mode'),
     'backup': ('backup_enabled', 'backup_interval_hours', 'backup_keep', 'backup_include_recordings'),
     'transcription': ('transcription_engine', 'transcription_url', 'transcription_model'),
     'public_page': ('public_page_mode', 'public_page_text', 'public_page_audio', 'public_page_max_listeners'),
@@ -264,6 +264,7 @@ class RepeaterConfig:
     # --- linking ---
     link_favorites: list = field(default_factory=list)
     link_schedules: list = field(default_factory=list)
+    dmr_talkgroup_favorites: list = field(default_factory=list)
     gmrs_mode: bool = False
     # --- backup ---
     backup_enabled: bool = False
@@ -351,7 +352,12 @@ class RepeaterConfig:
 
     @property
     def linking(self) -> LinkingConfig:
-        return LinkingConfig(link_favorites=self.link_favorites, link_schedules=self.link_schedules, gmrs_mode=self.gmrs_mode)
+        return LinkingConfig(
+            link_favorites=self.link_favorites,
+            link_schedules=self.link_schedules,
+            dmr_talkgroup_favorites=self.dmr_talkgroup_favorites,
+            gmrs_mode=self.gmrs_mode,
+        )
 
     @property
     def backup(self) -> BackupConfig:

@@ -358,6 +358,7 @@ def create_app(
         service=runtime.service,
         autopatch=runtime.autopatch,
         allstar_node=runtime.allstar_node,
+        dmr=runtime.dmr,
         links=runtime.links,
         link_scheduler=runtime.link_scheduler,
         gpio=runtime.gpio,

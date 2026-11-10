@@ -15,6 +15,7 @@ _logger = logging.getLogger("moreopenrepeater.service")
 
 LINK_AUDIO_NODE = "allstar"  # RemoteKeyed's node_id for the AllStar node's own transmitter
 LINK_RADIO_NODE = "link-radio"  # ...and for the link radio hearing the far end (api.link_radio)
+LINK_DMR_NODE = "dmr"  # ...and for Analog_Bridge / DMR talkgroup audio (api.dmr_audio)
 
 WEATHER_SUMMARY_MAX = 3
 MAX_HELD_ANNOUNCEMENTS = 10

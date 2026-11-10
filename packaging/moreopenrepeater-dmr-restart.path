@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for DMR bridge restart requests from the moreopenrepeater dashboard
+
+[Path]
+PathExists=/opt/moreopenrepeater/data/dmr-restart-request
+Unit=moreopenrepeater-dmr-restart.service
+
+[Install]
+WantedBy=multi-user.target

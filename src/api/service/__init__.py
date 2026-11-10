@@ -5,6 +5,7 @@ from .facade import RepeaterService
 from .protocols import AudioOutput, PatchCalls
 from .snapshot import (
     LINK_AUDIO_NODE,
+    LINK_DMR_NODE,
     LINK_RADIO_NODE,
     MAX_HELD_ANNOUNCEMENTS,
     StatusSnapshot,
@@ -18,6 +19,7 @@ from .snapshot import (
 __all__ = [
     "AudioOutput",
     "LINK_AUDIO_NODE",
+    "LINK_DMR_NODE",
     "LINK_RADIO_NODE",
     "MAX_HELD_ANNOUNCEMENTS",
     "PatchCalls",

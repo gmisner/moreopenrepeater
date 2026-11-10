@@ -81,6 +81,14 @@ devices and PTT/COS), separate from the AllStar IP link path.
 _Avoid_: secondary radio, remote radio (say remote base when that mode is meant);
 prefer “Linked Radio” in UI copy over “link radio”
 
+**DMR**:
+Digital Mobile Radio — here, a cross-mode bridge of the analog
+`RepeaterController` to open DMR networks (BrandMeister / TGIF / DMR+) via a
+DVSwitch sidecar over USRP (ADR 0004). Not a local DMR RF modem and not
+commercial/public-safety trunking.
+_Avoid_: MMDVM as the product name; digital repeater; MOTOTRBO as a synonym
+for this feature
+
 ### Operator features
 
 **Mailbox**:

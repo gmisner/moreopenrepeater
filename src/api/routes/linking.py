@@ -1,4 +1,4 @@
-"""AllStar, EchoLink, node links, GPIO outputs, and link-radio / monitor."""
+"""AllStar, EchoLink, DMR, node links, GPIO outputs, and link-radio / monitor."""
 from __future__ import annotations
 
 import asyncio
@@ -10,6 +10,7 @@ from fastapi import Path as UrlPath
 
 from ..allstar_node import AllStarNode, AllStarSetupError
 from ..autopatch import Autopatch
+from ..dmr import DmrBridge, DmrSettings, DmrSetupError
 from ..echolink import EchoLink, EchoLinkSettings
 from ..gpio import GpioControl, GpioError
 from ..link_radio import LinkRadio
@@ -19,6 +20,9 @@ from ..models import (
     AllStarIdentityRequest,
     AllStarNodeRequest,
     AllStarStatusResponse,
+    DmrRequest,
+    DmrStatusResponse,
+    DmrTalkgroupRequest,
     EchoLinkRequest,
     EchoLinkStatusResponse,
     GpioOutputRequest,
@@ -41,6 +45,7 @@ def register(
     service: RepeaterService,
     autopatch: Autopatch,
     allstar_node: AllStarNode,
+    dmr: DmrBridge,
     links: LinkControl,
     link_scheduler: LinkScheduler,
     gpio: GpioControl,
@@ -107,6 +112,36 @@ def register(
     async def delete_echolink() -> dict:
         no_call_in_progress()
         return await change_allstar(echolink.disable())
+
+    async def change_dmr(change: Awaitable[dict]) -> dict:
+        try:
+            return await change
+        except DmrSetupError as error:
+            raise HTTPException(status_code=502, detail=str(error))
+
+    @app.get("/api/dmr", response_model=DmrStatusResponse, dependencies=auth_dependencies)
+    async def get_dmr() -> dict:
+        return await dmr.status()
+
+    @app.put("/api/dmr", response_model=DmrStatusResponse, dependencies=admin_dependencies)
+    async def put_dmr(body: DmrRequest, request: Request) -> dict:
+        no_call_in_progress()
+        request.state.audit_detail = f"{body.callsign}, id {body.dmr_id}, TG {body.talkgroup}" + (
+            ", new password" if body.password else ""
+        )
+        settings = DmrSettings(**{**body.model_dump(), "password": body.password or None})
+        return await change_dmr(dmr.save(settings))
+
+    @app.delete("/api/dmr", response_model=DmrStatusResponse, dependencies=admin_dependencies)
+    async def delete_dmr() -> dict:
+        no_call_in_progress()
+        return await change_dmr(dmr.disable())
+
+    @app.post("/api/dmr/talkgroup", response_model=DmrStatusResponse, dependencies=transmit_dependencies)
+    async def post_dmr_talkgroup(body: DmrTalkgroupRequest, request: Request) -> dict:
+        no_call_in_progress()
+        request.state.audit_detail = f"TG {body.talkgroup}" + (f" slot {body.slot}" if body.slot is not None else "")
+        return await change_dmr(dmr.select_talkgroup(body.talkgroup, body.slot))
 
     async def links_status() -> dict:
         status = await links.status()

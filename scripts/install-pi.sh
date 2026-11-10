@@ -18,6 +18,8 @@
 #   --lan      explicitly listen on 0.0.0.0 (the default for a new install)
 #   --allstar  also install AllStarLink (ASL3) for linking and autopatch, and
 #              connect the controller to it (Debian 12 or 13; docs/allstar.md)
+#   --dmr      also install DVSwitch (Analog_Bridge + MMDVM_Bridge) for a
+#              cross-mode DMR bridge (Debian 12 or 13; docs/dmr.md)
 #   --protect-sd / --no-protect-sd
 #              keep the system journal and the controller's log in memory to
 #              spare the SD card, or stop doing so; remembered for later runs
@@ -39,11 +41,13 @@ ENV_DIR=/etc/moreopenrepeater
 ENV_FILE="$ENV_DIR/env"
 LISTEN_HOST=""
 ALLSTAR=0
+DMR=0
 CHANNEL=""
 FETCHED=0
 PROTECT_SD=""
 ASTERISK_DIR=/etc/asterisk
 AMI_USER=moreopenrepeater
+DMR_DIR=/etc/moreopenrepeater/dmr
 JOURNALD_DROPIN=/etc/systemd/journald.conf.d/60-moreopenrepeater.conf
 WATCHDOG_DROPIN=/etc/systemd/system.conf.d/60-moreopenrepeater-watchdog.conf
 RAM_LOG=/run/moreopenrepeater/moreopenrepeater.log  # the service's RuntimeDirectory
@@ -56,6 +60,7 @@ while [ $# -gt 0 ]; do
     --localhost) LISTEN_HOST=127.0.0.1 ;;
     --lan) LISTEN_HOST=0.0.0.0 ;;
     --allstar) ALLSTAR=1 ;;
+    --dmr) DMR=1 ;;
     --channel) CHANNEL="${2:-}"; shift ;;
     --channel=*) CHANNEL="${1#--channel=}" ;;
     --fetched) FETCHED=1 ;;
@@ -152,6 +157,58 @@ install_allstar() {
   fi
 }
 
+# DVSwitch apt repo installer for this Debian release (docs/dmr.md).
+dvswitch_repo_script() {
+  local codename
+  codename="$(sed -nE 's/^VERSION_CODENAME="?([^"]*)"?$/\1/p' /etc/os-release)"
+  case "$codename" in
+    bookworm|trixie) echo "bookworm" ;;
+    *) fail "DVSwitch packages via install-pi.sh --dmr need Debian 12 (bookworm) or 13 (trixie), not '${codename:-this system}'." ;;
+  esac
+}
+
+install_dmr() {
+  step "Installing DVSwitch (Analog_Bridge + MMDVM_Bridge)"
+  local repo_script
+  repo_script="$(dvswitch_repo_script)"
+  if ! dpkg -s analog-bridge >/dev/null 2>&1 || ! dpkg -s mmdvm-bridge >/dev/null 2>&1; then
+    curl -fsSL -o "/tmp/dvswitch-$repo_script" "http://dvswitch.org/$repo_script"
+    chmod +x "/tmp/dvswitch-$repo_script"
+    "/tmp/dvswitch-$repo_script"
+    rm -f "/tmp/dvswitch-$repo_script"
+    apt-get update -q
+    apt-get install -y -q analog-bridge mmdvm-bridge md380-emu || \
+      apt-get install -y -q analog-bridge mmdvm-bridge
+  fi
+
+  step "Seeding moreopenrepeater DMR config in $DMR_DIR"
+  install -d -m 750 -o root -g "$SERVICE_USER" "$DMR_DIR"
+  local name
+  for name in Analog_Bridge.ini MMDVM_Bridge.ini DVSwitch.ini; do
+    if [ ! -f "$DMR_DIR/$name" ]; then
+      install -m 640 -o root -g "$SERVICE_USER" "$INSTALL_DIR/packaging/dmr/$name" "$DMR_DIR/$name"
+    fi
+  done
+  # Analog_Bridge include=dvsm.macro resolves relative to the ini directory.
+  if [ -f /opt/Analog_Bridge/dvsm.macro ] && [ ! -e "$DMR_DIR/dvsm.macro" ]; then
+    ln -s /opt/Analog_Bridge/dvsm.macro "$DMR_DIR/dvsm.macro"
+  fi
+  install -d -m 755 /etc/systemd/system/analog_bridge.service.d
+  install -d -m 755 /etc/systemd/system/mmdvm_bridge.service.d
+  install -m 644 "$INSTALL_DIR/packaging/dmr/analog_bridge.service.d.conf" \
+    /etc/systemd/system/analog_bridge.service.d/60-moreopenrepeater.conf
+  install -m 644 "$INSTALL_DIR/packaging/dmr/mmdvm_bridge.service.d.conf" \
+    /etc/systemd/system/mmdvm_bridge.service.d/60-moreopenrepeater.conf
+  # Leave bridges disabled until the dashboard saves identity (docs/dmr.md).
+  systemctl disable --now analog_bridge mmdvm_bridge md380-emu 2>/dev/null || true
+  systemctl daemon-reload
+
+  set_env MOREOPENREPEATER_DMR_DIR "$DMR_DIR"
+  set_env MOREOPENREPEATER_DMR_USRP_LISTEN "127.0.0.1:34011"
+  set_env MOREOPENREPEATER_DMR_USRP_PEER "127.0.0.1:34012"
+  set_env MOREOPENREPEATER_DMR_RESTART_REQUEST "$INSTALL_DIR/data/dmr-restart-request"
+}
+
 # Logs are what a Pi writes most often; in memory they cost the SD card
 # nothing, at the price of starting afresh at every reboot.
 protect_sd() {
@@ -218,6 +275,7 @@ EOF
 
 [ "$(id -u)" -eq 0 ] || fail "run this with sudo."
 if [ "$ALLSTAR" -eq 1 ]; then asl_repo_package >/dev/null; fi
+if [ "$DMR" -eq 1 ]; then dvswitch_repo_script >/dev/null; fi
 command -v apt-get >/dev/null || fail "this installer needs a Debian-based system (Raspberry Pi OS, Debian, Ubuntu)."
 
 if [ -z "$CHANNEL" ] && [ -f "$ENV_FILE" ]; then CHANNEL="$(env_value MOREOPENREPEATER_UPDATE_CHANNEL)"; fi
@@ -274,6 +332,7 @@ if [ "$FETCHED" -eq 0 ]; then
     0.0.0.0) pass+=(--lan) ;;
   esac
   if [ "$ALLSTAR" -eq 1 ]; then pass+=(--allstar); fi
+  if [ "$DMR" -eq 1 ]; then pass+=(--dmr); fi
   if [ "$PROTECT_SD" = 1 ]; then pass+=(--protect-sd); fi
   if [ "$PROTECT_SD" = 0 ]; then pass+=(--no-protect-sd); fi
   if [ -n "$commit" ]; then
@@ -435,11 +494,15 @@ fi
 if [ "$ALLSTAR" -eq 1 ]; then
   install_allstar
 fi
+if [ "$DMR" -eq 1 ]; then
+  install_dmr
+fi
 
 step "Installing and (re)starting the service"
 for unit in moreopenrepeater.service moreopenrepeater-update.service moreopenrepeater-update.path \
             moreopenrepeater-tailscale.service moreopenrepeater-tailscale.path \
-            moreopenrepeater-restart.service moreopenrepeater-restart.path; do
+            moreopenrepeater-restart.service moreopenrepeater-restart.path \
+            moreopenrepeater-dmr-restart.service moreopenrepeater-dmr-restart.path; do
   install -m 644 "$INSTALL_DIR/packaging/$unit" "/etc/systemd/system/$unit"
 done
 # Keep the packaged unit usable for manual installs with the legacy .venv.
@@ -461,6 +524,7 @@ systemctl enable -q moreopenrepeater
 systemctl enable -q --now moreopenrepeater-update.path
 systemctl enable -q --now moreopenrepeater-tailscale.path
 systemctl enable -q --now moreopenrepeater-restart.path
+systemctl enable -q --now moreopenrepeater-dmr-restart.path
 systemctl restart moreopenrepeater
 
 wait_for_dashboard || fail "the dashboard didn't come up; see: journalctl -u moreopenrepeater -n 50"
@@ -496,4 +560,9 @@ if [ "$ALLSTAR" -eq 1 ]; then
   echo "AllStarLink is installed. If this node is new, enter its portal"
   echo "node number, callsign and password on the dashboard's AllStarLink"
   echo "page (or run: sudo asl-menu)."
+fi
+if [ "$DMR" -eq 1 ]; then
+  echo
+  echo "DVSwitch DMR is installed. Enter callsign, DMR Id, network password"
+  echo "and talkgroup on the dashboard's DMR page (docs/dmr.md)."
 fi

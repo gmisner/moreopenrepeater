@@ -38,6 +38,9 @@ from .agents import MCP_PATH, AgentAccess, AgentEndpoint, build_server
 from .airport_weather import AirportWeather
 from .allstar_audio import AllStarAudio, usrp_listen_from_env, usrp_settings_from_env
 from .allstar_node import AllStarNode
+from .dmr import DmrBridge, dmr_dir_from_env
+from .dmr_audio import DmrAudio, dmr_usrp_settings_from_env
+from .dmr_restart import DmrRestartControl, dmr_restart_settings_from_env
 from .aprs_map import AprsReceiver, StationStore, spoken_summary
 from .assets import AudioAssetStore
 from .audit import RETENTION_DAYS as AUDIT_RETENTION_DAYS
@@ -285,6 +288,8 @@ class LinkingBundle:
     remote_base: Optional[RemoteBase] = None
     monitor_receiver: Optional[MonitorReceiverService] = None
     monitor_recordings: Optional[RecordingStore] = None
+    dmr: Optional[DmrBridge] = None
+    dmr_audio: Optional[DmrAudio] = None
 
 
 @dataclass
@@ -399,6 +404,8 @@ class RuntimeBuilder:
     monitor_receiver: Optional[MonitorReceiverService] = None
     link_radio: Optional[LinkRadio] = None
     remote_base: Optional[RemoteBase] = None
+    dmr: Optional[DmrBridge] = None
+    dmr_audio: Optional[DmrAudio] = None
     hub_sites: Optional[HubSiteStore] = None
     hub_poller: Optional[HubPoller] = None
     run_mixer: Callable[[list[str]], object] = run_amixer
@@ -438,6 +445,8 @@ class RuntimeBuilder:
                 remote_base=self.remote_base,
                 monitor_receiver=self.monitor_receiver,
                 monitor_recordings=self.monitor_recordings,
+                dmr=self.dmr,
+                dmr_audio=self.dmr_audio,
             ),
             MediaBundle(
                 assets_store=self.assets_store,
@@ -542,6 +551,8 @@ class AppRuntime:
         remote_base = linking.remote_base
         monitor_receiver = linking.monitor_receiver
         monitor_recordings = linking.monitor_recordings
+        dmr = linking.dmr
+        dmr_audio = linking.dmr_audio
 
         assets_store = media.assets_store
         live_audio = media.live_audio
@@ -621,6 +632,13 @@ class AppRuntime:
             listen=usrp_listen_from_env(os.environ),
             address=os.environ.get("MOREOPENREPEATER_USRP_ADDRESS"),
             manual=usrp_settings_from_env(os.environ),
+        )
+        dmr_audio = dmr_audio or DmrAudio(service, dmr_usrp_settings_from_env(os.environ))
+        dmr = dmr or DmrBridge(
+            dmr_dir_from_env(os.environ),
+            dmr_audio,
+            DmrRestartControl(dmr_restart_settings_from_env(os.environ)),
+            usrp=dmr_usrp_settings_from_env(os.environ),
         )
         link_settings = link_settings if link_settings is not None else link_settings_from_env()
         node_directory = node_directory if node_directory is not None else NodeDirectory(None)
@@ -1155,6 +1173,8 @@ class AppRuntime:
                 tasks.append(asyncio.create_task(link_radio.run()))
                 await autopatch.start()
                 await allstar_node.start()
+                if (dmr.directory / "enabled").exists() if dmr.directory else False:
+                    await dmr_audio.start()
                 sd_notify("READY=1")
                 interval = ping_interval()
                 if interval is not None:
@@ -1171,6 +1191,7 @@ class AppRuntime:
             await gpio.stop()
             await tx_fan.stop()
             await allstar_node.stop()
+            await dmr_audio.stop()
             await autopatch.stop()
             live_audio.shutdown()
             monitor_receiver.shutdown()
@@ -1206,6 +1227,8 @@ class AppRuntime:
         self.autopatch = autopatch
         self.sip_trunk = sip_trunk
         self.allstar_node = allstar_node
+        self.dmr = dmr
+        self.dmr_audio = dmr_audio
         self.link_settings = link_settings
         self.node_directory = node_directory
         self.links = links

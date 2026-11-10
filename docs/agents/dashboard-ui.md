@@ -19,6 +19,7 @@ Read this before editing pages under `frontend/src/pages/`, the shell in
 | --- | --- |
 | Nav groups and phone tab bar | `frontend/src/nav.ts` |
 | On-air / signal path | `frontend/src/pages/dashboard/OnAir.tsx` |
+| Recent transmissions | `frontend/src/pages/dashboard/RecentActivity.tsx` |
 | Sticky save bar | `frontend/src/components/ConfigActions.tsx` |
 | Empty list / missing setup | `frontend/src/components/EmptyState.tsx` |
 | Field (i) tips and "How this works" | `frontend/src/components/FieldHint.tsx` (`labeled`, `InfoNote`) |
@@ -56,10 +57,19 @@ in operator words, live timers (time-out / hang / next ID), then a four-stage
 **signal path** (Receiver → Tone → Controller → Transmitter) that lights with
 COS/CTCSS/PTT.
 
-Around it: control overview / health, incident cards (lockout, net, patch)
-when relevant, then activity and the rest. Do not resurrect a separate
-PTT/COS tile row as the primary status story — that role belongs to the signal
-path.
+Around it: control overview / health, then **Recent transmissions** as a
+full-width horizontal panel (`RecentActivity`), then incident cards (lockout,
+net, patch) when relevant, then the rest. Do not resurrect a separate PTT/COS
+tile row as the primary status story — that role belongs to the signal path.
+
+### Recent transmissions rows
+
+Each row is a three-cell horizontal panel: **time | duration bar | kind +
+duration**. Keep the kind label (`Kerchunk` / `Timed out`) and the duration
+**outside** the bar track (`.mor-act-meta`). When every row is a short equal
+kerchunk, bars render at 100% of the track; a label inside the track overflows
+onto the duration and reads as `Kerchun1s` (#194). Do not put Recent
+transmissions back in a narrow side column.
 
 ## Navigation
 

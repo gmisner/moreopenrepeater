@@ -45,17 +45,18 @@ export function RecentActivity({ rows, showLink = true }: { rows: Transmission[]
                     <span className="mor-act-time">
                       {row.when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                     </span>
-                    <span className="mor-act-track">
+                    <span className="mor-act-track" aria-hidden="true">
                       <span
                         className="mor-act-bar"
-                        aria-hidden="true"
                         style={{ ["--len" as string]: `${(barLength(row.duration, longest) * 100).toFixed(1)}%` }}
                       />
+                    </span>
+                    <span className="mor-act-meta">
                       {row.kind !== "normal" ? (
                         <span className="mor-act-note">{row.kind === "timeout" ? "Timed out" : "Kerchunk"}</span>
                       ) : null}
+                      <span className="mor-act-dur">{formatAirtime(row.duration)}</span>
                     </span>
-                    <span className="mor-act-dur">{formatAirtime(row.duration)}</span>
                   </li>
                 ))}
               </ul>

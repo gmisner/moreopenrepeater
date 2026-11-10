@@ -289,8 +289,10 @@
 }
 
 .mor-act-row {
+  /* time | bar track | kind+duration — meta stays outside the bar so equal-length
+     kerchunks (bar at 100%) never paint the label over the duration (#194). */
   display: grid;
-  grid-template-columns: 4.6rem minmax(0, 1fr) 3.4rem;
+  grid-template-columns: 4.6rem minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--mantine-spacing-sm);
   min-height: 28px;
@@ -307,7 +309,6 @@
 .mor-act-track {
   display: flex;
   align-items: center;
-  gap: var(--mantine-spacing-xs);
   min-width: 0;
 }
 
@@ -315,6 +316,7 @@
   height: 8px;
   min-width: 3px;
   width: var(--len, 3px);
+  max-width: 100%;
   border-radius: 2px;
   background: color-mix(in srgb, var(--dash-green) 70%, transparent);
   flex: none;
@@ -323,16 +325,23 @@
 .mor-act-row[data-kind="kerchunk"] .mor-act-bar { background: var(--dash-off); }
 .mor-act-row[data-kind="timeout"] .mor-act-bar { background: var(--dash-red); }
 
+.mor-act-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--mantine-spacing-xs);
+  white-space: nowrap;
+  min-width: 3.4rem;
+}
+
 .mor-act-note {
   font-size: 0.78rem;
   color: var(--mantine-color-dimmed);
-  white-space: nowrap;
 }
 
 .mor-act-row[data-kind="timeout"] .mor-act-note { color: var(--dash-red); font-weight: 600; }
 
 .mor-act-dur {
-  text-align: right;
   font-family: var(--dash-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 600;

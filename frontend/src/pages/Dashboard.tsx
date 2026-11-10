@@ -3,7 +3,6 @@ import {
   Box,
   Button,
   Card,
-  Grid,
   Group,
   SegmentedControl,
   SimpleGrid,
@@ -477,6 +476,8 @@ export function Dashboard() {
 
         <OnAir status={status} config={config} />
 
+        <RecentActivity rows={recentTx} />
+
         {unused.length ? (
           <div className="mor-unused">
             {unused.map((item) => (
@@ -584,160 +585,151 @@ export function Dashboard() {
           </Card>
         ) : null}
 
-        <Grid>
-          <Grid.Col span={{ base: 12, lg: 7 }}>
-            <Stack gap="md">
-              {allstarReady ? (
-                <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-links-title">
-                  <Group justify="space-between" mb="sm">
-                    <h2 id="dash-links-title" className="mor-card-title">
-                      Links
-                    </h2>
-                    {canWrite && links && links.links.length >= 2 ? (
-                      <Button color="red" variant="outline" size="xs" onClick={() => void disconnectAll()}>
-                        Disconnect all
+        {allstarReady ? (
+          <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-links-title">
+            <Group justify="space-between" mb="sm">
+              <h2 id="dash-links-title" className="mor-card-title">
+                Links
+              </h2>
+              {canWrite && links && links.links.length >= 2 ? (
+                <Button color="red" variant="outline" size="xs" onClick={() => void disconnectAll()}>
+                  Disconnect all
+                </Button>
+              ) : null}
+            </Group>
+            {links?.links?.length ? (
+              <Stack gap="xs">
+                {links.links.map((link) => (
+                  <Group
+                    key={link.node}
+                    justify="space-between"
+                    p="sm"
+                    style={{
+                      background: link.keyed ? "color-mix(in srgb, var(--mor-green) 12%, transparent)" : "var(--mor-panel-2)",
+                      borderRadius: 8,
+                      border: `1px solid ${link.keyed ? "var(--mor-green)" : "var(--mor-border)"}`,
+                    }}
+                  >
+                    <Group gap="sm">
+                      <Box w={10} h={10} style={{ borderRadius: "50%", background: link.keyed ? "var(--mor-green)" : "var(--mor-control-off, #3a404a)" }} />
+                      <Text ff="monospace">{link.node}</Text>
+                      <Text size="sm">{[link.name, link.callsign].filter(Boolean).join(", ")}</Text>
+                      {link.keyed ? <Text size="sm" fw={600} c="var(--mor-green)">Talking</Text> : null}
+                      {link.mode ? <Badge variant="outline" color="gray">{link.mode}</Badge> : null}
+                    </Group>
+                    {canWrite && links.available ? (
+                      <Button color="red" variant="outline" size="xs" onClick={() => void disconnect(link.node)}>
+                        Disconnect
                       </Button>
                     ) : null}
                   </Group>
-                  {links?.links?.length ? (
-                    <Stack gap="xs">
-                      {links.links.map((link) => (
-                        <Group
-                          key={link.node}
-                          justify="space-between"
-                          p="sm"
-                          style={{
-                            background: link.keyed ? "color-mix(in srgb, var(--mor-green) 12%, transparent)" : "var(--mor-panel-2)",
-                            borderRadius: 8,
-                            border: `1px solid ${link.keyed ? "var(--mor-green)" : "var(--mor-border)"}`,
-                          }}
+                ))}
+              </Stack>
+            ) : (
+              <Text c="dimmed" size="sm">
+                No nodes are linked.
+              </Text>
+            )}
+            {canWrite && links?.available ? (
+              <Stack gap="sm" mt="md">
+                {links.favorites.length > 0 ? (
+                  <Group gap="xs">
+                    {links.favorites.map((fav) => {
+                      const linked = links.links.some((link) => link.node === fav.node);
+                      const title = [fav.description, fav.monitor ? "monitor only" : ""].filter(Boolean).join(", ");
+                      return (
+                        <Button
+                          key={fav.node}
+                          type="button"
+                          size="xs"
+                          variant={linked ? "light" : "default"}
+                          disabled={linked}
+                          title={title || undefined}
+                          onClick={() => void connectNode(fav.node, Boolean(fav.monitor))}
                         >
-                          <Group gap="sm">
-                            <Box w={10} h={10} style={{ borderRadius: "50%", background: link.keyed ? "var(--mor-green)" : "var(--mor-control-off, #3a404a)" }} />
-                            <Text ff="monospace">{link.node}</Text>
-                            <Text size="sm">{[link.name, link.callsign].filter(Boolean).join(", ")}</Text>
-                            {link.keyed ? <Text size="sm" fw={600} c="var(--mor-green)">Talking</Text> : null}
-                            {link.mode ? <Badge variant="outline" color="gray">{link.mode}</Badge> : null}
-                          </Group>
-                          {canWrite && links.available ? (
-                            <Button color="red" variant="outline" size="xs" onClick={() => void disconnect(link.node)}>
-                              Disconnect
-                            </Button>
-                          ) : null}
-                        </Group>
-                      ))}
-                    </Stack>
-                  ) : (
-                    <Text c="dimmed" size="sm">
-                      No nodes are linked.
-                    </Text>
-                  )}
-                  {canWrite && links?.available ? (
-                    <Stack gap="sm" mt="md">
-                      {links.favorites.length > 0 ? (
-                        <Group gap="xs">
-                          {links.favorites.map((fav) => {
-                            const linked = links.links.some((link) => link.node === fav.node);
-                            const title = [fav.description, fav.monitor ? "monitor only" : ""].filter(Boolean).join(", ");
-                            return (
-                              <Button
-                                key={fav.node}
-                                type="button"
-                                size="xs"
-                                variant={linked ? "light" : "default"}
-                                disabled={linked}
-                                title={title || undefined}
-                                onClick={() => void connectNode(fav.node, Boolean(fav.monitor))}
-                              >
-                                {favoriteTitle(fav)}
-                              </Button>
-                            );
-                          })}
-                        </Group>
-                      ) : null}
-                      <Group component="form" onSubmit={connect} align="flex-end" gap="sm">
-                        <TextInput label="Node number" value={node} onChange={(event) => setNode(event.currentTarget.value)} required maw={160} />
-                        <Button type="button" variant={monitor ? "light" : "default"} onClick={() => setMonitor((v) => !v)} aria-pressed={monitor}>
-                          Monitor only
+                          {favoriteTitle(fav)}
                         </Button>
-                        <Button type="submit">Connect</Button>
-                      </Group>
-                    </Stack>
-                  ) : null}
-                  {links?.error ? (
-                    <Text c="dimmed" size="sm" mt="sm">
-                      {links.error}
-                    </Text>
-                  ) : null}
-                </Card>
-              ) : null}
-
-              {linkEvents.length ? (
-                <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-linkevents-title">
-                  <Group justify="space-between" mb="sm">
-                    <h2 id="dash-linkevents-title" className="mor-card-title">
-                      Link activity
-                    </h2>
-                    <Button component={Link} to="/allstar" size="xs" variant="subtle">
-                      AllStarLink
-                    </Button>
+                      );
+                    })}
                   </Group>
-                  <Stack gap={6}>
-                    {linkEvents.slice(0, 12).map((event, index) => (
-                      <Group key={`${event.at}-${event.node}-${event.kind}-${index}`} justify="space-between" gap="sm" wrap="nowrap">
-                        <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
-                          <Badge color={eventBadgeColor(event.kind)} variant="light" style={{ flex: "0 0 auto" }}>
-                            {LINK_EVENT_LABELS[event.kind]}
-                          </Badge>
-                          <Text size="sm" ff="monospace" style={{ flex: "0 0 auto" }}>
-                            {event.node === "link-radio" ? "RF" : event.node}
-                          </Text>
-                          <Text size="sm" c="dimmed" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {event.label || (event.node === "link-radio" ? "Linked radio" : "")}
-                          </Text>
-                        </Group>
-                        <Text size="xs" c="dimmed" className="mor-dash-num" style={{ flex: "0 0 auto" }}>
-                          {shortTime(event.at)}
-                        </Text>
-                      </Group>
-                    ))}
-                  </Stack>
-                </Card>
-              ) : null}
-
-              <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-listen-title">
-                <Group justify="space-between" wrap="wrap" gap="sm">
-                  <div>
-                    <h2 id="dash-listen-title" className="mor-card-title">
-                      Listen live
-                    </h2>
-                    <Text size="sm" c="dimmed">
-                      {listenNote}
-                    </Text>
-                  </div>
-                  <Group gap="sm">
-                    <SegmentedControl
-                      size="xs"
-                      value={listenSource}
-                      onChange={setListenSource}
-                      aria-label="Audio to listen to"
-                      data={[
-                        { label: "On air", value: "tx" },
-                        { label: "Receiver", value: "rx" },
-                      ]}
-                    />
-                    <Button size="xs" variant={listening ? "light" : "default"} onClick={() => setListening((v) => !v)}>
-                      {listening ? "Stop" : "Listen"}
-                    </Button>
-                  </Group>
+                ) : null}
+                <Group component="form" onSubmit={connect} align="flex-end" gap="sm">
+                  <TextInput label="Node number" value={node} onChange={(event) => setNode(event.currentTarget.value)} required maw={160} />
+                  <Button type="button" variant={monitor ? "light" : "default"} onClick={() => setMonitor((v) => !v)} aria-pressed={monitor}>
+                    Monitor only
+                  </Button>
+                  <Button type="submit">Connect</Button>
                 </Group>
-              </Card>
+              </Stack>
+            ) : null}
+            {links?.error ? (
+              <Text c="dimmed" size="sm" mt="sm">
+                {links.error}
+              </Text>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {linkEvents.length ? (
+          <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-linkevents-title">
+            <Group justify="space-between" mb="sm">
+              <h2 id="dash-linkevents-title" className="mor-card-title">
+                Link activity
+              </h2>
+              <Button component={Link} to="/allstar" size="xs" variant="subtle">
+                AllStarLink
+              </Button>
+            </Group>
+            <Stack gap={6}>
+              {linkEvents.slice(0, 12).map((event, index) => (
+                <Group key={`${event.at}-${event.node}-${event.kind}-${index}`} justify="space-between" gap="sm" wrap="nowrap">
+                  <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+                    <Badge color={eventBadgeColor(event.kind)} variant="light" style={{ flex: "0 0 auto" }}>
+                      {LINK_EVENT_LABELS[event.kind]}
+                    </Badge>
+                    <Text size="sm" ff="monospace" style={{ flex: "0 0 auto" }}>
+                      {event.node === "link-radio" ? "RF" : event.node}
+                    </Text>
+                    <Text size="sm" c="dimmed" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {event.label || (event.node === "link-radio" ? "Linked radio" : "")}
+                    </Text>
+                  </Group>
+                  <Text size="xs" c="dimmed" className="mor-dash-num" style={{ flex: "0 0 auto" }}>
+                    {shortTime(event.at)}
+                  </Text>
+                </Group>
+              ))}
             </Stack>
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, lg: 5 }}>
-            <RecentActivity rows={recentTx} />
-          </Grid.Col>
-        </Grid>
+          </Card>
+        ) : null}
+
+        <Card withBorder padding="lg" radius="md" component="section" aria-labelledby="dash-listen-title">
+          <Group justify="space-between" wrap="wrap" gap="sm">
+            <div>
+              <h2 id="dash-listen-title" className="mor-card-title">
+                Listen live
+              </h2>
+              <Text size="sm" c="dimmed">
+                {listenNote}
+              </Text>
+            </div>
+            <Group gap="sm">
+              <SegmentedControl
+                size="xs"
+                value={listenSource}
+                onChange={setListenSource}
+                aria-label="Audio to listen to"
+                data={[
+                  { label: "On air", value: "tx" },
+                  { label: "Receiver", value: "rx" },
+                ]}
+              />
+              <Button size="xs" variant={listening ? "light" : "default"} onClick={() => setListening((v) => !v)}>
+                {listening ? "Stop" : "Listen"}
+              </Button>
+            </Group>
+          </Group>
+        </Card>
       </Stack>
     </Page>
   );

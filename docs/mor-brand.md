@@ -28,7 +28,7 @@ Shell + dashboard follow the blue identity sheet:
 - Dashboard cards use `--mor-panel` / `--mor-border` above that bg
 - Navy chrome stays in the nav; MOR blue marks the active item and OPEN
 - Brand mark is mountain + lattice tower under blue signal arcs
-- Login and the dashboard shell keep a subtle topographic contour wash (fades under the cards); no mountain photo wallpaper
+- Login keeps a subtle topographic contour pattern; authenticated pages use a flat bg (no topo wash, no mountain photo)
 - Sidebar callsign / station identity is centered in its pill
 - Metrics stay live controller/config data only
 

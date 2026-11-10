@@ -11,3 +11,9 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 ### Domain docs
 
 Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+### Dashboard UI
+
+UI work on pages, shell, nav, or shared frontend components: follow
+`docs/agents/dashboard-ui.md`. Tokens and a11y floors stay in
+`design-system/moreopenrepeater/MASTER.md`; MOR chrome in `docs/mor-brand.md`.

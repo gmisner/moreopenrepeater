@@ -4,33 +4,34 @@ MOR (MoreOpenRepeater) — **Radio. Reimagined.**
 
 Reference artwork:
 
-- [Brand guidelines](brand/brand-guidelines.jpg)
+- [Brand guidelines](brand/brand-guidelines.png)
 - [Dashboard mockup](brand/dashboard-mockup.jpg)
 
 ## Tokens
 
 | Token | Hex | Use |
 | --- | --- | --- |
-| MOR Navy | `#0B1F2E` | Shell, panels, brand mark |
-| MOR Orange | `#FF7A00` | Active nav, lockup accent, non-operational decoration |
-| Slate | `#475569` | Secondary borders / muted chrome |
-| Cloud | `#E5E7EB` | Light surfaces / glass edges |
+| Background / MOR Navy | `#0B1220` | Page bg (dark), shell nav, brand mark tile |
+| Primary / MOR Blue | `#0D6EFD` | Active nav, OPEN highlight, primary actions, signal arcs |
+| Accent / Hover | `#3DA5FF` | Hover fills, lighter brand accents |
+| Text / UI | `#E5E7EB` | Body text on dark brand surfaces |
 
-Typography: one system UI stack for brand, headings, and body (controllers are often offline — no CDN fonts). Monospace stays only for tabular telemetry numbers.
+Typography: brand faces are Montserrat / Inter. Controllers are often offline, so the app keeps a system UI stack (no CDN fonts). Monospace stays only for tabular telemetry numbers.
 
-Operational semantics stay unchanged: blue primary actions, green RX, red TX, amber warnings.
+Operational semantics stay unchanged: green RX, red TX, amber warnings. Brand blue is chrome and primary actions only — never a substitute for TX/RX state.
 
 ## Current stage
 
-Shell + dashboard aligned with the rest of the app surfaces:
+Shell + dashboard follow the blue identity sheet:
 
-- Page background uses the same gray `--mor-bg` as every other route (no mountain photo)
-- Dashboard cards use `--mor-panel` / `--mor-border` like the rest of the UI
-- Navy chrome stays in the nav; orange marks the active item
-- Status strip / KPI / quick-link spacing kept from the mockup rhythm
-- Metrics stay live controller/config data only (no invented user counts)
+- Dark page background uses `#0B1220` (`--mor-bg`)
+- Dashboard cards use `--mor-panel` / `--mor-border` above that bg
+- Navy chrome stays in the nav; MOR blue marks the active item and OPEN
+- Brand mark is mountain + lattice tower under blue signal arcs
+- Login keeps a subtle topographic contour pattern; authenticated pages do not use a mountain photo wallpaper
+- Metrics stay live controller/config data only
 
 ## Next stages
 
 - Optionally bundle Montserrat/Inter later if operators want exact brand faces offline
-- Refine logo geometry against the guidelines lockup
+- Swap in designer-exported lockup / favicon rasters when a full branding kit is available

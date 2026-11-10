@@ -16,4 +16,4 @@ Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.
 
 UI work on pages, shell, nav, or shared frontend components: follow
 `docs/agents/dashboard-ui.md`. Tokens and a11y floors stay in
-`design-system/moreopenrepeater/MASTER.md`; MOR chrome in `docs/mor-brand.md`.
+`design-system/moreopenrepeater/MASTER.md`; MOR blue chrome in `docs/mor-brand.md`.

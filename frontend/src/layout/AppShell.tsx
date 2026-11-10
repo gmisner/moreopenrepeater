@@ -187,7 +187,7 @@ export function AppShell() {
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                color: view === item.id ? "var(--mor-brand-orange)" : "var(--mantine-color-dimmed)",
+                color: view === item.id ? "var(--mor-brand-blue)" : "var(--mantine-color-dimmed)",
                 fontSize: "0.72rem",
                 fontWeight: 600,
               }}
@@ -205,7 +205,7 @@ export function AppShell() {
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              color: opened ? "var(--mor-brand-orange)" : "var(--mantine-color-dimmed)",
+              color: opened ? "var(--mor-brand-blue)" : "var(--mantine-color-dimmed)",
               fontSize: "0.72rem",
               fontWeight: 600,
             }}

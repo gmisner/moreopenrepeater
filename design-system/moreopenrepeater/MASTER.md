@@ -31,21 +31,21 @@ them in `frontend/src/theme.ts`.
 
 | Token | Dark | Light | Use |
 | --- | --- | --- | --- |
-| `--bg` | `#111317` | `#f3f4f6` | Page background |
-| `--sidebar` | `#16191e` | `#ffffff` | Sidebar and phone header |
-| `--panel` | `#1b1f25` | `#ffffff` | Cards |
-| `--panel-2` | `#22272e` | `#eef0f3` | Rows and tiles inside cards, secondary buttons |
-| `--field` | `#111317` | `#ffffff` | Text inputs and selects |
-| `--inset` | `#0b0c0f` | `#f8f9fb` | Log viewer |
-| `--border` | `#2c323b` | `#d5d9df` | All borders and dividers |
-| `--text` | `#e6e8eb` | `#1a1d22` | Body text |
+| `--bg` | `#0b1220` | `#f3f4f6` | Page background |
+| `--sidebar` | `#10182a` | `#ffffff` | Sidebar and phone header |
+| `--panel` | `#141c2c` | `#ffffff` | Cards |
+| `--panel-2` | `#1a2436` | `#eef0f3` | Rows and tiles inside cards, secondary buttons |
+| `--field` | `#0b1220` | `#ffffff` | Text inputs and selects |
+| `--inset` | `#080e18` | `#f8f9fb` | Log viewer |
+| `--border` | `#243044` | `#d5d9df` | All borders and dividers |
+| `--text` | `#e5e7eb` | `#1a1d22` | Body text |
 | `--muted` | `#8a919c` | `#5a6270` | Labels, help text, idle states |
-| `--accent` | `#5aa5ff` | `#1a5cc8` | Primary actions, focus ring, links, the logo |
+| `--accent` | `#3da5ff` | `#0d6efd` | Primary actions, focus ring, links, MOR blue brand chrome |
 | `--green` | `#35d07f` | `#0a6b3b` | Receiving, COS, on, connected, success |
 | `--red` | `#ff7070` | `#b8292a` | Transmitting, PTT, errors, destructive actions |
 | `--amber` | `#ffb020` | `#8a5200` | Warnings, announcements, weather alerts, lost connection |
-| `--on-accent` | `#08111f` | `#ffffff` | Text on a filled accent button |
-| `--on-status` | `#111317` | `#ffffff` | Text on a filled green or amber pill |
+| `--on-accent` | `#0b1220` | `#ffffff` | Text on a filled accent button |
+| `--on-status` | `#0b1220` | `#ffffff` | Text on a filled green or amber pill |
 | `--on-danger` | `#1a0505` | `#ffffff` | Text on the filled red PTT button |
 | `--control-off` | `#3a404a` | `#b9bfc8` | Unlit indicator dots, switch track when off |
 | `--knob` | `#ffffff` | `#ffffff` | Switch knob, map home marker ring |
@@ -218,19 +218,19 @@ To add a color: add it to both the dark `:root` block and the
 
 ## Brand
 
-The mark is a broadcast tower with two pairs of signal arcs, drawn on a 32×32
-grid with 2.2–2.4px round-capped strokes. The outer arcs are at 55% opacity.
+The mark is a mountain range with a lattice tower under three MOR-blue signal
+arcs on brand navy `#0B1220`. Source: `frontend/src/layout/BrandMark.tsx` and
+`frontend/public/mor-brand.svg` (see `docs/mor-brand.md`).
 
-- `web/icon.svg`: app icon, the mark in `#4f9dff` on a dark rounded square.
-  Used as the favicon and the manifest's scalable icon.
-- `web/favicon.ico` (16 and 32px), `icon-192.png`, `icon-512.png`: rendered from
-  `icon.svg`.
-- `web/apple-touch-icon.png` (180px) and `icon-maskable-512.png`: full-bleed
-  versions with the mark shrunk toward the center, because iOS and Android apply
-  their own rounded mask.
-- In the page, the mark is inline SVG using `currentColor`, colored `--accent`.
+- `mor-brand.svg` / `mor-maskable.svg`: favicon and PWA icons (arcs `#0D6EFD`,
+  mountains and tower `#E5E7EB`).
+- Brand chrome (active nav, OPEN highlight, login CTA) uses MOR blue; green /
+  red / amber stay reserved for operational status.
+- Controllers are often offline: no CDN fonts. Brand faces are Montserrat/Inter
+  in the guidelines; the app uses a system UI stack until fonts are bundled.
 
-The name is always written in lowercase: moreopenrepeater.
+The product name in prose is moreopenrepeater; the lockup is **MOR** /
+More**Open**Repeater with tagline **RADIO. REIMAGINED.**
 
 ## Accessibility checklist
 

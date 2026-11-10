@@ -3,23 +3,18 @@ import { createTheme, virtualColor, type MantineColorsTuple } from "@mantine/cor
 // MASTER tokens from design-system/moreopenrepeater/MASTER.md.
 // Mantine color tuples are 10 shades; we pin the semantic stops we use.
 
+// MOR Blue — primary actions and brand chrome (never TX/RX status).
 const accent: MantineColorsTuple = [
   "#e8f2ff",
-  "#d0e4ff",
-  "#a0c9ff",
-  "#70adff",
-  "#5aa5ff",
-  "#1a5cc8",
-  "#1649a0",
-  "#113778",
-  "#0c2550",
-  "#08111f",
-];
-
-// MOR Orange is for identity and non-operational decoration only.
-const morOrange: MantineColorsTuple = [
-  "#fff3e8", "#ffe1c2", "#ffc18a", "#ffa34d", "#ff7a00",
-  "#e56d00", "#bd5800", "#944400", "#6e3200", "#482100",
+  "#d0e5ff",
+  "#a8d1ff",
+  "#7abafe",
+  "#3da5ff",
+  "#0d6efd",
+  "#0b5ed7",
+  "#094bb0",
+  "#073888",
+  "#041f4d",
 ];
 
 const green: MantineColorsTuple = [
@@ -78,16 +73,16 @@ const gray: MantineColorsTuple = [
 // dark-4 = default border, dark-6 = default fill, dark-7 = --mantine-color-body.
 // Cards are painted to MASTER --panel in field-contrast.css (Paper uses body).
 const dark: MantineColorsTuple = [
-  "#e6e8eb", // 0 body text (--text)
+  "#e5e7eb", // 0 body text (--text)
   "#d5d9df",
   "#b9bfc8",
   "#8a919c", // 3 muted / placeholders
-  "#2c323b", // 4 --border
-  "#22272e", // 5 --panel-2
-  "#0b0c0f", // 6 --inset / default control fill
-  "#111317", // 7 --bg (Mantine body)
-  "#16191e", // 8 --sidebar
-  "#0b0c0f", // 9 deepest
+  "#243044", // 4 --border
+  "#1a2436", // 5 --panel-2
+  "#080e18", // 6 --inset / default control fill
+  "#0b1220", // 7 --bg (Mantine body)
+  "#10182a", // 8 --sidebar
+  "#080e18", // 9 deepest
 ];
 
 // One UI face everywhere. Controllers are often offline, so nothing loads from
@@ -103,7 +98,6 @@ export const theme = createTheme({
   cursorType: "pointer",
   colors: {
     accent,
-    morOrange,
     green,
     red,
     amber,
@@ -114,7 +108,7 @@ export const theme = createTheme({
   },
   primaryShade: { light: 5, dark: 4 },
   white: "#ffffff",
-  black: "#111317",
+  black: "#0b1220",
   fontSizes: {
     xs: "0.78rem",
     sm: "0.86rem",

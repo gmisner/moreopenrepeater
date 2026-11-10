@@ -478,7 +478,7 @@
 }
 .mor-kpi[data-tone="rx"] { border-color: var(--mor-green) !important; }
 .mor-kpi[data-tone="tx"] { border-color: var(--mor-red) !important; }
-.mor-kpi[data-tone="ok"] { border-color: color-mix(in srgb, var(--mor-brand-orange) 55%, var(--mor-border)) !important; }
+.mor-kpi[data-tone="ok"] { border-color: color-mix(in srgb, var(--mor-brand-blue) 55%, var(--mor-border)) !important; }
 .mor-kpi-label {
   letter-spacing: .08em;
   font-size: .68rem !important;
@@ -538,7 +538,7 @@
   transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 .mor-quick-link:hover {
-  border-color: color-mix(in srgb, var(--mor-brand-orange) 55%, var(--mor-border)) !important;
+  border-color: color-mix(in srgb, var(--mor-brand-blue) 55%, var(--mor-border)) !important;
   transform: translateY(-1px);
   box-shadow: 0 16px 34px rgb(0 0 0 / .28);
 }
@@ -574,7 +574,7 @@
 .mor-history-hour .mantine-Text-root { font-size: .65rem; white-space: nowrap; }
 .mor-history-pair { height: 160px; display: flex; align-items: flex-end; gap: 1px; border-bottom: 1px solid var(--mor-border); }
 .mor-history-pair span { flex: 1; min-width: 0; border-radius: 3px 3px 0 0; }
-.mor-history-rx { background: #5aa5ff; }
-.mor-history-tx { background: #ff7a00; }
+.mor-history-rx { background: var(--mor-brand-blue-hover, #3da5ff); }
+.mor-history-tx { background: var(--mor-red); }
 .mor-history-key { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
 @media (max-width: 37.5em) { .mor-history-chart { gap: 1px; } .mor-history-pair { height: 110px; } }

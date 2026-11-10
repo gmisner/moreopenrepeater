@@ -280,21 +280,36 @@
 
 .mor-act-day:first-of-type { margin-top: 0; }
 
-.mor-act-list {
+/* Horizontal strip: newest→oldest left-to-right so 20 kerchunks stay one short band. */
+.mor-act-strip {
   list-style: none;
   margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 2px;
+  padding: 0 0 4px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
 }
 
-.mor-act-row {
+.mor-act-cell {
+  /* time / vertical bar / kind+duration — meta stays outside the bar so equal-length
+     kerchunks (bar at 100%) never paint the label over the duration (#194). */
+  flex: 0 0 auto;
+  scroll-snap-align: start;
   display: grid;
-  grid-template-columns: 4.6rem minmax(0, 1fr) 3.4rem;
-  align-items: center;
-  gap: var(--mantine-spacing-sm);
-  min-height: 28px;
-  font-size: 0.86rem;
+  grid-template-rows: auto minmax(2.6rem, 1fr) auto;
+  align-items: end;
+  justify-items: center;
+  gap: 6px;
+  width: 4.6rem;
+  min-height: 5.6rem;
+  padding: 6px 4px 4px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--mor-panel-2, var(--mantine-color-default)) 88%, transparent);
+  border: 1px solid var(--mor-border, var(--mantine-color-default-border));
+  font-size: 0.78rem;
 }
 
 .mor-act-time {
@@ -302,37 +317,53 @@
   font-family: var(--dash-mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  font-size: 0.72rem;
 }
 
 .mor-act-track {
   display: flex;
-  align-items: center;
-  gap: var(--mantine-spacing-xs);
-  min-width: 0;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 2.6rem;
 }
 
 .mor-act-bar {
-  height: 8px;
-  min-width: 3px;
-  width: var(--len, 3px);
-  border-radius: 2px;
+  width: 10px;
+  min-height: 4px;
+  height: var(--len, 8%);
+  max-height: 100%;
+  border-radius: 3px;
   background: color-mix(in srgb, var(--dash-green) 70%, transparent);
-  flex: none;
 }
 
-.mor-act-row[data-kind="kerchunk"] .mor-act-bar { background: var(--dash-off); }
-.mor-act-row[data-kind="timeout"] .mor-act-bar { background: var(--dash-red); }
+.mor-act-cell[data-kind="kerchunk"] .mor-act-bar { background: var(--dash-off); }
+.mor-act-cell[data-kind="timeout"] .mor-act-bar { background: var(--dash-red); }
+
+.mor-act-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  text-align: center;
+  line-height: 1.15;
+  min-width: 0;
+  max-width: 100%;
+}
 
 .mor-act-note {
-  font-size: 0.78rem;
+  font-size: 0.65rem;
   color: var(--mantine-color-dimmed);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
-.mor-act-row[data-kind="timeout"] .mor-act-note { color: var(--dash-red); font-weight: 600; }
+.mor-act-cell[data-kind="timeout"] .mor-act-note { color: var(--dash-red); font-weight: 600; }
 
 .mor-act-dur {
-  text-align: right;
   font-family: var(--dash-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 600;

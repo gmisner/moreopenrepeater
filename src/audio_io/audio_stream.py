@@ -16,8 +16,9 @@ import numpy as np
 
 try:
     import sounddevice as sd
-except (ImportError, OSError):
-    sd = None  # sounddevice/PortAudio isn't installed/available on this system
+except Exception:
+    # ImportError/OSError, or PortAudio failing to talk to Pulse/ALSA (CI hosts).
+    sd = None
 
 
 @dataclass

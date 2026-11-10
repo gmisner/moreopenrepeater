@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.app import create_app
-from api.dmr import DmrBridge, DmrSettings
+from api.dmr import DmrBridge
 from api.dmr_audio import DmrAudio
 from api.service import RepeaterService
 from controller.config import RepeaterConfig

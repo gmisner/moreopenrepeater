@@ -137,6 +137,17 @@ def register(
         no_call_in_progress()
         return await change_dmr(dmr.disable())
 
+    @app.post("/api/dmr/install", response_model=DmrStatusResponse, dependencies=admin_dependencies)
+    async def post_dmr_install(request: Request) -> dict:
+        no_call_in_progress()
+        request.state.audit_detail = "install DVSwitch"
+        try:
+            return await dmr.request_install()
+        except DmrSetupError as error:
+            detail = str(error)
+            code = 409 if "already" in detail.lower() else 502
+            raise HTTPException(status_code=code, detail=detail) from error
+
     @app.post("/api/dmr/talkgroup", response_model=DmrStatusResponse, dependencies=transmit_dependencies)
     async def post_dmr_talkgroup(body: DmrTalkgroupRequest, request: Request) -> dict:
         no_call_in_progress()

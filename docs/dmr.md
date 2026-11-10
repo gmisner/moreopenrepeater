@@ -20,14 +20,14 @@ trunking. See ADR 0004 and `docs/research/dmr.md`.
 
 ## Setup
 
-On Debian 12/13 (Raspberry Pi OS Bookworm or newer):
+On Debian 12/13 (Raspberry Pi OS Bookworm or newer), either:
 
-```bash
-sudo bash /opt/moreopenrepeater/scripts/install-pi.sh --dmr
-```
+1. **Dashboard** — open the **DMR** page as an admin and press **Install DMR**
+   (same root helper pattern as Tailscale / Updates), or
+2. **CLI** — `sudo bash /opt/moreopenrepeater/scripts/install-pi.sh --dmr`
 
-That installs the DVSwitch apt packages, seeds `/etc/moreopenrepeater/dmr/`,
-adds systemd drop-ins so the units load our ini files, and sets:
+Both install the DVSwitch apt packages, seed `/etc/moreopenrepeater/dmr/`,
+add systemd drop-ins so the units load our ini files, and set:
 
 ```bash
 MOREOPENREPEATER_DMR_DIR=/etc/moreopenrepeater/dmr
@@ -36,9 +36,10 @@ MOREOPENREPEATER_DMR_USRP_PEER=127.0.0.1:34012
 MOREOPENREPEATER_DMR_RESTART_REQUEST=/opt/moreopenrepeater/data/dmr-restart-request
 ```
 
-Then open the dashboard **DMR** page: callsign, 7-digit DMR Id, network
-password, default talkgroup and slot. Save enables and restarts the
-bridges. Turn off keeps the saved details for next time.
+The dashboard restarts once so it picks up those env vars. Then on the
+**DMR** page: callsign, 7-digit DMR Id, network password, default talkgroup
+and slot. Save enables and restarts the bridges. Turn off keeps the saved
+details for next time.
 
 ### Talkgroup favorites
 

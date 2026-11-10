@@ -30,38 +30,14 @@
   .mor-nav-link { transition: none; }
 }
 
-/* Shell: brand navy in the nav. Dark theme gets a faint topo wash that fades
-   before the lower cards; light keeps a flat surface. */
+/* Shell: same page bg as the rest of the app; brand navy stays in the nav chrome. */
 .mor-shell .mantine-AppShell-main.mor-shell-main {
-  position: relative;
-  isolation: isolate;
-  min-height: 100dvh;
   background: var(--mor-bg, var(--mantine-color-body));
+  min-height: 100dvh;
 }
 .mor-shell-header {
   background: var(--mor-sidebar, var(--mantine-color-body)) !important;
   border-bottom: 1px solid var(--mor-border, var(--mantine-color-default-border)) !important;
-}
-[data-mantine-color-scheme="dark"] .mor-shell .mantine-AppShell-main.mor-shell-main {
-  background-color: var(--mor-bg, #0b1220);
-  background-image:
-    linear-gradient(180deg, color-mix(in srgb, var(--mor-bg, #0b1220) 8%, transparent) 0%, color-mix(in srgb, var(--mor-bg, #0b1220) 55%, transparent) 48%, var(--mor-bg, #0b1220) 82%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='720' height='460' viewBox='0 0 720 460' fill='none'%3E%3Cpath d='M-20 60c70 0 70 36 140 36s70-36 140-36 70 36 140 36 70-36 140-36 70 36 140 36 70-36 140-36' stroke='%232b4060' stroke-width='1.4'/%3E%3Cpath d='M-20 100c70 0 70 30 140 30s70-30 140-30 70 30 140 30 70-30 140-30 70 30 140 30 70-30 140-30' stroke='%23304a6e' stroke-width='1.3'/%3E%3Cpath d='M-20 140c70 0 70 26 140 26s70-26 140-26 70 26 140 26 70-26 140-26 70 26 140 26 70-26 140-26' stroke='%23253852' stroke-width='1.2'/%3E%3Cpath d='M-20 180c70 0 70 22 140 22s70-22 140-22 70 22 140 22 70-22 140-22 70 22 140 22 70-22 140-22' stroke='%232b4060' stroke-width='1.2'/%3E%3Cpath d='M-20 220c70 0 70 20 140 20s70-20 140-20 70 20 140 20 70-20 140-20 70 20 140 20 70-20 140-20' stroke='%231f334d' stroke-width='1.1'/%3E%3Cpath d='M-40 36c90-18 120 26 210 18s120-30 200-10 130 8 220-16 140 20 210 8' stroke='%230d6efd' stroke-opacity='0.34' stroke-width='1.6'/%3E%3Cpath d='M-30 250c80 0 80 16 160 16s80-16 160-16 80 16 160 16 80-16 160-16' stroke='%2320334c' stroke-width='1.1'/%3E%3Cpath d='M-20 290c70 0 70 14 140 14s70-14 140-14 70 14 140 14 70-14 140-14 70 14 140 14 70-14 140-14' stroke='%231a2b42' stroke-width='1'/%3E%3C/svg%3E");
-  background-size: auto, 720px 460px;
-  background-repeat: no-repeat, repeat-x;
-  background-position: center top, center top;
-}
-[data-mantine-color-scheme="dark"] .mor-shell-header {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--mor-sidebar, #10182a) 88%, transparent), color-mix(in srgb, var(--mor-sidebar, #10182a) 70%, transparent)),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='120' viewBox='0 0 480 120' fill='none'%3E%3Cpath d='M-10 36c50 0 50 18 100 18s50-18 100-18 50 18 100 18 50-18 100-18 50 18 100 18' stroke='%23304a6e' stroke-width='1.2'/%3E%3Cpath d='M-10 66c50 0 50 14 100 14s50-14 100-14 50 14 100 14 50-14 100-14 50 14 100 14' stroke='%232b4060' stroke-width='1.1'/%3E%3Cpath d='M0 20c70-10 90 14 150 8s95-18 160-4' stroke='%230d6efd' stroke-opacity='0.28' stroke-width='1.3'/%3E%3C/svg%3E") !important;
-  background-size: auto, 480px 120px !important;
-  background-repeat: no-repeat, repeat-x !important;
-  border-bottom-color: color-mix(in srgb, #304a6e 55%, var(--mor-border, #243044)) !important;
-  backdrop-filter: blur(6px);
-}
-@media (prefers-reduced-motion: reduce) {
-  [data-mantine-color-scheme="dark"] .mor-shell-header { backdrop-filter: none; }
 }
 .mor-shell-nav {
   background: var(--mor-brand-navy) !important;
@@ -73,7 +49,6 @@
   letter-spacing: .16em;
   text-transform: uppercase;
   color: var(--mor-brand-blue);
-  text-shadow: 0 0 18px color-mix(in srgb, var(--mor-brand-blue) 40%, transparent);
 }
 .mor-shell-heading {
   margin: 0;

@@ -3,20 +3,20 @@
    overrides the page and cards are the same color and look "off". */
 
 [data-mantine-color-scheme="dark"] {
-  --mor-bg: #111317;
-  --mor-sidebar: #16191e;
-  --mor-panel: #1b1f25;
-  --mor-panel-2: #22272e;
-  --mor-border: #2c323b;
-  --mor-field-bg: #0b0c0f;
-  --mor-field-bd: #2c323b;
+  --mor-bg: #0b1220;
+  --mor-sidebar: #10182a;
+  --mor-panel: #141c2c;
+  --mor-panel-2: #1a2436;
+  --mor-border: #243044;
+  --mor-field-bg: #080e18;
+  --mor-field-bd: #243044;
   --mor-field-placeholder: #8a919c;
-  --mor-text: #e6e8eb;
+  --mor-text: #e5e7eb;
   --mor-muted: #8a919c;
   --mor-green: #35d07f;
   --mor-amber: #ffb020;
   --mor-red: #ff7070;
-  --mor-on-status: #111317;
+  --mor-on-status: #0b1220;
 
   --mantine-color-body: var(--mor-bg);
   --mantine-color-default-border: var(--mor-border);

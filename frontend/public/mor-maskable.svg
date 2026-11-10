@@ -1,7 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="MOR app icon">
-<rect width="256" height="256" fill="#0B1F2E"/>
-<g transform="translate(26 26) scale(.797)" fill="none" stroke="#FF7A00" stroke-width="12" stroke-linecap="round">
-<path d="M44 115 A84 84 0 0 1 212 115"/><path d="M69 115 A59 59 0 0 1 187 115"/><path d="M94 115 A34 34 0 0 1 162 115"/>
+<rect width="256" height="256" fill="#0B1220"/>
+<g transform="translate(26 26) scale(.797)">
+<g fill="none" stroke="#0D6EFD" stroke-width="11" stroke-linecap="round">
+<path d="M44 108 A84 84 0 0 1 212 108"/>
+<path d="M69 108 A59 59 0 0 1 187 108"/>
+<path d="M94 108 A34 34 0 0 1 162 108"/>
 </g>
-<path transform="translate(26 26) scale(.797)" fill="#F5F7FA" d="M23 192 82 124 108 149 146 99 234 192 191 166 170 179 145 144 126 170 108 156 81 184 69 165Z"/>
+<path fill="#E5E7EB" d="M18 198 72 132 96 158 128 108 158 148 188 118 238 198 196 170 170 188 148 154 128 178 108 160 84 188 70 168Z"/>
+<g fill="#E5E7EB" stroke="#E5E7EB" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+<path d="M128 92v78"/>
+<path d="M118 108h20M114 124h28M118 140h20" fill="none"/>
+<path d="M128 170l-14 22M128 170l14 22" fill="none"/>
+<circle cx="128" cy="88" r="4"/>
+</g>
+</g>
 </svg>

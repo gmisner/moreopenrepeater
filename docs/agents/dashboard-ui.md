@@ -2,8 +2,8 @@
 
 How to change the React dashboard (`frontend/`) so it stays consistent with the
 current design. Tokens, status colors, spacing, and accessibility floors live
-in `design-system/moreopenrepeater/MASTER.md`. Brand chrome (MOR navy/orange)
-is in `docs/mor-brand.md`. This doc is the composition and shared-pattern
+in `design-system/moreopenrepeater/MASTER.md`. Brand chrome (MOR blue on
+`#0B1220`) is in `docs/mor-brand.md`. This doc is the composition and shared-pattern
 layer those files do not cover.
 
 ## When you open this

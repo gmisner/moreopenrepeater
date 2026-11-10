@@ -1,13 +1,14 @@
-/* MOR identity: brand orange is navigation only, never an operational TX/RX state. */
+/* MOR identity: brand blue is navigation/chrome only, never an operational TX/RX state. */
 :root {
-  --mor-brand-navy: #0b1f2e;
-  --mor-brand-orange: #ff7a00;
+  --mor-brand-navy: #0b1220;
+  --mor-brand-blue: #0d6efd;
+  --mor-brand-blue-hover: #3da5ff;
   --mor-brand-slate: #475569;
   --mor-brand-cloud: #e5e7eb;
   --mor-brand-snow: #f5f7fa;
-  --mor-brand-mark: #0b1f2e;
+  --mor-brand-mark: #0b1220;
 }
-[data-mantine-color-scheme="dark"] { --mor-brand-mark: #f5f7fa; }
+[data-mantine-color-scheme="dark"] { --mor-brand-mark: #e5e7eb; }
 .mor-brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .mor-brand-name {
   font-weight: 900;
@@ -16,20 +17,20 @@
   line-height: 1;
 }
 .mor-brand-expanded { font-size: .69rem; color: var(--mantine-color-dimmed); letter-spacing: .01em; white-space: nowrap; }
-.mor-brand-expanded strong { color: var(--mor-brand-orange); font-weight: 700; }
+.mor-brand-expanded strong { color: var(--mor-brand-blue); font-weight: 700; }
 .mor-nav-link[data-active] {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--mor-brand-orange) 88%, #fff), var(--mor-brand-orange));
-  color: #0b1f2e !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--mor-brand-blue) 82%, #fff), var(--mor-brand-blue));
+  color: #fff !important;
   border-radius: 10px;
   font-weight: 800;
 }
-.mor-nav-link[data-active] .mantine-NavLink-section { color: #0b1f2e; }
+.mor-nav-link[data-active] .mantine-NavLink-section { color: #fff; }
 .mor-page-title { letter-spacing: -.025em; }
 @media (prefers-reduced-motion: reduce) {
   .mor-nav-link { transition: none; }
 }
 
-/* Shell: same gray page bg as the rest of the app; navy stays in the nav chrome. */
+/* Shell: same page bg as the rest of the app; brand navy stays in the nav chrome. */
 .mor-shell .mantine-AppShell-main.mor-shell-main {
   background: var(--mor-bg, var(--mantine-color-body));
   min-height: 100dvh;
@@ -40,14 +41,14 @@
 }
 .mor-shell-nav {
   background: var(--mor-brand-navy) !important;
-  border-inline-end: 1px solid #294052 !important;
+  border-inline-end: 1px solid #1c2a3f !important;
 }
 .mor-shell-eyebrow {
   font-size: .68rem;
   font-weight: 800;
   letter-spacing: .16em;
   text-transform: uppercase;
-  color: var(--mor-brand-orange);
+  color: var(--mor-brand-blue);
 }
 .mor-shell-heading {
   margin: 0;
@@ -61,7 +62,7 @@
   font-size: .62rem !important;
   text-align: center;
 }
-/* Dashboard cards share the app panel gray — no navy glass tint. */
+/* Dashboard cards share the app panel surface — no navy glass tint. */
 .mor-glass-card {
   background: var(--mor-panel) !important;
   border-color: var(--mor-border) !important;
@@ -69,39 +70,44 @@
 }
 
 /* Shared MOR surfaces; existing semantic radio indicators remain unchanged. */
-.mor-brand-open { color: #ff7a00; }
-.mor-login { background: radial-gradient(circle at 50% 0%, #173449 0, #0b1f2e 48%, #081521 100%); }
-.mor-login .mantine-Card-root { border-color: #294052; background: #102538; color: #f5f7fa; }
-.mor-login .mantine-InputWrapper-label { color: #e6e8eb; }
-.mor-login .mantine-Text-root[data-c] { color: #bac9d5; }
-.mor-login-wordmark { font-size: 3rem; line-height: 1; letter-spacing: -.055em; color: #f5f7fa; }
-.mor-login .mantine-Button-root[type="submit"] { background: #ff7a00; color: #0b1f2e; font-weight: 800; }
-.mor-login .mantine-Button-root[type="submit"]:hover { background: #ff9638; }
-.mor-login .mantine-Button-root[type="submit"]:focus-visible { outline: 2px solid #f5f7fa; outline-offset: 2px; }
-.mor-login .mantine-Input-input { background: #0b1f2e; border-color: #475569; color: #f5f7fa; }
-.mor-login .mantine-Input-input::placeholder { color: #a8b8c6; }
-.mor-login .mantine-Input-input:focus { border-color: #ff9638; }
+.mor-brand-open { color: var(--mor-brand-blue); }
+.mor-login {
+  background:
+    radial-gradient(circle at 50% 0%, #152238 0, #0b1220 48%, #070c16 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='160' viewBox='0 0 240 160' fill='none'%3E%3Cpath d='M0 40c40 0 40 20 80 20s40-20 80-20 40 20 80 20' stroke='%231c2a3f' stroke-width='1'/%3E%3Cpath d='M0 80c40 0 40 16 80 16s40-16 80-16 40 16 80 16' stroke='%23152638' stroke-width='1'/%3E%3Cpath d='M0 120c40 0 40 12 80 12s40-12 80-12 40 12 80 12' stroke='%23121e30' stroke-width='1'/%3E%3C/svg%3E");
+  background-blend-mode: normal;
+}
+.mor-login .mantine-Card-root { border-color: #1c2a3f; background: #121a2a; color: #e5e7eb; }
+.mor-login .mantine-InputWrapper-label { color: #e5e7eb; }
+.mor-login .mantine-Text-root[data-c] { color: #9aa8bc; }
+.mor-login-wordmark { font-size: 3rem; line-height: 1; letter-spacing: -.055em; color: #e5e7eb; }
+.mor-login .mantine-Button-root[type="submit"] { background: var(--mor-brand-blue); color: #fff; font-weight: 800; }
+.mor-login .mantine-Button-root[type="submit"]:hover { background: var(--mor-brand-blue-hover); }
+.mor-login .mantine-Button-root[type="submit"]:focus-visible { outline: 2px solid #e5e7eb; outline-offset: 2px; }
+.mor-login .mantine-Input-input { background: #0b1220; border-color: #475569; color: #e5e7eb; }
+.mor-login .mantine-Input-input::placeholder { color: #8a9aaf; }
+.mor-login .mantine-Input-input:focus { border-color: var(--mor-brand-blue-hover); }
 
 /* MOR control center: glass nav, without recoloring RF telemetry. */
-.mor-shell-nav .mor-brand-name { color: #f5f7fa; }
-.mor-shell-nav .mor-brand-expanded { color: #bac9d5; }
-.mor-shell-nav .mor-nav-group { color: #bac9d5; }
-.mor-shell-nav .mor-nav-link { color: #dce5ed; border-radius: 10px; }
+.mor-shell-nav .mor-brand-name { color: #e5e7eb; }
+.mor-shell-nav .mor-brand-expanded { color: #9aa8bc; }
+.mor-shell-nav .mor-nav-group { color: #9aa8bc; }
+.mor-shell-nav .mor-nav-link { color: #d5dde8; border-radius: 10px; }
 .mor-shell-nav .mor-nav-link:hover { background: color-mix(in srgb, #ffffff 8%, transparent); }
 .mor-shell-nav .mor-station {
   background: color-mix(in srgb, #ffffff 6%, transparent);
-  border: 1px solid #294052;
+  border: 1px solid #1c2a3f;
   border-radius: 12px;
   padding: 8px 12px;
 }
-.mor-shell-nav .mor-station-call { color: #f5f7fa; }
+.mor-shell-nav .mor-station-call { color: #e5e7eb; }
 [data-mantine-color-scheme="dark"] .mantine-AppShell-footer {
   background: var(--mor-sidebar);
   border-color: var(--mor-border);
 }
-.mor-nav-link:focus-visible { outline: 2px solid var(--mor-brand-orange); outline-offset: 2px; }
-.mor-login .mantine-Text-root { color: #bac9d5; }
-.mor-login .mor-brand-open { color: #ff9638; }
+.mor-nav-link:focus-visible { outline: 2px solid var(--mor-brand-blue); outline-offset: 2px; }
+.mor-login .mantine-Text-root { color: #9aa8bc; }
+.mor-login .mor-brand-open { color: var(--mor-brand-blue-hover); }
 .mor-login .mantine-InputWrapper-error { color: #ffb0b0; }
 
 /* Shared MOR page system: one visual language across every route. */
@@ -177,7 +183,7 @@
 }
 [data-mantine-color-scheme="dark"] .mor-radio-workspace .mantine-Tabs-tab[data-active],
 [data-mantine-color-scheme="dark"] .mor-link-workspace .mantine-Tabs-tab[data-active] {
-  background: #294052;
+  background: #1c2a3f;
 }
 .mor-radio-workspace .mantine-Tabs-tab:focus-visible,
 .mor-link-workspace .mantine-Tabs-tab:focus-visible {

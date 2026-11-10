@@ -9,7 +9,13 @@ export type { Transmission };
 // Bars use a square-root scale so a 3 s kerchunk and a 2 min ragchew both stay readable.
 function barLength(duration: number, longest: number) {
   if (longest <= 0) return 0;
-  return Math.max(0.03, Math.sqrt(duration) / Math.sqrt(longest));
+  return Math.max(0.08, Math.sqrt(duration) / Math.sqrt(longest));
+}
+
+function kindLabel(kind: "normal" | "kerchunk" | "timeout") {
+  if (kind === "timeout") return "Timed out";
+  if (kind === "kerchunk") return "Kerchunk";
+  return null;
 }
 
 export function RecentActivity({ rows, showLink = true }: { rows: Transmission[]; showLink?: boolean }) {
@@ -39,26 +45,28 @@ export function RecentActivity({ rows, showLink = true }: { rows: Transmission[]
           {groups.map((group) => (
             <Fragment key={group.label}>
               <h3 className="mor-act-day">{group.label}</h3>
-              <ul className="mor-act-list">
-                {group.rows.map((row) => (
-                  <li key={row.started_at} className="mor-act-row" data-kind={row.kind}>
-                    <span className="mor-act-time">
-                      {row.when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                    </span>
-                    <span className="mor-act-track" aria-hidden="true">
-                      <span
-                        className="mor-act-bar"
-                        style={{ ["--len" as string]: `${(barLength(row.duration, longest) * 100).toFixed(1)}%` }}
-                      />
-                    </span>
-                    <span className="mor-act-meta">
-                      {row.kind !== "normal" ? (
-                        <span className="mor-act-note">{row.kind === "timeout" ? "Timed out" : "Kerchunk"}</span>
-                      ) : null}
-                      <span className="mor-act-dur">{formatAirtime(row.duration)}</span>
-                    </span>
-                  </li>
-                ))}
+              <ul className="mor-act-strip">
+                {group.rows.map((row) => {
+                  const note = kindLabel(row.kind);
+                  const when = row.when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+                  const dur = formatAirtime(row.duration);
+                  const label = note ? `${when}, ${note}, ${dur}` : `${when}, ${dur}`;
+                  return (
+                    <li key={row.started_at} className="mor-act-cell" data-kind={row.kind} title={label}>
+                      <span className="mor-act-time">{when}</span>
+                      <span className="mor-act-track" aria-hidden="true">
+                        <span
+                          className="mor-act-bar"
+                          style={{ ["--len" as string]: `${(barLength(row.duration, longest) * 100).toFixed(1)}%` }}
+                        />
+                      </span>
+                      <span className="mor-act-meta">
+                        {note ? <span className="mor-act-note">{note}</span> : null}
+                        <span className="mor-act-dur">{dur}</span>
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             </Fragment>
           ))}

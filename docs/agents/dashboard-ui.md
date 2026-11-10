@@ -62,14 +62,15 @@ full-width horizontal panel (`RecentActivity`), then incident cards (lockout,
 net, patch) when relevant, then the rest. Do not resurrect a separate PTT/COS
 tile row as the primary status story — that role belongs to the signal path.
 
-### Recent transmissions rows
+### Recent transmissions strip
 
-Each row is a three-cell horizontal panel: **time | duration bar | kind +
-duration**. Keep the kind label (`Kerchunk` / `Timed out`) and the duration
-**outside** the bar track (`.mor-act-meta`). When every row is a short equal
-kerchunk, bars render at 100% of the track; a label inside the track overflows
-onto the duration and reads as `Kerchun1s` (#194). Do not put Recent
-transmissions back in a narrow side column.
+Render as a **full-width horizontal strip** (`.mor-act-strip`): compact cells
+scroll sideways so twenty kerchunks stay one short band instead of a tall list.
+Each cell is **time / vertical duration bar / kind + duration**. Keep the kind
+label (`Kerchunk` / `Timed out`) and the duration **outside** the bar track
+(`.mor-act-meta`) — a label inside a 100% bar collides and reads as
+`Kerchun1s` (#194). Do not put this back in a narrow side column or as a
+stacked vertical list on the dashboard.
 
 ## Navigation
 

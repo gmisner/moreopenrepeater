@@ -1,8 +1,11 @@
 [Unit]
-Description=Restart DVSwitch DMR bridges when the dashboard asks
+Description=Apply a DMR change the moreopenrepeater dashboard asked for
 # Started by moreopenrepeater-dmr-restart.path; see scripts/dmr-restart.sh.
 
 [Service]
 Type=oneshot
 ExecStart=/opt/moreopenrepeater/scripts/dmr-restart.sh
-TimeoutStartSec=2min
+# /var/lib/moreopenrepeater-dmr: status.json and dmr.log for install progress.
+StateDirectory=moreopenrepeater-dmr
+StateDirectoryMode=0755
+TimeoutStartSec=30min

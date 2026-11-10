@@ -311,13 +311,18 @@ class DmrBridge:
                 "mmdvm_bridge": _unit_active("mmdvm_bridge"),
                 "md380_emu": _unit_active("md380-emu"),
             },
-            "restart": self.restart.status() if self.restart else {"available": False, "requested": False, "last_action": None},
+            "restart": self.restart.status()
+            if self.restart
+            else {"available": False, "requested": False, "last_action": None, "state": None, "message": None},
         }
         if self.directory is None:
-            result["error"] = "DMR isn't installed. On the Pi run: sudo bash scripts/install-pi.sh --dmr"
+            if self.restart is not None and self.restart.available:
+                result["error"] = "DMR packages aren't installed yet. An admin can install them from this page."
+            else:
+                result["error"] = "DMR isn't installed. On the Pi run: sudo bash scripts/install-pi.sh --dmr"
             return result
         if not self.directory.is_dir():
-            result["error"] = f"DMR config directory {self.directory} is missing. Re-run install-pi.sh --dmr."
+            result["error"] = f"DMR config directory {self.directory} is missing. Install DMR again from this page or run install-pi.sh --dmr."
             return result
         result["available"] = True
         try:
@@ -439,6 +444,18 @@ class DmrBridge:
             await self.audio.configure(None)
             if self.restart is not None and self.restart.available:
                 self.restart.request("stop")
+        return await self.status()
+
+    async def request_install(self) -> dict:
+        """Ask the root helper to install DVSwitch and seed the DMR config dir."""
+        if self.directory is not None and self.directory.is_dir():
+            raise DmrSetupError("DMR is already installed on this machine.")
+        if self.restart is None or not self.restart.available:
+            raise DmrSetupError("DMR install isn't available here. On the Pi run: sudo bash scripts/install-pi.sh --dmr")
+        try:
+            self.restart.request("install")
+        except RuntimeError as error:
+            raise DmrSetupError(str(error)) from error
         return await self.status()
 
     async def select_talkgroup(self, talkgroup: int, slot: Optional[int] = None) -> dict:

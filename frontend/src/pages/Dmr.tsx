@@ -67,7 +67,13 @@ type DmrStatus = {
     last_heard: DmrLastHeard | null;
   };
   services: { analog_bridge: boolean | null; mmdvm_bridge: boolean | null; md380_emu: boolean | null };
-  restart: { available: boolean; requested: boolean; last_action: string | null };
+  restart: {
+    available: boolean;
+    requested: boolean;
+    last_action: string | null;
+    state: string | null;
+    message: string | null;
+  };
 };
 
 function formatHeardAt(startedAt: number, endedAt: number | null, active: boolean): string {
@@ -166,6 +172,7 @@ export function Dmr() {
   const [saving, setSaving] = useState(false);
   const [favoritesSaving, setFavoritesSaving] = useState(false);
   const [selecting, setSelecting] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -173,16 +180,21 @@ export function Dmr() {
       setStatus(next);
       return next;
     } catch (error) {
-      notifyError(error);
+      // During install the service restarts briefly; keep polling quietly.
+      if (!installing) notifyError(error);
       return null;
     }
-  }, []);
+  }, [installing]);
 
   useEffect(() => {
     void refresh();
     const id = window.setInterval(() => void refresh(), REFRESH_MS);
     return () => window.clearInterval(id);
   }, [refresh]);
+
+  useEffect(() => {
+    if (status?.available) setInstalling(false);
+  }, [status?.available]);
 
   useEffect(() => {
     if (status?.settings) setForm(formFromSettings(status.settings));
@@ -268,6 +280,32 @@ export function Dmr() {
     }
   };
 
+  const installBusy =
+    installing ||
+    Boolean(status?.restart.requested && status.restart.last_action === "install") ||
+    status?.restart.state === "requested" ||
+    status?.restart.state === "running";
+
+  const onInstall = async () => {
+    if (!isAdmin || installBusy) return;
+    if (
+      !window.confirm(
+        "Install DVSwitch (Analog_Bridge + MMDVM_Bridge) on this Pi? This uses apt and restarts the dashboard when finished.",
+      )
+    ) {
+      return;
+    }
+    setInstalling(true);
+    try {
+      const next = await api<DmrStatus>("/api/dmr/install", { method: "POST" });
+      setStatus(next);
+      notifySuccess("Installing DMR — this can take a few minutes");
+    } catch (error) {
+      setInstalling(false);
+      notifyError(error);
+    }
+  };
+
   const selectFavorite = async (favorite: TalkgroupFavorite) => {
     const talkgroup = Number(favorite.talkgroup);
     if (!talkgroup || !status?.enabled) return;
@@ -308,25 +346,36 @@ export function Dmr() {
 
   const summary = !status
     ? "Loading…"
-    : status.error
-      ? status.error
-      : !status.available
-        ? "Install with: sudo bash scripts/install-pi.sh --dmr"
-        : status.enabled && settings
-          ? `${settings.callsign} · Id ${settings.dmr_id} · TG ${settings.talkgroup} slot ${settings.slot}`
-          : "Set callsign, DMR Id, network password and talkgroup to bridge the analog repeater.";
+    : installBusy
+      ? status.restart.message || "Installing DVSwitch packages…"
+      : status.error
+        ? status.error
+        : !status.available
+          ? status.restart.available
+            ? "Install DVSwitch on this Pi, then set callsign, DMR Id, and talkgroup."
+            : "Install with: sudo bash scripts/install-pi.sh --dmr"
+          : status.enabled && settings
+            ? `${settings.callsign} · Id ${settings.dmr_id} · TG ${settings.talkgroup} slot ${settings.slot}`
+            : "Set callsign, DMR Id, network password and talkgroup to bridge the analog repeater.";
 
   return (
     <Page title="DMR">
       <Stack gap="md">
         <ConfigSummaryCard
           title="DMR bridge"
-          badge={badge}
-          badgeColor={badgeColor}
+          badge={installBusy ? "Installing" : badge}
+          badgeColor={installBusy ? "amber" : badgeColor}
           blurb={summary}
           hint="Cross-mode bridge via DVSwitch to BrandMeister, TGIF, or a custom master."
           onEdit={isAdmin && status?.available ? () => setDrawerOpen(true) : undefined}
           editLabel={status?.enabled ? "Edit…" : "Set up…"}
+          secondaryAction={
+            isAdmin && status && !status.available && status.restart.available ? (
+              <Button loading={installBusy} onClick={() => void onInstall()}>
+                Install DMR
+              </Button>
+            ) : undefined
+          }
         />
         {status?.available && (
           <Text size="sm" c="dimmed">
@@ -431,7 +480,19 @@ export function Dmr() {
             ) : null}
           </Card>
         ) : (
-          <EmptyState>DMR setup appears here after install-pi.sh --dmr on this machine.</EmptyState>
+          <EmptyState
+            action={
+              isAdmin && status?.restart.available ? (
+                <Button loading={installBusy} onClick={() => void onInstall()}>
+                  Install DMR
+                </Button>
+              ) : undefined
+            }
+          >
+            {status?.restart.available
+              ? "Install DVSwitch on this Pi to unlock DMR setup. Debian 12 or 13 required."
+              : "DMR setup appears here after install-pi.sh --dmr on this machine."}
+          </EmptyState>
         )}
       </Stack>
 

@@ -47,7 +47,6 @@ FETCHED=0
 PROTECT_SD=""
 ASTERISK_DIR=/etc/asterisk
 AMI_USER=moreopenrepeater
-DMR_DIR=/etc/moreopenrepeater/dmr
 JOURNALD_DROPIN=/etc/systemd/journald.conf.d/60-moreopenrepeater.conf
 WATCHDOG_DROPIN=/etc/systemd/system.conf.d/60-moreopenrepeater-watchdog.conf
 RAM_LOG=/run/moreopenrepeater/moreopenrepeater.log  # the service's RuntimeDirectory
@@ -168,45 +167,8 @@ dvswitch_repo_script() {
 }
 
 install_dmr() {
-  step "Installing DVSwitch (Analog_Bridge + MMDVM_Bridge)"
-  local repo_script
-  repo_script="$(dvswitch_repo_script)"
-  if ! dpkg -s analog-bridge >/dev/null 2>&1 || ! dpkg -s mmdvm-bridge >/dev/null 2>&1; then
-    curl -fsSL -o "/tmp/dvswitch-$repo_script" "http://dvswitch.org/$repo_script"
-    chmod +x "/tmp/dvswitch-$repo_script"
-    "/tmp/dvswitch-$repo_script"
-    rm -f "/tmp/dvswitch-$repo_script"
-    apt-get update -q
-    apt-get install -y -q analog-bridge mmdvm-bridge md380-emu || \
-      apt-get install -y -q analog-bridge mmdvm-bridge
-  fi
-
-  step "Seeding moreopenrepeater DMR config in $DMR_DIR"
-  install -d -m 750 -o root -g "$SERVICE_USER" "$DMR_DIR"
-  local name
-  for name in Analog_Bridge.ini MMDVM_Bridge.ini DVSwitch.ini; do
-    if [ ! -f "$DMR_DIR/$name" ]; then
-      install -m 640 -o root -g "$SERVICE_USER" "$INSTALL_DIR/packaging/dmr/$name" "$DMR_DIR/$name"
-    fi
-  done
-  # Analog_Bridge include=dvsm.macro resolves relative to the ini directory.
-  if [ -f /opt/Analog_Bridge/dvsm.macro ] && [ ! -e "$DMR_DIR/dvsm.macro" ]; then
-    ln -s /opt/Analog_Bridge/dvsm.macro "$DMR_DIR/dvsm.macro"
-  fi
-  install -d -m 755 /etc/systemd/system/analog_bridge.service.d
-  install -d -m 755 /etc/systemd/system/mmdvm_bridge.service.d
-  install -m 644 "$INSTALL_DIR/packaging/dmr/analog_bridge.service.d.conf" \
-    /etc/systemd/system/analog_bridge.service.d/60-moreopenrepeater.conf
-  install -m 644 "$INSTALL_DIR/packaging/dmr/mmdvm_bridge.service.d.conf" \
-    /etc/systemd/system/mmdvm_bridge.service.d/60-moreopenrepeater.conf
-  # Leave bridges disabled until the dashboard saves identity (docs/dmr.md).
-  systemctl disable --now analog_bridge mmdvm_bridge md380-emu 2>/dev/null || true
-  systemctl daemon-reload
-
-  set_env MOREOPENREPEATER_DMR_DIR "$DMR_DIR"
-  set_env MOREOPENREPEATER_DMR_USRP_LISTEN "127.0.0.1:34011"
-  set_env MOREOPENREPEATER_DMR_USRP_PEER "127.0.0.1:34012"
-  set_env MOREOPENREPEATER_DMR_RESTART_REQUEST "$INSTALL_DIR/data/dmr-restart-request"
+  # Shared with the dashboard Install button (scripts/dmr-install.sh).
+  bash "$INSTALL_DIR/scripts/dmr-install.sh"
 }
 
 # Logs are what a Pi writes most often; in memory they cost the SD card

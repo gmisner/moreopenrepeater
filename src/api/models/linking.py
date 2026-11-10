@@ -240,6 +240,8 @@ class DmrRestartStatus(BaseModel):
     available: bool
     requested: bool
     last_action: Optional[str] = None
+    state: Optional[str] = None
+    message: Optional[str] = None
 
 
 class DmrStatusResponse(BaseModel):

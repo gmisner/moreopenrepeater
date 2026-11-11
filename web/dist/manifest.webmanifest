@@ -10,7 +10,7 @@
   "icons": [
     {
       "src": "/brand/app_icon.png",
-      "sizes": "148x142",
+      "sizes": "256x246",
       "type": "image/png",
       "purpose": "any"
     },

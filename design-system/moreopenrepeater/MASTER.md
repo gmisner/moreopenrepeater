@@ -218,10 +218,10 @@ To add a color: add it to both the dark `:root` block and the
 
 ## Brand
 
-Exact-sheet logo crops (opaque PNGs from the brand collage) live in
-`docs/brand/exact-sheet/` and are served from `frontend/public/brand/`. See
-`docs/mor-brand.md`. `BrandMark` uses `app_icon.png`; login uses
-`primary_stacked.png`.
+Transparent logo variants (alpha PNGs) live in `docs/brand/transparent/` and
+are served (resized) from `frontend/public/brand/`. Opaque exact-sheet crops
+remain in `docs/brand/exact-sheet/`. See `docs/mor-brand.md`. `BrandMark` uses
+`app_icon.png`; login uses `primary_stacked.png` on a navy plate.
 
 - Favicon / PWA icons are resized from `app_icon.png`.
 - Brand chrome (active nav, OPEN highlight, login CTA) uses MOR blue; green /

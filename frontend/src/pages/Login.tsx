@@ -18,8 +18,8 @@ export function Login() {
             src="/brand/primary_stacked.png"
             alt="MOR — MoreOpenRepeater"
             className="mor-login-lockup"
-            width={274}
-            height={156}
+            width={548}
+            height={312}
           />
           <Text c="dimmed">Sign in to manage your repeater.</Text>
           <form

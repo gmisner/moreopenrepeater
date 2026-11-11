@@ -504,8 +504,7 @@ state, linked nodes, and a recent-activity feed), Activity (airtime charts),
 Recordings (playback, filters, transcripts), Timing, Identification, Audio &
 tones (sounds, clip library and the live radio interface), DTMF macros
 (add/edit/rename/delete), Announcements, Weather alerts, APRS, APRS map,
-Sites, Site sensors, Simulator, Known configs (community-tested Digirig /
-CM108 / SVXLink recipes), Logs (filter/level/pause), Backup & restore,
+Sites, Site sensors, Simulator, Logs (filter/level/pause), Backup & restore,
 and for admins Users, Audit log, Alerts & health and Updates. Each settings
 view saves only its own fields
 through `PUT /api/config`, with unsaved-change tracking. It has light and dark

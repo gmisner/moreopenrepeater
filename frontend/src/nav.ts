@@ -22,7 +22,6 @@ export const NAV: NavGroup[] = [
       { id: "macros", label: "DTMF macros", icon: "macros" },
       { id: "announcements", label: "Announcements", icon: "announce" },
       { id: "simulator", label: "Simulator", icon: "simulator" },
-      { id: "configs", label: "Known configs", icon: "info" },
     ],
   },
   {

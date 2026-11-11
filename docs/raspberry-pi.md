@@ -295,9 +295,9 @@ sends a test ID and offers to create an admin account. It can be skipped, and
 run again from **Audio & tones → Radio interface → Run setup wizard**.
 
 Community-tested host / radio / interface recipes (exact PTT, COS, and level
-starting points) live in [known-working-configs.md](known-working-configs.md)
-and on the dashboard under **Tools → Known configs**. Prefer those when your
-hardware is listed; open a PR there if you bring up something new.
+starting points) live in [known-working-configs.md](known-working-configs.md).
+Prefer those when your hardware is listed; open a PR there if you bring up
+something new.
 
 Picking a board sets its PTT and carrier-detect wiring and, if asked, its
 mixer levels (with `amixer`, on the ALSA card of the chosen output device;

@@ -365,10 +365,10 @@ def test_missing_dist_index_fails_clearly(tmp_path):
             web_dir=tmp_path / "web",
         )
 
-def test_spa_deep_links_include_configs_sites_and_sensors():
+def test_spa_deep_links_include_sites_and_sensors():
     client, service, clock = make_client()
 
-    for path in ("/sites", "/sensors", "/dashboard", "/configs"):
+    for path in ("/sites", "/sensors", "/dashboard"):
         response = client.get(path)
         assert response.status_code == 200, path
         assert "text/html" in response.headers.get("content-type", "")

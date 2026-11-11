@@ -46,6 +46,7 @@ Shell + dashboard follow the blue identity sheet:
 - Dashboard cards use `--mor-panel` / `--mor-border` above that bg
 - Navy chrome stays in the nav; MOR blue marks the active item and OPEN
 - Brand mark is the transparent `app_icon.png` (tile + mountain + tower + MOR)
+- Desktop nav uses transparent `horizontal.png`; phone header keeps the app icon
 - Login uses transparent `primary_stacked.png` on a navy plate
 - Sidebar callsign / station identity is centered in its pill
 - Metrics stay live controller/config data only

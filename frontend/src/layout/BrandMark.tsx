@@ -11,3 +11,16 @@ export function BrandMark({ size = 32 }: { size?: number }) {
     />
   );
 }
+
+/** Transparent horizontal lockup for the desktop nav. */
+export function BrandLockup() {
+  return (
+    <img
+      src="/brand/horizontal.png"
+      alt="MOR — MoreOpenRepeater"
+      className="mor-brand-lockup"
+      width={434}
+      height={145}
+    />
+  );
+}

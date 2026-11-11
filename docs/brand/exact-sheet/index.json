@@ -1,0 +1,561 @@
+{
+  "source_size": [
+    1536,
+    1024
+  ],
+  "coordinates": "[left, top, right, bottom), origin top-left",
+  "assets": [
+    {
+      "file": "01_logos/primary_stacked.png",
+      "box": [
+        79,
+        315,
+        353,
+        471
+      ],
+      "width": 274,
+      "height": 156,
+      "note": "Original background retained."
+    },
+    {
+      "file": "01_logos/horizontal.png",
+      "box": [
+        440,
+        341,
+        877,
+        440
+      ],
+      "width": 437,
+      "height": 99,
+      "note": "Original background retained."
+    },
+    {
+      "file": "01_logos/wordmark_minimal.png",
+      "box": [
+        925,
+        349,
+        1260,
+        439
+      ],
+      "width": 335,
+      "height": 90,
+      "note": "Original background retained."
+    },
+    {
+      "file": "01_logos/app_icon.png",
+      "box": [
+        1335,
+        327,
+        1483,
+        469
+      ],
+      "width": 148,
+      "height": 142,
+      "note": "Original background retained."
+    },
+    {
+      "file": "01_logos/hero_logo_with_tagline.png",
+      "box": [
+        190,
+        3,
+        667,
+        273
+      ],
+      "width": 477,
+      "height": 270,
+      "note": "Original background retained."
+    },
+    {
+      "file": "02_monochrome/white.png",
+      "box": [
+        35,
+        538,
+        210,
+        643
+      ],
+      "width": 175,
+      "height": 105,
+      "note": "Original background retained."
+    },
+    {
+      "file": "02_monochrome/black_on_white.png",
+      "box": [
+        225,
+        536,
+        377,
+        656
+      ],
+      "width": 152,
+      "height": 120,
+      "note": "Original background retained."
+    },
+    {
+      "file": "02_monochrome/blue_on_white.png",
+      "box": [
+        387,
+        536,
+        529,
+        656
+      ],
+      "width": 142,
+      "height": 120,
+      "note": "Original background retained."
+    },
+    {
+      "file": "03_stickers/stacked_diecut.png",
+      "box": [
+        590,
+        522,
+        789,
+        671
+      ],
+      "width": 199,
+      "height": 149,
+      "note": "Original background retained."
+    },
+    {
+      "file": "03_stickers/hexagon.png",
+      "box": [
+        798,
+        509,
+        944,
+        674
+      ],
+      "width": 146,
+      "height": 165,
+      "note": "Original background retained."
+    },
+    {
+      "file": "03_stickers/round.png",
+      "box": [
+        953,
+        509,
+        1120,
+        675
+      ],
+      "width": 167,
+      "height": 166,
+      "note": "Original background retained."
+    },
+    {
+      "file": "03_stickers/wordmark_rectangle.png",
+      "box": [
+        1127,
+        552,
+        1323,
+        633
+      ],
+      "width": 196,
+      "height": 81,
+      "note": "Original background retained."
+    },
+    {
+      "file": "03_stickers/flag.png",
+      "box": [
+        1333,
+        536,
+        1516,
+        650
+      ],
+      "width": 183,
+      "height": 114,
+      "note": "Original background retained."
+    },
+    {
+      "file": "04_github/banner.png",
+      "box": [
+        25,
+        722,
+        589,
+        826
+      ],
+      "width": 564,
+      "height": 104,
+      "note": "Original background retained."
+    },
+    {
+      "file": "04_github/star.png",
+      "box": [
+        31,
+        831,
+        137,
+        858
+      ],
+      "width": 106,
+      "height": 27,
+      "note": "Original background retained."
+    },
+    {
+      "file": "04_github/fork.png",
+      "box": [
+        154,
+        831,
+        226,
+        858
+      ],
+      "width": 72,
+      "height": 27,
+      "note": "Original background retained."
+    },
+    {
+      "file": "04_github/issues.png",
+      "box": [
+        242,
+        831,
+        322,
+        858
+      ],
+      "width": 80,
+      "height": 27,
+      "note": "Original background retained."
+    },
+    {
+      "file": "04_github/discussions.png",
+      "box": [
+        337,
+        831,
+        453,
+        858
+      ],
+      "width": 116,
+      "height": 27,
+      "note": "Original background retained."
+    },
+    {
+      "file": "04_github/contributing.png",
+      "box": [
+        470,
+        831,
+        585,
+        858
+      ],
+      "width": 115,
+      "height": 27,
+      "note": "Original background retained."
+    },
+    {
+      "file": "05_social/profile_icon.png",
+      "box": [
+        629,
+        725,
+        748,
+        846
+      ],
+      "width": 119,
+      "height": 121,
+      "note": "Original background retained."
+    },
+    {
+      "file": "05_social/cover.png",
+      "box": [
+        765,
+        725,
+        1142,
+        848
+      ],
+      "width": 377,
+      "height": 123,
+      "note": "Original background retained."
+    },
+    {
+      "file": "06_colors/navy.png",
+      "box": [
+        1196,
+        740,
+        1254,
+        783
+      ],
+      "width": 58,
+      "height": 43,
+      "note": "Interior pixels of the displayed swatch; no label or border. Colors may vary slightly in the flattened image."
+    },
+    {
+      "file": "06_colors/mor_blue.png",
+      "box": [
+        1277,
+        733,
+        1342,
+        788
+      ],
+      "width": 65,
+      "height": 55,
+      "note": "Interior pixels of the displayed swatch; no label or border. Colors may vary slightly in the flattened image."
+    },
+    {
+      "file": "06_colors/accent_blue.png",
+      "box": [
+        1361,
+        733,
+        1424,
+        788
+      ],
+      "width": 63,
+      "height": 55,
+      "note": "Interior pixels of the displayed swatch; no label or border. Colors may vary slightly in the flattened image."
+    },
+    {
+      "file": "06_colors/surface.png",
+      "box": [
+        1445,
+        733,
+        1507,
+        788
+      ],
+      "width": 62,
+      "height": 55,
+      "note": "Interior pixels of the displayed swatch; no label or border. Colors may vary slightly in the flattened image."
+    },
+    {
+      "file": "07_backgrounds/topographic.png",
+      "box": [
+        311,
+        918,
+        419,
+        998
+      ],
+      "width": 108,
+      "height": 80,
+      "note": "Original background retained."
+    },
+    {
+      "file": "07_backgrounds/mountains.png",
+      "box": [
+        446,
+        918,
+        552,
+        998
+      ],
+      "width": 106,
+      "height": 80,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/repeater.png",
+      "box": [
+        601,
+        925,
+        642,
+        962
+      ],
+      "width": 41,
+      "height": 37,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/services.png",
+      "box": [
+        660,
+        927,
+        696,
+        959
+      ],
+      "width": 36,
+      "height": 32,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/network.png",
+      "box": [
+        710,
+        925,
+        751,
+        962
+      ],
+      "width": 41,
+      "height": 37,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/settings.png",
+      "box": [
+        766,
+        925,
+        804,
+        962
+      ],
+      "width": 38,
+      "height": 37,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/dashboard.png",
+      "box": [
+        819,
+        926,
+        858,
+        962
+      ],
+      "width": 39,
+      "height": 36,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/metrics.png",
+      "box": [
+        873,
+        925,
+        906,
+        959
+      ],
+      "width": 33,
+      "height": 34,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/users.png",
+      "box": [
+        916,
+        925,
+        960,
+        961
+      ],
+      "width": 44,
+      "height": 36,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/api.png",
+      "box": [
+        964,
+        927,
+        1001,
+        959
+      ],
+      "width": 37,
+      "height": 32,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/docs.png",
+      "box": [
+        1008,
+        925,
+        1043,
+        961
+      ],
+      "width": 35,
+      "height": 36,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/feature_multi_mode.png",
+      "box": [
+        1221,
+        36,
+        1260,
+        73
+      ],
+      "width": 39,
+      "height": 37,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/feature_network_ready.png",
+      "box": [
+        1222,
+        78,
+        1260,
+        109
+      ],
+      "width": 38,
+      "height": 31,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/feature_open_source.png",
+      "box": [
+        1222,
+        116,
+        1261,
+        145
+      ],
+      "width": 39,
+      "height": 29,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/feature_community.png",
+      "box": [
+        1221,
+        151,
+        1262,
+        184
+      ],
+      "width": 41,
+      "height": 33,
+      "note": "Original background retained."
+    },
+    {
+      "file": "08_ui_icons/feature_operators.png",
+      "box": [
+        1222,
+        187,
+        1261,
+        220
+      ],
+      "width": 39,
+      "height": 33,
+      "note": "Original background retained."
+    },
+    {
+      "file": "09_merch_previews/cap.png",
+      "box": [
+        1071,
+        909,
+        1199,
+        1004
+      ],
+      "width": 128,
+      "height": 95,
+      "note": "Flattened merchandise mockup crop; not standalone print artwork."
+    },
+    {
+      "file": "09_merch_previews/hoodie.png",
+      "box": [
+        1197,
+        900,
+        1319,
+        1012
+      ],
+      "width": 122,
+      "height": 112,
+      "note": "Flattened merchandise mockup crop; not standalone print artwork."
+    },
+    {
+      "file": "09_merch_previews/shirt.png",
+      "box": [
+        1319,
+        896,
+        1444,
+        1011
+      ],
+      "width": 125,
+      "height": 115,
+      "note": "Flattened merchandise mockup crop; not standalone print artwork."
+    },
+    {
+      "file": "09_merch_previews/tumbler.png",
+      "box": [
+        1445,
+        896,
+        1515,
+        1012
+      ],
+      "width": 70,
+      "height": 116,
+      "note": "Flattened merchandise mockup crop; not standalone print artwork."
+    },
+    {
+      "file": "10_reference/typography_panel.png",
+      "box": [
+        17,
+        905,
+        272,
+        1009
+      ],
+      "width": 255,
+      "height": 104,
+      "note": "Typography specimen and font labels retained as reference, not font files."
+    }
+  ]
+}

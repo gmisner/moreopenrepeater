@@ -133,13 +133,10 @@ export function AppShell() {
       <MantineAppShell.Navbar p={0} className="mor-shell-nav">
         <Stack gap="md" p="md" style={{ height: "100%" }}>
           <Group gap="sm" visibleFrom="md" wrap="nowrap" className="mor-brand-lockup">
-            <BrandMark size={44} />
-            <Box>
-              <Text className="mor-brand-name">MOR</Text>
-              <Text className="mor-brand-expanded">
-                More<strong>Open</strong>Repeater
-              </Text>
-            </Box>
+            <BrandMark size={48} />
+            <Text className="mor-brand-expanded">
+              More<strong>Open</strong>Repeater
+            </Text>
           </Group>
           <Box className="mor-station">
             {status?.callsign ? (

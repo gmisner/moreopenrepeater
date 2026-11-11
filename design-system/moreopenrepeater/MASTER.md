@@ -218,12 +218,12 @@ To add a color: add it to both the dark `:root` block and the
 
 ## Brand
 
-The mark is a mountain range with a lattice tower under three MOR-blue signal
-arcs on brand navy `#0B1220`. Source: `frontend/src/layout/BrandMark.tsx` and
-`frontend/public/mor-brand.svg` (see `docs/mor-brand.md`).
+Exact-sheet logo crops (opaque PNGs from the brand collage) live in
+`docs/brand/exact-sheet/` and are served from `frontend/public/brand/`. See
+`docs/mor-brand.md`. `BrandMark` uses `app_icon.png`; login uses
+`primary_stacked.png`.
 
-- `mor-brand.svg` / `mor-maskable.svg`: favicon and PWA icons (arcs `#0D6EFD`,
-  mountains and tower `#E5E7EB`).
+- Favicon / PWA icons are resized from `app_icon.png`.
 - Brand chrome (active nav, OPEN highlight, login CTA) uses MOR blue; green /
   red / amber stay reserved for operational status.
 - Controllers are often offline: no CDN fonts. Brand faces are Montserrat/Inter

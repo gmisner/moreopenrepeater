@@ -1,0 +1,1 @@
+import{w as e}from"./BrandMark-BXdFghCh.js";var t=e();function n({children:e,action:n}){return(0,t.jsxs)(`div`,{className:`mor-empty mor-empty-branded`,children:[(0,t.jsx)(`p`,{children:e}),n]})}export{n as t};

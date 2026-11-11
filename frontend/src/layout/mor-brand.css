@@ -14,7 +14,12 @@
   object-fit: contain;
   background: transparent;
 }
-.mor-brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mor-brand-lockup {
+  display: block;
+  width: 100%;
+  max-width: 210px;
+  height: auto;
+}
 .mor-brand-name {
   font-weight: 900;
   font-size: 1.4rem;
@@ -105,7 +110,6 @@
 
 /* MOR control center: glass nav, without recoloring RF telemetry. */
 .mor-shell-nav .mor-brand-name { color: #e5e7eb; }
-.mor-shell-nav .mor-brand-expanded { color: #9aa8bc; }
 .mor-shell-nav .mor-nav-group { color: #9aa8bc; }
 .mor-shell-nav .mor-nav-link { color: #d5dde8; border-radius: 10px; }
 .mor-shell-nav .mor-nav-link:hover { background: color-mix(in srgb, #ffffff 8%, transparent); }

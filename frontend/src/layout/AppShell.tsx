@@ -19,7 +19,7 @@ import { useSession } from "../session";
 import { useStatus } from "../status";
 import { ConnectionBanner } from "../components/ConnectionBanner";
 import { ServerUpdatedBanner } from "../components/ServerUpdatedBanner";
-import { BrandMark } from "./BrandMark";
+import { BrandLockup, BrandMark } from "./BrandMark";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { MiniStatus } from "./MiniStatus";
 import { RouteBoundary } from "./RouteBoundary";
@@ -132,12 +132,9 @@ export function AppShell() {
 
       <MantineAppShell.Navbar p={0} className="mor-shell-nav">
         <Stack gap="md" p="md" style={{ height: "100%" }}>
-          <Group gap="sm" visibleFrom="md" wrap="nowrap" className="mor-brand-lockup">
-            <BrandMark size={48} />
-            <Text className="mor-brand-expanded">
-              More<strong>Open</strong>Repeater
-            </Text>
-          </Group>
+          <Box visibleFrom="md">
+            <BrandLockup />
+          </Box>
           <Box className="mor-station">
             {status?.callsign ? (
               <Text ff="monospace" fw={700} size="lg" component={Link} to="/identification" className="mor-station-call">

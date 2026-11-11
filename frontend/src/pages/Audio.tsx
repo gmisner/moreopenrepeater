@@ -1,6 +1,5 @@
 import { Anchor, Badge, Card, Group, Stack, Table, Tabs, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api";
 import {
   ENGINE_DEFAULTS,
@@ -348,11 +347,15 @@ export function Audio() {
       description="Configure radio interfaces, audio devices, linked radios, and station sounds."
     >
       <Text size="sm" c="dimmed">
-        Looking for a starting recipe? See{" "}
-        <Anchor component={Link} to="/configs">
-          Known configs
+        Looking for a starting recipe? See the{" "}
+        <Anchor
+          href="https://github.com/gmisner/moreopenrepeater/blob/main/docs/known-working-configs.md"
+          target="_blank"
+          rel="noreferrer"
+        >
+          known-working configs
         </Anchor>{" "}
-        for Digirig, CM108, AIOC, and SVXLink board settings.
+        docs for Digirig, CM108, AIOC, and SVXLink board settings.
       </Text>
       <Tabs className="mor-radio-workspace" value={tab} onChange={changeTab} keepMounted variant="default">
         <Tabs.List style={{ overflowX: "auto", flexWrap: "nowrap" }}>

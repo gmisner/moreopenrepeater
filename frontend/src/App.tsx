@@ -34,7 +34,6 @@ const Aprs = lazyPage(() => import("./pages/Aprs"), "Aprs");
 const MapPage = lazyPage(() => import("./pages/MapPage"), "MapPage");
 const PublicListening = lazyPage(() => import("./pages/PublicListening"), "PublicListening");
 const Simulator = lazyPage(() => import("./pages/Simulator"), "Simulator");
-const Configs = lazyPage(() => import("./pages/Configs"), "Configs");
 const Logs = lazyPage(() => import("./pages/Logs"), "Logs");
 const Backup = lazyPage(() => import("./pages/Backup"), "Backup");
 const Users = lazyPage(() => import("./pages/Users"), "Users");
@@ -89,7 +88,6 @@ function AuthedApp() {
                 <Route path="map" element={<MapPage />} />
                 <Route path="public" element={<PublicListening />} />
                 <Route path="simulator" element={<Simulator />} />
-                <Route path="configs" element={<Configs />} />
                 <Route path="logs" element={<Logs />} />
                 <Route path="backup" element={<Backup />} />
                 <Route path="users" element={<Users />} />

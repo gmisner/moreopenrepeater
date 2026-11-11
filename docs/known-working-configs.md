@@ -125,5 +125,4 @@ Add a section with:
 4. Mixer levels that worked
 5. Any radio-menu gotchas or RFI notes
 
-PR against `docs/known-working-configs.md`, and update the matching entry in
-`frontend/src/pages/Configs.tsx` so the dashboard gallery stays in sync.
+PR against `docs/known-working-configs.md`.

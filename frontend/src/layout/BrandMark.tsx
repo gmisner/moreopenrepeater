@@ -1,4 +1,4 @@
-/** Exact-sheet app icon crop (opaque navy tile). Prefer this over the hand SVG. */
+/** Transparent app icon (blue tile + alpha outside the squircle). */
 export function BrandMark({ size = 32 }: { size?: number }) {
   return (
     <img

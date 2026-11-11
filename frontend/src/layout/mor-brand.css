@@ -11,9 +11,8 @@
 [data-mantine-color-scheme="dark"] { --mor-brand-mark: #e5e7eb; }
 .mor-brand-mark {
   display: block;
-  border-radius: 22%;
-  object-fit: cover;
-  background: #0b1220;
+  object-fit: contain;
+  background: transparent;
 }
 .mor-brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .mor-brand-name {
@@ -29,7 +28,10 @@
   width: min(100%, 274px);
   height: auto;
   margin-inline: auto;
+  padding: 16px 18px;
   border-radius: 12px;
+  background: var(--mor-brand-navy);
+  box-sizing: border-box;
 }
 .mor-nav-link[data-active] {
   background: linear-gradient(90deg, color-mix(in srgb, var(--mor-brand-blue) 82%, #fff), var(--mor-brand-blue));

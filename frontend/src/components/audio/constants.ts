@@ -185,8 +185,10 @@ export const CTCSS_TONES = [
 
 export const METER_FLOOR_DB = -80;
 export const SILENCE_DB = -120;
-export const SILENT_POLLS_BEFORE_HINT = 20;
-export const POLL_MS = 250;
+/** ~5 s of silence before the "check the sound card" hint (at POLL_MS). */
+export const SILENT_POLLS_BEFORE_HINT = 5;
+/** Live meters on Audio & tones — was 250 ms; too hot for on-Pi Chromium. */
+export const POLL_MS = 1000;
 export const SIDE_LABELS = {
   input: "Receive",
   output: "Transmit",

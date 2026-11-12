@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, Suspense, type ErrorInfo, type ReactNode } from "react";
 import { Title } from "@mantine/core";
 import { Outlet, useLocation } from "react-router-dom";
 import { ErrorCard, LoadingBlock } from "../components/StateCards";
@@ -68,17 +68,19 @@ function ConfigGate({ view, children }: { view: string; children: ReactNode }) {
   );
 }
 
-/** Wraps every page: catches crashes, and holds back settings pages until their settings have loaded. */
+/** Wraps every page: catches crashes, and holds back settings pages until their settings have loaded.
+ *  Suspense lives here (not around AppShell) so nav/title update immediately while a lazy page loads.
+ *  Putting Suspense above the shell leaves the old Dashboard painted when the URL has already changed.
+ */
 export function RouteBoundary() {
   const { pathname } = useLocation();
   const view = pathname.replace(/^\//, "").split("/")[0] || "dashboard";
-  const body = NEEDS_CONFIG.has(view) ? (
-    <ConfigGate view={view}>
+  const page = (
+    <Suspense fallback={<LoadingBlock label="Loading page" />}>
       <Outlet />
-    </ConfigGate>
-  ) : (
-    <Outlet />
+    </Suspense>
   );
+  const body = NEEDS_CONFIG.has(view) ? <ConfigGate view={view}>{page}</ConfigGate> : page;
   return <Catcher key={pathname}>{body}</Catcher>;
 }
 

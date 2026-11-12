@@ -34,6 +34,8 @@ def test_get_status_returns_idle_initially():
     assert body["state"] == "idle"
     assert body["ptt_active"] is False
     assert body["callsign"] == ""
+    assert "pins" in body["gpio"]
+    assert "enabled" in body["link_radio"]
 
 
 def test_status_includes_the_configured_callsign():

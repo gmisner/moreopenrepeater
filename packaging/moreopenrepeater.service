@@ -45,6 +45,9 @@ RuntimeDirectoryPreserve=yes
 ExecStart=/opt/moreopenrepeater/.venv/bin/moreopenrepeater-api
 Restart=on-failure
 RestartSec=5
+# Prefer the radio path when a local Chromium/desktop session is also busy.
+Nice=-10
+CPUWeight=200
 
 # Modest hardening -- not locked down further since the process needs real
 # device access (/dev/hidrawN for audio_io.cm108, sound devices for

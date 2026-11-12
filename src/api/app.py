@@ -118,8 +118,21 @@ __all__ = [
 ]
 
 
-def _status_response(snapshot: StatusSnapshot) -> StatusResponse:
-    return StatusResponse(**dataclasses.asdict(snapshot))
+def _status_payload(
+    snapshot: StatusSnapshot,
+    *,
+    gpio=None,
+    tx_fan=None,
+    link_radio=None,
+    remote_base=None,
+) -> StatusResponse:
+    """Controller snapshot plus live gpio / linked-radio for /api/status and /ws/status."""
+    data = dataclasses.asdict(snapshot)
+    if gpio is not None and tx_fan is not None:
+        data["gpio"] = {**gpio.status(), "fan": tx_fan.status()}
+    if link_radio is not None and remote_base is not None:
+        data["link_radio"] = {**link_radio.status(), **remote_base.status()}
+    return StatusResponse.model_validate(data)
 
 
 def _config_response(service: RepeaterService) -> ConfigResponse:
@@ -232,6 +245,15 @@ def create_app(
             role=identity.role if identity else None,
         )
 
+    def status_response(snapshot: StatusSnapshot) -> StatusResponse:
+        return _status_payload(
+            snapshot,
+            gpio=runtime.gpio,
+            tx_fan=runtime.tx_fan,
+            link_radio=runtime.link_radio,
+            remote_base=runtime.remote_base,
+        )
+
     session_routes.register(
         app,
         identify=runtime.identify,
@@ -248,7 +270,7 @@ def create_app(
         service=runtime.service,
         run_mixer=runtime.run_mixer,
         render_and_queue=runtime.render_and_queue,
-        status_response=_status_response,
+        status_response=status_response,
         config_response=_config_response,
         auth_dependencies=runtime.auth_dependencies,
         transmit_dependencies=runtime.transmit_dependencies,
@@ -267,7 +289,7 @@ def create_app(
         app,
         service=runtime.service,
         transmit_dependencies=runtime.transmit_dependencies,
-        status_response=_status_response,
+        status_response=status_response,
     )
 
     def actor_of(request: Request) -> str:
@@ -288,7 +310,7 @@ def create_app(
         zone_shapes=runtime.zone_shapes,
         render_and_queue=runtime.render_and_queue,
         check_weather=runtime.check_weather,
-        status_response=_status_response,
+        status_response=status_response,
         auth_dependencies=runtime.auth_dependencies,
         transmit_dependencies=runtime.transmit_dependencies,
     )
@@ -459,7 +481,7 @@ def create_app(
         identify=runtime.identify,
         bind_stream_identity=runtime.bind_stream_identity,
         auth_enabled=runtime.auth_enabled,
-        status_response=_status_response,
+        status_response=status_response,
         web_dir=WEB_DIR,
     )
 

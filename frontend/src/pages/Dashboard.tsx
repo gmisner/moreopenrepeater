@@ -241,37 +241,15 @@ export function Dashboard() {
     return () => window.clearInterval(timer);
   }, [refreshRecentTx]);
 
-  const refreshLinkRadio = useCallback(async () => {
-    try {
-      setLinkRadio(await api<LinkRadioStatus>("/api/link-radio"));
-    } catch {
-      /* keep last */
-    }
-  }, []);
-
+  // gpio + linked radio arrive on /ws/status; no 1 Hz HTTP polls (those starved on-Pi Chromium).
   useEffect(() => {
-    void refreshLinkRadio();
-    const timer = window.setInterval(() => {
-      if (!document.hidden) void refreshLinkRadio();
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [refreshLinkRadio]);
-
-  const refreshGpio = useCallback(async () => {
-    try {
-      setGpio(await api<GpioStatus>("/api/gpio"));
-    } catch {
-      /* keep last */
+    if (status?.gpio && typeof status.gpio === "object") {
+      setGpio(status.gpio as GpioStatus);
     }
-  }, []);
-
-  useEffect(() => {
-    void refreshGpio();
-    const timer = window.setInterval(() => {
-      if (!document.hidden) void refreshGpio();
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [refreshGpio]);
+    if (status?.link_radio && typeof status.link_radio === "object") {
+      setLinkRadio(status.link_radio as LinkRadioStatus);
+    }
+  }, [status]);
 
   const refreshSensors = useCallback(async () => {
     try {

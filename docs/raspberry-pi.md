@@ -368,9 +368,13 @@ repeater and check:
 3. TX gain is loud enough on the air without clipping; use a second radio
    or the monitor if you have one.
 4. **Audio glitches** on the Radio interface card stays near zero while
-   someone talks (dropped or late audio blocks). A desktop session on the
-   Pi itself often causes late blocks — run Raspberry Pi OS Lite and use
-   the dashboard from another computer.
+   someone talks (dropped or late audio blocks). A desktop Chromium session
+   on the Pi itself still competes for CPU — close DevTools if you use the
+   local browser, or prefer the dashboard from another computer / phone.
+   Live GPIO and linked-radio status are pushed over `/ws/status` (not
+   polled every second), and the service runs at a higher nice so the
+   radio path keeps priority under load. Raspberry Pi OS Lite remains the
+   quietest setup.
 A command's reply comes that much later after the last key.
 "CTCSS tone present" opens only when a sub-audible tone is decoded,
 which requires the receiver's audio to be unfiltered (discriminator or
@@ -1079,10 +1083,9 @@ refills as new reports arrive.
   card (dropped or late audio blocks).
 - Audio processing fits on a Raspberry Pi 3B+: it averages about 4 ms of
   each 20 ms block, and 99% of blocks take under 6 ms
-  (`scripts/benchmark_audio.py`). A desktop session with a
-  web browser open on the Pi itself competes for the CPU and causes the
-  occasional late block, so run the Pi without a desktop (Raspberry Pi OS
-  Lite), or at least don't browse on it, and use the dashboard from another
-  computer.
+  (`scripts/benchmark_audio.py`). A desktop Chromium session on the Pi
+  itself still competes for CPU; close DevTools if you browse locally, or
+  use the dashboard from another computer. GPIO and linked-radio status are
+  pushed over the status socket, and the service is niced above the desktop.
 - AllStarLink audio (the node's `rxchannel` over USRP) is set up separately;
   see [allstar.md](allstar.md).

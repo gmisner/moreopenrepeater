@@ -272,6 +272,10 @@ class RepeaterService:
                 queue.task_done()
             queue.put_nowait(snapshot)
 
+    def notify_status(self) -> None:
+        """Push a fresh /ws/status frame (gpio / link-radio side channels use this)."""
+        self._notify()
+
     # --- controller command loop (orchestration) ---
 
     def _apply_commands(self, commands: list[ControllerCommand]) -> None:

@@ -149,6 +149,7 @@ class LinkRadio:
         self._repeater_side: Optional[LinkAudio] = None
         self._link_side: Optional[LinkAudio] = None
         self._last_stream_recover = float("-inf")
+        self._pushed: Optional[tuple] = None
 
     def attach(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -170,6 +171,7 @@ class LinkRadio:
             self._stop()
             if config.link_radio_enabled:
                 self._start(config)
+            self._maybe_notify()
         elif self.engine is not None:
             settings = self.engine.processor.settings
             settings.vox_threshold_db = config.link_radio_vox_threshold_db
@@ -234,6 +236,7 @@ class LinkRadio:
             _logger.info("remote base idle; turning it off")
             self._service.update_config(link_radio_enabled=False)
             self._service.speak(TTS_PREFIX + "Remote base off.")
+        self._maybe_notify()
 
     def play_clip(self, clip: str) -> None:
         """Play `clip` on the Linked Radio TX (announcements marked on_linked_radio).
@@ -278,6 +281,25 @@ class LinkRadio:
     def _set_receiving(self, receiving: bool) -> None:
         self.receiving = receiving
         self._service.link_radio_keyed(receiving)
+        self._maybe_notify()
+
+    def _discrete(self) -> tuple:
+        engine = self.engine
+        return (
+            self._service.config.link_radio_enabled,
+            engine is not None and engine.running,
+            self.error,
+            self.receiving,
+            bool(engine.transmitting) if engine else False,
+            self.controller.timed_out,
+        )
+
+    def _maybe_notify(self) -> None:
+        key = self._discrete()
+        if key == self._pushed:
+            return
+        self._pushed = key
+        self._service.notify_status()
 
     @property
     def cm108(self) -> Optional[CM108Interface]:

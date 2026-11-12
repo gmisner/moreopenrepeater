@@ -1,4 +1,5 @@
 import { Badge, Card, Group, Text, Title } from "@mantine/core";
+import { memo } from "react";
 import { Link } from "react-router-dom";
 import type { Config } from "../../config";
 import type { RepeaterStatus } from "../../status";
@@ -57,7 +58,15 @@ function Kpi({
 }
 
 /** Live controller overview styled to the MOR dashboard mockup; metrics stay real. */
-export function ControlOverview({ status, connected, links, history, config, linkRadioOnline, health }: Props) {
+export const ControlOverview = memo(function ControlOverview({
+  status,
+  connected,
+  links,
+  history,
+  config,
+  linkRadioOnline,
+  health,
+}: Props) {
   const bins = history?.bins ?? [];
   const max = Math.max(1, ...bins.flatMap((bin) => [bin.rx_seconds, bin.tx_seconds]));
   const ptt = Boolean(status?.ptt_active);
@@ -273,4 +282,4 @@ export function ControlOverview({ status, connected, links, history, config, lin
       </div>
     </div>
   );
-}
+});

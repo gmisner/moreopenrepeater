@@ -46,6 +46,22 @@ def test_tick_advances_timers_using_injected_clock():
     assert service.snapshot().ptt_active is False
 
 
+def test_idle_ticks_do_not_spam_status_subscribers():
+    """Tick is 50 ms; without dedupe the Dashboard re-renders ~20×/s on Pi Chromium."""
+    service, clock = make_service()
+    queue = service.subscribe()
+    service.tick()
+    assert queue.qsize() == 1
+    queue.get_nowait()
+    queue.task_done()
+    for _ in range(40):
+        clock["now"] += 0.05
+        service.tick()
+    assert queue.qsize() == 0
+    service.simulate_cos(active=True)
+    assert queue.qsize() == 1
+
+
 def test_simulate_dtmf_dispatches_macro_command():
     macro = Macro(
         pattern="*81",

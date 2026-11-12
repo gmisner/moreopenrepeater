@@ -1,4 +1,5 @@
 import { Badge, Card } from "@mantine/core";
+import { memo } from "react";
 import { Link } from "react-router-dom";
 import type { Config } from "../../config";
 import type { RepeaterStatus } from "../../status";
@@ -133,7 +134,7 @@ function SignalPath({ stages }: { stages: PathStage[] }) {
   );
 }
 
-export function OnAir({ status, config }: { status: RepeaterStatus | null; config: Config | null }) {
+export const OnAir = memo(function OnAir({ status, config }: { status: RepeaterStatus | null; config: Config | null }) {
   const state = status?.state ?? "unknown";
   const tone = stateTone(state);
   const cos = Boolean(status?.cos_active);
@@ -195,4 +196,4 @@ export function OnAir({ status, config }: { status: RepeaterStatus | null; confi
       <SignalPath stages={stages} />
     </Card>
   );
-}
+});

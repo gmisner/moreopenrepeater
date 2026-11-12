@@ -109,6 +109,7 @@ class RepeaterService:
         self._kerchunks_filtered = 0
         self._locked_out = False
         self._subscribers: set["asyncio.Queue[StatusSnapshot]"] = set()
+        self._last_status_fp: object | None = None
 
     # --- collaborators (public so hooks can move onto them over time) ---
 
@@ -264,8 +265,38 @@ class RepeaterService:
     def unsubscribe(self, queue: "asyncio.Queue[StatusSnapshot]") -> None:
         self._subscribers.discard(queue)
 
-    def _notify(self) -> None:
+    @staticmethod
+    def _quantize_timer(seconds: Optional[float]) -> Optional[int]:
+        """Bucket timer displays to 0.25 s so idle ticks do not spam /ws/status."""
+        if seconds is None:
+            return None
+        return round(seconds * 4)
+
+    def _status_fingerprint(self, snapshot: StatusSnapshot) -> tuple:
+        return (
+            snapshot.state,
+            snapshot.ptt_active,
+            snapshot.cos_active,
+            snapshot.ctcss_hz,
+            tuple(snapshot.linked_nodes),
+            snapshot.last_clip,
+            snapshot.transmitter_enabled,
+            snapshot.locked_out,
+            snapshot.net_active,
+            snapshot.gmrs_mode,
+            snapshot.callsign,
+            self._quantize_timer(snapshot.tot_remaining),
+            self._quantize_timer(snapshot.hang_remaining),
+            self._quantize_timer(snapshot.id_due_in),
+        )
+
+    def _notify(self, *, force: bool = False) -> None:
+        # Tick runs every 50 ms; only push when operators would see a change.
         snapshot = self.snapshot()
+        fingerprint = self._status_fingerprint(snapshot)
+        if not force and fingerprint == self._last_status_fp:
+            return
+        self._last_status_fp = fingerprint
         for queue in self._subscribers:
             if queue.full():
                 queue.get_nowait()
@@ -274,7 +305,7 @@ class RepeaterService:
 
     def notify_status(self) -> None:
         """Push a fresh /ws/status frame (gpio / link-radio side channels use this)."""
-        self._notify()
+        self._notify(force=True)
 
     # --- controller command loop (orchestration) ---
 

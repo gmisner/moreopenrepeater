@@ -1,6 +1,7 @@
 import { Center, Loader } from "@mantine/core";
 import { lazy, Suspense, type ComponentType } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { ErrorCard } from "./components/StateCards";
 import { ConfigProvider } from "./config";
 import { AppShell } from "./layout/AppShell";
 import { Login } from "./pages/Login";
@@ -8,10 +9,27 @@ import { SessionProvider, useSession } from "./session";
 import { StatusProvider } from "./status";
 import { SetupWizardProvider } from "./wizard/SetupWizard";
 
+function PageLoadError({ name }: { name: string }) {
+  return (
+    <ErrorCard title="Couldn't load this page" onRetry={() => location.reload()} retryLabel="Reload the page">
+      {name} did not download. After an update, a reload usually fixes it.
+    </ErrorCard>
+  );
+}
+
 function lazyPage(loader: () => Promise<{ [key: string]: ComponentType }>, name: string) {
   return lazy(async () => {
-    const mod = await loader();
-    return { default: mod[name] as ComponentType };
+    try {
+      const mod = await loader();
+      const Comp = mod[name] as ComponentType | undefined;
+      if (!Comp) throw new Error(`Missing export ${name}`);
+      return { default: Comp };
+    } catch (err) {
+      console.error(`Failed to load page ${name}`, err);
+      return { default: function FailedPage() {
+        return <PageLoadError name={name} />;
+      } };
+    }
   });
 }
 
@@ -65,41 +83,39 @@ function AuthedApp() {
     <ConfigProvider>
       <StatusProvider>
         <SetupWizardProvider>
-          <Suspense fallback={<PageFallback />}>
-            <Routes>
-              <Route element={<AppShell />}>
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<Dashboard />} />
-                <Route path="activity" element={<Activity />} />
-                <Route path="recordings" element={<Recordings />} />
-                <Route path="timing" element={<Timing />} />
-                <Route path="identification" element={<Identification />} />
-                <Route path="audio" element={<Audio />} />
-                <Route path="macros" element={<Macros />} />
-                <Route path="net" element={<Net />} />
-                <Route path="mailbox" element={<Mailbox />} />
-                <Route path="announcements" element={<Announcements />} />
-                <Route path="weather" element={<Weather />} />
-                <Route path="sensors" element={<Sensors />} />
-                <Route path="autopatch" element={<Autopatch />} />
-                <Route path="allstar" element={<AllStar />} />
-                <Route path="dmr" element={<Dmr />} />
-                <Route path="aprs" element={<Aprs />} />
-                <Route path="map" element={<MapPage />} />
-                <Route path="public" element={<PublicListening />} />
-                <Route path="simulator" element={<Simulator />} />
-                <Route path="logs" element={<Logs />} />
-                <Route path="backup" element={<Backup />} />
-                <Route path="users" element={<Users />} />
-                <Route path="sites" element={<Sites />} />
-                <Route path="audit" element={<Audit />} />
-                <Route path="alerts" element={<Alerts />} />
-                <Route path="updates" element={<Updates />} />
-                <Route path="remote" element={<Remote />} />
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
-              </Route>
-            </Routes>
-          </Suspense>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="activity" element={<Activity />} />
+              <Route path="recordings" element={<Recordings />} />
+              <Route path="timing" element={<Timing />} />
+              <Route path="identification" element={<Identification />} />
+              <Route path="audio" element={<Audio />} />
+              <Route path="macros" element={<Macros />} />
+              <Route path="net" element={<Net />} />
+              <Route path="mailbox" element={<Mailbox />} />
+              <Route path="announcements" element={<Announcements />} />
+              <Route path="weather" element={<Weather />} />
+              <Route path="sensors" element={<Sensors />} />
+              <Route path="autopatch" element={<Autopatch />} />
+              <Route path="allstar" element={<AllStar />} />
+              <Route path="dmr" element={<Dmr />} />
+              <Route path="aprs" element={<Aprs />} />
+              <Route path="map" element={<MapPage />} />
+              <Route path="public" element={<PublicListening />} />
+              <Route path="simulator" element={<Simulator />} />
+              <Route path="logs" element={<Logs />} />
+              <Route path="backup" element={<Backup />} />
+              <Route path="users" element={<Users />} />
+              <Route path="sites" element={<Sites />} />
+              <Route path="audit" element={<Audit />} />
+              <Route path="alerts" element={<Alerts />} />
+              <Route path="updates" element={<Updates />} />
+              <Route path="remote" element={<Remote />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Route>
+          </Routes>
         </SetupWizardProvider>
       </StatusProvider>
     </ConfigProvider>

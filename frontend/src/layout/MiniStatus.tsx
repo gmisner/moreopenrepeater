@@ -1,8 +1,9 @@
 import { Badge, Group } from "@mantine/core";
 import { Link } from "react-router-dom";
-import type { RepeaterStatus } from "../status";
+import { useStatusLive } from "../status";
 
-export function MiniStatus({ status }: { status: RepeaterStatus | null }) {
+export function MiniStatus() {
+  const status = useStatusLive();
   const ptt = Boolean(status?.ptt_active);
   const cos = Boolean(status?.cos_active);
   const dryRun = status?.transmitter_enabled === false;

@@ -14,7 +14,7 @@ import { useRef, useState, type FormEvent, type PointerEvent } from "react";
 import { api } from "../api";
 import { notifyError } from "../config";
 import { Page } from "../layout/AppShell";
-import { useStatus, type RepeaterStatus } from "../status";
+import { useStatusLive, type RepeaterStatus } from "../status";
 
 const DTMF_KEYS = ["1", "2", "3", "A", "4", "5", "6", "B", "7", "8", "9", "C", "*", "0", "#", "D"];
 
@@ -27,7 +27,7 @@ async function post(path: string, json: Record<string, unknown>) {
 }
 
 export function Simulator() {
-  const { status } = useStatus();
+  const status = useStatusLive();
   const [ctcss, setCtcss] = useState<number | string>("");
   const [sent, setSent] = useState("");
   const [sequence, setSequence] = useState("");

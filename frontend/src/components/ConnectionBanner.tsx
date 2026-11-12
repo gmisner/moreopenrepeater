@@ -1,14 +1,14 @@
 import { Alert } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { useReachable } from "../connection";
-import { useStatus } from "../status";
+import { useStatusConnected } from "../status";
 
 const GRACE_MS = 4000;
 
 /** Appears when the controller stops answering. Waits a few seconds so a page load or a blip stays quiet. */
 export function ConnectionBanner() {
   const reachable = useReachable();
-  const { connected } = useStatus();
+  const connected = useStatusConnected();
   const down = !reachable || !connected;
   const [shown, setShown] = useState(false);
 

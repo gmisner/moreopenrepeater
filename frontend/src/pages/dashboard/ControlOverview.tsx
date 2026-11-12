@@ -2,7 +2,7 @@ import { Badge, Card, Group, Text, Title } from "@mantine/core";
 import { memo } from "react";
 import { Link } from "react-router-dom";
 import type { Config } from "../../config";
-import type { RepeaterStatus } from "../../status";
+import { useStatusConnected, useStatusLive } from "../../status";
 import { formatAirtime } from "./activity";
 
 export type History24h = {
@@ -14,13 +14,12 @@ export type History24h = {
 type HealthItem = { label: string; value: string; ok: boolean };
 
 type Props = {
-  status: RepeaterStatus | null;
-  connected: boolean;
   links: number | null;
   history: History24h | null;
   config: Config | null;
   linkRadioOnline: boolean | null;
-  health: HealthItem[];
+  /** False when linked radio is enabled but not running. */
+  linkRadioOk?: boolean;
 };
 
 function num(value: unknown) {
@@ -59,14 +58,14 @@ function Kpi({
 
 /** Live controller overview styled to the MOR dashboard mockup; metrics stay real. */
 export const ControlOverview = memo(function ControlOverview({
-  status,
-  connected,
   links,
   history,
   config,
   linkRadioOnline,
-  health,
+  linkRadioOk = true,
 }: Props) {
+  const status = useStatusLive();
+  const connected = useStatusConnected();
   const bins = history?.bins ?? [];
   const max = Math.max(1, ...bins.flatMap((bin) => [bin.rx_seconds, bin.tx_seconds]));
   const ptt = Boolean(status?.ptt_active);
@@ -89,6 +88,30 @@ export const ControlOverview = memo(function ControlOverview({
   const rxFreq = txFreq != null && offset != null ? txFreq + offset : null;
   const rxAir = history ? bins.reduce((sum, bin) => sum + bin.rx_seconds, 0) : null;
   const txAir = history ? bins.reduce((sum, bin) => sum + bin.tx_seconds, 0) : null;
+
+  const health: HealthItem[] = [
+    { label: "Controller", value: connected ? "Operational" : "Disconnected", ok: connected },
+    {
+      label: "Radio",
+      value: !connected ? "Unknown" : status?.transmitter_enabled === false ? "Muted" : "Online",
+      ok: connected && status?.transmitter_enabled !== false,
+    },
+    {
+      label: "Linking",
+      value: links == null ? "Unavailable" : `${links} connected`,
+      ok: links != null,
+    },
+    {
+      label: "APRS frequency",
+      value: typeof config?.aprs_frequency_mhz === "number" ? "Configured" : "Not set",
+      ok: true,
+    },
+    {
+      label: "Linked radio",
+      value: linkRadioOnline == null ? "Unavailable" : linkRadioOnline ? "Online" : "Off",
+      ok: linkRadioOnline == null ? true : linkRadioOk,
+    },
+  ];
 
   return (
     <div className="mor-control-overview">

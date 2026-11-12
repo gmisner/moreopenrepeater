@@ -8,11 +8,9 @@ import {
   LINK_DEFAULTS,
   LINK_KEYS,
   LinkRadioCard,
-  POLL_MS,
   PTT_LABELS,
   RadioInterfaceCard,
   SILENCE_DB,
-  SILENT_POLLS_BEFORE_HINT,
   SOUND_DEFAULTS,
   SOUND_KEYS,
   SoundLevelsCard,
@@ -39,6 +37,7 @@ import {
   soundAssignments,
 } from "../deviceUsage";
 import { Page } from "../layout/AppShell";
+import { POLL_MS_BY, readPollAggressiveness, silentPollsBeforeHint } from "../prefs";
 import { useSession } from "../session";
 import { useSetupWizard } from "../wizard/SetupWizard";
 import { labeled } from "../components/FieldHint";
@@ -175,13 +174,15 @@ export function Audio() {
 
   useEffect(() => {
     let cancelled = false;
+    const pollMs = POLL_MS_BY[readPollAggressiveness()];
+    const silentBeforeHint = silentPollsBeforeHint(pollMs);
     const tick = async () => {
       try {
         const next = await api<EngineStatus>("/api/audio/engine");
         if (cancelled) return;
         setEngineStatus(next);
         silentPolls.current = next.running && next.rx_level_db <= SILENCE_DB ? silentPolls.current + 1 : 0;
-        setShowSilenceHint(silentPolls.current >= SILENT_POLLS_BEFORE_HINT);
+        setShowSilenceHint(silentPolls.current >= silentBeforeHint);
       } catch {
         // Next poll retries; session handling covers sign-out.
       }
@@ -201,7 +202,7 @@ export function Audio() {
     void tick();
     const id = window.setInterval(() => {
       if (!document.hidden) void tick();
-    }, POLL_MS);
+    }, pollMs);
     return () => {
       cancelled = true;
       window.clearInterval(id);

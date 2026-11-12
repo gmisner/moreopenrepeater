@@ -17,7 +17,7 @@ import { notifyError, notifySuccess } from "../config";
 import { fanText, gpioStateText, shortTime, type GpioPinStatus, type GpioStatus } from "../gpio";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
-import { useStatus } from "../status";
+import { useStatusConnected, useStatusExtras, useStatusLive } from "../status";
 import { useConfig } from "../config";
 import { OnAir } from "./dashboard/OnAir";
 import { ControlOverview, type History24h } from "./dashboard/ControlOverview";
@@ -85,26 +85,6 @@ function eventBadgeColor(kind: LinkEvent["kind"]) {
   if (kind === "connected" || kind === "keyed") return "green";
   if (kind === "disconnected") return "gray";
   return "blue";
-}
-
-function gpioLiveKey(gpio: GpioStatus | null): string {
-  if (!gpio) return "";
-  const pins = gpio.pins.map((pin) => `${pin.pin}:${pin.mode}:${pin.on ? 1 : 0}`).join(",");
-  const fan = gpio.fan ? `${gpio.fan.output}:${gpio.fan.on ? 1 : 0}:${gpio.fan.error ?? ""}` : "";
-  return `${gpio.available}:${gpio.error ?? ""}:${pins}:${fan}`;
-}
-
-function linkRadioLiveKey(link: LinkRadioStatus | null): string {
-  if (!link) return "";
-  return [
-    link.enabled ? 1 : 0,
-    link.running ? 1 : 0,
-    link.receiving ? 1 : 0,
-    link.transmitting ? 1 : 0,
-    link.timed_out ? 1 : 0,
-    link.error ?? "",
-    link.rig_error ?? "",
-  ].join(":");
 }
 
 function Indicator({ name, on, value, danger }: { name: string; on: boolean; value: string; danger?: boolean }) {
@@ -186,20 +166,43 @@ function GpioIndicator({
   );
 }
 
+function LockoutBanner({ canWrite, onClear }: { canWrite: boolean; onClear: () => void }) {
+  const live = useStatusLive();
+  if (!live?.locked_out) return null;
+  return (
+    <Card withBorder padding="md" radius="md" style={{ borderColor: "var(--mor-red)", background: "color-mix(in srgb, var(--mor-red) 10%, transparent)" }}>
+      <Group justify="space-between">
+        <div>
+          <Text fw={700} c="var(--mor-red)">
+            Locked out: stuck carrier
+          </Text>
+          <Text size="sm" c="dimmed">
+            The receiver kept timing out, so the repeater has stopped repeating. IDs still go out.
+          </Text>
+        </div>
+        {canWrite ? (
+          <Button color="red" variant="outline" size="xs" onClick={onClear}>
+            Clear lockout
+          </Button>
+        ) : null}
+      </Group>
+    </Card>
+  );
+}
+
 export function Dashboard() {
-  const { status, connected } = useStatus();
+  const connected = useStatusConnected();
+  const extras = useStatusExtras();
   const { session } = useSession();
   const canWrite = session?.role !== "viewer";
   const { config } = useConfig();
 
   const [links, setLinks] = useState<LinksStatus | null>(null);
-  const [linkRadio, setLinkRadio] = useState<LinkRadioStatus | null>(null);
   const [node, setNode] = useState("");
   const [monitor, setMonitor] = useState(false);
   const [listenSource, setListenSource] = useState("tx");
   const [listening, setListening] = useState(false);
   const [listenNote, setListenNote] = useState("Streams the repeater's audio to this browser (needs live audio running).");
-  const [gpio, setGpio] = useState<GpioStatus | null>(null);
   const [gpioBusy, setGpioBusy] = useState<number | null>(null);
   const [sensors, setSensors] = useState<
     { id: string; name: string; units: string; value: number | null; error: string | null }[] | null
@@ -261,18 +264,12 @@ export function Dashboard() {
     return () => window.clearInterval(timer);
   }, [refreshRecentTx]);
 
-  // gpio + linked radio arrive on /ws/status; only commit when discrete fields change
-  // so timer ticks do not re-render the whole Dashboard twice per frame.
-  useEffect(() => {
-    if (status?.gpio && typeof status.gpio === "object") {
-      const next = status.gpio as GpioStatus;
-      setGpio((prev) => (gpioLiveKey(prev) === gpioLiveKey(next) ? prev : next));
-    }
-    if (status?.link_radio && typeof status.link_radio === "object") {
-      const next = status.link_radio as LinkRadioStatus;
-      setLinkRadio((prev) => (linkRadioLiveKey(prev) === linkRadioLiveKey(next) ? prev : next));
-    }
-  }, [status]);
+  const gpio =
+    extras.gpio && typeof extras.gpio === "object" ? (extras.gpio as GpioStatus) : null;
+  const linkRadio =
+    extras.link_radio && typeof extras.link_radio === "object"
+      ? (extras.link_radio as LinkRadioStatus)
+      : null;
 
   const refreshSensors = useCallback(async () => {
     try {
@@ -292,10 +289,6 @@ export function Dashboard() {
     }, 15000);
     return () => window.clearInterval(timer);
   }, [refreshSensors]);
-
-  useEffect(() => {
-    if (!status?.locked_out) return;
-  }, [status?.locked_out]);
 
   const connectNode = async (target: string, monitorOnly: boolean, clearInput = false) => {
     try {
@@ -343,7 +336,8 @@ export function Dashboard() {
   const switchGpio = async (pin: GpioPinStatus) => {
     setGpioBusy(pin.pin);
     try {
-      setGpio(await api<GpioStatus>(`/api/gpio/${pin.pin}`, { method: "PUT", json: { on: !pin.on } }));
+      // Optimistic local feel; the next /ws/status extras frame reconciles.
+      await api<GpioStatus>(`/api/gpio/${pin.pin}`, { method: "PUT", json: { on: !pin.on } });
     } catch (error) {
       notifyError(error);
     } finally {
@@ -423,59 +417,17 @@ export function Dashboard() {
           </Card>
         ) : null}
 
-        {status?.locked_out ? (
-          <Card withBorder padding="md" radius="md" style={{ borderColor: "var(--mor-red)", background: "color-mix(in srgb, var(--mor-red) 10%, transparent)" }}>
-            <Group justify="space-between">
-              <div>
-                <Text fw={700} c="var(--mor-red)">
-                  Locked out: stuck carrier
-                </Text>
-                <Text size="sm" c="dimmed">
-                  The receiver kept timing out, so the repeater has stopped repeating. IDs still go out.
-                </Text>
-              </div>
-              {canWrite ? (
-                <Button color="red" variant="outline" size="xs" onClick={() => void clearLockout()}>
-                  Clear lockout
-                </Button>
-              ) : null}
-            </Group>
-          </Card>
-        ) : null}
+        <LockoutBanner canWrite={canWrite} onClear={() => void clearLockout()} />
 
         <ControlOverview
-          status={status}
-          connected={connected}
           links={links ? links.links.length : null}
           history={history24h}
           config={config}
           linkRadioOnline={linkRadio ? Boolean(linkRadio.enabled && linkRadio.running) : null}
-          health={[
-            { label: "Controller", value: connected ? "Operational" : "Disconnected", ok: connected },
-            {
-              label: "Radio",
-              value: !connected ? "Unknown" : status?.transmitter_enabled === false ? "Muted" : "Online",
-              ok: connected && status?.transmitter_enabled !== false,
-            },
-            {
-              label: "Linking",
-              value: links == null ? "Unavailable" : `${links.links.length} connected`,
-              ok: links != null,
-            },
-            {
-              label: "APRS frequency",
-              value: typeof config?.aprs_frequency_mhz === "number" ? "Configured" : "Not set",
-              ok: true,
-            },
-            {
-              label: "Linked radio",
-              value: !linkRadio ? "Unavailable" : linkRadio.enabled && linkRadio.running ? "Online" : "Off",
-              ok: linkRadio == null ? true : !linkRadio.enabled || Boolean(linkRadio.running),
-            },
-          ]}
+          linkRadioOk={linkRadio == null ? true : !linkRadio.enabled || Boolean(linkRadio.running)}
         />
 
-        <OnAir status={status} config={config} />
+        <OnAir config={config} />
 
         <RecentActivity rows={recentTx} />
 

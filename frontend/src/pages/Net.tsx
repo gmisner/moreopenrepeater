@@ -22,7 +22,7 @@ import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
 import { ConfigSummaryCard } from "../components/ConfigSummaryCard";
 import { notifyError, notifySuccess, useConfig, useConfigSlice } from "../config";
 import { Page } from "../layout/AppShell";
-import { useStatus } from "../status";
+import { useStatusLive } from "../status";
 import { labeled } from "../components/FieldHint";
 import { EmptyState } from "../components/EmptyState";
 import { ActionsHeader } from "../components/ActionsHeader";
@@ -181,7 +181,7 @@ function daysLabel(days: number[]) {
 
 export function Net() {
   const { config, save: saveConfig } = useConfig();
-  const { status } = useStatus();
+  const status = useStatusLive();
   const settings = useConfigSlice<NetValues>(NET_KEYS, NET_DEFAULTS);
 
   const [net, setNet] = useState<NetStatus | null>(null);

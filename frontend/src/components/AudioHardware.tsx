@@ -164,7 +164,7 @@ export function MonitorReceiverCard({ devices }: { devices: AudioDevice[] }) {
     void refresh();
     const timer = window.setInterval(() => {
       if (!document.hidden) void refresh();
-    }, 1000);
+    }, 3000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -409,7 +409,7 @@ export function AudioHardwareCards({
     api<Macro[]>("/api/macros").then(setMacros).catch(() => setMacros([]));
     const timer = window.setInterval(() => {
       if (!document.hidden) refreshGpio().catch(() => {});
-    }, 1000);
+    }, 3000);
     return () => window.clearInterval(timer);
   }, [refreshGpio]);
 

@@ -2,7 +2,7 @@ import { Badge, Card } from "@mantine/core";
 import { memo } from "react";
 import { Link } from "react-router-dom";
 import type { Config } from "../../config";
-import type { RepeaterStatus } from "../../status";
+import { useStatusLive, type LiveStatus } from "../../status";
 
 // What each controller state means, in the words an operator would use.
 const STATE_COPY: Record<string, string> = {
@@ -50,7 +50,7 @@ function hz(value: number) {
   return value.toFixed(1);
 }
 
-function StationLine({ status, config }: { status: RepeaterStatus | null; config: Config | null }) {
+function StationLine({ status, config }: { status: LiveStatus | null; config: Config | null }) {
   const freq = num(config?.aprs_frequency_mhz);
   const offset = num(config?.aprs_offset_mhz);
   const tone = num(config?.aprs_tone_hz) ?? num(config?.require_ctcss_hz);
@@ -134,7 +134,8 @@ function SignalPath({ stages }: { stages: PathStage[] }) {
   );
 }
 
-export const OnAir = memo(function OnAir({ status, config }: { status: RepeaterStatus | null; config: Config | null }) {
+export const OnAir = memo(function OnAir({ config }: { config: Config | null }) {
+  const status = useStatusLive();
   const state = status?.state ?? "unknown";
   const tone = stateTone(state);
   const cos = Boolean(status?.cos_active);

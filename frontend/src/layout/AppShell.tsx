@@ -16,7 +16,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "../icons/Icon";
 import { NAV, PAGE_TITLES, TABBAR } from "../nav";
 import { useSession } from "../session";
-import { useStatus } from "../status";
+import { useStatusCallsign } from "../status";
 import { ConnectionBanner } from "../components/ConnectionBanner";
 import { ServerUpdatedBanner } from "../components/ServerUpdatedBanner";
 import { BrandLockup, BrandMark } from "./BrandMark";
@@ -29,7 +29,7 @@ import "./mor-brand.css";
 
 export function AppShell() {
   const { session, logout } = useSession();
-  const { status, connected } = useStatus();
+  const callsign = useStatusCallsign();
   const [opened, { toggle, close }] = useDisclosure(false);
   const isPhone = useMediaQuery("(max-width: 53.75em)");
   const location = useLocation();
@@ -121,7 +121,7 @@ export function AppShell() {
           </Box>
           <Group gap="sm" wrap="nowrap">
             <Box hiddenFrom="md">
-              <MiniStatus status={status} />
+              <MiniStatus />
             </Box>
             <Box visibleFrom="md" className="mor-shell-header-actions">
               <UserMenu session={session} onSignOut={() => void logout()} />
@@ -136,9 +136,9 @@ export function AppShell() {
             <BrandLockup />
           </Box>
           <Box className="mor-station">
-            {status?.callsign ? (
+            {callsign ? (
               <Text ff="monospace" fw={700} size="lg" component={Link} to="/identification" className="mor-station-call">
-                {status.callsign}
+                {callsign}
               </Text>
             ) : (
               <Text size="sm" component={Link} to="/identification" className="mor-station-call">
@@ -148,7 +148,7 @@ export function AppShell() {
           </Box>
           <Box style={{ flex: 1, overflow: "auto" }}>{nav}</Box>
           <Stack gap="xs">
-            <ConnectionStatus connected={connected} />
+            <ConnectionStatus />
             <Text size="xs" c="dimmed" className="mor-shell-version">
               RADIO. REIMAGINED.
             </Text>

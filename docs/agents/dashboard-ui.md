@@ -28,8 +28,14 @@ Read this before editing pages under `frontend/src/pages/`, the shell in
 | Loading / failed-load cards | `frontend/src/components/StateCards.tsx` |
 | Table action column header | `frontend/src/components/ActionsHeader.tsx` |
 | Theme tokens wired into Mantine | `frontend/src/theme.ts` |
+| Live `/ws/status` (narrow hooks) | `frontend/src/status.tsx` — prefer `useStatusLive` / `useStatusConnected` / `useStatusCallsign` / `useStatusExtras` over full `useStatus` |
+| Per-browser live-meter rate | `frontend/src/prefs.ts` (`PollAggressiveness`) + ThemePicker |
 
 Prefer these components over inventing a parallel pattern.
+
+Live status must stay in **narrow contexts** (ADR 0001): the shell and
+pages that only need callsign or connection must not subscribe to every
+TX/RX frame, or on-Pi Chromium starves nav clicks while Dashboard is open.
 
 ## Principles
 

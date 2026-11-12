@@ -33,6 +33,7 @@ import { labeled, InfoNote } from "./FieldHint";
 import { ConfigActions } from "./ConfigActions";
 import { soundAssignments, soundDeviceOptions } from "../deviceUsage";
 import { ActionsHeader } from "./ActionsHeader";
+import { HARDWARE_POLL_MS_BY, readPollAggressiveness } from "../prefs";
 
 type Asset = { id: string; kind: string; filename: string; uploaded_at: string };
 type AudioDevice = { name: string; inputs: number };
@@ -164,7 +165,7 @@ export function MonitorReceiverCard({ devices }: { devices: AudioDevice[] }) {
     void refresh();
     const timer = window.setInterval(() => {
       if (!document.hidden) void refresh();
-    }, 3000);
+    }, HARDWARE_POLL_MS_BY[readPollAggressiveness()]);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -409,7 +410,7 @@ export function AudioHardwareCards({
     api<Macro[]>("/api/macros").then(setMacros).catch(() => setMacros([]));
     const timer = window.setInterval(() => {
       if (!document.hidden) refreshGpio().catch(() => {});
-    }, 3000);
+    }, HARDWARE_POLL_MS_BY[readPollAggressiveness()]);
     return () => window.clearInterval(timer);
   }, [refreshGpio]);
 

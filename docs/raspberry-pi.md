@@ -375,6 +375,38 @@ repeater and check:
    polled every second), and the service runs at a higher nice so the
    radio path keeps priority under load. Raspberry Pi OS Lite remains the
    quietest setup.
+
+### On-Pi Chromium: stuck nav, high load, audio glitches
+
+Managing the dashboard **from Chromium on the same Pi** that runs the
+controller is supported, but it shares CPU with PortAudio. Operators hit
+this in the field as:
+
+- load average climbing (Chromium often ~100–160% CPU) while
+  `moreopenrepeater` fights for the rest;
+- `journalctl -u moreopenrepeater` showing `audio glitch` /
+  overrun / underrun lines while a heavy page is open;
+- sidebar clicks feeling dead **only after opening Dashboard** (Activity
+  and other pages still navigated fine).
+
+What we changed (stable from v2026.11.12.2 onward, thrash fix in
+v2026.11.12.4):
+
+| Symptom | Fix |
+| --- | --- |
+| 1 Hz `GET /api/gpio` + `/api/link-radio` while Dashboard open | Push those snapshots on `/ws/status` (#205 / #206) |
+| Audio & tones polling three endpoints every 250 ms | Default live poll ~1 s; operator can pick Smooth / Balanced / Light under the display menu (#207 / #208) |
+| Dashboard re-rendering on every 50 ms controller tick | Status WebSocket only notifies when a display fingerprint changes; Dashboard uses narrow status contexts so the shell/nav do not re-render on every TX/RX frame (#209 / #210) |
+| Desktop starving audio under equal nice | `Nice=-10` / `CPUWeight=200` on `moreopenrepeater.service` |
+
+After an update you may see **“moreopenrepeater was updated on the server.
+Reload to get the latest dashboard.”** — that is expected; click Reload (or
+hard-refresh) so the tab drops the old JS.
+
+If glitches remain with local Chromium open, use **Light** live meters, close
+DevTools, or open the dashboard from another machine. Occasional idle
+overrun/underrun lines can still appear under contention; they are logged
+and counted on **Audio & tones → Radio interface**.
 A command's reply comes that much later after the last key.
 "CTCSS tone present" opens only when a sub-audible tone is decoded,
 which requires the receiver's audio to be unfiltered (discriminator or
@@ -1084,8 +1116,10 @@ refills as new reports arrive.
 - Audio processing fits on a Raspberry Pi 3B+: it averages about 4 ms of
   each 20 ms block, and 99% of blocks take under 6 ms
   (`scripts/benchmark_audio.py`). A desktop Chromium session on the Pi
-  itself still competes for CPU; close DevTools if you browse locally, or
-  use the dashboard from another computer. GPIO and linked-radio status are
-  pushed over the status socket, and the service is niced above the desktop.
+  itself still competes for CPU; see
+  [On-Pi Chromium](#on-pi-chromium-stuck-nav-high-load-audio-glitches)
+  above. GPIO and linked-radio status are pushed over the status socket,
+  the service is niced above the desktop, and live-meter rate is a
+  per-browser preference (Smooth / Balanced / Light).
 - AllStarLink audio (the node's `rxchannel` over USRP) is set up separately;
   see [allstar.md](allstar.md).

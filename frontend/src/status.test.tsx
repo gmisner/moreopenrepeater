@@ -1,6 +1,13 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { StatusProvider, useStatus } from "./status";
+import {
+  StatusProvider,
+  useStatus,
+  useStatusCallsign,
+  useStatusConnected,
+  useStatusExtras,
+  useStatusLive,
+} from "./status";
 
 type Handler = ((event?: { data?: string }) => void) | null;
 
@@ -50,6 +57,27 @@ function StatusProbe() {
       <span data-testid="ptt">{String(Boolean(status?.ptt_active))}</span>
       <span data-testid="cos">{String(status?.cos_active ?? "")}</span>
       <span data-testid="raw">{JSON.stringify(status)}</span>
+    </div>
+  );
+}
+
+let narrowRenderCount = 0;
+
+function NarrowConnectedProbe() {
+  narrowRenderCount += 1;
+  const connected = useStatusConnected();
+  return <span data-testid="narrow-connected">{String(connected)}</span>;
+}
+
+function NarrowSlicesProbe() {
+  const callsign = useStatusCallsign();
+  const live = useStatusLive();
+  const extras = useStatusExtras();
+  return (
+    <div>
+      <span data-testid="slice-callsign">{callsign ?? ""}</span>
+      <span data-testid="slice-ptt">{String(Boolean(live?.ptt_active))}</span>
+      <span data-testid="slice-gpio">{String(Boolean((extras.gpio as { available?: boolean } | null)?.available))}</span>
     </div>
   );
 }
@@ -259,5 +287,77 @@ describe("StatusProvider", () => {
     expect(screen.getByTestId("connected")).toHaveTextContent("true");
     expect(screen.getByTestId("callsign")).toHaveTextContent("K1ABC");
     expect(screen.getByTestId("ptt")).toHaveTextContent("true");
+  });
+
+  it("keeps connected-only subscribers quiet when only live fields change", async () => {
+    narrowRenderCount = 0;
+    render(
+      <StatusProvider>
+        <NarrowConnectedProbe />
+        <NarrowSlicesProbe />
+      </StatusProvider>,
+    );
+
+    await act(async () => {
+      MockWebSocket.instances[0].open();
+      MockWebSocket.instances[0].push({
+        callsign: "W1AW",
+        ptt_active: false,
+        gpio: { available: true, pins: [], error: null },
+      });
+    });
+    const afterOpen = narrowRenderCount;
+
+    await act(async () => {
+      MockWebSocket.instances[0].push({
+        callsign: "W1AW",
+        ptt_active: true,
+        gpio: { available: true, pins: [], error: null },
+      });
+    });
+
+    expect(screen.getByTestId("slice-ptt")).toHaveTextContent("true");
+    expect(screen.getByTestId("slice-callsign")).toHaveTextContent("W1AW");
+    expect(screen.getByTestId("slice-gpio")).toHaveTextContent("true");
+    // Connected flag unchanged → connected-only probe must not re-render.
+    expect(narrowRenderCount).toBe(afterOpen);
+  });
+
+  it("updates extras only when discrete gpio / link_radio fields change", async () => {
+    render(
+      <StatusProvider>
+        <NarrowSlicesProbe />
+      </StatusProvider>,
+    );
+
+    await act(async () => {
+      MockWebSocket.instances[0].open();
+      MockWebSocket.instances[0].push({
+        callsign: "W1AW",
+        gpio: { available: true, pins: [{ pin: 1, mode: "output", on: false }], error: null },
+        link_radio: { enabled: true, running: true, receiving: false, transmitting: false, timed_out: false },
+      });
+    });
+    expect(screen.getByTestId("slice-gpio")).toHaveTextContent("true");
+
+    await act(async () => {
+      MockWebSocket.instances[0].push({
+        callsign: "W1AW",
+        ptt_active: true,
+        gpio: { available: true, pins: [{ pin: 1, mode: "output", on: false }], error: null },
+        link_radio: { enabled: true, running: true, receiving: false, transmitting: false, timed_out: false },
+      });
+    });
+    expect(screen.getByTestId("slice-ptt")).toHaveTextContent("true");
+
+    await act(async () => {
+      MockWebSocket.instances[0].push({
+        callsign: "W1AW",
+        ptt_active: true,
+        gpio: { available: true, pins: [{ pin: 1, mode: "output", on: true }], error: null },
+        link_radio: { enabled: true, running: true, receiving: false, transmitting: false, timed_out: false },
+      });
+    });
+    expect(screen.getByTestId("slice-gpio")).toHaveTextContent("true");
   });
 });

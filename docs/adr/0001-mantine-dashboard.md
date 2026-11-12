@@ -28,7 +28,9 @@ cutover (login, listen, and all authenticated views land together).
 - Theme tokens map 1:1 to MASTER (system fonts, semantic status colors,
   light/dark/auto). No Google Fonts / CDN.
 - High-frequency WebSocket status updates go through a narrow store so
-  TX/RX indicators do not re-render the whole tree.
+  TX/RX indicators do not re-render the whole tree. The store is split into
+  React contexts (`connected`, callsign, live on-air fields, gpio/link
+  extras, full snapshot) with matching hooks in `frontend/src/status.tsx`.
 - FastAPI serves **`web/dist` only**. Presence of `web/dist/index.html` is
   the gate; if it is missing, app startup fails with a clear error. There
   is no fallback to vanilla `web/index.html` / `listen.html` / `login.html`.

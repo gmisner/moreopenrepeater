@@ -147,6 +147,7 @@ class GpioControl:
         self._output(pin)
         self._cancel_pulse(pin)
         self._write(pin, on)
+        self._service.notify_status()
 
     def toggle(self, pin: int) -> bool:
         on = not self._cm108_level(pin)
@@ -251,13 +252,17 @@ class GpioControl:
                 await asyncio.sleep(1.0)
                 continue
             self.error = None
+            changed = False
             for pin, settings in inputs.items():
                 level = bool(levels & (1 << (pin - 1)))
                 on = level != bool(settings.get("invert"))
                 if self._inputs.get(pin) != on:
                     _logger.info("GPIO%d (%s) input %s", pin, self.name(pin), "on" if on else "off")
+                    changed = True
                 self._inputs[pin] = on
                 self._settle(pin, level)
+            if changed:
+                self._service.notify_status()
 
     async def _run_schedule(self) -> None:
         while True:

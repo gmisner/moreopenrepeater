@@ -11,6 +11,8 @@ export type RepeaterStatus = {
   transmitter_enabled?: boolean;
   locked_out?: boolean;
   callsign?: string;
+  gpio?: unknown;
+  link_radio?: unknown;
   [key: string]: unknown;
 };
 

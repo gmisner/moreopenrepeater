@@ -50,6 +50,10 @@ class StatusResponse(BaseModel):
     tot_remaining: Optional[float] = None
     hang_remaining: Optional[float] = None
     id_due_in: Optional[float] = None
+    # Pushed with /ws/status so the dashboard need not poll these every second.
+    # Dict-shaped to avoid a models circular import with linking/site.
+    gpio: Optional[dict[str, Any]] = None
+    link_radio: Optional[dict[str, Any]] = None
 
 
 class GpioPinConfig(BaseModel):

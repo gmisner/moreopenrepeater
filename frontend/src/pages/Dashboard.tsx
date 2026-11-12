@@ -87,6 +87,26 @@ function eventBadgeColor(kind: LinkEvent["kind"]) {
   return "blue";
 }
 
+function gpioLiveKey(gpio: GpioStatus | null): string {
+  if (!gpio) return "";
+  const pins = gpio.pins.map((pin) => `${pin.pin}:${pin.mode}:${pin.on ? 1 : 0}`).join(",");
+  const fan = gpio.fan ? `${gpio.fan.output}:${gpio.fan.on ? 1 : 0}:${gpio.fan.error ?? ""}` : "";
+  return `${gpio.available}:${gpio.error ?? ""}:${pins}:${fan}`;
+}
+
+function linkRadioLiveKey(link: LinkRadioStatus | null): string {
+  if (!link) return "";
+  return [
+    link.enabled ? 1 : 0,
+    link.running ? 1 : 0,
+    link.receiving ? 1 : 0,
+    link.transmitting ? 1 : 0,
+    link.timed_out ? 1 : 0,
+    link.error ?? "",
+    link.rig_error ?? "",
+  ].join(":");
+}
+
 function Indicator({ name, on, value, danger }: { name: string; on: boolean; value: string; danger?: boolean }) {
   // Mantine rejects bg="green.light" (throws → blank React tree). Use the CSS var.
   const color = on ? (danger ? "red" : "green") : "gray";
@@ -219,7 +239,7 @@ export function Dashboard() {
     const timer = window.setInterval(() => {
       void refreshLinks();
       void refreshLinkEvents();
-    }, 3000);
+    }, 10_000);
     return () => window.clearInterval(timer);
   }, [refreshLinks, refreshLinkEvents]);
 
@@ -241,13 +261,16 @@ export function Dashboard() {
     return () => window.clearInterval(timer);
   }, [refreshRecentTx]);
 
-  // gpio + linked radio arrive on /ws/status; no 1 Hz HTTP polls (those starved on-Pi Chromium).
+  // gpio + linked radio arrive on /ws/status; only commit when discrete fields change
+  // so timer ticks do not re-render the whole Dashboard twice per frame.
   useEffect(() => {
     if (status?.gpio && typeof status.gpio === "object") {
-      setGpio(status.gpio as GpioStatus);
+      const next = status.gpio as GpioStatus;
+      setGpio((prev) => (gpioLiveKey(prev) === gpioLiveKey(next) ? prev : next));
     }
     if (status?.link_radio && typeof status.link_radio === "object") {
-      setLinkRadio(status.link_radio as LinkRadioStatus);
+      const next = status.link_radio as LinkRadioStatus;
+      setLinkRadio((prev) => (linkRadioLiveKey(prev) === linkRadioLiveKey(next) ? prev : next));
     }
   }, [status]);
 

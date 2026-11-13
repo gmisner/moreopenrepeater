@@ -5,7 +5,8 @@ import { api } from "../api";
 import { Page } from "../layout/AppShell";
 import "./MapPage.css";
 
-const REFRESH_MS = 5_000;
+/** APRS station refresh — was 5 s; 15 s is enough for the map on a Pi. */
+const REFRESH_MS = 15_000;
 const AREAS_REFRESH_MS = 60_000;
 const KM_PER_MILE = 1.609344;
 const KM_PER_DEGREE = 111.195;

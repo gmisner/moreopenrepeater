@@ -389,8 +389,8 @@ this in the field as:
 - sidebar clicks feeling dead **only after opening Dashboard** (Activity
   and other pages still navigated fine).
 
-What we changed (stable from v2026.11.12.2 onward, thrash fix in
-v2026.11.12.4):
+What we changed (stable from v2026.11.12.2 onward; thrash fix in
+v2026.11.12.4; more poll cuts in later stables):
 
 | Symptom | Fix |
 | --- | --- |
@@ -398,6 +398,8 @@ v2026.11.12.4):
 | Audio & tones polling three endpoints every 250 ms | Default live poll ~1 s; operator can pick Smooth / Balanced / Light under the display menu (#207 / #208) |
 | Dashboard re-rendering on every 50 ms controller tick | Status WebSocket only notifies when a display fingerprint changes; Dashboard uses narrow status contexts so the shell/nav do not re-render on every TX/RX frame (#209 / #210) |
 | Desktop starving audio under equal nice | `Nice=-10` / `CPUWeight=200` on `moreopenrepeater.service` |
+| Background tab still applying every status frame | Skip React updates from `/ws/status` while the tab is hidden; apply the latest frame when it becomes visible again |
+| Map / AllStar hot polls while those pages are open | APRS stations ~15 s; AllStar status/links ~10 s; Dashboard link polls skip when the tab is hidden |
 
 After an update you may see **“moreopenrepeater was updated on the server.
 Reload to get the latest dashboard.”** — that is expected; click Reload (or

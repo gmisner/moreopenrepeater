@@ -9,8 +9,6 @@ from typing import Awaitable, Sequence
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi import Path as UrlPath
 
-_logger = logging.getLogger("moreopenrepeater.routes.linking")
-
 from ..allstar_node import AllStarNode, AllStarSetupError
 from ..autopatch import Autopatch
 from ..dmr import DmrBridge, DmrSettings, DmrSetupError
@@ -40,6 +38,8 @@ from ..monitor_receiver import MonitorReceiverService
 from ..remote_base import RemoteBase
 from ..service import RepeaterService
 from ..tx_fan import TxFan
+
+_logger = logging.getLogger("moreopenrepeater.routes.linking")
 
 
 def register(

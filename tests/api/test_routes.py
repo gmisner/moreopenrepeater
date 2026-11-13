@@ -380,8 +380,6 @@ def test_spa_deep_links_include_sites_and_sensors():
 
 def test_allstar_change_allstar_returns_502_on_allstar_setup_error(tmp_path):
     """Verify that AllStarSetupError from change_allstar returns HTTP 502 and logs a WARNING."""
-    from api.allstar_node import AllStarSetupError
-
     node, etc, fake, service = make(tmp_path)
 
     # Arrange: make _write raise AsteriskFilesError (→ AllStarSetupError) when writing rpt.conf

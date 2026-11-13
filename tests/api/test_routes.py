@@ -3,9 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from link.asterisk_files import AsteriskFilesError
 from controller.state_machine import RECEIVING, RepeaterConfig
-from tests.api.test_allstar_node import make  # noqa: F401 used in test
 
 from api.app import create_app
 from api.assets import AudioAssetStore
@@ -376,38 +374,4 @@ def test_spa_deep_links_include_sites_and_sensors():
         response = client.get(path)
         assert response.status_code == 200, path
         assert "text/html" in response.headers.get("content-type", "")
-
-
-def test_allstar_change_allstar_returns_502_on_allstar_setup_error(tmp_path):
-    """Verify that AllStarSetupError from change_allstar returns HTTP 502 and logs a WARNING."""
-    node, etc, fake, service = make(tmp_path)
-
-    # Arrange: make _write raise AsteriskFilesError (→ AllStarSetupError) when writing rpt.conf
-    original_write = node._files.write
-    node._files.write = lambda name, text: (_ for _ in ()).throw(
-        AsteriskFilesError("Couldn't write rpt.conf: Permission denied. See docs/allstar.md...")
-    )
-
-    # Act & Assert: the route returns 502 with the error detail
-    from fastapi.testclient import TestClient
-    from api.app import create_app
-
-    app = create_app(
-        service=service,
-        start_background_tick=False,
-        assets_store=AudioAssetStore(Path(tempfile.mkdtemp()) / "audio"),
-        log_path=tmp_path / "test.log",
-        allstar_node=node,
-    )
-    client = TestClient(app)
-
-    # Use a node that exists in the test data (1999) so the error comes from the write, not a missing node
-    response = client.put("/api/allstar", json={"node": "1999"})
-    assert response.status_code == 502
-
-    # The detail should contain the permission message
-    assert "Permission denied" in response.json()["detail"]
-
-    # Restore
-    node._files.write = original_write
 

@@ -280,14 +280,17 @@ export function Dmr() {
     }
   };
 
-  const installBusy =
-    installing ||
-    Boolean(status?.restart.requested && status.restart.last_action === "install") ||
+  // Save/talkgroup only request a bridge restart; don't treat that as apt install.
+  const helperBusy =
+    Boolean(status?.restart.requested) ||
     status?.restart.state === "requested" ||
     status?.restart.state === "running";
+  const installBusy =
+    installing || Boolean(helperBusy && status?.restart.last_action === "install");
+  const restartBusy = Boolean(helperBusy && status?.restart.last_action !== "install");
 
   const onInstall = async () => {
-    if (!isAdmin || installBusy) return;
+    if (!isAdmin || installBusy || restartBusy) return;
     if (
       !window.confirm(
         "Install DVSwitch (Analog_Bridge + MMDVM_Bridge) on this Pi? This uses apt and restarts the dashboard when finished.",
@@ -348,30 +351,32 @@ export function Dmr() {
     ? "Loading…"
     : installBusy
       ? status.restart.message || "Installing DVSwitch packages…"
-      : status.error
-        ? status.error
-        : !status.available
-          ? status.restart.available
-            ? "Install DVSwitch on this Pi, then set callsign, DMR Id, and talkgroup."
-            : "Install with: sudo bash scripts/install-pi.sh --dmr"
-          : status.enabled && settings
-            ? `${settings.callsign} · Id ${settings.dmr_id} · TG ${settings.talkgroup} slot ${settings.slot}`
-            : "Set callsign, DMR Id, network password and talkgroup to bridge the analog repeater.";
+      : restartBusy
+        ? status.restart.message || "Restarting DVSwitch bridges…"
+        : status.error
+          ? status.error
+          : !status.available
+            ? status.restart.available
+              ? "Install DVSwitch on this Pi, then set callsign, DMR Id, and talkgroup."
+              : "Install with: sudo bash scripts/install-pi.sh --dmr"
+            : status.enabled && settings
+              ? `${settings.callsign} · Id ${settings.dmr_id} · TG ${settings.talkgroup} slot ${settings.slot}`
+              : "Set callsign, DMR Id, network password and talkgroup to bridge the analog repeater.";
 
   return (
     <Page title="DMR">
       <Stack gap="md">
         <ConfigSummaryCard
           title="DMR bridge"
-          badge={installBusy ? "Installing" : badge}
-          badgeColor={installBusy ? "amber" : badgeColor}
+          badge={installBusy ? "Installing" : restartBusy ? "Restarting" : badge}
+          badgeColor={installBusy || restartBusy ? "amber" : badgeColor}
           blurb={summary}
           hint="Cross-mode bridge via DVSwitch to BrandMeister, TGIF, or a custom master."
           onEdit={isAdmin && status?.available ? () => setDrawerOpen(true) : undefined}
           editLabel={status?.enabled ? "Edit…" : "Set up…"}
           secondaryAction={
             isAdmin && status && !status.available && status.restart.available ? (
-              <Button loading={installBusy} onClick={() => void onInstall()}>
+              <Button loading={installBusy || restartBusy} onClick={() => void onInstall()}>
                 Install DMR
               </Button>
             ) : undefined
@@ -483,7 +488,7 @@ export function Dmr() {
           <EmptyState
             action={
               isAdmin && status?.restart.available ? (
-                <Button loading={installBusy} onClick={() => void onInstall()}>
+                <Button loading={installBusy || restartBusy} onClick={() => void onInstall()}>
                   Install DMR
                 </Button>
               ) : undefined

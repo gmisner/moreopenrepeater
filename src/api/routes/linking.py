@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Awaitable, Sequence
 
@@ -38,6 +39,8 @@ from ..remote_base import RemoteBase
 from ..service import RepeaterService
 from ..tx_fan import TxFan
 
+_logger = logging.getLogger("moreopenrepeater.routes.linking")
+
 
 def register(
     app: FastAPI,
@@ -65,6 +68,7 @@ def register(
         try:
             return await change
         except AllStarSetupError as error:
+            _logger.warning("AllStar setup error: %s", str(error))
             raise HTTPException(status_code=502, detail=str(error))
 
     @app.get("/api/allstar", response_model=AllStarStatusResponse, dependencies=auth_dependencies)

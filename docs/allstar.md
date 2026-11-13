@@ -100,6 +100,12 @@ rewrite the dialplan anyway. It also needs the AMI settings
 (`MOREOPENREPEATER_AMI_*`) to restart Asterisk. Without them, restart it
 yourself after each change.
 
+**Updates without `--allstar`**: If you run `install-pi.sh` without `--allstar`
+(e.g. a regular update), the installer re-applies `usermod -aG asterisk` and
+`chmod g+w` on all `/etc/asterisk` conf files whenever `/etc/asterisk/rpt.conf`
+is present. This prevents ASL package upgrades from leaving the service user
+without write access.
+
 The settings do this:
 
 - `rxchannel = USRP/<controller host>:<controller port>:<node port>`. The

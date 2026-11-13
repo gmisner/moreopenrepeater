@@ -127,11 +127,18 @@ install_allstar() {
   step "Letting moreopenrepeater set up the node"
   # It edits the node's lines in rpt.conf as text (see docs/allstar.md).
   usermod -aG asterisk "$SERVICE_USER"
+
+  # Ensure conf files are group asterisk AND group-writable.
+  # This matters even after ASL package upgrades that may reset modes.
   local file
   for file in rpt.conf modules.conf echolink.conf rpt_http_registrations.conf \
       extensions.conf simpleusb.conf usbradio.conf voter.conf savenode.conf iax.conf; do
-    if [ -f "$ASTERISK_DIR/$file" ]; then chmod g+w "$ASTERISK_DIR/$file"; fi
+    if [ -f "$ASTERISK_DIR/$file" ]; then
+      chgrp asterisk "$ASTERISK_DIR/$file"
+      chmod g+w "$ASTERISK_DIR/$file"
+    fi
   done
+
   # AMI logins and the autopatch SIP password must not be world-readable;
   # a fresh ASL3 must not load chan_simpleusb onto the controller's CM108.
   # (scripts/asl-harden.sh — covered by tests/scripts/test_asl_harden.py)
@@ -455,6 +462,22 @@ fi
 
 if [ "$ALLSTAR" -eq 1 ]; then
   install_allstar
+else
+  # Even when run without --allstar, re-apply group membership + conf
+  # permissions if ASL3 is already present.  Beta updates often omit
+  # --allstar, and ASL package upgrades can replace conf modes, leaving
+  # the service user without write access.
+  if [ -f "$ASTERISK_DIR/rpt.conf" ]; then
+    step "Re-applying AllStarLink group permissions (update without --allstar)"
+    usermod -aG asterisk "$SERVICE_USER" 2>/dev/null || true
+    for file in rpt.conf modules.conf echolink.conf rpt_http_registrations.conf \
+        extensions.conf simpleusb.conf usbradio.conf voter.conf savenode.conf iax.conf; do
+      if [ -f "$ASTERISK_DIR/$file" ]; then
+        chgrp asterisk "$ASTERISK_DIR/$file" 2>/dev/null || true
+        chmod g+w "$ASTERISK_DIR/$file"
+      fi
+    done
+  fi
 fi
 if [ "$DMR" -eq 1 ]; then
   install_dmr

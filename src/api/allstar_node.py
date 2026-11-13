@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from typing import Callable, Optional
 
@@ -44,6 +45,21 @@ from .allstar_audio import AllStarAudio, UsrpSettings
 from .autopatch import AMI_TIMEOUT, PatchSettings
 
 _logger = logging.getLogger("moreopenrepeater.allstar_node")
+
+# Files the controller writes into /etc/asterisk; if any are not group-
+# writable for the service user the dashboard will fail to save changes.
+ASTERISK_CONF_FILES = [
+    "rpt.conf",
+    "modules.conf",
+    "echolink.conf",
+    "rpt_http_registrations.conf",
+    "extensions.conf",
+    "simpleusb.conf",
+    "usbradio.conf",
+    "voter.conf",
+    "savenode.conf",
+    "iax.conf",
+]
 
 FIRST_NODE_PORT = 32001
 # Radio channel drivers that open a USB sound card, by rxchannel prefix.
@@ -115,10 +131,18 @@ class AllStarNode:
         }
         if not result["available"]:
             return result
+
+        # Preflight: surface unwritable Asterisk configs before the user clicks Save.
+        perm_error = self._check_writable()
+        if perm_error:
+            result["error"] = perm_error
+
         try:
             text = await self._read("rpt.conf")
         except AllStarSetupError as error:
-            result["error"] = str(error)
+            # Only overwrite error if no permission check already flagged it.
+            if not result["error"]:
+                result["error"] = str(error)
             return result
         found = nodes(text)
         result["nodes"] = [
@@ -354,6 +378,28 @@ class AllStarNode:
             raise AllStarSetupError("The node is set up by MOREOPENREPEATER_USRP_NODE; change it there.")
         if self._files is None:
             raise AllStarSetupError("AllStarLink's rpt.conf wasn't found on this machine.")
+
+    def _check_writable(self) -> Optional[str]:
+        """Check that key conf files under self._files.directory are writable by the service user.
+
+        Returns an error message string if any file is not group-writable, or None.
+        """
+        if self._files is None or not os.path.isdir(self._files.directory):
+            return None
+        for name in ASTERISK_CONF_FILES:
+            path = os.path.join(self._files.directory, name)
+            if os.path.exists(path):
+                # Check writability for the service user (moreopenrepeater).
+                # os.access checks real UID/GID, which covers group permissions.
+                if not os.access(path, os.W_OK):
+                    return (
+                        f"Config file {name} is not writable by the service user. "
+                        "Run: sudo usermod -aG asterisk moreopenrepeater && "
+                        f"sudo chmod g+w {path} && "
+                        "sudo systemctl restart moreopenrepeater. "
+                        "See docs/allstar.md for details."
+                    )
+        return None
 
     async def _read(self, name: str) -> str:
         assert self._files is not None

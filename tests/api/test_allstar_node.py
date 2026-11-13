@@ -13,7 +13,7 @@ from api.autopatch import PatchSettings
 from api.service import LINK_AUDIO_NODE, RepeaterService
 from controller.events import RemoteKeyed
 from controller.state_machine import IDLE, RECEIVING, RepeaterConfig
-from link.asterisk_files import AsteriskFiles
+from link.asterisk_files import AsteriskFiles, AsteriskFilesError
 
 AMI = PatchSettings("127.0.0.1", 5038, "admin", "secret", "127.0.0.1", 0, "127.0.0.1:9092")
 
@@ -263,3 +263,24 @@ def test_routes(tmp_path):
         assert identity["node"] == "531870"
         assert identity["identity"]["callsign"] == "W1AW"
     assert "[531870](node-main)" in (etc / "rpt.conf").read_text()
+
+
+def test_change_allstar_returns_502_on_permission_error(tmp_path):
+    """AllStarSetupError from a failed write becomes HTTP 502 with the detail."""
+    node, _etc, _fake, service = make(tmp_path)
+    original_write = node._files.write
+    node._files.write = lambda name, text: (_ for _ in ()).throw(
+        AsteriskFilesError("Couldn't write rpt.conf: Permission denied. See docs/allstar.md...")
+    )
+    app = create_app(
+        service=service,
+        start_background_tick=False,
+        assets_store=AudioAssetStore(Path(tempfile.mkdtemp()) / "audio"),
+        log_path=tmp_path / "test.log",
+        allstar_node=node,
+    )
+    with TestClient(app) as client:
+        response = client.put("/api/allstar", json={"node": "1999"})
+        assert response.status_code == 502
+        assert "Permission denied" in response.json()["detail"]
+    node._files.write = original_write

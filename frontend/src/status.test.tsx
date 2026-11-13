@@ -91,6 +91,7 @@ describe("StatusProvider", () => {
   });
 
   afterEach(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -321,6 +322,29 @@ describe("StatusProvider", () => {
     expect(screen.getByTestId("slice-gpio")).toHaveTextContent("true");
     // Connected flag unchanged → connected-only probe must not re-render.
     expect(narrowRenderCount).toBe(afterOpen);
+  });
+
+  it("defers React updates while the tab is hidden, then applies the pending frame", async () => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    render(
+      <StatusProvider>
+        <StatusProbe />
+      </StatusProvider>,
+    );
+
+    await act(async () => {
+      MockWebSocket.instances[0].open();
+      MockWebSocket.instances[0].push({ callsign: "HIDDEN", ptt_active: true });
+    });
+    expect(screen.getByTestId("callsign")).toHaveTextContent("");
+    expect(screen.getByTestId("ptt")).toHaveTextContent("false");
+
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(screen.getByTestId("callsign")).toHaveTextContent("HIDDEN");
+    expect(screen.getByTestId("ptt")).toHaveTextContent("true");
   });
 
   it("updates extras only when discrete gpio / link_radio fields change", async () => {

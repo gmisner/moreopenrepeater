@@ -32,7 +32,8 @@ import { isReady, recentNodes, setupSteps, type LinkEvent, type LinkRow } from "
 import "./allstar/allstar.css";
 import { ActionsHeader } from "../components/ActionsHeader";
 
-const REFRESH_MS = 2000;
+/** Background status/links refresh — was 2 s; too hot for on-Pi Chromium. */
+const REFRESH_MS = 10_000;
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const ALLSTAR_TABS = ["links", "schedule", "node"];
 

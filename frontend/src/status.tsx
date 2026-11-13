@@ -140,6 +140,9 @@ export function StatusProvider({ children }: { children: ReactNode }) {
   const [extras, setExtras] = useState<StatusExtras>({ gpio: null, link_radio: null });
   const liveKeyRef = useRef("");
   const extrasKeyRef = useRef(extrasKey({ gpio: null, link_radio: null }));
+  // Latest frame while the tab is hidden — applied on the next visible tick so
+  // Chromium on the Pi does not re-render TX/RX for a background tab.
+  const pendingRef = useRef<RepeaterStatus | null>(null);
 
   useEffect(() => {
     let socket: WebSocket | null = null;
@@ -147,6 +150,7 @@ export function StatusProvider({ children }: { children: ReactNode }) {
     let stale: number | undefined;
 
     const clearSlices = () => {
+      pendingRef.current = null;
       setStatus(null);
       setConnected(false);
       setCallsign(undefined);
@@ -154,6 +158,26 @@ export function StatusProvider({ children }: { children: ReactNode }) {
       setExtras({ gpio: null, link_radio: null });
       liveKeyRef.current = "";
       extrasKeyRef.current = extrasKey({ gpio: null, link_radio: null });
+    };
+
+    const applySnapshot = (next: RepeaterStatus) => {
+      setStatus(next);
+      setCallsign(typeof next.callsign === "string" ? next.callsign : undefined);
+      const nextLive = liveFrom(next);
+      const nextLiveKey = liveKey(nextLive);
+      if (nextLiveKey !== liveKeyRef.current) {
+        liveKeyRef.current = nextLiveKey;
+        setLive(nextLive);
+      }
+      const nextExtras: StatusExtras = {
+        gpio: next.gpio ?? null,
+        link_radio: next.link_radio ?? null,
+      };
+      const nextExtrasKey = extrasKey(nextExtras);
+      if (nextExtrasKey !== extrasKeyRef.current) {
+        extrasKeyRef.current = nextExtrasKey;
+        setExtras(nextExtras);
+      }
     };
 
     const connect = () => {
@@ -187,24 +211,14 @@ export function StatusProvider({ children }: { children: ReactNode }) {
           const snapshot = JSON.parse(event.data);
           if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return;
           const next = snapshot as RepeaterStatus;
-          setStatus(next);
-          setCallsign(typeof next.callsign === "string" ? next.callsign : undefined);
-          const nextLive = liveFrom(next);
-          const nextLiveKey = liveKey(nextLive);
-          if (nextLiveKey !== liveKeyRef.current) {
-            liveKeyRef.current = nextLiveKey;
-            setLive(nextLive);
-          }
-          const nextExtras: StatusExtras = {
-            gpio: next.gpio ?? null,
-            link_radio: next.link_radio ?? null,
-          };
-          const nextExtrasKey = extrasKey(nextExtras);
-          if (nextExtrasKey !== extrasKeyRef.current) {
-            extrasKeyRef.current = nextExtrasKey;
-            setExtras(nextExtras);
-          }
+          // Keep the socket + stale timer alive; skip React updates while hidden.
           expectFrame();
+          if (document.hidden) {
+            pendingRef.current = next;
+            return;
+          }
+          pendingRef.current = null;
+          applySnapshot(next);
         } catch {
           /* ignore malformed frames */
         }
@@ -213,12 +227,22 @@ export function StatusProvider({ children }: { children: ReactNode }) {
       expectFrame();
     };
 
+    const onVisibility = () => {
+      if (document.hidden) return;
+      const pending = pendingRef.current;
+      if (!pending) return;
+      pendingRef.current = null;
+      applySnapshot(pending);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     connect();
     return () => {
       const ws = socket;
       socket = null;
       window.clearTimeout(retry);
       window.clearTimeout(stale);
+      document.removeEventListener("visibilitychange", onVisibility);
       ws?.close();
     };
   }, []);

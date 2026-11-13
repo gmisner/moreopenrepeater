@@ -240,6 +240,7 @@ export function Dashboard() {
     void refreshLinks();
     void refreshLinkEvents();
     const timer = window.setInterval(() => {
+      if (document.hidden) return;
       void refreshLinks();
       void refreshLinkEvents();
     }, 10_000);

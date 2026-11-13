@@ -1,5 +1,6 @@
 import {
   Accordion,
+  Alert,
   Badge,
   Button,
   Card,
@@ -16,8 +17,10 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import { ActionsHeader } from "../components/ActionsHeader";
 import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
 import { EmptyState } from "../components/EmptyState";
 import { labeled } from "../components/FieldHint";
@@ -30,7 +33,13 @@ import { ScheduleWeek } from "./allstar/ScheduleWeek";
 import { SetupChecklist } from "./allstar/SetupChecklist";
 import { isReady, recentNodes, setupSteps, type LinkEvent, type LinkRow } from "./allstar/model";
 import "./allstar/allstar.css";
-import { ActionsHeader } from "../components/ActionsHeader";
+
+/** Extract a user-facing message from any error object. */
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) return String((error as { message: unknown }).message);
+  return String(error);
+}
 
 /** Background status/links refresh — was 2 s; too hot for on-Pi Chromium. */
 const REFRESH_MS = 10_000;
@@ -50,6 +59,9 @@ type AllStarStatus = {
   identity?: AllStarIdentity | null;
   audio: { node?: string | null; keyed?: boolean; error?: string | null };
 };
+
+/** Persistent inline alert for AllStar setup errors — stays until dismissed. */
+type ErrorAlert = { message: string; dismissed: boolean };
 
 type IdentityForm = { fromNode: string; node: string; callsign: string; password: string };
 
@@ -241,6 +253,7 @@ export function AllStar() {
   const [identityFilled, setIdentityFilled] = useState(false);
   const [identityEdited, setIdentityEdited] = useState(false);
   const [identityBusy, setIdentityBusy] = useState(false);
+  const [errorAlert, setErrorAlert] = useState<ErrorAlert | null>(null);
 
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [favoritesSaving, setFavoritesSaving] = useState(false);
@@ -403,11 +416,18 @@ export function AllStar() {
     setNodeBusy(true);
     try {
       setStatus(await api<AllStarStatus>("/api/allstar", { method: "PUT", json: { node: selectedNode } }));
+      setErrorAlert(null);
       notifySuccess(`The repeater is node ${selectedNode}'s radio`);
       setEditingNode(false);
       refreshEcho().catch(() => {});
     } catch (error) {
-      notifyError(error);
+      const detail = getErrorMessage(error);
+      setErrorAlert({ message: detail, dismissed: false });
+      notifications.show({
+        color: "red",
+        message: detail,
+        autoClose: false,
+      });
       refresh().catch(() => {});
     } finally {
       setNodeBusy(false);
@@ -422,10 +442,17 @@ export function AllStar() {
     setNodeBusy(true);
     try {
       setStatus(await api<AllStarStatus>("/api/allstar", { method: "DELETE" }));
+      setErrorAlert(null);
       notifySuccess("Node settings put back");
       setEditingNode(false);
     } catch (error) {
-      notifyError(error);
+      const detail = getErrorMessage(error);
+      setErrorAlert({ message: detail, dismissed: false });
+      notifications.show({
+        color: "red",
+        message: detail,
+        autoClose: false,
+      });
       refresh().catch(() => {});
     } finally {
       setNodeBusy(false);
@@ -471,11 +498,18 @@ export function AllStar() {
       setIdentityEdited(false);
       setIdentityFilled(false);
       setIdentityForm((prev) => ({ ...prev, password: "" }));
+      setErrorAlert(null);
       notifySuccess(`Node ${node} is set up and the repeater is its radio`);
       setEditingNode(false);
       refreshEcho().catch(() => {});
     } catch (error) {
-      notifyError(error);
+      const detail = getErrorMessage(error);
+      setErrorAlert({ message: detail, dismissed: false });
+      notifications.show({
+        color: "red",
+        message: detail,
+        autoClose: false,
+      });
       refresh().catch(() => {});
     } finally {
       setIdentityBusy(false);
@@ -601,6 +635,18 @@ export function AllStar() {
           </Badge>
         ) : null}
       </Card>
+
+      {errorAlert && !errorAlert.dismissed ? (
+        <Alert
+          color="red"
+          role="alert"
+          mt="md"
+          withCloseButton
+          onClose={() => setErrorAlert((prev) => (prev ? { ...prev, dismissed: true } : null))}
+        >
+          {errorAlert.message}
+        </Alert>
+      ) : null}
 
       <Tabs className="mor-link-workspace" value={tab} onChange={changeTab} variant="default">
         <Tabs.List style={{ overflowX: "auto", flexWrap: "nowrap" }}>

@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Awaitable, Sequence
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi import Path as UrlPath
+
+_logger = logging.getLogger("moreopenrepeater.routes.linking")
 
 from ..allstar_node import AllStarNode, AllStarSetupError
 from ..autopatch import Autopatch
@@ -65,6 +68,7 @@ def register(
         try:
             return await change
         except AllStarSetupError as error:
+            _logger.warning("AllStar setup error: %s", str(error))
             raise HTTPException(status_code=502, detail=str(error))
 
     @app.get("/api/allstar", response_model=AllStarStatusResponse, dependencies=auth_dependencies)

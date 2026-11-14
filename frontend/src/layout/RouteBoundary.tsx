@@ -17,6 +17,7 @@ const NEEDS_CONFIG = new Set([
   "aprs",
   "autopatch",
   "allstar",
+  "dmr",
   "sensors",
   "recordings",
   "backup",

@@ -16,6 +16,7 @@ export function LinkMap({
   hubKeyed,
   links,
   canWrite,
+  busy = false,
   onDisconnect,
   onDisconnectAll,
 }: {
@@ -24,6 +25,7 @@ export function LinkMap({
   hubKeyed: boolean;
   links: LinkRow[];
   canWrite: boolean;
+  busy?: boolean;
   onDisconnect: (node: string) => void;
   onDisconnectAll: () => void;
 }) {
@@ -114,7 +116,7 @@ export function LinkMap({
             {links.length ? `${links.length} linked` : "Nothing linked"}
           </Text>
           {canWrite && links.length >= 2 ? (
-            <Button color="red" variant="outline" size="xs" onClick={onDisconnectAll}>
+            <Button color="red" variant="outline" size="xs" disabled={busy} onClick={onDisconnectAll}>
               Disconnect all
             </Button>
           ) : null}
@@ -145,7 +147,7 @@ export function LinkMap({
                   {link.until ? <span className="mor-as-row-meta">until {shortTime(link.until)}</span> : null}
                 </div>
                 {canWrite ? (
-                  <Button color="red" variant="subtle" size="compact-sm" onClick={() => onDisconnect(link.node)}>
+                  <Button color="red" variant="subtle" size="compact-sm" disabled={busy} onClick={() => onDisconnect(link.node)}>
                     Disconnect
                   </Button>
                 ) : null}

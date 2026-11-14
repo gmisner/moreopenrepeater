@@ -191,7 +191,7 @@ def register(
         request.state.audit_detail = f"node {body.node}" + (" (monitor)" if body.monitor else "")
         return await change_links(links.connect(body.node, body.monitor))
 
-    @app.delete("/api/links", response_model=LinksResponse, dependencies=auth_dependencies)
+    @app.delete("/api/links", response_model=LinksResponse, dependencies=transmit_dependencies)
     async def delete_links() -> dict:
         return await change_links(links.disconnect_all())
 

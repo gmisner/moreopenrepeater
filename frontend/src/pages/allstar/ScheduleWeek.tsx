@@ -32,15 +32,17 @@ export function ScheduleWeek({
   schedules: (ScheduleLike & { name: string })[];
   live: LiveRow[];
   now?: Date;
-  onEdit: () => void;
+  onEdit?: () => void;
 }) {
   if (!schedules.length) {
     return (
       <EmptyState
         action={
-          <Button size="xs" variant="default" onClick={onEdit}>
-            Add a schedule
-          </Button>
+          onEdit ? (
+            <Button size="xs" variant="default" onClick={onEdit}>
+              Add a schedule
+            </Button>
+          ) : undefined
         }
       >
         No scheduled links yet. Add one to connect to a node automatically, like a weekly net.
@@ -96,7 +98,8 @@ export function ScheduleWeek({
                       data-open={b.openEnded ? "" : undefined}
                       data-off={s.enabled ? undefined : ""}
                       data-continued={b.continued ? "" : undefined}
-                      onClick={onEdit}
+                      onClick={onEdit ?? (() => {})}
+                      disabled={!onEdit}
                       aria-label={`${FULL_DAYS[b.day]} ${minutesLabel(b.startMin)} to ${b.openEnded ? "disconnect" : minutesLabel(b.endMin)}, node ${s.node}${
                         s.name.trim() ? `, ${s.name.trim()}` : ""
                       }${s.enabled ? "" : ", turned off"}. Edit schedules.`}

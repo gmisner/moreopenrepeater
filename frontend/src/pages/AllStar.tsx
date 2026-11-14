@@ -18,11 +18,12 @@ import {
   TextInput,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ActionsHeader } from "../components/ActionsHeader";
 import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
 import { EmptyState } from "../components/EmptyState";
+import { ErrorCard, LoadingBlock } from "../components/StateCards";
 import { labeled } from "../components/FieldHint";
 import { notifyError, notifySuccess, useConfig } from "../config";
 import { Page } from "../layout/AppShell";
@@ -162,21 +163,6 @@ function describeAllStar(status: AllStarStatus, isAdmin: boolean): { text: strin
   return { text: `The repeater is node ${status.node}'s radio.`, pill: ["Ready", "on"] };
 }
 
-function shortTime(value: string | number) {
-  const when = new Date(value);
-  const time = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (when.toDateString() === new Date().toDateString()) return time;
-  const farOff = when.getTime() - Date.now() > 6 * 24 * 3600 * 1000;
-  const day = when.toLocaleDateString([], farOff ? { weekday: "short", month: "short", day: "numeric" } : { weekday: "short" });
-  return `${day} ${time}`;
-}
-
-function scheduleText(row: ScheduleStatus | undefined, active: string) {
-  if (!row) return "";
-  if (row.until) return `${active} until ${shortTime(row.until)}`;
-  return row.next_start ? `Next: ${shortTime(row.next_start)}` : "";
-}
-
 function emptyFavorite(): Favorite {
   return { node: "", name: "", monitor: false };
 }
@@ -255,17 +241,38 @@ export function AllStar() {
   const [identityBusy, setIdentityBusy] = useState(false);
   const [errorAlert, setErrorAlert] = useState<ErrorAlert | null>(null);
 
-  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [favoriteDraft, setFavoriteDraft] = useState<Favorite[]>([]);
+  const [savedFavorites, setSavedFavorites] = useState<Favorite[]>([]);
   const [favoritesSaving, setFavoritesSaving] = useState(false);
 
-  const [schedules, setSchedules] = useState<LinkSchedule[]>([]);
+  const [scheduleDraft, setScheduleDraft] = useState<LinkSchedule[]>([]);
+  const [savedSchedules, setSavedSchedules] = useState<LinkSchedule[]>([]);
   const [scheduleStatus, setScheduleStatus] = useState<ScheduleStatus[]>([]);
   const [schedulesSaving, setSchedulesSaving] = useState(false);
+
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusStale, setStatusStale] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
+
+  const [echoLoading, setEchoLoading] = useState(true);
+  const [echoError, setEchoError] = useState<string | null>(null);
+  const [echoStale, setEchoStale] = useState(false);
+
+  const [linksLoading, setLinksLoading] = useState(true);
+  const [linksError, setLinksError] = useState<string | null>(null);
+  const [linksStale, setLinksStale] = useState(false);
+
+  const echoReadVersionRef = useRef(0);
+  const echoMutationIdRef = useRef(0);
+  const linksReadVersionRef = useRef(0);
+  const linksMutationIdRef = useRef(0);
 
   const [echo, setEcho] = useState<EchoLinkStatus | null>(null);
   const [echoForm, setEchoForm] = useState<EchoLinkForm>(emptyEchoForm());
   const [echoFilled, setEchoFilled] = useState(false);
   const [echoEdited, setEchoEdited] = useState(false);
+  const [echoSnapshot, setEchoSnapshot] = useState<string | null>(null);
   const [echoBusy, setEchoBusy] = useState(false);
 
   const [editingNode, setEditingNode] = useState(false);
@@ -274,24 +281,85 @@ export function AllStar() {
   const [editingEcho, setEditingEcho] = useState(false);
 
   const refresh = useCallback(async () => {
-    const next = await api<AllStarStatus>("/api/allstar");
-    setStatus(next);
-    setSelectedNode((prev) => {
-      if (next.node && next.nodes.some((n) => n.number === next.node)) return next.node;
-      if (prev && next.nodes.some((n) => n.number === prev)) return prev;
-      return next.nodes[0]?.number ?? "";
-    });
+    setStatusLoading(true);
+    try {
+      const next = await api<AllStarStatus>("/api/allstar");
+      setStatus(next);
+      setStatusError(null);
+      setStatusStale(false);
+      setSelectedNode((prev) => {
+        if (next.node && next.nodes.some((n) => n.number === next.node)) return next.node;
+        if (prev && next.nodes.some((n) => n.number === prev)) return prev;
+        return next.nodes[0]?.number ?? "";
+      });
+      return next;
+    } catch (error) {
+      setStatusError(error instanceof Error ? error.message : String(error));
+      setStatusStale(true);
+      throw error;
+    } finally {
+      setStatusLoading(false);
+    }
   }, []);
 
   const refreshEcho = useCallback(async () => {
-    setEcho(await api<EchoLinkStatus>("/api/allstar/echolink"));
+    const version = ++echoReadVersionRef.current;
+    setEchoLoading(true);
+    try {
+      const next = await api<EchoLinkStatus>("/api/allstar/echolink");
+      if (version !== echoReadVersionRef.current) return next;
+      if (echoMutationIdRef.current !== 0) return next;
+      setEcho(next);
+      setEchoError(null);
+      setEchoStale(false);
+      return next;
+    } catch (error) {
+      if (version !== echoReadVersionRef.current) throw error;
+      if (echoMutationIdRef.current !== 0) throw error;
+      setEchoError(error instanceof Error ? error.message : String(error));
+      setEchoStale(true);
+      throw error;
+    } finally {
+      if (version === echoReadVersionRef.current) setEchoLoading(false);
+    }
+  }, []);
+
+  const applyLinksResponse = useCallback((links: { favorites: FavoriteInfo[]; schedules: ScheduleStatus[]; links?: LinkRow[]; error?: string | null }, version: number) => {
+    if (version !== linksReadVersionRef.current) return false;
+    if (linksMutationIdRef.current !== 0) return false;
+    if (links.error) {
+      setLinksError(links.error);
+      setLinksStale(true);
+      return false;
+    }
+    setScheduleStatus(links.schedules ?? []);
+    setLinkRows(links.links ?? []);
+    setLinksError(null);
+    setLinksStale(false);
+    return true;
   }, []);
 
   const refreshLinks = useCallback(async () => {
-    const links = await api<{ favorites: FavoriteInfo[]; schedules: ScheduleStatus[]; links?: LinkRow[] }>("/api/links");
-    setScheduleStatus(links.schedules ?? []);
-    setLinkRows(links.links ?? []);
-  }, []);
+    const version = ++linksReadVersionRef.current;
+    try {
+      const links = await api<{ favorites: FavoriteInfo[]; schedules: ScheduleStatus[]; links?: LinkRow[]; error?: string | null }>(
+        "/api/links",
+      );
+      if (version !== linksReadVersionRef.current) return links;
+      if (linksMutationIdRef.current !== 0) return links;
+      if (links.error) throw new Error(links.error);
+      applyLinksResponse(links, version);
+      return links;
+    } catch (error) {
+      if (version !== linksReadVersionRef.current) throw error;
+      if (linksMutationIdRef.current !== 0) throw error;
+      setLinksError(error instanceof Error ? error.message : String(error));
+      setLinksStale(true);
+      throw error;
+    } finally {
+      if (version === linksReadVersionRef.current) setLinksLoading(false);
+    }
+  }, [applyLinksResponse]);
 
   const refreshLinkEvents = useCallback(async () => {
     const data = await api<{ events: LinkEvent[] }>("/api/links/events?limit=30");
@@ -299,38 +367,113 @@ export function AllStar() {
   }, []);
 
   const connectNode = async (target: string, monitorOnly: boolean) => {
+    if (linksMutationIdRef.current !== 0) return;
+    const mutationId = ++linksMutationIdRef.current;
+    ++linksReadVersionRef.current;
+    setLinkBusy(true);
     try {
-      const next = await api<{ links?: LinkRow[] }>("/api/links", { method: "POST", json: { node: target, monitor: monitorOnly } });
-      setLinkRows(next.links ?? []);
-      notifySuccess(`Connecting node ${target}`);
+      const next = await api<{ links?: LinkRow[]; schedules?: ScheduleStatus[]; error?: string | null }>("/api/links", { method: "POST", json: { node: target, monitor: monitorOnly } });
+      if (mutationId !== linksMutationIdRef.current) return;
+      if (next.error) {
+        setLinksError(next.error);
+        setLinksStale(true);
+        notifyError(new Error(next.error));
+      } else {
+        setScheduleStatus(next.schedules ?? []);
+        setLinkRows(next.links ?? []);
+        setLinksError(null);
+        setLinksStale(false);
+        notifySuccess(`Connecting node ${target}`);
+      }
     } catch (error) {
+      if (mutationId !== linksMutationIdRef.current) return;
+      setLinksError(error instanceof Error ? error.message : String(error));
+      setLinksStale(true);
       notifyError(error);
+    } finally {
+      if (mutationId === linksMutationIdRef.current) {
+        setLinkBusy(false);
+        linksMutationIdRef.current = 0;
+        ++linksReadVersionRef.current;
+        void refreshLinks().catch(() => {});
+      }
     }
   };
 
   const disconnectNode = async (target: string) => {
+    if (linksMutationIdRef.current !== 0) return;
+    const mutationId = ++linksMutationIdRef.current;
+    ++linksReadVersionRef.current;
+    setLinkBusy(true);
     try {
-      const next = await api<{ links?: LinkRow[] }>(`/api/links/${encodeURIComponent(target)}`, { method: "DELETE" });
-      setLinkRows(next.links ?? []);
-      notifySuccess(`Disconnecting node ${target}`);
+      const next = await api<{ links?: LinkRow[]; schedules?: ScheduleStatus[]; error?: string | null }>(`/api/links/${encodeURIComponent(target)}`, { method: "DELETE" });
+      if (mutationId !== linksMutationIdRef.current) return;
+      if (next.error) {
+        setLinksError(next.error);
+        setLinksStale(true);
+        notifyError(new Error(next.error));
+      } else {
+        setScheduleStatus(next.schedules ?? []);
+        setLinkRows(next.links ?? []);
+        setLinksError(null);
+        setLinksStale(false);
+        notifySuccess(`Disconnecting node ${target}`);
+      }
     } catch (error) {
+      if (mutationId !== linksMutationIdRef.current) return;
+      setLinksError(error instanceof Error ? error.message : String(error));
+      setLinksStale(true);
       notifyError(error);
+    } finally {
+      if (mutationId === linksMutationIdRef.current) {
+        setLinkBusy(false);
+        linksMutationIdRef.current = 0;
+        ++linksReadVersionRef.current;
+        void refreshLinks().catch(() => {});
+      }
     }
   };
 
   const disconnectAll = async () => {
     if (!window.confirm("Disconnect every link?")) return;
+    if (linksMutationIdRef.current !== 0) return;
+    const mutationId = ++linksMutationIdRef.current;
+    ++linksReadVersionRef.current;
+    setLinkBusy(true);
     try {
-      const next = await api<{ links?: LinkRow[] }>("/api/links", { method: "DELETE" });
-      setLinkRows(next.links ?? []);
-      notifySuccess("Disconnecting all links");
+      const next = await api<{ links?: LinkRow[]; schedules?: ScheduleStatus[]; error?: string | null }>("/api/links", { method: "DELETE" });
+      if (mutationId !== linksMutationIdRef.current) return;
+      if (next.error) {
+        setLinksError(next.error);
+        setLinksStale(true);
+        notifyError(new Error(next.error));
+      } else {
+        setScheduleStatus(next.schedules ?? []);
+        setLinkRows(next.links ?? []);
+        setLinksError(null);
+        setLinksStale(false);
+        notifySuccess("Disconnecting all links");
+      }
     } catch (error) {
+      if (mutationId !== linksMutationIdRef.current) return;
+      setLinksError(error instanceof Error ? error.message : String(error));
+      setLinksStale(true);
       notifyError(error);
+    } finally {
+      if (mutationId === linksMutationIdRef.current) {
+        setLinkBusy(false);
+        linksMutationIdRef.current = 0;
+        ++linksReadVersionRef.current;
+        void refreshLinks().catch(() => {});
+      }
     }
   };
 
   useEffect(() => {
-    refresh().catch(notifyError);
+    refresh().catch((error) => {
+      setStatusStale(true);
+      notifyError(error);
+    });
     refreshEcho().catch(notifyError);
     refreshLinks().catch(() => {});
     refreshLinkEvents().catch(() => {});
@@ -339,25 +482,40 @@ export function AllStar() {
   useEffect(() => {
     const id = window.setInterval(() => {
       if (document.hidden) return;
-      refresh().catch(() => {});
+      refresh()
+        .then(() => setStatusStale(false))
+        .catch(() => setStatusStale(true));
+      refreshEcho().catch(() => {});
       refreshLinks().catch(() => {});
       refreshLinkEvents().catch(() => {});
     }, REFRESH_MS);
     return () => window.clearInterval(id);
-  }, [refresh, refreshLinks, refreshLinkEvents]);
+  }, [refresh, refreshEcho, refreshLinks, refreshLinkEvents]);
 
   useEffect(() => {
     const list = (config?.link_favorites as Favorite[] | undefined) ?? [];
-    setFavorites(list.map((f) => ({ ...f })));
+    setSavedFavorites(list.map((f) => ({ ...f })));
   }, [config]);
 
   useEffect(() => {
     const list = (config?.link_schedules as LinkSchedule[] | undefined) ?? [];
-    setSchedules(list.map((s) => ({ ...s, days: [...(s.days ?? [])] })));
+    setSavedSchedules(list.map((s) => ({ ...s, days: [...(s.days ?? [])] })));
   }, [config]);
 
+  const savedSchedulesKey = JSON.stringify(savedSchedules);
+  const previousSchedulesKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!echo?.settings || echoFilled || echoEdited) return;
+    if (previousSchedulesKeyRef.current !== null && previousSchedulesKeyRef.current !== savedSchedulesKey) {
+      setScheduleStatus([]);
+      setLinksStale(true);
+    }
+    previousSchedulesKeyRef.current = savedSchedulesKey;
+  }, [savedSchedulesKey]);
+
+  useEffect(() => {
+    if (!echo?.settings || echoEdited) return;
+    const snapshot = JSON.stringify(echo.settings);
+    if (echoFilled && snapshot === echoSnapshot) return;
     const settings = echo.settings;
     const tone = (config?.aprs_tone_hz as number | undefined) ?? (config?.require_ctcss_hz as number | undefined);
     const pick = <T,>(value: T, empty: T, fallback: T | "" | undefined) =>
@@ -375,11 +533,15 @@ export function AllStar() {
       tone_hz: pick(settings.tone_hz, 0, tone ?? ""),
       max_stations: settings.max_stations || 20,
     });
+    setEchoSnapshot(snapshot);
     setEchoFilled(true);
-  }, [echo, echoFilled, echoEdited, config]);
+  }, [echo, echoFilled, echoEdited, echoSnapshot, config]);
 
   useEffect(() => {
-    if (echo?.settings && !echoEdited) setEchoFilled(false);
+    if (echo?.settings && !echoEdited) {
+      setEchoFilled(false);
+      setEchoSnapshot(null);
+    }
   }, [config]); // eslint-disable-line react-hooks/exhaustive-deps -- refill EchoLink defaults when station config changes
 
   useEffect(() => {
@@ -394,6 +556,15 @@ export function AllStar() {
     });
     setIdentityFilled(true);
   }, [status, config, identityEdited, identityFilled]);
+
+  const openFavoritesEditor = () => {
+    setFavoriteDraft(savedFavorites.map((f) => ({ ...f })));
+    setEditingFavorites(true);
+  };
+  const openSchedulesEditor = () => {
+    setScheduleDraft(savedSchedules.map((s) => ({ ...s, days: [...(s.days ?? [])] })));
+    setEditingSchedules(true);
+  };
 
   const selected = status?.nodes.find((n) => n.number === selectedNode);
   const view = status ? describeAllStar(status, isAdmin) : null;
@@ -520,9 +691,10 @@ export function AllStar() {
     event.preventDefault();
     setFavoritesSaving(true);
     try {
-      await saveConfig({ link_favorites: favorites });
+      await saveConfig({ link_favorites: favoriteDraft });
       await refreshLinks();
       notifySuccess("Favorites saved");
+      setFavoriteDraft([]);
       setEditingFavorites(false);
     } catch (error) {
       notifyError(error);
@@ -533,20 +705,34 @@ export function AllStar() {
 
   const saveSchedules = async (event: FormEvent) => {
     event.preventDefault();
-    if (schedules.some((schedule) => schedule.days.length === 0)) {
+    if (scheduleDraft.some((schedule) => schedule.days.length === 0)) {
       notifyError(new Error("Pick at least one day for each schedule."));
       return;
     }
+    if (linksMutationIdRef.current !== 0) return;
+    const mutationId = ++linksMutationIdRef.current;
+    ++linksReadVersionRef.current;
+    setScheduleStatus([]);
+    setLinksStale(true);
     setSchedulesSaving(true);
     try {
-      await saveConfig({ link_schedules: schedules });
+      await saveConfig({ link_schedules: scheduleDraft });
+      if (mutationId !== linksMutationIdRef.current) return;
       await refreshLinks();
+      if (mutationId !== linksMutationIdRef.current) return;
       notifySuccess("Schedules saved");
+      setScheduleDraft([]);
       setEditingSchedules(false);
     } catch (error) {
+      if (mutationId !== linksMutationIdRef.current) return;
       notifyError(error);
     } finally {
-      setSchedulesSaving(false);
+      if (mutationId === linksMutationIdRef.current) {
+        setSchedulesSaving(false);
+        linksMutationIdRef.current = 0;
+        ++linksReadVersionRef.current;
+        void refreshLinks().catch(() => {});
+      }
     }
   };
 
@@ -571,18 +757,28 @@ export function AllStar() {
       max_stations: Number(echoForm.max_stations) || 20,
     };
     if (!window.confirm(`Save EchoLink as ${body.callsign}? Asterisk restarts, dropping links for a few seconds.`)) return;
+    const mutationId = ++echoMutationIdRef.current;
+    ++echoReadVersionRef.current;
     setEchoBusy(true);
     try {
       const next = await api<EchoLinkStatus>("/api/allstar/echolink", { method: "PUT", json: body });
+      if (mutationId !== echoMutationIdRef.current) return;
       setEcho(next);
       setEchoFilled(false);
       setEchoEdited(false);
+      setEchoSnapshot(null);
       notifySuccess(next.loaded === false ? "Saved, but Asterisk didn't load EchoLink" : `EchoLink is on as ${body.callsign}`);
       setEditingEcho(false);
     } catch (error) {
+      if (mutationId !== echoMutationIdRef.current) return;
       notifyError(error);
     } finally {
-      setEchoBusy(false);
+      if (mutationId === echoMutationIdRef.current) {
+        setEchoBusy(false);
+        echoMutationIdRef.current = 0;
+        ++echoReadVersionRef.current;
+        void refreshEcho().catch(() => {});
+      }
     }
   };
 
@@ -590,29 +786,44 @@ export function AllStar() {
     if (!window.confirm("Turn off EchoLink? Asterisk restarts, and EchoLink stations are disconnected. The details are kept.")) {
       return;
     }
+    const mutationId = ++echoMutationIdRef.current;
+    ++echoReadVersionRef.current;
     setEchoBusy(true);
     try {
-      setEcho(await api<EchoLinkStatus>("/api/allstar/echolink", { method: "DELETE" }));
+      const next = await api<EchoLinkStatus>("/api/allstar/echolink", { method: "DELETE" });
+      if (mutationId !== echoMutationIdRef.current) return;
+      setEcho(next);
       setEchoFilled(false);
       setEchoEdited(false);
+      setEchoSnapshot(null);
       notifySuccess("EchoLink turned off");
       setEditingEcho(false);
     } catch (error) {
+      if (mutationId !== echoMutationIdRef.current) return;
       notifyError(error);
     } finally {
-      setEchoBusy(false);
+      if (mutationId === echoMutationIdRef.current) {
+        setEchoBusy(false);
+        echoMutationIdRef.current = 0;
+        ++echoReadVersionRef.current;
+        void refreshEcho().catch(() => {});
+      }
     }
   };
 
   const callsign =
     status?.identity?.callsign || (config?.callsign ? String(config.callsign).toUpperCase() : "");
-  const savedFavorites = favorites.filter((f) => f.node.trim());
+  const savedFavoriteList = savedFavorites.filter((f) => f.node.trim());
+  // De-duplicate by node for one-click buttons while keeping the editor list intact.
+  const uniqueSavedFavorites = savedFavoriteList.filter(
+    (favorite, index, list) => list.findIndex((item) => item.node === favorite.node) === index,
+  );
   const canEditNode = Boolean(showIdentityForm || showNodeForm);
   const ready = isReady(status);
-  const steps = setupSteps(status, savedFavorites.length);
+  const steps = setupSteps(status, uniqueSavedFavorites.length);
   const recents = recentNodes(
     linkEvents,
-    savedFavorites.map((f) => f.node),
+    uniqueSavedFavorites.map((f) => f.node),
     linkRows.map((l) => l.node),
   ).map((r) => ({ node: r.node, name: r.label }));
 
@@ -648,6 +859,46 @@ export function AllStar() {
         </Alert>
       ) : null}
 
+      {statusLoading && !status ? <LoadingBlock label="Loading AllStarLink" /> : null}
+      {statusError && !status ? (
+        <ErrorCard
+          title="Couldn't load AllStarLink"
+          onRetry={() => {
+            void refresh().catch((error) => {
+              setStatusStale(true);
+              notifyError(error);
+            });
+          }}
+        >
+          {statusError}
+        </ErrorCard>
+      ) : null}
+      {statusStale && status ? (
+        <Text size="sm" c="amber">
+          Status may be out of date. Retrying…
+        </Text>
+      ) : null}
+
+      {linksLoading && linkRows.length === 0 && scheduleStatus.length === 0 ? <LoadingBlock label="Loading links" /> : null}
+      {linksError && linkRows.length === 0 && scheduleStatus.length === 0 ? (
+        <ErrorCard title="Couldn't load links" onRetry={() => { void refreshLinks().catch(() => {}); }}>
+          {linksError}
+        </ErrorCard>
+      ) : null}
+      {linksError && (linkRows.length > 0 || scheduleStatus.length > 0) ? (
+        <Text size="sm" c="red">
+          {linksError}{" "}
+          <Button variant="subtle" size="xs" onClick={() => void refreshLinks().catch(() => {})}>
+            Retry
+          </Button>
+        </Text>
+      ) : null}
+      {linksStale && !linksError && (linkRows.length > 0 || scheduleStatus.length > 0) ? (
+        <Text size="sm" c="amber">
+          Links may be out of date. Retrying…
+        </Text>
+      ) : null}
+
       <Tabs className="mor-link-workspace" value={tab} onChange={changeTab} variant="default">
         <Tabs.List style={{ overflowX: "auto", flexWrap: "nowrap" }}>
           <Tabs.Tab value="links">Links</Tabs.Tab>
@@ -657,7 +908,9 @@ export function AllStar() {
 
         <Tabs.Panel value="links" pt="md">
           <Stack gap="md">
-            {ready ? (
+            {linksLoading && linkRows.length === 0 ? (
+              <LoadingBlock label="Loading links" />
+            ) : ready ? (
               <>
                 <Card withBorder padding="lg" radius="md" component="section" aria-label="Linked nodes">
                   <LinkMap
@@ -666,6 +919,7 @@ export function AllStar() {
                     hubKeyed={Boolean(status?.audio?.keyed)}
                     links={linkRows}
                     canWrite={canWrite}
+                    busy={linkBusy}
                     onDisconnect={(n) => void disconnectNode(n)}
                     onDisconnectAll={() => void disconnectAll()}
                   />
@@ -673,9 +927,10 @@ export function AllStar() {
                 {canWrite ? (
                   <Card withBorder padding="lg" radius="md" component="section" aria-label="Connect to a node">
                     <ConnectBar
-                      favorites={savedFavorites}
+                      favorites={uniqueSavedFavorites}
                       recent={recents}
                       linked={linkRows.map((l) => l.node)}
+                      busy={linkBusy}
                       onConnect={connectNode}
                     />
                   </Card>
@@ -686,7 +941,7 @@ export function AllStar() {
                 <SetupChecklist
                   steps={steps}
                   canAct={(action) => (action === "node" ? Boolean(canEditNode) : isAdmin)}
-                  onAction={(action) => (action === "node" ? setEditingNode(true) : setEditingFavorites(true))}
+                  onAction={(action) => (action === "node" ? setEditingNode(true) : openFavoritesEditor())}
                 />
                 {status && !status.available && !status.manual ? (
                   <Text size="xs" c="dimmed" mt="md">
@@ -705,13 +960,15 @@ export function AllStar() {
                 <div>
                   <h2 className="mor-card-title">{labeled("Favorite nodes", <>One-click buttons on the Links tab and the dashboard. EchoLink: 3 plus the six-digit number.</>)}</h2>
                 </div>
-                <Button variant="default" size="xs" onClick={() => setEditingFavorites(true)}>
-                  Edit favorites
-                </Button>
+                {isAdmin ? (
+                  <Button variant="default" size="xs" onClick={openFavoritesEditor}>
+                    Edit favorites
+                  </Button>
+                ) : null}
               </Group>
-              {savedFavorites.length ? (
+              {uniqueSavedFavorites.length ? (
                 <Group gap="xs">
-                  {savedFavorites.map((favorite) => (
+                  {uniqueSavedFavorites.map((favorite) => (
                     <Badge
                       key={`${favorite.node}-${favorite.name}`}
                       size="lg"
@@ -730,9 +987,11 @@ export function AllStar() {
               ) : (
                 <EmptyState
                   action={
-                    <Button size="xs" variant="default" onClick={() => setEditingFavorites(true)}>
-                      Add a favorite
-                    </Button>
+                    isAdmin ? (
+                      <Button size="xs" variant="default" onClick={openFavoritesEditor}>
+                        Add a favorite
+                      </Button>
+                    ) : undefined
                   }
                 >
                   No favorites yet. Save the nodes you link to often and they become one-click buttons.
@@ -745,16 +1004,37 @@ export function AllStar() {
                 <div>
                   <h2 className="mor-card-title">{labeled("Scheduled links", <>Connect automatically each week, then drop after a set time.</>)}</h2>
                 </div>
-                <Button variant="default" size="xs" onClick={() => setEditingSchedules(true)}>
-                  Edit schedules
-                </Button>
+                {isAdmin ? (
+                  <Button variant="default" size="xs" onClick={openSchedulesEditor}>
+                    Edit schedules
+                  </Button>
+                ) : null}
               </Group>
-              <ScheduleWeek schedules={schedules} live={scheduleStatus} onEdit={() => setEditingSchedules(true)} />
+              <ScheduleWeek schedules={savedSchedules} live={scheduleStatus} onEdit={isAdmin ? openSchedulesEditor : undefined} />
             </Card>
           </Stack>
         </Tabs.Panel>
 
         <Tabs.Panel value="node" pt="md">
+          {echoLoading && !echo ? <LoadingBlock label="Loading EchoLink" /> : null}
+          {echoError && !echo ? (
+            <ErrorCard title="Couldn't load EchoLink" onRetry={() => void refreshEcho().catch(() => {})}>
+              {echoError}
+            </ErrorCard>
+          ) : null}
+          {echoError && echo ? (
+            <Text size="sm" c="red" mb="sm">
+              {echoError}{" "}
+              <Button variant="subtle" size="xs" onClick={() => void refreshEcho().catch(() => {})}>
+                Retry
+              </Button>
+            </Text>
+          ) : null}
+          {echoStale && !echoError && echo ? (
+            <Text size="sm" c="amber" mb="sm">
+              EchoLink status may be out of date. Retrying…
+            </Text>
+          ) : null}
           <Grid>
             <Grid.Col span={{ base: 12, md: 6 }}>
               <Card withBorder padding="lg" radius="md" h="100%" component="section" aria-label="Node">
@@ -861,7 +1141,12 @@ export function AllStar() {
 
       <ConfigEditDrawer
         opened={editingNode}
-        onClose={() => setEditingNode(false)}
+        onClose={() => {
+          setEditingNode(false);
+          setIdentityForm((prev) => ({ ...prev, password: "" }));
+          setIdentityEdited(false);
+          setIdentityFilled(false);
+        }}
         title="AllStarLink node"
         subtitle="Register or pick the local ASL3 node this repeater becomes the radio for."
       >
@@ -924,7 +1209,8 @@ export function AllStar() {
                     type="password"
                     autoComplete="new-password"
                     required={Number(identityForm.node) >= 2000 && !status?.identity?.has_password}
-                    placeholder=""
+                    placeholder={status?.identity?.has_password ? "******" : undefined}
+                    description={status?.identity?.has_password ? "Saved password. Leave blank to keep it, or enter a replacement." : "Enter the node password from the AllStarLink portal."}
                     value={identityForm.password}
                     onChange={(event) => setIdentityField("password", event.currentTarget.value)}
                   />
@@ -984,7 +1270,10 @@ export function AllStar() {
 
       <ConfigEditDrawer
         opened={editingFavorites}
-        onClose={() => setEditingFavorites(false)}
+        onClose={() => {
+          setEditingFavorites(false);
+          setFavoriteDraft([]);
+        }}
         title="Favorite nodes"
         subtitle="Remote nodes for the dashboard Links card."
       >
@@ -1001,7 +1290,7 @@ export function AllStar() {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {favorites.map((favorite, index) => (
+                  {favoriteDraft.map((favorite, index) => (
                     <Table.Tr key={index}>
                       <Table.Td>
                         <TextInput
@@ -1011,9 +1300,9 @@ export function AllStar() {
                           placeholder="e.g. 2000"
                           value={favorite.node}
                           onChange={(event) => {
-                            const next = [...favorites];
+                            const next = [...favoriteDraft];
                             next[index] = { ...favorite, node: event.currentTarget.value };
-                            setFavorites(next);
+                            setFavoriteDraft(next);
                           }}
                         />
                       </Table.Td>
@@ -1023,9 +1312,9 @@ export function AllStar() {
                           placeholder="Optional name"
                           value={favorite.name}
                           onChange={(event) => {
-                            const next = [...favorites];
+                            const next = [...favoriteDraft];
                             next[index] = { ...favorite, name: event.currentTarget.value };
-                            setFavorites(next);
+                            setFavoriteDraft(next);
                           }}
                         />
                       </Table.Td>
@@ -1034,9 +1323,9 @@ export function AllStar() {
                           aria-label="Monitor only"
                           checked={favorite.monitor}
                           onChange={(event) => {
-                            const next = [...favorites];
+                            const next = [...favoriteDraft];
                             next[index] = { ...favorite, monitor: event.currentTarget.checked };
-                            setFavorites(next);
+                            setFavoriteDraft(next);
                           }}
                         />
                       </Table.Td>
@@ -1045,7 +1334,7 @@ export function AllStar() {
                           size="compact-sm"
                           color="red"
                           variant="subtle"
-                          onClick={() => setFavorites(favorites.filter((_, i) => i !== index))}
+                          onClick={() => setFavoriteDraft(favoriteDraft.filter((_, i) => i !== index))}
                         >
                           Remove
                         </Button>
@@ -1055,13 +1344,13 @@ export function AllStar() {
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
-            {favorites.length === 0 ? (
+            {favoriteDraft.length === 0 ? (
               <Text c="dimmed" size="sm">
                 No favorites yet.
               </Text>
             ) : null}
             <Group justify="space-between">
-              <Button type="button" variant="subtle" onClick={() => setFavorites([...favorites, emptyFavorite()])}>
+              <Button type="button" variant="subtle" onClick={() => setFavoriteDraft([...favoriteDraft, emptyFavorite()])}>
                 Add a node
               </Button>
               <Button type="submit" loading={favoritesSaving}>
@@ -1074,13 +1363,16 @@ export function AllStar() {
 
       <ConfigEditDrawer
         opened={editingSchedules}
-        onClose={() => setEditingSchedules(false)}
+        onClose={() => {
+          setEditingSchedules(false);
+          setScheduleDraft([]);
+        }}
         title="Scheduled links"
         subtitle="0 minutes keeps the link until someone disconnects it."
       >
         <form onSubmit={(event) => void saveSchedules(event)}>
           <Stack gap="md">
-            {schedules.map((schedule, index) => (
+            {scheduleDraft.map((schedule, index) => (
               <Stack
                 key={index}
                 gap="sm"
@@ -1099,9 +1391,9 @@ export function AllStar() {
                     placeholder="e.g. 2000"
                     value={schedule.node}
                     onChange={(event) => {
-                      const next = [...schedules];
+                      const next = [...scheduleDraft];
                       next[index] = { ...schedule, node: event.currentTarget.value };
-                      setSchedules(next);
+                      setScheduleDraft(next);
                     }}
                   />
                   <TextInput
@@ -1110,9 +1402,9 @@ export function AllStar() {
                     placeholder="e.g. Tuesday net"
                     value={schedule.name}
                     onChange={(event) => {
-                      const next = [...schedules];
+                      const next = [...scheduleDraft];
                       next[index] = { ...schedule, name: event.currentTarget.value };
-                      setSchedules(next);
+                      setScheduleDraft(next);
                     }}
                   />
                   <TextInput
@@ -1121,9 +1413,9 @@ export function AllStar() {
                     required
                     value={schedule.time}
                     onChange={(event) => {
-                      const next = [...schedules];
+                      const next = [...scheduleDraft];
                       next[index] = { ...schedule, time: event.currentTarget.value };
-                      setSchedules(next);
+                      setScheduleDraft(next);
                     }}
                   />
                   <NumberInput
@@ -1133,9 +1425,9 @@ export function AllStar() {
                     required
                     value={schedule.minutes}
                     onChange={(value) => {
-                      const next = [...schedules];
+                      const next = [...scheduleDraft];
                       next[index] = { ...schedule, minutes: Number(value) || 0 };
-                      setSchedules(next);
+                      setScheduleDraft(next);
                     }}
                   />
                 </SimpleGrid>
@@ -1152,9 +1444,9 @@ export function AllStar() {
                         const days = event.currentTarget.checked
                           ? [...schedule.days, dayIndex].sort((a, b) => a - b)
                           : schedule.days.filter((d) => d !== dayIndex);
-                        const next = [...schedules];
+                        const next = [...scheduleDraft];
                         next[index] = { ...schedule, days };
-                        setSchedules(next);
+                        setScheduleDraft(next);
                       }}
                     />
                   ))}
@@ -1165,30 +1457,27 @@ export function AllStar() {
                       label="Monitor only"
                       checked={schedule.monitor}
                       onChange={(event) => {
-                        const next = [...schedules];
+                        const next = [...scheduleDraft];
                         next[index] = { ...schedule, monitor: event.currentTarget.checked };
-                        setSchedules(next);
+                        setScheduleDraft(next);
                       }}
                     />
                     <Checkbox
                       label="On"
                       checked={schedule.enabled}
                       onChange={(event) => {
-                        const next = [...schedules];
+                        const next = [...scheduleDraft];
                         next[index] = { ...schedule, enabled: event.currentTarget.checked };
-                        setSchedules(next);
+                        setScheduleDraft(next);
                       }}
                     />
                   </Group>
                   <Group gap="sm">
-                    <Text size="sm" c="dimmed">
-                      {scheduleText(scheduleStatus[index], "Linked")}
-                    </Text>
                     <Button
                       size="compact-sm"
                       color="red"
                       variant="subtle"
-                      onClick={() => setSchedules(schedules.filter((_, i) => i !== index))}
+                      onClick={() => setScheduleDraft(scheduleDraft.filter((_, i) => i !== index))}
                     >
                       Remove
                     </Button>
@@ -1196,13 +1485,13 @@ export function AllStar() {
                 </Group>
               </Stack>
             ))}
-            {schedules.length === 0 ? (
+            {scheduleDraft.length === 0 ? (
               <Text c="dimmed" size="sm">
                 No scheduled links.
               </Text>
             ) : null}
             <Group justify="space-between">
-              <Button type="button" variant="subtle" onClick={() => setSchedules([...schedules, emptySchedule()])}>
+              <Button type="button" variant="subtle" onClick={() => setScheduleDraft([...scheduleDraft, emptySchedule()])}>
                 Add a schedule
               </Button>
               <Button type="submit" loading={schedulesSaving}>
@@ -1215,7 +1504,13 @@ export function AllStar() {
 
       <ConfigEditDrawer
         opened={editingEcho}
-        onClose={() => setEditingEcho(false)}
+        onClose={() => {
+          setEditingEcho(false);
+          setEchoForm((prev) => ({ ...prev, password: "" }));
+          setEchoEdited(false);
+          setEchoFilled(false);
+          setEchoSnapshot(null);
+        }}
         title="EchoLink"
         subtitle="Station details for EchoLink users connecting through AllStar."
       >
@@ -1234,7 +1529,8 @@ export function AllStar() {
                   type="password"
                   autoComplete="new-password"
                   required={!echo.settings.has_password}
-                  placeholder=""
+                  placeholder={echo.settings.has_password ? "******" : undefined}
+                  description={echo.settings.has_password ? "Saved password. Leave blank to keep it, or enter a replacement." : "Enter the EchoLink password."}
                   value={echoForm.password}
                   onChange={(event) => setEchoField("password", event.currentTarget.value)}
                 />

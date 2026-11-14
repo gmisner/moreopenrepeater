@@ -12,12 +12,13 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ActionsHeader } from "../components/ActionsHeader";
 import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
 import { ConfigSummaryCard } from "../components/ConfigSummaryCard";
 import { EmptyState } from "../components/EmptyState";
+import { ErrorCard, LoadingBlock } from "../components/StateCards";
 import { labeled } from "../components/FieldHint";
 import { notifyError, notifySuccess, useConfig } from "../config";
 import { Page } from "../layout/AppShell";
@@ -162,33 +163,60 @@ function favoritesFromConfig(raw: unknown): TalkgroupFavorite[] {
 
 export function Dmr() {
   const { session } = useSession();
-  const isAdmin = session?.role === "admin";
+  const canWrite = Boolean(session?.authenticated && session.role !== "viewer");
+  const isAdmin = Boolean(session?.authenticated && session.role === "admin");
   const { config, save: saveConfig } = useConfig();
   const [status, setStatus] = useState<DmrStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [form, setForm] = useState<DmrForm>(emptyForm());
+  const [formEdited, setFormEdited] = useState(false);
+  const formEditedRef = useRef(formEdited);
+  useEffect(() => {
+    formEditedRef.current = formEdited;
+  }, [formEdited]);
+  const dmrReadVersionRef = useRef(0);
+  const dmrMutationIdRef = useRef(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
-  const [favorites, setFavorites] = useState<TalkgroupFavorite[]>([]);
+  const [favoriteDraft, setFavoriteDraft] = useState<TalkgroupFavorite[]>([]);
   const [saving, setSaving] = useState(false);
+  const [dmrBusy, setDmrBusy] = useState(false);
   const [favoritesSaving, setFavoritesSaving] = useState(false);
   const [selecting, setSelecting] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [statusStale, setStatusStale] = useState(false);
 
   const refresh = useCallback(async () => {
+    const version = ++dmrReadVersionRef.current;
+    setStatusLoading(true);
     try {
       const next = await api<DmrStatus>("/api/dmr");
+      if (version !== dmrReadVersionRef.current) return next;
+      if (dmrMutationIdRef.current !== 0) return next;
       setStatus(next);
+      setStatusError(null);
+      setStatusStale(false);
       return next;
     } catch (error) {
+      if (version !== dmrReadVersionRef.current) return null;
+      if (dmrMutationIdRef.current !== 0) return null;
+      setStatusStale(true);
+      setStatusError(error instanceof Error ? error.message : String(error));
       // During install the service restarts briefly; keep polling quietly.
       if (!installing) notifyError(error);
       return null;
+    } finally {
+      if (version === dmrReadVersionRef.current) setStatusLoading(false);
     }
   }, [installing]);
 
   useEffect(() => {
     void refresh();
-    const id = window.setInterval(() => void refresh(), REFRESH_MS);
+    const id = window.setInterval(() => {
+      if (document.hidden) return;
+      void refresh();
+    }, REFRESH_MS);
     return () => window.clearInterval(id);
   }, [refresh]);
 
@@ -197,15 +225,21 @@ export function Dmr() {
   }, [status?.available]);
 
   useEffect(() => {
-    if (status?.settings) setForm(formFromSettings(status.settings));
-  }, [status?.settings?.dmr_id, status?.settings?.callsign, status?.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (status?.settings && !formEdited) setForm(formFromSettings(status.settings));
+  }, [status?.settings, formEdited]);
 
   useEffect(() => {
-    setFavorites(favoritesFromConfig(config?.dmr_talkgroup_favorites));
-  }, [config?.dmr_talkgroup_favorites]);
+    if (drawerOpen && status?.settings) {
+      setForm(formFromSettings(status.settings));
+      setFormEdited(false);
+    }
+  }, [drawerOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const savedFavorites = favoritesFromConfig(config?.dmr_talkgroup_favorites);
 
   const setField = <K extends keyof DmrForm>(name: K, value: DmrForm[K]) => {
     setForm((prev) => ({ ...prev, [name]: value }));
+    setFormEdited(true);
   };
 
   const onNetwork = (network: DmrForm["network"]) => {
@@ -218,12 +252,16 @@ export function Dmr() {
       }
       return next;
     });
+    setFormEdited(true);
   };
 
   const onSave = async (event: FormEvent) => {
     event.preventDefault();
-    if (!isAdmin) return;
+    if (!isAdmin || dmrBusy || dmrMutationIdRef.current !== 0) return;
     if (!window.confirm(`Save DMR as ${form.callsign} / ${form.dmr_id}? The DVSwitch bridges restart.`)) return;
+    const mutationId = ++dmrMutationIdRef.current;
+    ++dmrReadVersionRef.current;
+    setDmrBusy(true);
     setSaving(true);
     try {
       const body = {
@@ -232,29 +270,51 @@ export function Dmr() {
         password: form.password || undefined,
       };
       const next = await api<DmrStatus>("/api/dmr", { method: "PUT", json: body });
+      if (mutationId !== dmrMutationIdRef.current) return;
       setStatus(next);
       if (next.settings) setForm(formFromSettings(next.settings));
+      setFormEdited(false);
       setDrawerOpen(false);
       notifySuccess(next.restart.requested ? "Saved — bridges restarting" : "Saved");
     } catch (error) {
+      if (mutationId !== dmrMutationIdRef.current) return;
       notifyError(error);
     } finally {
-      setSaving(false);
+      if (mutationId === dmrMutationIdRef.current) {
+        setSaving(false);
+        setDmrBusy(false);
+        dmrMutationIdRef.current = 0;
+        ++dmrReadVersionRef.current;
+        void refresh().catch(() => {});
+      }
     }
   };
 
   const onDisable = async () => {
-    if (!isAdmin) return;
+    if (!isAdmin || dmrBusy || dmrMutationIdRef.current !== 0) return;
     if (!window.confirm("Turn off DMR? The bridges stop; saved details are kept.")) return;
+    const mutationId = ++dmrMutationIdRef.current;
+    ++dmrReadVersionRef.current;
+    setDmrBusy(true);
     setSaving(true);
     try {
-      setStatus(await api<DmrStatus>("/api/dmr", { method: "DELETE" }));
+      const next = await api<DmrStatus>("/api/dmr", { method: "DELETE" });
+      if (mutationId !== dmrMutationIdRef.current) return;
+      setStatus(next);
+      setFormEdited(false);
       notifySuccess("DMR turned off");
       setDrawerOpen(false);
     } catch (error) {
+      if (mutationId !== dmrMutationIdRef.current) return;
       notifyError(error);
     } finally {
-      setSaving(false);
+      if (mutationId === dmrMutationIdRef.current) {
+        setSaving(false);
+        setDmrBusy(false);
+        dmrMutationIdRef.current = 0;
+        ++dmrReadVersionRef.current;
+        void refresh().catch(() => {});
+      }
     }
   };
 
@@ -263,7 +323,7 @@ export function Dmr() {
     if (!isAdmin) return;
     setFavoritesSaving(true);
     try {
-      const cleaned = favorites
+      const cleaned = favoriteDraft
         .filter((f) => f.talkgroup.trim())
         .map((f) => ({
           talkgroup: Number(f.talkgroup),
@@ -271,6 +331,7 @@ export function Dmr() {
           slot: Number(f.slot) === 1 ? 1 : 2,
         }));
       await saveConfig({ dmr_talkgroup_favorites: cleaned });
+      setFavoriteDraft([]);
       setFavoritesOpen(false);
       notifySuccess("Talkgroup favorites saved");
     } catch (error) {
@@ -290,7 +351,7 @@ export function Dmr() {
   const restartBusy = Boolean(helperBusy && status?.restart.last_action !== "install");
 
   const onInstall = async () => {
-    if (!isAdmin || installBusy || restartBusy) return;
+    if (!isAdmin || dmrBusy || dmrMutationIdRef.current !== 0 || installBusy || restartBusy) return;
     if (
       !window.confirm(
         "Install DVSwitch (Analog_Bridge + MMDVM_Bridge) on this Pi? This uses apt and restarts the dashboard when finished.",
@@ -298,54 +359,99 @@ export function Dmr() {
     ) {
       return;
     }
+    const mutationId = ++dmrMutationIdRef.current;
+    ++dmrReadVersionRef.current;
+    setDmrBusy(true);
     setInstalling(true);
     try {
       const next = await api<DmrStatus>("/api/dmr/install", { method: "POST" });
+      if (mutationId !== dmrMutationIdRef.current) return;
       setStatus(next);
       notifySuccess("Installing DMR — this can take a few minutes");
     } catch (error) {
-      setInstalling(false);
+      if (mutationId !== dmrMutationIdRef.current) return;
       notifyError(error);
+    } finally {
+      if (mutationId === dmrMutationIdRef.current) {
+        setInstalling(false);
+        setDmrBusy(false);
+        dmrMutationIdRef.current = 0;
+        ++dmrReadVersionRef.current;
+        void refresh().catch(() => {});
+      }
     }
   };
 
   const selectFavorite = async (favorite: TalkgroupFavorite) => {
+    if (!canWrite || dmrBusy || dmrMutationIdRef.current !== 0) return;
     const talkgroup = Number(favorite.talkgroup);
     if (!talkgroup || !status?.enabled) return;
     const key = `${favorite.talkgroup}-${favorite.slot}`;
+    const mutationId = ++dmrMutationIdRef.current;
+    ++dmrReadVersionRef.current;
+    setDmrBusy(true);
     setSelecting(key);
     try {
       const next = await api<DmrStatus>("/api/dmr/talkgroup", {
         method: "POST",
         json: { talkgroup, slot: Number(favorite.slot) === 1 ? 1 : 2 },
       });
+      if (mutationId !== dmrMutationIdRef.current) return;
       setStatus(next);
-      if (next.settings) setForm(formFromSettings(next.settings));
+      if (next.settings && !formEditedRef.current) setForm(formFromSettings(next.settings));
+      if (!formEditedRef.current) setFormEdited(false);
       notifySuccess(
         next.restart.requested
           ? `Talkgroup ${talkgroup} — bridges restarting`
           : `Talkgroup ${talkgroup}`,
       );
     } catch (error) {
+      if (mutationId !== dmrMutationIdRef.current) return;
       notifyError(error);
     } finally {
-      setSelecting(null);
+      if (mutationId === dmrMutationIdRef.current) {
+        setSelecting(null);
+        setDmrBusy(false);
+        dmrMutationIdRef.current = 0;
+        ++dmrReadVersionRef.current;
+        void refresh().catch(() => {});
+      }
     }
   };
 
   const settings = status?.settings;
-  const savedFavorites = favorites.filter((f) => f.talkgroup.trim());
+  const liveFavorites = savedFavorites.filter((f) => f.talkgroup.trim());
   const currentTg = settings?.talkgroup;
+  const audio = status?.audio;
+  const requiredBridgesDown =
+    Boolean(status?.available && status.enabled) &&
+    (status?.services.analog_bridge === false ||
+      status?.services.mmdvm_bridge === false ||
+      (status?.settings?.use_emulator === true && status?.services.md380_emu === false));
   const badge = !status
     ? "…"
     : !status.available
       ? "Not installed"
-      : status.enabled
-        ? status.audio.keyed
-          ? "Keyed"
-          : "On"
-        : "Off";
-  const badgeColor = status?.enabled ? "green" : "gray";
+      : !status.enabled
+        ? "Off"
+        : audio?.error
+          ? "Audio error"
+          : !audio?.configured
+            ? "Not configured"
+            : !audio?.running
+              ? "Stopped"
+              : requiredBridgesDown
+                ? "Degraded"
+                : audio.keyed
+                  ? "Keyed"
+                  : "On";
+  const badgeColor = !status?.enabled
+    ? "gray"
+    : audio?.error
+      ? "red"
+      : !audio?.configured || !audio?.running || requiredBridgesDown
+        ? "amber"
+        : "green";
 
   const summary = !status
     ? "Loading…"
@@ -366,6 +472,12 @@ export function Dmr() {
   return (
     <Page title="DMR">
       <Stack gap="md">
+        {statusLoading && !status ? <LoadingBlock label="Loading DMR" /> : null}
+        {statusError && !status ? (
+          <ErrorCard title="Couldn't load DMR" onRetry={() => void refresh()}>
+            {statusError}
+          </ErrorCard>
+        ) : null}
         <ConfigSummaryCard
           title="DMR bridge"
           badge={installBusy ? "Installing" : restartBusy ? "Restarting" : badge}
@@ -376,12 +488,17 @@ export function Dmr() {
           editLabel={status?.enabled ? "Edit…" : "Set up…"}
           secondaryAction={
             isAdmin && status && !status.available && status.restart.available ? (
-              <Button loading={installBusy || restartBusy} onClick={() => void onInstall()}>
+              <Button loading={installBusy || restartBusy || dmrBusy} disabled={dmrBusy} onClick={() => void onInstall()}>
                 Install DMR
               </Button>
             ) : undefined
           }
         />
+        {statusStale ? (
+          <Text size="sm" c="amber">
+            Status may be out of date. Retrying…
+          </Text>
+        ) : null}
         {status?.available && (
           <Text size="sm" c="dimmed">
             Analog_Bridge {serviceLabel(status.services.analog_bridge)} · MMDVM_Bridge{" "}
@@ -389,6 +506,11 @@ export function Dmr() {
             {status.audio.listen ? ` · USRP ${status.audio.listen} → ${status.audio.peer}` : ""}
           </Text>
         )}
+        {status?.audio.error ? (
+          <Text size="sm" c="red">
+            {status.audio.error}
+          </Text>
+        ) : null}
 
         {status?.available && status.enabled ? (
           <Card withBorder padding="lg" radius="md" component="section" aria-label="Last heard">
@@ -434,42 +556,52 @@ export function Dmr() {
                 </h2>
               </div>
               {isAdmin ? (
-                <Button variant="default" size="xs" onClick={() => setFavoritesOpen(true)}>
+                <Button variant="default" size="xs" onClick={() => { setFavoriteDraft(savedFavorites.map((f) => ({ ...f }))); setFavoritesOpen(true); }}>
                   Edit favorites
                 </Button>
               ) : null}
             </Group>
-            {savedFavorites.length ? (
+            {liveFavorites.length ? (
               <Group gap="xs">
-                {savedFavorites.map((favorite) => {
-                  const tg = Number(favorite.talkgroup);
-                  const active = status.enabled && currentTg === tg;
-                  const key = `${favorite.talkgroup}-${favorite.slot}`;
-                  return (
-                    <Button
-                      key={key}
-                      size="compact-md"
-                      variant={active ? "filled" : "light"}
-                      color={active ? "accent" : "gray"}
-                      loading={selecting === key}
-                      disabled={!status.enabled || selecting !== null}
-                      onClick={() => void selectFavorite(favorite)}
-                      style={{ textTransform: "none", fontWeight: 500 }}
-                    >
-                      <Text span ff="monospace" size="sm">
-                        {favorite.talkgroup}
-                      </Text>
+                {canWrite ? (
+                  liveFavorites.map((favorite, index) => {
+                    const tg = Number(favorite.talkgroup);
+                    const active = status.enabled && currentTg === tg && settings?.slot === (Number(favorite.slot) === 1 ? 1 : 2);
+                    const key = `${favorite.talkgroup}-${favorite.slot}`;
+                    return (
+                      <Button
+                        key={`${key}-${index}`}
+                        size="compact-md"
+                        variant={active ? "filled" : "light"}
+                        color={active ? "accent" : "gray"}
+                        loading={selecting === key}
+                        disabled={!status.enabled || selecting !== null || dmrBusy}
+                        onClick={() => void selectFavorite(favorite)}
+                        style={{ textTransform: "none", fontWeight: 500 }}
+                      >
+                        <Text span ff="monospace" size="sm">
+                          {favorite.talkgroup}
+                        </Text>
+                        {favorite.name.trim() ? ` · ${favorite.name.trim()}` : ""}
+                        {favorite.slot === "1" ? " · TS1" : ""}
+                      </Button>
+                    );
+                  })
+                ) : (
+                  liveFavorites.map((favorite, index) => (
+                    <Badge key={`${favorite.talkgroup}-${favorite.slot}-${index}`} variant="light" color="gray" style={{ textTransform: "none" }}>
+                      {favorite.talkgroup}
                       {favorite.name.trim() ? ` · ${favorite.name.trim()}` : ""}
                       {favorite.slot === "1" ? " · TS1" : ""}
-                    </Button>
-                  );
-                })}
+                    </Badge>
+                  ))
+                )}
               </Group>
             ) : (
               <EmptyState
                 action={
                   isAdmin ? (
-                    <Button size="xs" variant="default" onClick={() => setFavoritesOpen(true)}>
+                    <Button size="xs" variant="default" onClick={() => { setFavoriteDraft(savedFavorites.map((f) => ({ ...f }))); setFavoritesOpen(true); }}>
                       Add a talkgroup
                     </Button>
                   ) : undefined
@@ -488,7 +620,7 @@ export function Dmr() {
           <EmptyState
             action={
               isAdmin && status?.restart.available ? (
-                <Button loading={installBusy || restartBusy} onClick={() => void onInstall()}>
+                <Button loading={installBusy || restartBusy || dmrBusy} disabled={dmrBusy} onClick={() => void onInstall()}>
                   Install DMR
                 </Button>
               ) : undefined
@@ -503,7 +635,10 @@ export function Dmr() {
 
       <ConfigEditDrawer
         opened={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => {
+          setDrawerOpen(false);
+          setForm((prev) => ({ ...prev, password: "" }));
+        }}
         title="DMR"
         subtitle="DVSwitch bridge to BrandMeister, TGIF, or a custom master."
       >
@@ -531,6 +666,9 @@ export function Dmr() {
               <TextInput
                 label={labeled("Network password", settings?.has_password ? "Leave blank to keep the saved password." : "Required.")}
                 type="password"
+                placeholder={settings?.has_password ? "******" : undefined}
+                description={settings?.has_password ? "Saved password. Leave blank to keep it, or enter a replacement." : "Enter the DMR network password."}
+                required={!settings?.has_password}
                 value={form.password}
                 onChange={(e) => setField("password", e.currentTarget.value)}
                 autoComplete="new-password"
@@ -599,7 +737,10 @@ export function Dmr() {
 
       <ConfigEditDrawer
         opened={favoritesOpen}
-        onClose={() => setFavoritesOpen(false)}
+        onClose={() => {
+          setFavoritesOpen(false);
+          setFavoriteDraft([]);
+        }}
         title="Talkgroup favorites"
         subtitle="DMR talkgroups for one-click retune. These are not AllStar node numbers."
       >
@@ -616,7 +757,7 @@ export function Dmr() {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {favorites.map((favorite, index) => (
+                  {favoriteDraft.map((favorite, index) => (
                     <Table.Tr key={index}>
                       <Table.Td>
                         <TextInput
@@ -626,9 +767,9 @@ export function Dmr() {
                           placeholder="e.g. 3100"
                           value={favorite.talkgroup}
                           onChange={(event) => {
-                            const next = [...favorites];
+                            const next = [...favoriteDraft];
                             next[index] = { ...favorite, talkgroup: event.currentTarget.value };
-                            setFavorites(next);
+                            setFavoriteDraft(next);
                           }}
                         />
                       </Table.Td>
@@ -638,9 +779,9 @@ export function Dmr() {
                           placeholder="Optional name"
                           value={favorite.name}
                           onChange={(event) => {
-                            const next = [...favorites];
+                            const next = [...favoriteDraft];
                             next[index] = { ...favorite, name: event.currentTarget.value };
-                            setFavorites(next);
+                            setFavoriteDraft(next);
                           }}
                         />
                       </Table.Td>
@@ -653,9 +794,9 @@ export function Dmr() {
                           value={favorite.slot}
                           onChange={(value) => {
                             if (!value) return;
-                            const next = [...favorites];
+                            const next = [...favoriteDraft];
                             next[index] = { ...favorite, slot: value };
-                            setFavorites(next);
+                            setFavoriteDraft(next);
                           }}
                         />
                       </Table.Td>
@@ -664,7 +805,7 @@ export function Dmr() {
                           size="compact-sm"
                           color="red"
                           variant="subtle"
-                          onClick={() => setFavorites(favorites.filter((_, i) => i !== index))}
+                          onClick={() => setFavoriteDraft(favoriteDraft.filter((_, i) => i !== index))}
                         >
                           Remove
                         </Button>
@@ -674,13 +815,13 @@ export function Dmr() {
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
-            {favorites.length === 0 ? (
+            {favoriteDraft.length === 0 ? (
               <Text c="dimmed" size="sm">
                 No favorites yet.
               </Text>
             ) : null}
             <Group justify="space-between">
-              <Button type="button" variant="subtle" onClick={() => setFavorites([...favorites, emptyFavorite()])}>
+              <Button type="button" variant="subtle" onClick={() => setFavoriteDraft([...favoriteDraft, emptyFavorite()])}>
                 Add a talkgroup
               </Button>
               <Button type="submit" loading={favoritesSaving}>

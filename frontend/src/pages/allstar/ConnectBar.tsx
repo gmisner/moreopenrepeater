@@ -12,41 +12,53 @@ export function ConnectBar({
   favorites,
   recent,
   linked,
+  busy = false,
   onConnect,
 }: {
   favorites: Chip[];
   recent: Chip[];
   linked: string[];
+  busy?: boolean;
   onConnect: (node: string, monitor: boolean) => Promise<void> | void;
 }) {
   const [node, setNode] = useState("");
   const [monitor, setMonitor] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const target = node.trim();
-    if (!target) return;
-    setBusy(true);
+    if (!target || busy || submitting) return;
+    setSubmitting(true);
     try {
       await onConnect(target, monitor);
       setNode("");
     } finally {
-      setBusy(false);
+      setSubmitting(false);
     }
   };
 
-  const chip = (item: Chip) => {
+  const connectChip = async (item: Chip) => {
+    if (busy || submitting || linked.includes(item.node)) return;
+    setSubmitting(true);
+    try {
+      await onConnect(item.node, Boolean(item.monitor));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const chip = (item: Chip, index: number) => {
     const isLinked = linked.includes(item.node);
     return (
       <Button
-        key={item.node}
+        key={`${item.node}-${index}`}
         type="button"
         size="xs"
         variant={isLinked ? "light" : "default"}
-        disabled={isLinked}
+        disabled={isLinked || busy || submitting}
         title={item.monitor ? "Connects monitor only" : undefined}
-        onClick={() => void onConnect(item.node, Boolean(item.monitor))}
+        onClick={() => void connectChip(item)}
       >
         {isLinked ? "Linked · " : ""}
         {chipLabel(item)}
@@ -76,20 +88,20 @@ export function ConnectBar({
         >
           Monitor only
         </Button>
-        <Button type="submit" loading={busy} disabled={!node.trim()}>
+        <Button type="submit" loading={submitting} disabled={!node.trim() || busy || submitting}>
           Connect
         </Button>
       </form>
       {favorites.length ? (
         <div className="mor-chips">
           <span className="mor-chips-label">Favorites</span>
-          {favorites.map(chip)}
+          {favorites.map((item, index) => chip(item, index))}
         </div>
       ) : null}
       {recent.length ? (
         <div className="mor-chips">
           <span className="mor-chips-label">Recent</span>
-          {recent.map(chip)}
+          {recent.map((item, index) => chip(item, index))}
         </div>
       ) : null}
       {!favorites.length && !recent.length ? (

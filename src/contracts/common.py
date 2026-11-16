@@ -4,9 +4,9 @@ from __future__ import annotations
 import itertools
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, ClassVar, Optional
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .redaction import redact
 
@@ -107,3 +107,25 @@ class Freshness(BaseModel):
 
     def is_stale(self, now: datetime) -> bool:
         return self.age(now).total_seconds() > self.max_age_s
+
+
+class Message(BaseModel):
+    """Base for every contract message: a header plus a body.
+
+    Each message class pins its own `SCHEMA_VERSION`. A message whose header
+    says a different version is rejected rather than half understood.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    SCHEMA_VERSION: ClassVar[int] = 1
+
+    header: Header
+
+    @model_validator(mode="after")
+    def _header_matches_schema_version(self) -> "Message":
+        if self.header.schema_version != self.SCHEMA_VERSION:
+            raise ValueError(
+                f"{type(self).__name__} is schema version {self.SCHEMA_VERSION}, header says {self.header.schema_version}"
+            )
+        return self

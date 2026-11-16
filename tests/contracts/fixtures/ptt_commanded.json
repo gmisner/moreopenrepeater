@@ -1,0 +1,15 @@
+{
+  "kind": "ptt.commanded",
+  "header": {
+    "schema_version": 1,
+    "message_id": "11112222333344445555666677778888",
+    "emitted_at": "2026-11-16T18:00:01Z",
+    "boot_id": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "seq": 1208,
+    "source": {"module": "core", "version": "0.1.0"},
+    "correlation_id": "7e7e7e7e8f8f8f8f9a9a9a9ab0b0b0b0"
+  },
+  "keyed": true,
+  "reason": "transmission",
+  "transmission_id": "7e7e7e7e8f8f8f8f9a9a9a9ab0b0b0b0"
+}

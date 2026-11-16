@@ -26,6 +26,11 @@ On Debian 12/13 (Raspberry Pi OS Bookworm or newer), either:
    (same root helper pattern as Tailscale / Updates), or
 2. **CLI** — `sudo bash /opt/moreopenrepeater/scripts/install-pi.sh --dmr`
 
+The installer adds DVSwitch's apt repository using a signing key that ships
+with moreopenrepeater (`packaging/dmr/dvswitch-keyring.gpg`) and is checked
+against a pinned fingerprint before use. It does not run any script downloaded
+from the internet.
+
 Both install the DVSwitch apt packages, seed `/etc/moreopenrepeater/dmr/`,
 add systemd drop-ins so the units load our ini files, and set:
 

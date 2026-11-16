@@ -1,0 +1,207 @@
+{
+  "$defs": {
+    "Header": {
+      "additionalProperties": false,
+      "description": "Common header on commands, events, health, status and config messages.",
+      "properties": {
+        "boot_id": {
+          "pattern": "^[A-Za-z0-9_-]{8,64}$",
+          "title": "Boot Id",
+          "type": "string"
+        },
+        "correlation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_-]{8,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Correlation Id"
+        },
+        "emitted_at": {
+          "format": "date-time",
+          "title": "Emitted At",
+          "type": "string"
+        },
+        "message_id": {
+          "pattern": "^[A-Za-z0-9_-]{8,64}$",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_-]{8,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        }
+      },
+      "required": [
+        "schema_version",
+        "message_id",
+        "emitted_at",
+        "boot_id",
+        "seq",
+        "source"
+      ],
+      "title": "Header",
+      "type": "object"
+    },
+    "PttEvidence": {
+      "enum": [
+        "none",
+        "gpio_readback",
+        "audio_loopback",
+        "current_sense",
+        "rf_detect"
+      ],
+      "title": "PttEvidence",
+      "type": "string"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "properties": {
+        "module": {
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+          "title": "Module",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "module",
+        "version"
+      ],
+      "title": "Source",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A snapshot of the repeater, with commanded and observed PTT kept apart.\n\n`ptt_commanded` is what the core asked for. It is not proof of\ntransmission. `ptt_observed` and `ptt_evidence` say what was seen, and\n`ptt_observed: null` means \"could not tell\".",
+  "properties": {
+    "cos_active": {
+      "title": "Cos Active",
+      "type": "boolean"
+    },
+    "hang_remaining_s": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Hang Remaining S"
+    },
+    "header": {
+      "$ref": "#/$defs/Header"
+    },
+    "id_due_in_s": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Id Due In S"
+    },
+    "kind": {
+      "const": "core.status",
+      "default": "core.status",
+      "title": "Kind",
+      "type": "string"
+    },
+    "locked_out": {
+      "title": "Locked Out",
+      "type": "boolean"
+    },
+    "ptt_commanded": {
+      "title": "Ptt Commanded",
+      "type": "boolean"
+    },
+    "ptt_evidence": {
+      "$ref": "#/$defs/PttEvidence",
+      "default": "none"
+    },
+    "ptt_observed": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ptt Observed"
+    },
+    "state": {
+      "maxLength": 40,
+      "pattern": "^[a-z][a-z_]*$",
+      "title": "State",
+      "type": "string"
+    },
+    "tot_remaining_s": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tot Remaining S"
+    },
+    "transmitter_enabled": {
+      "title": "Transmitter Enabled",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "header",
+    "state",
+    "transmitter_enabled",
+    "locked_out",
+    "cos_active",
+    "ptt_commanded"
+  ],
+  "title": "CoreStatus",
+  "type": "object"
+}

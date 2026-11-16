@@ -1,0 +1,255 @@
+{
+  "$defs": {
+    "DeviceAccess": {
+      "enum": [
+        "read",
+        "write",
+        "read_write"
+      ],
+      "title": "DeviceAccess",
+      "type": "string"
+    },
+    "DeviceNeed": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/DeviceAccess"
+        },
+        "exclusive": {
+          "default": true,
+          "title": "Exclusive",
+          "type": "boolean"
+        },
+        "match": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Match",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]{0,39}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "safe_state_on_loss": {
+          "$ref": "#/$defs/SafeState",
+          "default": "disable_module"
+        }
+      },
+      "required": [
+        "name",
+        "match",
+        "access"
+      ],
+      "title": "DeviceNeed",
+      "type": "object"
+    },
+    "Header": {
+      "additionalProperties": false,
+      "description": "Common header on commands, events, health, status and config messages.",
+      "properties": {
+        "boot_id": {
+          "pattern": "^[A-Za-z0-9_-]{8,64}$",
+          "title": "Boot Id",
+          "type": "string"
+        },
+        "correlation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_-]{8,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Correlation Id"
+        },
+        "emitted_at": {
+          "format": "date-time",
+          "title": "Emitted At",
+          "type": "string"
+        },
+        "message_id": {
+          "pattern": "^[A-Za-z0-9_-]{8,64}$",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_-]{8,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        }
+      },
+      "required": [
+        "schema_version",
+        "message_id",
+        "emitted_at",
+        "boot_id",
+        "seq",
+        "source"
+      ],
+      "title": "Header",
+      "type": "object"
+    },
+    "ModuleManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "contract_version": {
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/$defs/DeviceNeed"
+          },
+          "maxItems": 20,
+          "title": "Devices",
+          "type": "array"
+        },
+        "health_port": {
+          "maximum": 65535,
+          "minimum": 1024,
+          "title": "Health Port",
+          "type": "integer"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "resources": {
+          "$ref": "#/$defs/ResourceBudget"
+        },
+        "version": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "contract_version",
+        "resources",
+        "health_port"
+      ],
+      "title": "ModuleManifest",
+      "type": "object"
+    },
+    "ResourceBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu_millicores": {
+          "exclusiveMinimum": 0,
+          "maximum": 4000,
+          "title": "Cpu Millicores",
+          "type": "integer"
+        },
+        "memory_mb": {
+          "exclusiveMinimum": 0,
+          "maximum": 4096,
+          "title": "Memory Mb",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "memory_mb",
+        "cpu_millicores"
+      ],
+      "title": "ResourceBudget",
+      "type": "object"
+    },
+    "SafeState": {
+      "description": "What the module does when it loses the device.",
+      "enum": [
+        "none",
+        "disable_module",
+        "unkey_transmitter",
+        "publish_stale"
+      ],
+      "title": "SafeState",
+      "type": "string"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "properties": {
+        "module": {
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+          "title": "Module",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "module",
+        "version"
+      ],
+      "title": "Source",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Sent by a module at startup: here is who I am and what I need.",
+  "properties": {
+    "header": {
+      "$ref": "#/$defs/Header"
+    },
+    "kind": {
+      "const": "module.announce",
+      "default": "module.announce",
+      "title": "Kind",
+      "type": "string"
+    },
+    "manifest": {
+      "$ref": "#/$defs/ModuleManifest"
+    }
+  },
+  "required": [
+    "header",
+    "manifest"
+  ],
+  "title": "ModuleAnnounce",
+  "type": "object"
+}

@@ -56,7 +56,7 @@ install_dvswitch_repo() {
   home="$(mktemp -d)"
   # Primary key fingerprint only (the line after "pub:"), compared in full.
   found="$(GNUPGHOME="$home" gpg --show-keys --with-colons --fingerprint "$shipped" 2>/dev/null |
-    awk -F: '/^pub:/ {want=1; next} want && /^fpr:/ {print $10; want=0}')"
+    awk -F: '/^pub:/ {want=1; next} want && /^fpr:/ {print $10; want=0}')" || true
   rm -rf "$home"
   [ "$found" = "$DVSWITCH_KEY_FPR" ] ||
     fail "the DVSwitch keyring does not match the pinned fingerprint (got '${found:-none}'); not installing."

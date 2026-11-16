@@ -66,3 +66,10 @@ def test_shipped_keyring_has_exactly_the_pinned_fingerprint():
 
 def test_restart_helper_unit_gets_a_private_tmp():
     assert re.search(r"^PrivateTmp=yes$", RESTART_UNIT, re.MULTILINE)
+
+
+def test_unreadable_keyring_reports_the_fingerprint_failure_instead_of_dying_silently():
+    # Under `set -e -o pipefail` a gpg failure would abort the script before the
+    # "does not match the pinned fingerprint" message. It must reach that check.
+    code = "\n".join(_code_lines())
+    assert re.search(r"want=0\}'\)\" \|\| true", code)

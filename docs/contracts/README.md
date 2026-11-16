@@ -23,8 +23,9 @@ behavior. Design context: [ADR 0005](../adr/0005-container-module-runtime.md).
 | Site location (fixed or GPS) | `contracts.SiteLocation` | [site_location.v1.json](schema/site_location.v1.json) |
 | PTT, transmission start and end events | `contracts.core_event_adapter` | [core_event.v1.json](schema/core_event.v1.json) |
 
-Still to come in later Stage 2 PRs: the non-blocking emit path design and the
-per-module metrics endpoint.
+The non-blocking emit path and the per-module metrics registry are designed in
+[emit-path.md](emit-path.md), with a standalone prototype (`contracts.Emitter`,
+`contracts.Metrics`) and `scripts/benchmark_emit.py`.
 
 ## Rules
 

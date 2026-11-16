@@ -32,6 +32,7 @@ from ..models import (
     SoundLevelsResponse,
     StatusResponse,
 )
+from ..redaction import redact_config_for
 from ..service import RepeaterService
 from ..updates import installed_version
 from playout.tts import TTSError
@@ -60,9 +61,13 @@ def register(
             return None
         return installed_version(repo_dir)
 
+    def visible_config(request: Request) -> ConfigResponse:
+        """The saved config as this caller may see it (access codes are admin-only)."""
+        return redact_config_for(config_response(service), request.state.identity.role)
+
     @app.get("/api/config", response_model=ConfigResponse, dependencies=auth_dependencies)
-    def get_config() -> ConfigResponse:
-        return config_response(service)
+    def get_config(request: Request) -> ConfigResponse:
+        return visible_config(request)
 
     @app.put("/api/config", response_model=ConfigResponse, dependencies=auth_dependencies)
     async def put_config(update: ConfigUpdateRequest, request: Request) -> ConfigResponse:
@@ -76,7 +81,7 @@ def register(
             overrides["board_preset"] = ""
         request.state.audit_detail = describe_config_change(dataclasses.asdict(saved), overrides)
         service.update_config(**overrides)
-        return config_response(service)
+        return visible_config(request)
 
     boards = {board.id: board for board in load_boards()}
 
@@ -141,7 +146,7 @@ def register(
                 updates[output_key] = outputs
             if updates:
                 service.update_config(**updates)
-        return BoardApplyResponse(config=config_response(service), mixer=mixer, mixer_skipped=skipped)
+        return BoardApplyResponse(config=visible_config(request), mixer=mixer, mixer_skipped=skipped)
 
     def sound_levels() -> SoundLevelsResponse:
         config = service.saved_config

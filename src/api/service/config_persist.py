@@ -9,6 +9,7 @@ from controller.announcements import next_occurrence
 from controller.config import RepeaterConfig
 from controller.modes import effective_config
 
+from ..redaction import redact_overrides
 from .snapshot import announcements_from_snapshot, config_from_snapshot, macros_from_snapshot
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ class ConfigPersistence:
 
     def update(self, **overrides: object) -> RepeaterConfig:
         """Change saved settings; returns the new saved settings."""
-        _logger.info("update_config(%s)", overrides)
+        _logger.info("update_config(%s)", redact_overrides(overrides))
         self.apply(self.saved.replace_flat(**overrides), persist=True)
         return self.saved
 

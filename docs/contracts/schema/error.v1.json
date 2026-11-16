@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "description": "An error a module can return or log. `code` is stable and machine\nreadable; `message` is for people and must not carry secrets or content.",
+  "properties": {
+    "code": {
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+      "title": "Code",
+      "type": "string"
+    },
+    "details": {
+      "additionalProperties": true,
+      "title": "Details",
+      "type": "object"
+    },
+    "message": {
+      "maxLength": 300,
+      "title": "Message",
+      "type": "string"
+    },
+    "retry_after_s": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Retry After S"
+    },
+    "retryable": {
+      "default": false,
+      "title": "Retryable",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "code",
+    "message"
+  ],
+  "title": "StructuredError",
+  "type": "object"
+}

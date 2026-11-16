@@ -1,0 +1,117 @@
+{
+  "$defs": {
+    "Severity": {
+      "description": "Numbers match Python's `logging` levels, so they sort and filter the same.",
+      "enum": [
+        10,
+        20,
+        30,
+        40,
+        50
+      ],
+      "title": "Severity",
+      "type": "integer"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One thing that happened, in a form a collector can store and search.\n\n`event` is a stable dotted name (`ptt.commanded`, `ptt.feedback`,\n`tx.started`). Put variable data in `context`, not in `event` or `message`,\nso events can be counted and filtered. `context` is redacted on\nconstruction (see `contracts.redaction`).",
+  "properties": {
+    "boot_id": {
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "title": "Boot Id",
+      "type": "string"
+    },
+    "context": {
+      "additionalProperties": true,
+      "title": "Context",
+      "type": "object"
+    },
+    "correlation_id": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9_-]{8,64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Correlation Id"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "event": {
+      "maxLength": 80,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+      "title": "Event",
+      "type": "string"
+    },
+    "message": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Message"
+    },
+    "module": {
+      "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+      "title": "Module",
+      "type": "string"
+    },
+    "module_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Module Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "seq": {
+      "minimum": 0,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity"
+    },
+    "time": {
+      "format": "date-time",
+      "title": "Time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "time",
+    "boot_id",
+    "seq",
+    "severity",
+    "event",
+    "module",
+    "module_version"
+  ],
+  "title": "LogEvent",
+  "type": "object"
+}

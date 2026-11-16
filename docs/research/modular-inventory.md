@@ -31,7 +31,7 @@ issue or an ADR gate.
 | F6 | **PTT status is intent, not confirmation.** `ptt_active` is set before any hardware write. `engine.transmitting` means the write did not raise. Nothing reads back PTT, RF or current. [C] | `facade.py:316-321`, `engine.py:254`, `metrics.py:90` |
 | F7 | **Blocking work runs on the event loop that also runs the tick:** `fsync` on every JSON save, a synchronous SQLite audit write in the HTTP middleware, `systemctl` calls in the DMR status route, engine restart (thread joins, `amixer`, PortAudio open) on a config change, blocking DNS in two audio modules, and an activity-store lock that a scheduled backup can hold. [C] | `persistence.py:91-104`, `app.py:231`, `dmr.py:301-312`, `live_audio.py:604-633`, `activity.py:66-120`, `allstar_audio.py:104` |
 | F8 | **Logging is synchronous and unbounded in two places.** All three handlers run on the calling thread. Two `.exception()` calls can fire at audio-block rate if a failure persists. No drop counters exist. [C] | `logging_config.py:42-56`, `engine.py:209`, `receiver.py:232` |
-| F9 | **No redaction layer.** Autopatch PINs, DTMF digits, phone numbers and coordinates can reach the log file, the live stream, shipped logs, the audit database and the support bundle. [C] | `config_persist.py:33`, `audit.py:70-72`, `facade.py:407`, `autopatch.py` log calls |
+| F9 | **No redaction layer** between log calls and the log file, live stream, shipped logs, audit database and support bundle. Specific cases are tracked privately under `SECURITY.md`. The shared redaction filter is part of Stage 2 (#228). [C] | `logging_config.py`, `log_hub.py`, `support_bundle.py` |
 | F10 | **Startup timeout mismatch.** The lifespan waits up to 240 s for Piper or Kokoro before `READY=1`, but `TimeoutStartSec=180`. A cold TTS load over 180 s would get the unit killed. [C] for the constants, [I] for the effect. | `piper_service.py:25`, `kokoro_service.py:24`, `moreopenrepeater.service` |
 | F11 | **Several tasks die permanently on an unexpected exception:** `announcement_loop`, `long_id_loop`, `LinkRadio.run`, the AllStar and DMR `_send` loops (which also carry the 0.5 s lost-unkey guard), and `node_link_loop` for non-OSError errors. [C] | `runtime.py:941-948,1068,862-896`, `link_radio.py:203-212`, `allstar_audio.py:115,145-164`, `dmr_audio.py:148,179-200` |
 | F12 | **An AMI drop while a remote is keyed does not release `RemoteKeyed`**, so the controller waits for TOT. [I] | `runtime.py:866,893-895`, `node_link.py:74` |
@@ -279,9 +279,8 @@ gpiochip, any hardware PTT confirmation, or link-radio PTT beyond
   and the log path moved to `/run/moreopenrepeater`. Lines are written twice
   (file and journal), both in RAM in that mode. `MOREOPENREPEATER_PROTECT_SD`
   only affects the health report.
-- **Redaction:** none. See F9. Secret fields (tokens, passwords) are not in any
-  log call found, and settings responses hide them. [C] for the log calls; the
-  `%r` of exceptions is an indirect path [I].
+- **Redaction:** no generic redaction layer exists. See F9. Settings responses
+  hide secret fields. Details of what can reach logs are tracked privately.
 - **Correlation:** no request, trace or session ID is logged. Process-local IDs
   exist (`seq`, autopatch `call_id`, AMI `action_id`, net and clip ids) but none
   spans a transmission.
@@ -340,7 +339,7 @@ beacon, AMI `connect` and `send_action`, `gethostbyname` on the loop,
 
 | Listener | Bind | Notes |
 | --- | --- | --- |
-| FastAPI HTTP and WebSocket | `0.0.0.0:8000` default, plain HTTP | auth is optional and on only if an env admin or any user exists; with no accounts everything is open |
+| FastAPI HTTP and WebSocket | `0.0.0.0:8000` default, plain HTTP | authentication is optional; see the README and `docs/raspberry-pi.md` |
 | `/mcp` | same port | needs an identity; refuses requests with an `Origin` header |
 | AudioSocket | `127.0.0.1:9092`, only if AMI host is set | call UUID must match a known call |
 | USRP AllStar / DMR | `127.0.0.1:34001` / `34011` | source-IP filter only |

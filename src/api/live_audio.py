@@ -98,7 +98,9 @@ def describe_opening(opening: ReceiverOpening) -> str:
         parts.append(f"strongest {opening.strongest_hz:.0f} Hz ({opening.tone_share:.0%} of the audio)")
     parts.append(f"CTCSS {opening.ctcss_hz:g} Hz" if opening.ctcss_hz is not None else "no CTCSS")
     if opening.dtmf_digits:
-        parts.append(f"DTMF {opening.dtmf_digits}")
+        # How many, not which: the digits can be part of a code.
+        count = len(opening.dtmf_digits)
+        parts.append(f"{count} DTMF digit{'s' if count != 1 else ''}")
     if opening.after_tx == 0.0:
         parts.append("while the repeater was transmitting")
     elif opening.after_tx is not None:

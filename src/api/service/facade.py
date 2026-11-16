@@ -404,7 +404,8 @@ class RepeaterService:
             elif isinstance(event, CTCSSChanged):
                 self.ctcss_hz = event.tone_hz
             elif isinstance(event, DTMFDigit):
-                _logger.info("DTMF digit %r received", event.digit)
+                # The digit itself can be part of a code, so it stays out of the log.
+                _logger.info("DTMF digit received")
                 self._pass_digit_to_call(event.digit)
             commands += self.controller.handle_event(event, self._clock())
         self._apply_commands(commands)

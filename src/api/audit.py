@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from .persistence import copy_database, load_database, open_database
+from .redaction import shown
 
 RETENTION_DAYS = 365
 
@@ -68,5 +69,9 @@ class AuditLog:
 
 
 def describe_config_change(before: dict, after: dict) -> str:
-    changes = [f"{key}: {before.get(key)!r} → {value!r}" for key, value in after.items() if before.get(key) != value]
+    changes = [
+        f"{key}: {shown(key, before.get(key))!r} → {shown(key, value)!r}"
+        for key, value in after.items()
+        if before.get(key) != value
+    ]
     return "; ".join(changes)

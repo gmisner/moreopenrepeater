@@ -18,6 +18,7 @@ behavior. Design context: [ADR 0005](../adr/0005-container-module-runtime.md).
 | Core's answer to a request | `contracts.SpeakDecision` | [speak_decision.v1.json](schema/speak_decision.v1.json) |
 | Health report | `contracts.HealthReport` | [health_report.v1.json](schema/health_report.v1.json) |
 | Module manifest and startup announce | `contracts.ModuleAnnounce` | [module_announce.v1.json](schema/module_announce.v1.json) |
+| Whole configuration and a change to it (API to core only, carries secrets) | `contracts.ConfigState`, `ConfigChange` | [config_state.v1.json](schema/config_state.v1.json), [config_change.v1.json](schema/config_change.v1.json) |
 | Config delivery and acknowledgement | `contracts.ConfigSnapshot`, `ConfigApplied` | [config_snapshot.v1.json](schema/config_snapshot.v1.json), [config_applied.v1.json](schema/config_applied.v1.json) |
 | Core status | `contracts.CoreStatus` | [core_status.v1.json](schema/core_status.v1.json) |
 | Site location (fixed or GPS) | `contracts.SiteLocation` | [site_location.v1.json](schema/site_location.v1.json) |
@@ -79,10 +80,24 @@ lose a value without anyone noticing. Secrets go by name (`secret_refs`) and are
 read from a Docker secret or environment file. A module answers with
 `ConfigApplied`: `applied`, `restart_required` or `rejected` (with an error).
 
+**Contract version 1.2.** Two messages for the trusted channel between the API and the
+core (below): `ConfigState` and `ConfigChange`. Nothing else changed.
+
 **Contract version 1.1.** `core.status` gained optional fields (`ctcss_hz`,
 `linked_nodes`, `net_active`, `gmrs_mode`, `callsign`), the things the dashboard
 shows beside the state. They are optional, so a module built for 1.0 is
 unaffected (`is_compatible` allows a lower minor).
+
+**The API's channel to the core is different.** `ConfigState` (`GET /config`) and
+`ConfigChange` (`POST /config`) carry the whole configuration, the autopatch PIN and
+other credentials included, because the API manages those settings. They exist only
+on the core's control socket, whose access control is its file permissions, and are
+never sent to a module. `values` is excluded from the messages' `repr`, and nothing
+may log it. The core checks every change itself (`core.config_boundary.check_change`):
+unknown settings, wrong kinds of value and unsafe numbers are refused, and a refused
+change applies nothing. The answer is a `ConfigApplied` pointing back at the change.
+A change may carry `expected_version`; the core refuses it if the configuration has
+changed since.
 
 **Core status.** `ptt_commanded` is what the core asked for. `ptt_observed` and
 `ptt_evidence` say what was seen, and `null` means "could not tell". The

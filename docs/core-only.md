@@ -34,9 +34,10 @@ curl --unix-socket /run/moreopenrepeater/core.sock http://core/status
 curl --unix-socket /run/moreopenrepeater/core.sock http://core/health
 ```
 
-- `GET /status` and `GET /health` are read only. The one command is
-  `POST /speak`: a `speak.request` in, a `speak.decision` out (below).
-  Configuration changes are not available over the socket yet.
+- `GET /status` and `GET /health` are read only. The commands are
+  `POST /speak` (a `speak.request` in, a `speak.decision` out) and `POST /config`
+  (below). Macros, announcements and the other write paths are not available over
+  the socket yet.
 - Access is the file mode: the socket is `0660` in a `0750` directory, so only
   the core's user and group can open it. The API's user must share the group.
 - `ptt_commanded` is what the controller asked for. `ptt_observed` is null and
@@ -71,6 +72,36 @@ curl -N --unix-socket /run/moreopenrepeater/core.sock http://core/events
   connection limit. A client that cannot take an event within 5 seconds, or that
   hangs up, is dropped, and it never slows the controller. Stopping the core ends
   every open stream.
+
+### `GET /config` and `POST /config` (the API's channel)
+
+For the API, not for modules. `GET /config` returns a `config.state`: the whole saved
+configuration by flat setting name, **credentials included** (the autopatch PIN, for
+one), and a `config_version` that rises with every change whoever makes it. `POST
+/config` takes a `config.change` (`values`: only the settings to change; optionally
+`expected_version`) and answers `200` with a `config.applied` whose `header.request_id`
+is the change's `message_id`.
+
+```
+curl --unix-socket /run/moreopenrepeater/core.sock http://core/config
+```
+
+- The core checks every change itself, so a bug or a hand-written client cannot hand
+  the controller a zero time-out. A setting that does not exist (`config.unknown_setting`),
+  a wrong kind of value (`config.wrong_type`), or an unusable number or a blank callsign
+  (`config.unsafe`) is **refused and nothing is applied**, the good half of a mixed
+  change included. This is stricter than start-up, which repairs an unsafe number to keep
+  the repeater up.
+- With `expected_version`, a change is refused (`config.conflict`, retryable) if the
+  configuration has changed since that version.
+- An accepted change is applied and saved to `state.json` the same way the dashboard's
+  changes are.
+- The values are never logged or echoed. The log names the settings that changed.
+- The body may be up to 64 KiB here (16 KiB on `/speak`).
+
+The channel is trusted by file permissions (the socket's mode and group), which is why it
+may carry secrets. `config.snapshot`, the message modules get, refuses them. See
+[contracts](contracts/README.md).
 
 ### `POST /speak`
 

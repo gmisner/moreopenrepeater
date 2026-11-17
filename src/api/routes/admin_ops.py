@@ -17,6 +17,7 @@ from starlette.background import BackgroundTask
 from audio_io.cm108 import find_interfaces
 from audio_io.serial_lines import find_serial_ports
 
+from ..split import safe_status
 from ..audit import AuditLog
 from ..backup import BackupFolder, BackupSources, backup_name, write_backup
 from ..health import HealthMonitor
@@ -110,7 +111,7 @@ def register(
                 log_path=log_path,
                 repo_dir=repo_dir,
                 update_channel=update_channel,
-                live_audio_status=live_audio.status(),
+                live_audio_status=safe_status(live_audio),
                 system_readings=health.probe.readings(),
                 updater=updater,
                 now=now,

@@ -76,7 +76,7 @@ from .net import NetMode
 from .node_directory import NodeDirectory
 from .notify import Notifier
 from .service.core_handle import CoreUnavailable
-from .split import Unavailable
+from .split import CoreHardware, Unavailable
 from .core_runtime import ANNOUNCEMENT_POLL_SECONDS, AnnouncementQueueFull, CoreRuntime, SplitCoreRuntime
 from .persistence import StateStore
 from .recordings import RecordingStore
@@ -591,17 +591,18 @@ class AppRuntime:
         if getattr(service, "is_remote", False):
             service.attach_log_hub(log_hub)  # the Logs page shows the core's log lines too
             # The core owns these and runs in its own process; this process holds no device.
-            live_audio = live_audio or Unavailable("live_audio")
-            monitor_receiver = monitor_receiver or Unavailable("monitor_receiver")
-            link_radio = link_radio or Unavailable("link_radio")
-            remote_base = remote_base or Unavailable("remote_base")
-            gpio = gpio or Unavailable("gpio")
-            tx_fan = tx_fan or Unavailable("tx_fan")
-            autopatch = autopatch or Unavailable("autopatch")
+            # Their status is the core's, read over the socket (split.CoreHardware); acting on them is not yet.
+            live_audio = live_audio or CoreHardware("live_audio", service)
+            monitor_receiver = monitor_receiver or CoreHardware("monitor_receiver", service)
+            link_radio = link_radio or CoreHardware("link_radio", service)
+            remote_base = remote_base or CoreHardware("remote_base", service)
+            gpio = gpio or CoreHardware("gpio", service)
+            tx_fan = tx_fan or CoreHardware("tx_fan", service)
+            autopatch = autopatch or CoreHardware("autopatch", service)
             sip_trunk = sip_trunk or Unavailable("sip_trunk")
-            allstar_node = allstar_node or Unavailable("allstar_node")
+            allstar_node = allstar_node or CoreHardware("allstar_node", service, asynchronous=True)
             dmr_audio = dmr_audio or Unavailable("dmr_audio")
-            dmr = dmr or Unavailable("dmr")
+            dmr = dmr or CoreHardware("dmr", service, asynchronous=True)
         live_audio = live_audio or LiveAudio(
             service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings, run_mixer=run_mixer
         )

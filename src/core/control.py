@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import inspect
 import json
 import logging
 import os
@@ -48,6 +49,7 @@ from contracts import (
     ConfigResult,
     ConfigState,
     CoreCommand,
+    CoreHardware,
     CoreLogs,
     LinkEvents,
     ProgrammingState,
@@ -105,6 +107,10 @@ MAX_BODY_BYTES = 16 * 1024
 MAX_CONFIG_BODY_BYTES = 64 * 1024
 #: A command can carry a whole snapshot (a restore): every setting, macro and announcement.
 MAX_COMMAND_BODY_BYTES = 256 * 1024
+HARDWARE_DEADLINE_SECONDS = 2.0  # each part's status must answer in this long
+HARDWARE_PARTS = (
+    "live_audio", "gpio", "tx_fan", "link_radio", "remote_base", "monitor_receiver", "autopatch", "allstar_node", "dmr",
+)
 LOGS_PER_REQUEST = 500  # the most log lines one GET /logs returns
 LOGS_RING_MAX = 5000  # more than any hub holds
 MAX_LOG_LINE_CHARS = 4000
@@ -159,6 +165,7 @@ class ControlServer:
         self._get: dict[str, Callable[[], dict]] = {
             "/health": self._health, "/status": self._status, "/config": self._config_state,
             "/programming": self._programming_state, "/link-events": self._link_events,
+            "/hardware": self._hardware,
         }
         self._post: dict[str, Callable[[bytes], Awaitable[dict]]] = {
             "/speak": self._speak, "/config": self._config_change, "/command": self._command,
@@ -325,7 +332,10 @@ class ControlServer:
             if method == "GET" and path == "/logs":
                 return 200, self._logs(target)
             if method == "GET" and path in self._get:
-                return 200, self._get[path]()
+                result = self._get[path]()
+                if asyncio.iscoroutine(result):
+                    result = await result
+                return 200, result
             if method == "POST" and path in self._post:
                 return 200, await self._post[path](body)
             allowed = "GET" if (path in self._get or path == "/logs") else "POST"
@@ -596,6 +606,33 @@ class ControlServer:
                 {"seq": e.seq, "line": e.line[:MAX_LOG_LINE_CHARS], "level": e.level, "at": e.at} for e in found
             ]
         message = CoreLogs(header=self._header(), cursor=cursor, lines=lines)
+        return json.loads(message.model_dump_json())
+
+    async def _hardware(self) -> dict:
+        """`GET /hardware`: what each part of the radio side reports, read at once and each with a
+        deadline, so one slow part (the AllStar node reads files and asks Asterisk) cannot hold the
+        answer or the controller. A part that fails or is slow is named in `unavailable`."""
+        async def one(name: str):
+            part = getattr(self._runtime, name, None)
+            status = getattr(part, "status", None)
+            if status is None:
+                return name, None
+            try:
+                if inspect.iscoroutinefunction(status):
+                    value = await asyncio.wait_for(status(), HARDWARE_DEADLINE_SECONDS)
+                else:
+                    value = status()
+                return name, json.loads(json.dumps(value, default=str))  # plain JSON, whatever the part returns
+            except Exception:  # noqa: BLE001 - one part must not take the others down
+                return name, None
+
+        statuses, missing = {}, []
+        for name, value in await asyncio.gather(*(one(n) for n in HARDWARE_PARTS)):
+            if isinstance(value, dict):
+                statuses[name] = value
+            else:
+                missing.append(name)
+        message = CoreHardware(header=self._header(), statuses=statuses, unavailable=missing)
         return json.loads(message.model_dump_json())
 
     def _link_events(self) -> dict:

@@ -121,3 +121,14 @@ class CoreLogs(Message):
     cursor: int = Field(ge=0)
     #: Each `{"seq": int, "line": str, "level": str, "at": float}`.
     lines: list[dict[str, Any]] = Field(max_length=1000)
+
+
+class CoreHardware(Message):
+    """What the core's own hardware reports: audio engine, GPIO, fan, link radio, remote base,
+    monitor receiver, autopatch, AllStar node and DMR (`GET /hardware`), each its status as a plain
+    object. For the API's trusted channel, so the dashboard's pages about them work with the core in
+    another process. A part that could not be read in time is listed in `unavailable`, not guessed."""
+
+    kind: Literal["core.hardware"] = "core.hardware"
+    statuses: dict[str, dict[str, Any]]
+    unavailable: list[str] = Field(default_factory=list, max_length=32)

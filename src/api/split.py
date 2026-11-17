@@ -53,6 +53,7 @@ class Unavailable:
     cm108 = None
     node = None
     directory = None
+    is_stub = True  # a stand-in with nothing behind it; `CoreHardware` is the one with a status
 
     def __init__(self, name: str) -> None:
         self._name = name
@@ -64,3 +65,35 @@ class Unavailable:
 
     def __repr__(self) -> str:
         return f"<{self._name}: runs in the core>"
+
+
+class CoreHardware(Unavailable):
+    """The API's view of one of the core's hardware parts: its status, as the core last reported it.
+
+    `status()` answers from what the core reports every couple of seconds (and raises `CoreUnavailable`
+    if the core is not being heard from, or did not report that part). Everything else (turning an
+    output on, dialling, saving a trunk) still refuses with `NotInSplitMode`: those are commands, and
+    the core does not take them over the socket yet. `asynchronous` is for the parts whose status
+    the dashboard awaits."""
+
+    def __init__(self, name: str, remote, *, asynchronous: bool = False) -> None:
+        super().__init__(name)
+        self._remote = remote
+        self.is_stub = False
+        if asynchronous:
+            self.status = self._status_async  # type: ignore[assignment]
+
+    def status(self) -> dict:  # type: ignore[override]
+        return dict(self._remote.hardware_status(self._name))
+
+    async def _status_async(self) -> dict:
+        return dict(self._remote.hardware_status(self._name))
+
+
+def safe_status(part: Any) -> dict:
+    """A part's status, or {} if it cannot be had now (the core is away). For places that report
+    on everything and must not fail because one part is unknown: metrics, the support bundle."""
+    try:
+        return dict(part.status())
+    except CoreError:
+        return {}

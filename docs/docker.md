@@ -13,11 +13,15 @@ It is off by default, `install-pi.sh` does not use it, and the normal service is
 
 What works in the dashboard when the API runs apart from the core: status (live), configuration,
 macros, announcements, nets, link activity, the backup export and restore, accounts, alerts, logs,
-and the pages that are not the radio. What does not yet: the pages about the core's hardware (GPIO,
-link radio, monitor receiver, autopatch and SIP trunk, AllStar node, DMR, audio engine) answer 503
-`core.hardware` ("needs the core's hardware, which runs in another process"). They need the core to
-report that state over the socket, which is later work. The core's weather macro cannot see the
-API's NWS alerts and says weather is not set up; the API's own weather page and alerts work.
+and the pages that are not the radio. **The pages about the core's hardware show what the core
+reports** (audio engine, GPIO and fan, link radio and remote base, monitor receiver, autopatch, the
+AllStar node, DMR), read over the socket every couple of seconds. With the core away they say so
+(a 503 `core.unavailable`) instead of showing an old state, and the status panels are left out.
+**Acting on them does not work yet**: turning a GPIO output on, dialling, saving a trunk, tuning the
+remote base, selecting a DMR talkgroup and the audio tools answer 503 `core.hardware`, because the
+core does not take those commands over the socket yet. The SIP trunk page needs the core's Asterisk
+files and is unavailable. The core's weather macro cannot see the API's NWS alerts and says weather is
+not set up; the API's own weather page and alerts work.
 
 Files:
 

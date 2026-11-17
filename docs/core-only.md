@@ -104,6 +104,14 @@ client handles the action, the core says what it says today for a missing module
 weather is not set up.", "The mailbox is not available."; net mode only logs). When the control
 server stops, macros fall back to that too.
 
+### `GET /hardware`
+
+What each part of the radio side reports, as a `core.hardware`: `live_audio`, `gpio`, `tx_fan`,
+`link_radio`, `remote_base`, `monitor_receiver`, `autopatch`, `allstar_node` and `dmr`, each its own
+status as plain JSON. Each part has 2 seconds to answer, so one slow part (the AllStar node reads
+files and asks Asterisk) cannot hold the rest; a part that fails or is slow is named in `unavailable`.
+The API reads it every 2 seconds for the dashboard's hardware pages.
+
 ### `GET /logs`
 
 The core's recent log lines (its in-memory ring of 2000), oldest first from a cursor:

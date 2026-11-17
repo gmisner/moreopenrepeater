@@ -25,6 +25,7 @@ repeater on the air:
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import os
@@ -71,6 +72,10 @@ MAX_STREAMS = 4  # long-lived /events connections; fewer than MAX_CONNECTIONS so
 HEARTBEAT_SECONDS = 5.0
 STREAM_WRITE_DEADLINE_SECONDS = 5.0  # a client that cannot take an event in this long is dropped
 MIN_EVENT_INTERVAL_SECONDS = 0.1  # status events are coalesced to at most ten a second
+#: A countdown (time-out, hang time, next ID) moves every tick, so it is not a change
+#: by itself. The client counts it down on its own; a new event is sent only when the
+#: real value is off from that count by more than this, or starts or stops existing.
+COUNTDOWN_TOLERANCE_SECONDS = 1.0
 MAX_BODY_BYTES = 16 * 1024
 RENDER_DEADLINE_SECONDS = 30.0  # to prepare speech before giving up on a request
 #: Longer than any normal pause (the tick runs every 50 ms); the same figure the
@@ -336,18 +341,32 @@ class ControlServer:
                 b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n"
                 b"Connection: close\r\nX-Accel-Buffering: no\r\n\r\n"
             )
-            await self._send_event(writer, "status", self._event_payload(self._service.snapshot()))
+            sent = self._service.snapshot()
+            await self._send_event(writer, "status", self._event_payload(sent))
+            last_write = time.monotonic()
             while True:
                 waiting = asyncio.ensure_future(queue.get())
-                done, _ = await asyncio.wait({waiting, gone}, timeout=HEARTBEAT_SECONDS, return_when=asyncio.FIRST_COMPLETED)
+                # A heartbeat is due HEARTBEAT_SECONDS after the last thing written, even
+                # while snapshots keep arriving that are not worth sending.
+                due = max(0.0, HEARTBEAT_SECONDS - (time.monotonic() - last_write))
+                done, _ = await asyncio.wait({waiting, gone}, timeout=due, return_when=asyncio.FIRST_COMPLETED)
                 if gone in done:
                     return
                 if waiting in done:
-                    await self._send_event(writer, "status", self._event_payload(waiting.result()))
-                    await asyncio.sleep(MIN_EVENT_INTERVAL_SECONDS)  # coalesce a burst into the latest
+                    snapshot = waiting.result()
+                    now = time.monotonic()
+                    if _is_news(sent, snapshot):
+                        await self._send_event(writer, "status", self._event_payload(snapshot))
+                        sent = snapshot
+                        last_write = time.monotonic()
+                        await asyncio.sleep(MIN_EVENT_INTERVAL_SECONDS)  # coalesce a burst into the latest
+                    elif now - last_write >= HEARTBEAT_SECONDS:
+                        await self._send_event(writer, "heartbeat", self._heartbeat_payload())
+                        last_write = time.monotonic()
                 else:
                     waiting.cancel()
                     await self._send_event(writer, "heartbeat", self._heartbeat_payload())
+                    last_write = time.monotonic()
         finally:
             for task in (gone, waiting):
                 if task is not None and not task.done():
@@ -490,6 +509,23 @@ async def _until_eof(reader: asyncio.StreamReader) -> None:
         await reader.read()
     except (ConnectionError, OSError):
         pass
+
+
+def _is_news(sent, new) -> bool:
+    """Is `new` different from what the client has, once the client has counted the
+    countdowns down on its own? Time between the two is the difference of their
+    timestamps, which come from the service's clock."""
+    elapsed = max(0.0, new.timestamp - sent.timestamp)
+    for name in ("tot_remaining", "hang_remaining", "id_due_in"):
+        before, after = getattr(sent, name), getattr(new, name)
+        if (before is None) != (after is None):
+            return True
+        if before is not None and abs(max(0.0, before - elapsed) - after) > COUNTDOWN_TOLERANCE_SECONDS:
+            return True
+    skip = {"tot_remaining", "hang_remaining", "id_due_in", "timestamp"}
+    return any(
+        getattr(sent, f.name) != getattr(new, f.name) for f in dataclasses.fields(sent) if f.name not in skip
+    )
 
 
 class _BadRequest(Exception):

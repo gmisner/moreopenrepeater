@@ -6,12 +6,9 @@ core extraction; they use simulated events, an injected clock, and fake audio.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import subprocess
 import sys
-
-import pytest
 
 from api.service import RepeaterService
 from controller.config import RepeaterConfig
@@ -108,11 +105,12 @@ def test_idle_id_setting_plays_station_id_when_interval_expires() -> None:
     assert service.snapshot().ptt_active is True
 
 
-def test_core_repeats_without_any_status_subscriber() -> None:
-    service, now, _audio = make_service()
+def test_core_keeps_repeating_when_a_status_subscriber_never_reads() -> None:
+    """A dashboard tab that stops reading must not hold up the repeater."""
+    service, now, audio = make_service()
+    stuck = service.subscribe()  # a queue of one that nobody drains
 
     service.simulate_cos(active=True)
-    assert service.snapshot().ptt_active is True
     now["value"] = 1.0
     service.simulate_cos(active=False)
     now["value"] = 1.2
@@ -120,8 +118,11 @@ def test_core_repeats_without_any_status_subscriber() -> None:
     now["value"] = 2.3
     service.tick()
 
+    assert stuck.full()
     assert service.snapshot().state == IDLE
     assert service.snapshot().ptt_active is False
+    assert audio.ptt == [True, False]
+    service.unsubscribe(stuck)
 
 
 def _run_isolated(code: str, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -147,24 +148,4 @@ blocked = sorted(name for name in ('fastapi', 'starlette') if name in sys.module
 assert not blocked, f'web framework modules imported: {blocked}'
 """
     result = _run_isolated(code)
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="F3: api/__init__.py imports the app at import time; fixed by Stage 3 slice 2",
-)
-def test_importing_api_service_does_not_import_fastapi() -> None:
-    # Keep the probe away from host radio devices even though importing api.service
-    # currently creates the application as an api package side effect.
-    env = os.environ.copy()
-    env["MOREOPENREPEATER_CM108_HIDRAW"] = "off"
-    env["MOREOPENREPEATER_LINK_CM108_HIDRAW"] = "off"
-    code = """
-import sys
-sys.path.insert(0, 'src')
-import api.service
-assert 'fastapi' not in sys.modules, 'api.service imported fastapi'
-"""
-    result = _run_isolated(code, env=env)
     assert result.returncode == 0, result.stdout + result.stderr

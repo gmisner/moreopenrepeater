@@ -254,7 +254,9 @@ def test_an_idle_stream_sends_no_status_for_ticking_countdowns_but_still_heartbe
     """Found on the Pi: the next-ID countdown made an idle core push four status events a
     second, and starved the heartbeat. Ticks alone must not."""
     monkeypatch.setattr(control_module, "HEARTBEAT_SECONDS", 0.4)
-    clock = [1000.0]
+    # Start from the real clock: the controller armed its ID deadline from it when built, and
+    # a fixed start can be past that deadline on a machine that booted recently (CI did).
+    clock = [time.monotonic()]
     core.service._clock = lambda: clock[0]
     core.service.controller.config = dataclasses.replace(core.service.controller.config, idle_id=True)
     core.service.tick()

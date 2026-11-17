@@ -38,6 +38,7 @@ from typing import Awaitable, Callable, Optional
 from pydantic import ValidationError
 
 from contracts import (
+    PROGRAMMING,
     SIMULATED,
     CommandName,
     CommandResult,
@@ -47,6 +48,7 @@ from contracts import (
     ConfigResult,
     ConfigState,
     CoreCommand,
+    ProgrammingState,
     CoreStatus,
     HealthCheck,
     HealthReport,
@@ -64,6 +66,11 @@ from contracts import (
     new_id,
     screen_speak_request,
 )
+import dataclasses as _dc
+
+from api.models.programming import AnnouncementFields, MacroCreateRequest
+from controller.announcements import Announcement
+from controller.macros import Macro
 from playout.renderer import TTS_PREFIX, UnknownClipError
 
 from .config_boundary import ConfigRejected, check_change
@@ -111,6 +118,7 @@ class ControlServer:
         clock: Callable[[], float] = time.monotonic,
         now: Optional[Callable[[], datetime]] = None,
         allow_simulate: bool = False,
+        assets_have: Optional[Callable[[str], bool]] = None,
     ) -> None:
         """`service` is the `RepeaterService`; `runtime` the `CoreRuntime`. `clock` is
         monotonic time (health); `now` is wall-clock time (request deadlines)."""
@@ -120,6 +128,7 @@ class ControlServer:
         #: The simulator injects events the radio did not send, and a simulated COS makes the
         #: repeater transmit. A core on a real radio refuses it unless this was asked for.
         self._allow_simulate = allow_simulate
+        self._assets_have = assets_have  # is there an uploaded clip with this id? None: not checked here
         self._version = version
         self._clock = clock
         self._started = clock()
@@ -133,6 +142,7 @@ class ControlServer:
         self._ledger = IdempotencyLedger()
         self._get: dict[str, Callable[[], dict]] = {
             "/health": self._health, "/status": self._status, "/config": self._config_state,
+            "/programming": self._programming_state,
         }
         self._post: dict[str, Callable[[bytes], Awaitable[dict]]] = {
             "/speak": self._speak, "/config": self._config_change, "/command": self._command,
@@ -501,6 +511,52 @@ class ControlServer:
         _logger.info("config.change applied (%d settings: %s)", len(request.values), ", ".join(sorted(request.values)))
         return self._config_result(request, ConfigResult.APPLIED)
 
+    def _programming_state(self) -> dict:
+        """`GET /programming`: the macros and announcements, each announcement with when the
+        core's scheduler will next play it."""
+        service = self._service
+        announcements = []
+        for announcement in service.list_announcements():
+            when = service.next_announcement_run(announcement.id)
+            announcements.append({**_dc.asdict(announcement), "next_run": when.isoformat() if when else None})
+        message = ProgrammingState(
+            header=self._header(), version=self._config_version,
+            macros=[_dc.asdict(macro) for macro in service.list_macros()], announcements=announcements,
+        )
+        return json.loads(message.model_dump_json())
+
+    def _apply_programming(self, request: CoreCommand) -> Optional[dict]:
+        """Run a macro or announcement command. Returns a refusal answer, or None if done."""
+        service, name, params = self._service, request.command, request.params
+        try:
+            if name is CommandName.ADD_MACRO:
+                try:
+                    macro = Macro(**MacroCreateRequest.model_validate(params["macro"]).model_dump())
+                except (ValidationError, ValueError, TypeError):
+                    return self._command_refused(request, "command.invalid_macro", "that is not a valid macro")
+                service.add_macro(macro)
+            elif name is CommandName.DELETE_MACRO:
+                service.delete_macro(params["pattern"])
+            elif name is CommandName.SAVE_ANNOUNCEMENT:
+                fields = dict(params["announcement"])
+                identifier = fields.pop("id", None)
+                try:
+                    if not isinstance(identifier, str) or not identifier or len(identifier) > 64:
+                        raise ValueError("an announcement needs an id")
+                    checked = AnnouncementFields.model_validate(fields)
+                except (ValidationError, ValueError, TypeError):
+                    return self._command_refused(request, "command.invalid_announcement", "that is not a valid announcement")
+                if checked.asset_id and self._assets_have is not None and not self._assets_have(checked.asset_id):
+                    return self._command_refused(request, "command.unknown_asset", "no audio clip has that id")
+                service.save_announcement(Announcement(id=identifier, **checked.model_dump()))
+            elif name is CommandName.DELETE_ANNOUNCEMENT:
+                service.delete_announcement(params["announcement_id"])
+        except Exception:  # noqa: BLE001 - nothing a client sent may reach the controller as a crash
+            _logger.exception("core.command %s could not be applied", name.value)
+            return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
+        self._config_changed(None)  # macros and announcements count as a change: clients read them again
+        return None
+
     # -- commands (the trusted API channel) -----------------------------------------------------
 
     def _command_result(self, request: CoreCommand, status: CommandStatus, error: Optional[StructuredError] = None) -> dict:
@@ -531,6 +587,12 @@ class ControlServer:
                 "This core is on a real radio and does not accept simulated events. "
                 "Start it with MOREOPENREPEATER_CORE_SIMULATE=1 to allow them.",
             )
+        if name in PROGRAMMING:
+            refusal = self._apply_programming(request)
+            if refusal is not None:
+                return refusal
+            _logger.info("core.command %s applied", name.value)
+            return self._command_result(request, CommandStatus.APPLIED)
         if name is CommandName.CLEAR_LOCKOUT and not service.locked_out:
             return self._command_refused(request, "command.not_locked_out", "The repeater isn't locked out.")
         try:

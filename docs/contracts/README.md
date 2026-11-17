@@ -81,7 +81,8 @@ lose a value without anyone noticing. Secrets go by name (`secret_refs`) and are
 read from a Docker secret or environment file. A module answers with
 `ConfigApplied`: `applied`, `restart_required` or `rejected` (with an error).
 
-**Contract version 1.3.** `CoreCommand` and `CommandResult`: the API's one-shot commands
+**Contract version 1.3.** `ProgrammingState` (the macros and scheduled announcements) and
+`CoreCommand` and `CommandResult`: the API's one-shot commands
 to the core (clear a lockout, net mode, the simulator), on the same trusted channel as
 1.2 and not for modules.
 

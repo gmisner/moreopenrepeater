@@ -29,6 +29,10 @@ class CommandName(str, Enum):
     SIMULATE_CTCSS = "simulate_ctcss"
     SIMULATE_DTMF = "simulate_dtmf"
     SIMULATE_REMOTE_KEYED = "simulate_remote_keyed"
+    ADD_MACRO = "add_macro"
+    DELETE_MACRO = "delete_macro"
+    SAVE_ANNOUNCEMENT = "save_announcement"
+    DELETE_ANNOUNCEMENT = "delete_announcement"
 
 
 #: The commands that make the controller act on an event that did not come from the radio.
@@ -36,8 +40,16 @@ SIMULATED = frozenset(
     {CommandName.SIMULATE_COS, CommandName.SIMULATE_CTCSS, CommandName.SIMULATE_DTMF, CommandName.SIMULATE_REMOTE_KEYED}
 )
 
+#: The commands that change the macros or the scheduled announcements.
+PROGRAMMING = frozenset(
+    {CommandName.ADD_MACRO, CommandName.DELETE_MACRO, CommandName.SAVE_ANNOUNCEMENT, CommandName.DELETE_ANNOUNCEMENT}
+)
+
 _DTMF = re.compile(r"^[0-9A-D*#]$")
 _NODE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+_PATTERN = re.compile(r"^[0-9A-D*#]{1,32}$")
+_IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+MAX_OBJECT_KEYS = 32
 
 #: command -> parameter name -> the kind of value it must be
 _PARAMS: dict[CommandName, dict[str, str]] = {
@@ -47,6 +59,12 @@ _PARAMS: dict[CommandName, dict[str, str]] = {
     CommandName.SIMULATE_CTCSS: {"tone_hz": "tone"},
     CommandName.SIMULATE_DTMF: {"digit": "digit"},
     CommandName.SIMULATE_REMOTE_KEYED: {"node_id": "node", "keyed": "bool"},
+    # The contract only checks the shape. The core validates a macro or an announcement with
+    # the same models the API's routes use (api.models.programming).
+    CommandName.ADD_MACRO: {"macro": "object"},
+    CommandName.DELETE_MACRO: {"pattern": "pattern"},
+    CommandName.SAVE_ANNOUNCEMENT: {"announcement": "object"},
+    CommandName.DELETE_ANNOUNCEMENT: {"announcement_id": "identifier"},
 }
 
 
@@ -61,6 +79,12 @@ def _valid(kind: str, value: Any) -> bool:
         return isinstance(value, str) and bool(_DTMF.match(value))
     if kind == "node":
         return isinstance(value, str) and bool(_NODE.match(value))
+    if kind == "pattern":
+        return isinstance(value, str) and bool(_PATTERN.match(value))
+    if kind == "identifier":
+        return isinstance(value, str) and bool(_IDENTIFIER.match(value))
+    if kind == "object":
+        return isinstance(value, dict) and len(value) <= MAX_OBJECT_KEYS and all(isinstance(k, str) for k in value)
     return False
 
 

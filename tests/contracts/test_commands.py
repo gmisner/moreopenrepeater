@@ -68,3 +68,33 @@ def test_a_result_needs_a_request_and_a_rejection_needs_an_error():
     )
     assert ok.status is CommandStatus.REJECTED
     assert {c.value for c in CommandName} >= {"clear_lockout", "set_net_active"}
+
+
+@pytest.mark.parametrize(
+    "command, params",
+    [
+        ("add_macro", {"macro": {"pattern": "*71", "description": "x"}}),
+        ("delete_macro", {"pattern": "*71"}),
+        ("save_announcement", {"announcement": {"id": "a1", "name": "n", "message": "hi"}}),
+        ("delete_announcement", {"announcement_id": "a1b2-c3_d4"}),
+    ],
+)
+def test_programming_commands_are_accepted(command, params):
+    assert CoreCommand(header=header(), command=command, params=params)
+
+
+@pytest.mark.parametrize(
+    "command, params",
+    [
+        ("add_macro", {"macro": "not an object"}),
+        ("add_macro", {"macro": {str(i): i for i in range(40)}}),
+        ("delete_macro", {"pattern": "../x"}),
+        ("delete_macro", {"pattern": ""}),
+        ("save_announcement", {"announcement": ["a"]}),
+        ("delete_announcement", {"announcement_id": "a/b"}),
+        ("delete_announcement", {"announcement_id": "x" * 65}),
+    ],
+)
+def test_malformed_programming_commands_are_refused(command, params):
+    with pytest.raises(ValidationError):
+        CoreCommand(header=header(), command=command, params=params)

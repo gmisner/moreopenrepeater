@@ -37,14 +37,21 @@ from contracts import (
     CoreCommand,
     CoreStatus,
     Header,
+    PROGRAMMING,
+    ProgrammingState,
     Sequencer,
     Source,
     new_id,
 )
+
+from controller.announcements import Announcement
 from controller.config import RepeaterConfig
+from controller.macros import Macro
 from controller.modes import effective_config
 
 from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
+from playout.renderer import ASSET_PREFIX, TTS_PREFIX
+
 from .service.snapshot import StatusSnapshot
 
 _logger = logging.getLogger("moreopenrepeater.remote_core")
@@ -81,6 +88,9 @@ class RemoteCore:
         self._config_version: Optional[int] = None  # the version `_config` is at
         self._announced_version: Optional[int] = None  # the newest version the core has told us of
         self._fetching: Optional[asyncio.Task] = None
+        self._macros: Optional[list[Macro]] = None
+        self._announcements: list[Announcement] = []
+        self._next_runs: dict[str, Optional[datetime]] = {}
         self._sequencer = Sequencer()
 
     # -- lifecycle ------------------------------------------------------------
@@ -154,6 +164,27 @@ class RemoteCore:
         """The settings in force: the saved ones with net mode applied, as the controller runs them."""
         net_active = bool(self._snapshot and self._snapshot.net_active)
         return effective_config(self.saved_config, net_active)
+
+    # -- macros and announcements, read from the cache ----------------------------------------
+
+    def list_macros(self) -> list[Macro]:
+        if self._macros is None:
+            raise CoreUnavailable("the core has not been reached yet, so its macros are not known")
+        return list(self._macros)
+
+    def list_announcements(self) -> list[Announcement]:
+        if self._macros is None:
+            raise CoreUnavailable("the core has not been reached yet, so its announcements are not known")
+        return list(self._announcements)
+
+    def next_announcement_run(self, announcement_id: str) -> Optional[datetime]:
+        return self._next_runs.get(announcement_id)
+
+    def announcement_clip(self, announcement: Announcement) -> str:
+        """The clip name for an announcement: its recording, or its message as speech."""
+        if announcement.asset_id:
+            return ASSET_PREFIX + announcement.asset_id
+        return TTS_PREFIX + announcement.message
 
     @property
     def config_version(self) -> Optional[int]:
@@ -302,6 +333,7 @@ class RemoteCore:
     async def _fetch_config_quietly(self) -> None:
         try:
             await self._fetch_config()
+            await self._fetch_programming()
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 - the next status event tries again
@@ -317,6 +349,23 @@ class RemoteCore:
         self._config_version = state.config_version
         if self._announced_version is not None and self._announced_version != state.config_version:
             self._refresh_config()  # it moved on while we were reading
+
+    async def _fetch_programming(self) -> None:
+        async with self._client() as client:
+            response = await client.get("/programming")
+        if response.status_code != 200 or len(response.content) > MAX_CONFIG_BYTES:
+            raise RuntimeError(f"core answered {response.status_code}")
+        state = ProgrammingState.model_validate_json(response.content)
+        macro_fields = {f.name for f in dataclasses.fields(Macro)}
+        announcement_fields = {f.name for f in dataclasses.fields(Announcement)}
+        macros = [Macro(**{k: v for k, v in item.items() if k in macro_fields}) for item in state.macros]
+        announcements, runs = [], {}
+        for item in state.announcements:
+            announcement = Announcement(**{k: v for k, v in item.items() if k in announcement_fields})
+            announcements.append(announcement)
+            when = item.get("next_run")
+            runs[announcement.id] = datetime.fromisoformat(when) if when else None
+        self._macros, self._announcements, self._next_runs = macros, announcements, runs
 
     def _header(self) -> Header:
         return Header(
@@ -361,6 +410,12 @@ class RemoteCore:
                 error.code if error else "command.rejected", error.message if error else "the core refused the command",
                 retryable=bool(error and error.retryable),
             )
+        if request.command in PROGRAMMING:
+            try:
+                await self._fetch_programming()  # so the lists a route returns next are current
+            except Exception:  # noqa: BLE001 - it IS applied; the cache catches up on the next event
+                _logger.warning("the change was applied but the lists could not be read back")
+                self._refresh_config()
 
     async def change_config(self, **overrides: object) -> RepeaterConfig:
         """Ask the core to change settings and wait for its answer.

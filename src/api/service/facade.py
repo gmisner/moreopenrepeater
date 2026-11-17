@@ -460,6 +460,10 @@ class RepeaterService:
             "simulate_ctcss": self.simulate_ctcss,
             "simulate_dtmf": self.simulate_dtmf,
             "simulate_remote_keyed": self.simulate_remote_keyed,
+            "add_macro": lambda macro: self.add_macro(Macro(**macro)),
+            "delete_macro": self.delete_macro,
+            "save_announcement": lambda announcement: self.save_announcement(Announcement(**announcement)),
+            "delete_announcement": self.delete_announcement,
         }
         handler = handlers.get(name)
         if handler is None:

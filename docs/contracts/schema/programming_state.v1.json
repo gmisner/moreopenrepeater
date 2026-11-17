@@ -1,0 +1,140 @@
+{
+  "$defs": {
+    "Header": {
+      "additionalProperties": false,
+      "description": "Common header on commands, events, health, status and config messages.",
+      "properties": {
+        "boot_id": {
+          "pattern": "^[A-Za-z0-9_-]{8,64}$",
+          "title": "Boot Id",
+          "type": "string"
+        },
+        "correlation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_-]{8,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Correlation Id"
+        },
+        "emitted_at": {
+          "format": "date-time",
+          "title": "Emitted At",
+          "type": "string"
+        },
+        "message_id": {
+          "pattern": "^[A-Za-z0-9_-]{8,64}$",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_-]{8,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        }
+      },
+      "required": [
+        "schema_version",
+        "message_id",
+        "emitted_at",
+        "boot_id",
+        "seq",
+        "source"
+      ],
+      "title": "Header",
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "properties": {
+        "module": {
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+          "title": "Module",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "module",
+        "version"
+      ],
+      "title": "Source",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The macros and scheduled announcements the core holds (`GET /programming`). For the\nAPI's trusted channel, like `ConfigState`. An announcement carries `next_run` (an ISO\ntime or null), which only the core's scheduler knows.",
+  "properties": {
+    "announcements": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "maxItems": 1000,
+      "title": "Announcements",
+      "type": "array"
+    },
+    "header": {
+      "$ref": "#/$defs/Header"
+    },
+    "kind": {
+      "const": "programming.state",
+      "default": "programming.state",
+      "title": "Kind",
+      "type": "string"
+    },
+    "macros": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "maxItems": 1000,
+      "title": "Macros",
+      "type": "array"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "header",
+    "version",
+    "macros",
+    "announcements"
+  ],
+  "title": "ProgrammingState",
+  "type": "object"
+}

@@ -181,6 +181,12 @@ by the contract and again by the core.
   and `command.unsafe_snapshot` (a blank callsign or an unusable number) apply nothing. It
   carries credentials and is never logged. A `/command` body may be up to 256 KiB for this.
   There is no export endpoint: the API builds the export from `/config` and `/programming`.
+- `gpio_set_output(pin, on)`, `remote_base_retune()`, `autopatch_dial(number, actor)` and
+  `autopatch_hangup(reason)` act on the radio side's hardware for the dashboard. The core's own
+  checks apply and a refusal is `command.hardware_refused` with its reason in words (no CM108, an
+  output that is not set up as one, "The transmitter is off.", "That number is not allowed."). The
+  number dialled and who asked are the API's audit record and are not in the core's log. No
+  simulator flag is needed: these are real actions, and the API's role checks guard them.
 - `queue_clip(clip, on_linked_radio)` renders a clip (`id`, `asset:<id>`, `tts:<text>`) off
   the event loop with a 30 s deadline, then queues it to play: what the dashboard's play
   buttons and the API's modules do in process. Refusals are `command.unknown_clip`,

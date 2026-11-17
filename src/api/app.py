@@ -229,7 +229,7 @@ def create_app(
 
     @app.exception_handler(CommandRefused)
     async def core_refused_a_command(request: Request, error: CommandRefused) -> JSONResponse:
-        status = {"command.not_locked_out": 409, "command.simulation_disabled": 403}.get(error.code, 422)
+        status = {"command.not_locked_out": 409, "command.simulation_disabled": 403, "command.hardware_refused": 409}.get(error.code, 422)
         return JSONResponse(status_code=status, content={"detail": error.message, "code": error.code})
 
     @app.exception_handler(NotInSplitMode)

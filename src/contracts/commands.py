@@ -35,6 +35,10 @@ class CommandName(str, Enum):
     DELETE_ANNOUNCEMENT = "delete_announcement"
     QUEUE_CLIP = "queue_clip"
     IMPORT_SNAPSHOT = "import_snapshot"
+    GPIO_SET_OUTPUT = "gpio_set_output"
+    REMOTE_BASE_RETUNE = "remote_base_retune"
+    AUTOPATCH_DIAL = "autopatch_dial"
+    AUTOPATCH_HANGUP = "autopatch_hangup"
 
 
 #: The commands that make the controller act on an event that did not come from the radio.
@@ -47,10 +51,19 @@ PROGRAMMING = frozenset(
     {CommandName.ADD_MACRO, CommandName.DELETE_MACRO, CommandName.SAVE_ANNOUNCEMENT, CommandName.DELETE_ANNOUNCEMENT}
 )
 
+#: The commands that act on the radio side's hardware: an output pin, the remote base, a phone call.
+HARDWARE = frozenset(
+    {
+        CommandName.GPIO_SET_OUTPUT, CommandName.REMOTE_BASE_RETUNE, CommandName.AUTOPATCH_DIAL,
+        CommandName.AUTOPATCH_HANGUP,
+    }
+)
+
 _DTMF = re.compile(r"^[0-9A-D*#]$")
 _NODE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 #: The longest clip name the core takes: "tts:" and up to 2000 characters of text, with room.
 MAX_CLIP_CHARS = 2100
+_DIGITS = re.compile(r"^[0-9]{1,15}$")
 _PATTERN = re.compile(r"^[0-9A-D*#]{1,32}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 MAX_OBJECT_KEYS = 32
@@ -75,6 +88,12 @@ _PARAMS: dict[CommandName, dict[str, str]] = {
     # Replace the whole configuration, macros and announcements (a restore). The core checks
     # it with the same validation the dashboard's restore uses. It carries credentials.
     CommandName.IMPORT_SNAPSHOT: {"snapshot": "object"},
+    # The core checks these against its own configuration too (an output must be set up as one, a number
+    # must be allowed, the transmitter must be on).
+    CommandName.GPIO_SET_OUTPUT: {"pin": "pin", "on": "bool"},
+    CommandName.REMOTE_BASE_RETUNE: {},
+    CommandName.AUTOPATCH_DIAL: {"number": "digits", "actor": "text"},
+    CommandName.AUTOPATCH_HANGUP: {"reason": "text"},
 }
 
 
@@ -91,6 +110,12 @@ def _valid(kind: str, value: Any) -> bool:
         return isinstance(value, str) and bool(_NODE.match(value))
     if kind == "clip":
         return isinstance(value, str) and 0 < len(value) <= MAX_CLIP_CHARS and "\x00" not in value
+    if kind == "pin":
+        return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 64
+    if kind == "digits":
+        return isinstance(value, str) and bool(_DIGITS.match(value))
+    if kind == "text":  # a short label (who asked, why): no control characters
+        return isinstance(value, str) and 0 < len(value) <= 200 and value.isprintable()
     if kind == "pattern":
         return isinstance(value, str) and bool(_PATTERN.match(value))
     if kind == "identifier":

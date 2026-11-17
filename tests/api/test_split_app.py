@@ -161,13 +161,43 @@ def test_with_the_core_away_a_hardware_page_says_so_rather_than_showing_an_old_s
     assert client.get("/metrics").status_code == 200  # and metrics still answer
 
 
-def test_acting_on_the_hardware_is_not_available_yet(split):
+def test_acting_on_the_hardware_goes_through_the_core_and_its_refusals_come_back(split, monkeypatch):
     client, remote, core, _ = split
     wait_for(lambda: remote._hardware_at is not None)
-    before = core.runtime.gpio.status()
+    # The core has no CM108 here, so it refuses in its own words, and they reach the dashboard.
+    refused = client.put("/api/gpio/1", json={"on": True})
+    assert refused.status_code == 409 and "CM108" in refused.json()["detail"]
+    dial = client.post("/api/autopatch/dial", json={"number": "5551234"})
+    assert dial.status_code == 409 and "autopatch" in dial.json()["detail"].lower()  # "Autopatch is turned off."
+    # With the core able to do it, it does it.
+    calls = []
+    monkeypatch.setattr(core.runtime.gpio, "set_output", lambda pin, on: calls.append(("gpio", pin, on)))
+    monkeypatch.setattr(core.runtime.remote_base, "retune", lambda: calls.append(("retune",)))
+    monkeypatch.setattr(core.runtime.autopatch, "hangup", lambda reason: calls.append(("hangup", reason)))
+    assert client.put("/api/gpio/3", json={"on": True}).status_code == 200
+    assert client.post("/api/link-radio/tune").status_code == 200
+    assert client.post("/api/autopatch/hangup").status_code == 200
+    assert calls[0] == ("gpio", 3, True) and calls[1] == ("retune",)
+    assert calls[2][0] == "hangup" and "dashboard" in calls[2][1]
+
+
+def test_a_call_is_placed_by_the_core_with_the_dashboard_user_as_the_actor(split, monkeypatch):
+    client, remote, core, _ = split
+    wait_for(lambda: remote._hardware_at is not None)
+    dialled = []
+    monkeypatch.setattr(core.runtime.autopatch, "dial", lambda number, actor: dialled.append((number, actor)) or None)
+    response = client.post("/api/autopatch/dial", json={"number": "5551234"})
+    assert response.status_code == 200, response.text
+    assert dialled == [("5551234", "local")]
+
+
+def test_with_the_core_away_a_hardware_command_says_nothing_was_done(split):
+    client, remote, core, thread = split
+    wait_for(lambda: remote._hardware_at is not None)
+    asyncio.run_coroutine_threadsafe(thread.server.stop(), thread.loop).result(5)
+    wait_for(lambda: not remote.connected)
     response = client.post("/api/autopatch/hangup")
-    assert response.status_code == 503 and response.json()["code"] == "core.hardware"  # a command, not a status
-    assert core.runtime.gpio.status() == before  # and nothing was touched
+    assert response.status_code == 503 and response.json()["code"] == "core.unavailable"
 
 
 def test_the_trunk_page_is_still_the_cores_alone(split):

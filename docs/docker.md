@@ -17,9 +17,12 @@ and the pages that are not the radio. **The pages about the core's hardware show
 reports** (audio engine, GPIO and fan, link radio and remote base, monitor receiver, autopatch, the
 AllStar node, DMR), read over the socket every couple of seconds. With the core away they say so
 (a 503 `core.unavailable`) instead of showing an old state, and the status panels are left out.
-**Acting on them does not work yet**: turning a GPIO output on, dialling, saving a trunk, tuning the
-remote base, selecting a DMR talkgroup and the audio tools answer 503 `core.hardware`, because the
-core does not take those commands over the socket yet. The SIP trunk page needs the core's Asterisk
+**Acting on them mostly works**: switching a GPIO output, re-tuning the remote base, and placing and
+ending an autopatch call are commands the core takes over the socket and checks itself (an output must
+be set up as one, the transmitter must be on, the number must be allowed), and its refusal comes back
+in its own words (a 409). The rest does not yet: selecting a DMR talkgroup, the AllStar node and DMR
+setup (they edit the host's Asterisk and DMR files), saving a trunk, and the audio tools answer 503
+`core.hardware`. The SIP trunk page needs the core's Asterisk
 files and is unavailable. The core's weather macro cannot see the API's NWS alerts and says weather is
 not set up; the API's own weather page and alerts work.
 

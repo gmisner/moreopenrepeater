@@ -13,7 +13,11 @@
         "save_announcement",
         "delete_announcement",
         "queue_clip",
-        "import_snapshot"
+        "import_snapshot",
+        "gpio_set_output",
+        "remote_base_retune",
+        "autopatch_dial",
+        "autopatch_hangup"
       ],
       "title": "CommandName",
       "type": "string"

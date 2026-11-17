@@ -759,10 +759,14 @@ class AppRuntime:
         last_tick: list[Optional[float]] = [None]
         watchdog.watch("controller", lambda: last_tick[0])
         watchdog.watch("audio engine", live_audio.progress)
+        watchdog.watch("link radio audio engine", link_radio.progress)
 
         def before_watchdog_restart(stalled: str) -> None:
             try:
-                live_audio.release_ptt()
+                try:
+                    live_audio.release_ptt()
+                finally:
+                    link_radio.release_ptt()  # unkey the link radio even if the main one failed
             finally:
                 # Remember even if unkey fails so the next start reports a watchdog
                 # restart instead of a generic crash.

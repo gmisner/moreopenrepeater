@@ -46,7 +46,9 @@ Measured on `main`, outside `src/api/service`:
 - The API reaches the core through one object, `RepeaterService`, using about
   45 distinct members. The most used are `config` (33 uses), `saved_config`
   (15), `snapshot` (14) and `programming` (11). The rest are one to five each.
-- Only 9 places reach through the service to `controller` directly.
+- Only 2 places reach through the service to `controller` directly
+  (`api/live_audio.py` and `api/routes/core.py`). An earlier count of 9 also
+  included `LinkRadio`'s own controller, which is not the service's.
 - `src/controller/**` already imports only stdlib and itself (F2).
 
 So the seam is narrow. The work is mostly in two places: untangling start-up

@@ -40,7 +40,8 @@ echo MOR_DATA_DIR=/srv/mor-data >> .env
 ## What the container is allowed to do
 
 - Runs as uid 999 (the uid of `install-pi.sh`'s `moreopenrepeater` user on a Pi), with a
-  read-only root, no capabilities and `no-new-privileges`.
+  read-only root, no capabilities and `no-new-privileges`. Docker's default seccomp
+  filter is off (see Measured on a Pi).
 - Gets `/dev/snd` and one `hidraw` node (`MOR_PTT_HIDRAW`, default `/dev/hidraw0`).
   The group numbers for `audio` and `dialout` are the same on Debian and Pi OS;
   the `gpio` group number differs, so it is `MOR_GPIO_GID`. GPIO pins are not
@@ -83,19 +84,24 @@ and `PIPER_VOICE=<name>` in `core.env`; it downloads into the data folder when
 first needed. Build with `--build-arg WITH_PIPER=0` for a smaller image that
 uses `espeak-ng` only. Kokoro is not in the image.
 
-## Measured on a Pi, and not yet explained
+## Measured on a Pi
 
 On a Pi 4 (Debian 13, AIOC, 4 cores) the container starts, finds the sound card and
 the CM108, keys for the scheduled ID and unkeys, and is followed by `RemoteCore`
-through the volume's socket. One result is **not good yet**: while idle the
-container logs a pair of `audio glitch` lines (a sound card receive overrun and a
-transmit underrun, "not transmitting") about every one to four minutes. The same
-core run directly by systemd on the same Pi, over nine minutes, logged none. Turning
-off the Piper server did not change it, and the scheduled ID in the container
-transmitted without a glitch, so the cause is something about running in the
-container. Candidates to try: Docker's default seccomp profile, the container's CPU
-weight (the systemd unit sets `Nice=-10` and `CPUWeight=200`), and the log driver.
-Do not rely on the container for a repeater people use until this is understood.
+through the volume's socket.
+
+**Docker's default seccomp profile broke the audio.** With it, the container logged a
+pair of `audio glitch` lines (a sound card receive overrun and a transmit underrun)
+every one to four minutes while idle, across several runs. The same core run by
+systemd logged none in nine minutes. Turning off the Piper server and turning off
+the health check changed nothing; turning off seccomp (`seccomp=unconfined`) gave
+15 minutes with no glitch after start-up and, with the health check on, 12 more
+minutes with none. The audio worker makes a steady stream of small system calls, and
+the filter adds a cost to each that a Pi cannot always afford. So `compose.yaml`
+sets `seccomp=unconfined`, and keeps the rest: non-root user, read-only root, no
+capabilities, `no-new-privileges`. A tight allowlist profile for this container
+(the core uses few system calls) would restore the filter; that is a later slice,
+and it must be measured the same way.
 
 Also found:
 

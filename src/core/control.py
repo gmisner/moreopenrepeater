@@ -104,6 +104,9 @@ MAX_BODY_BYTES = 16 * 1024
 MAX_CONFIG_BODY_BYTES = 64 * 1024
 #: A command can carry a whole snapshot (a restore): every setting, macro and announcement.
 MAX_COMMAND_BODY_BYTES = 256 * 1024
+#: The macro actions the API's modules own. A client names the ones it handles when it connects.
+MACRO_FAMILIES = frozenset({"net", "homeassistant", "metar", "sensor", "mailbox", "aprs"})
+MACRO_QUEUE_LIMIT = 32  # per client; a client that cannot keep up loses the newest
 RENDER_DEADLINE_SECONDS = 30.0  # to prepare speech before giving up on a request
 #: Longer than any normal pause (the tick runs every 50 ms); the same figure the
 #: systemd watchdog uses.
@@ -159,6 +162,9 @@ class ControlServer:
         #: net mode). The API sends the version it last saw to detect a concurrent change.
         self._config_version = 1
         self._config_waiters: set[asyncio.Event] = set()  # one per open /events stream
+        #: One per open /events stream: the macro families it handles and a queue for its events.
+        self._macro_clients: list[tuple[frozenset, asyncio.Queue]] = []
+        service.programming.api_action = self._api_action
         service.add_config_listener(self._config_changed)
 
     # -- lifecycle ------------------------------------------------------------
@@ -193,6 +199,8 @@ class ControlServer:
         os.unlink(self.path)
 
     async def stop(self) -> None:
+        if self._service.programming.api_action == self._api_action:
+            self._service.programming.api_action = None  # macros fall back to "not available"
         server, self._server = self._server, None
         if server is not None:
             server.close()
@@ -227,7 +235,7 @@ class ControlServer:
                 await self._respond(writer, error.status, error.body())
                 return
             if method == "GET" and target.split("?", 1)[0] == "/events":
-                await self._stream_events(reader, writer)
+                await self._stream_events(reader, writer, _handled_families(target))
                 return
             status, answer = await self._dispatch(method, target, body)
             await self._respond(writer, status, answer)
@@ -370,7 +378,9 @@ class ControlServer:
 
     # -- events (server-sent) ------------------------------------------------------------
 
-    async def _stream_events(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    async def _stream_events(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, handles: frozenset = frozenset()
+    ) -> None:
         """`GET /events`: the current status at once, then a `status` event whenever it
         changes (at most ten a second) and a `heartbeat` every few seconds. A client
         that falls behind or goes away is dropped; it never slows the core."""
@@ -382,8 +392,12 @@ class ControlServer:
         gone = asyncio.ensure_future(_until_eof(reader))  # finishes when the client hangs up
         config_event = asyncio.Event()  # set when the configuration changes
         self._config_waiters.add(config_event)
+        macro_queue: asyncio.Queue = asyncio.Queue(maxsize=MACRO_QUEUE_LIMIT)
+        client = (handles, macro_queue)
+        self._macro_clients.append(client)
         waiting: Optional[asyncio.Future] = None  # the next snapshot
         config_changed: Optional[asyncio.Future] = None
+        macro_waiting: Optional[asyncio.Future] = None  # the next macro action for this client
         try:
             writer.write(
                 b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n"
@@ -397,11 +411,13 @@ class ControlServer:
                     waiting = asyncio.ensure_future(queue.get())
                 if config_changed is None:
                     config_changed = asyncio.ensure_future(config_event.wait())
+                if macro_waiting is None:
+                    macro_waiting = asyncio.ensure_future(macro_queue.get())
                 # A heartbeat is due HEARTBEAT_SECONDS after the last thing written, even
                 # while snapshots keep arriving that are not worth sending.
                 due = max(0.0, HEARTBEAT_SECONDS - (time.monotonic() - last_write))
                 done, _ = await asyncio.wait(
-                    {waiting, gone, config_changed}, timeout=due, return_when=asyncio.FIRST_COMPLETED
+                    {waiting, gone, config_changed, macro_waiting}, timeout=due, return_when=asyncio.FIRST_COMPLETED
                 )
                 if gone in done:
                     return
@@ -412,6 +428,11 @@ class ControlServer:
                     config_changed = None
                     sent = self._service.snapshot()
                     await self._send_event(writer, "status", self._event_payload(sent))
+                    last_write = time.monotonic()
+                if macro_waiting in done:
+                    item = macro_waiting.result()
+                    macro_waiting = None
+                    await self._send_event(writer, "macro", item)
                     last_write = time.monotonic()
                 if waiting in done:
                     snapshot = waiting.result()
@@ -429,10 +450,12 @@ class ControlServer:
                     await self._send_event(writer, "heartbeat", self._heartbeat_payload())
                     last_write = time.monotonic()
         finally:
-            for task in (gone, waiting, config_changed):
+            for task in (gone, waiting, config_changed, macro_waiting):
                 if task is not None and not task.done():
                     task.cancel()
             self._config_waiters.discard(config_event)
+            if client in self._macro_clients:
+                self._macro_clients.remove(client)
             self._service.unsubscribe(queue)
             self._streams -= 1
 
@@ -517,6 +540,20 @@ class ControlServer:
             ))
         _logger.info("config.change applied (%d settings: %s)", len(request.values), ", ".join(sorted(request.values)))
         return self._config_result(request, ConfigResult.APPLIED)
+
+    def _api_action(self, family: str, args: list) -> bool:
+        """A macro asked for something the API's modules do. Deliver it to every connected
+        client that handles `family` and say whether any took it. It never waits, and the
+        arguments (a mailbox PIN, say) are never logged."""
+        taken = False
+        for handles, queue in self._macro_clients:
+            if family in handles:
+                try:
+                    queue.put_nowait({"family": family, "args": args})
+                    taken = True
+                except asyncio.QueueFull:
+                    _logger.warning("a client is not keeping up; dropped a %s macro action for it", family)
+        return taken
 
     def _link_events(self) -> dict:
         """`GET /link-events`: recent link activity, newest first (all the core keeps)."""
@@ -787,6 +824,16 @@ async def _until_eof(reader: asyncio.StreamReader) -> None:
         await reader.read()
     except (ConnectionError, OSError):
         pass
+
+
+def _handled_families(target: str) -> frozenset:
+    """The macro families a client says it handles: `/events?handles=net,metar`. Unknown names are ignored."""
+    _, _, query = target.partition("?")
+    for part in query.split("&"):
+        name, _, value = part.partition("=")
+        if name == "handles":
+            return frozenset(f for f in value.split(",") if f in MACRO_FAMILIES)
+    return frozenset()
 
 
 def _is_news(sent, new) -> bool:

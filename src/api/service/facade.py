@@ -451,6 +451,15 @@ class RepeaterService:
     async def change_config(self, **overrides: object) -> RepeaterConfig:
         return self._config.update(**overrides)
 
+    def register_macro_handler(self, family: str, handler: Callable) -> None:
+        hooks = {
+            "net": "net_hook", "homeassistant": "homeassistant_hook", "metar": "metar_hook",
+            "sensor": "sensor_hook", "mailbox": "mailbox_hook", "aprs": "aprs_summary",
+        }
+        if family not in hooks:
+            raise ValueError(f"not a macro family: {family}")
+        setattr(self._programming, hooks[family], handler)
+
     async def recent_link_events(self, limit: int = 50) -> list[dict]:
         return self.links.recent_events(limit)
 

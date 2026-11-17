@@ -675,8 +675,8 @@ class AppRuntime:
         def aprs_window_start() -> float:
             return time.time() - service.config.aprs.aprs_map_hours * 3600
 
-        service.programming.aprs_summary = lambda: spoken_summary(
-            aprs_stations.stations(aprs_window_start()), service.config, time.time()
+        service.register_macro_handler(
+            "aprs", lambda: spoken_summary(aprs_stations.stations(aprs_window_start()), service.config, time.time())
         )
         backups = backups or BackupFolder(None)
         updater = updater or Updater(updater_settings_from_env(os.environ))

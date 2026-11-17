@@ -73,6 +73,19 @@ curl -N --unix-socket /run/moreopenrepeater/core.sock http://core/events
   hangs up, is dropped, and it never slows the controller. Stopping the core ends
   every open stream.
 
+### Macro actions that belong to the API (`macro` events)
+
+Some macro actions are done by the API's modules, not the core: `net` (net_start, net_end),
+`homeassistant`, `metar`, `sensor`, `mailbox` and `aprs`. A client names the ones it handles
+when it connects, `GET /events?handles=net,metar`, and the core sends each such action to
+every connected client that handles it as an `event: macro` with `{"family", "args"}`
+(`args` are the arguments the in-process hook gets; a mailbox command carries its PIN, so
+they are never logged). Delivery is at most once, with no acknowledgement, and the core never
+waits: each client has a short queue and loses the newest if it cannot keep up. If no connected
+client handles the action, the core says what it says today for a missing module ("Airport
+weather is not set up.", "The mailbox is not available."; net mode only logs). When the control
+server stops, macros fall back to that too.
+
 ### `GET /link-events`
 
 Recent link activity (connects, disconnects, keying), newest first, as a `link.events`:

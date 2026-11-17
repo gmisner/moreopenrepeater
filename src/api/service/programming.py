@@ -11,6 +11,7 @@ from controller.events import CodedCommand, MailboxCommand, RunAction, SendLinkC
 from controller.macros import Macro
 from controller.remote_base import summary as remote_base_summary
 from controller.spoken_help import help_text
+from controller.state_machine import PRIORITY_NORMAL
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX
 
 from .snapshot import MAX_HELD_ANNOUNCEMENTS, talking_clock_text
@@ -255,10 +256,10 @@ class Programming:
         """Clip names from `due_announcements` (tests and callers that ignore the link flag)."""
         return [clip for clip, _ in self.due_announcements()]
 
-    def queue_announcement(self, clip: str, *, on_linked_radio: bool = False) -> bool:
+    def queue_announcement(self, clip: str, *, on_linked_radio: bool = False, priority: int = PRIORITY_NORMAL) -> bool:
         """Callers should render `clip` first (off the event loop) so the
         controller knows how long to hold PTT for."""
-        return self._host.controller.queue_announcement(clip, on_linked_radio=on_linked_radio)
+        return self._host.controller.queue_announcement(clip, on_linked_radio=on_linked_radio, priority=priority)
 
     def defer_announcement(self, clip: str, *, on_linked_radio: bool = False) -> None:
         """Hold `clip` until the net ends (when net_hold_announcements is on)."""

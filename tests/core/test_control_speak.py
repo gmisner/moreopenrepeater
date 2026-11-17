@@ -46,16 +46,17 @@ async def post(path, body, *, content_type="application/json", extra=b""):
 @pytest.fixture
 def fakes(core, monkeypatch):
     """No real synthesis, and the announcement queue is observable."""
-    state = {"queued": [], "deferred": [], "render_calls": 0, "queue_ok": True, "render": lambda clip, config: None}
+    state = {"queued": [], "priorities": [], "deferred": [], "render_calls": 0, "queue_ok": True, "render": lambda clip, config: None}
 
     def render(clip, config):
         state["render_calls"] += 1
         return state["render"](clip, config)
 
-    def queue(clip, on_linked_radio=False):
+    def queue(clip, on_linked_radio=False, priority=20):
         if not state["queue_ok"]:
             return False
         state["queued"].append(clip)
+        state["priorities"].append(priority)
         return True
 
     monkeypatch.setattr(core.runtime.renderer, "render", render)
@@ -303,3 +304,51 @@ def test_the_intended_client_can_post(core, sock_dir, fakes):
             assert SpeakDecision.model_validate(response.json()).status is SpeakStatus.ACCEPTED
 
     run(core, sock_dir, scenario)
+
+
+# --- priority ------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("name,value", [("low", 10), ("normal", 20), ("high", 30), ("emergency", 40)])
+def test_the_priority_reaches_the_core_queue(core, sock_dir, fakes, name, value):
+    async def scenario(path, server):
+        assert (await post(path, make_request(priority=value)))[0] == 200
+
+    run(core, sock_dir, scenario)
+    assert fakes["priorities"] == [value]
+
+
+def test_an_emergency_is_not_held_back_by_a_net_but_a_high_priority_one_is(core, sock_dir, fakes):
+    core.service.set_net_active(True)
+    core.service.update_config(net_hold_announcements=True)
+
+    async def scenario(path, server):
+        await post(path, make_request(priority=30))  # high: held until the net ends
+        await post(path, make_request(priority=40))  # emergency: queued now, to play at the next idle
+
+    run(core, sock_dir, scenario)
+    assert len(fakes["deferred"]) == 1 and len(fakes["queued"]) == 1
+    assert fakes["priorities"] == [40]
+
+
+def test_an_emergency_is_still_refused_when_the_transmitter_is_disabled(core, sock_dir, fakes):
+    core.service.update_config(transmitter_enabled=False)
+
+    async def scenario(path, server):
+        decision = SpeakDecision.model_validate((await post(path, make_request(priority=40)))[1])
+        assert decision.status is SpeakStatus.REJECTED and decision.error.code == "speak.transmitter_disabled"
+
+    run(core, sock_dir, scenario)
+
+
+def test_priority_orders_real_requests_in_the_real_queue(core, sock_dir, monkeypatch):
+    """No fakes for the queue: requests go through the real controller queue."""
+    monkeypatch.setattr(core.runtime.renderer, "render", lambda clip, config: None)
+
+    async def scenario(path, server):
+        for text, priority in [("routine", 20), ("alert", 40), ("minor", 10)]:
+            assert (await post(path, make_request(text=text, priority=priority)))[0] == 200
+
+    run(core, sock_dir, scenario)
+    assert [clip.removeprefix(TTS_PREFIX) for clip in core.service.controller.queued_announcements] == [
+        "alert", "routine", "minor"
+    ]

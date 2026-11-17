@@ -42,6 +42,7 @@ from contracts import (
     HealthState,
     Header,
     IdempotencyLedger,
+    Priority,
     PttEvidence,
     Sequencer,
     SpeakDecision,
@@ -367,7 +368,8 @@ class ControlServer:
         if not service.config.transmitter_enabled:
             return rejected("speak.transmitter_disabled", "The transmitter is disabled.", False)
         clip = TTS_PREFIX + request.text
-        if service.net_active and service.saved_config.net_hold_announcements:
+        emergency = request.priority >= Priority.EMERGENCY
+        if service.net_active and service.saved_config.net_hold_announcements and not emergency:
             service.defer_announcement(clip)  # held until the net ends, like a scheduled weather report
             return None
         loop = asyncio.get_running_loop()
@@ -385,7 +387,7 @@ class ControlServer:
             return SpeakStatus.EXPIRED, StructuredError(
                 code="speak.expired", message="The deadline passed while the speech was being prepared."
             )
-        if not service.queue_announcement(clip):
+        if not service.queue_announcement(clip, priority=int(request.priority)):
             return rejected("speak.queue_full", "Too many announcements are already waiting to play.", True)
         return None
 

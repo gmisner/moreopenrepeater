@@ -34,7 +34,7 @@ from controller.events import (
 from controller.macros import Macro
 from controller.modes import effective_config, held_reason
 from controller.config import RepeaterConfig
-from controller.state_machine import IDLE, PATCH, RECEIVING, RepeaterController
+from controller.state_machine import IDLE, PATCH, PRIORITY_NORMAL, RECEIVING, RepeaterController
 from playout.renderer import ClipRenderer
 from wx.nws import WeatherAlert
 
@@ -475,8 +475,8 @@ class RepeaterService:
     def due_announcement_clips(self) -> list[str]:
         return self._programming.due_announcement_clips()
 
-    def queue_announcement(self, clip: str, *, on_linked_radio: bool = False) -> bool:
-        return self._programming.queue_announcement(clip, on_linked_radio=on_linked_radio)
+    def queue_announcement(self, clip: str, *, on_linked_radio: bool = False, priority: int = PRIORITY_NORMAL) -> bool:
+        return self._programming.queue_announcement(clip, on_linked_radio=on_linked_radio, priority=priority)
 
     def weather_polled(self, geojson: dict, announce: bool = True) -> list[str]:
         return self._weather.polled(geojson, announce=announce)

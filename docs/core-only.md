@@ -69,42 +69,25 @@ text is content: it is never logged and never echoed back. Speech is prepared
 in the executor with a 30 second deadline, so a slow synthesis never holds up
 the controller tick.
 
-Known gap: `priority` is validated but the core's announcement queue has no
-priority yet, so it is not used. The `transmission_id` is not yet the
-correlation ID on PTT and transmission events (those events are not emitted yet).
+### Priority
 
-## Before you use it
+`priority` is `low` (10), `normal` (20, the default), `high` (30) or `emergency`
+(40). It orders what is waiting. **A radio transmission always comes first**
+(maintainer decision), so **it never interrupts anything:** a priority
+only moves a clip ahead of the others in the queue, and it plays at the next idle
+like any announcement. It does not cut off a user, the station ID or a
+transmission in progress.
 
-1. Set the repeater up with the normal service first. The core alone cannot be
-   set up, and it **refuses to start** if the saved configuration is missing,
-   unreadable, not valid JSON, or has no callsign. It never falls back to
-   defaults, because that would put an unidentified repeater on the air.
-2. A time-out, ID interval, hang time or link or autopatch limit that is not a
-   usable number is replaced by its default (logged as a warning), so a bad
-   value can't key the transmitter and drop it at once.
-3. Stop the normal service. The unit declares `Conflicts=moreopenrepeater.service`,
-   so systemd does this for you, but check:
-   `sudo systemctl stop moreopenrepeater`.
+- Highest priority plays first; the same priority plays in the order received.
+- The queue holds 10. When it is full, a request with a **higher** priority than
+  the lowest one waiting takes the place of the oldest of that lowest priority
+  (a warning is logged). Otherwise it is `rejected` as `speak.queue_full`.
+  An emergency is never dropped to make room for another request.
+- An accepted request can therefore be dropped later by a higher-priority one
+  when the queue is full. It is logged, and the requester is not told.
+- During a net that holds announcements, `emergency` is queued at once (to play
+  at the next idle); every other priority is held until the net ends.
+- A disabled transmitter refuses every priority, an emergency included.
 
-## Try it
-
-```
-sudo cp /opt/moreopenrepeater/packaging/moreopenrepeater-core.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl stop moreopenrepeater
-sudo systemctl start moreopenrepeater-core
-journalctl -u moreopenrepeater-core -f
-```
-
-To go back: `sudo systemctl stop moreopenrepeater-core && sudo systemctl start moreopenrepeater`.
-Do not `enable` it until you have tested it on your hardware.
-
-Exit code 2 means the saved configuration is unusable. systemd will not restart
-it (`RestartPreventExitStatus=2`); the journal says what to fix.
-
-## Status
-
-Verified by tests only (simulation). Not yet run on a Raspberry Pi. See the
-[design](research/core-extraction-design.md) for what must be shown on real
-hardware: stopping the API during a transmission does not interrupt PTT, the
-time-out or the ID, and killing the core drops PTT.
+Known gap: the `transmission_id` is not yet the correlation ID on PTT and
+transmission events (those events are not emitted yet).

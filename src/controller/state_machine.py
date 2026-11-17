@@ -43,6 +43,12 @@ PATCH = "patch"  # autopatch call: transmitter held up carrying the phone audio
 LOCKOUT = "lockout"  # stuck carrier: nothing is repeated until the channel goes quiet
 
 MAX_QUEUED_ANNOUNCEMENTS = 10
+# Announcement priorities. These match `contracts.Priority` (a test keeps them in
+# step); the controller imports nothing outside the standard library and itself.
+PRIORITY_LOW = 10
+PRIORITY_NORMAL = 20
+PRIORITY_HIGH = 30
+PRIORITY_EMERGENCY = 40
 TONE_BURST_GRACE = 5.0  # seconds a 1750 Hz burst heard without a carrier still opens the repeater
 ANNOUNCEMENT_FALLBACK_DURATION = 10.0
 
@@ -80,8 +86,9 @@ class RepeaterController:
         self._receiving_ptt = False  # the transmitter is up in RECEIVING (always, except on a simplex node)
         self._resume_state_after_id = IDLE
         self._remote_keyed: set[str] = set()
-        # (clip, on_linked_radio) — on_linked_radio mirrors the clip on Linked Radio TX.
-        self._announcements: list[tuple[str, bool]] = []
+        # (clip, on_linked_radio, priority), highest priority first and first come first
+        # served within a priority. on_linked_radio mirrors the clip on Linked Radio TX.
+        self._announcements: list[tuple[str, bool, int]] = []
         self._keyup_at: Optional[float] = None  # carrier seen while idle; keys up then if it lasts
         self.kerchunks_filtered = 0
         self._timeouts: list[float] = []  # recent timeouts, for the lockout
@@ -97,20 +104,36 @@ class RepeaterController:
     def set_macros(self, macros: list[Macro]) -> None:
         self._dtmf.set_macros(macros)
 
-    def queue_announcement(self, clip: str, *, on_linked_radio: bool = False) -> bool:
+    def queue_announcement(
+        self, clip: str, *, on_linked_radio: bool = False, priority: int = PRIORITY_NORMAL
+    ) -> bool:
         """Play `clip` the next time the channel is idle. Announcements never
-        interrupt a user or the ID; they wait their turn. Returns False (and
-        drops the clip) if too many are already waiting. `on_linked_radio`
-        also plays the clip on the Linked Radio when that port is up."""
+        interrupt a user or the ID; they wait their turn, whatever their priority:
+        a higher priority only moves a clip ahead of the others that are waiting.
+        Highest priority plays first; the same priority plays in the order queued.
+
+        When too many are waiting, a clip of higher priority than the lowest one
+        waiting takes its place (the oldest of the lowest priority is dropped).
+        Otherwise the new clip is dropped and this returns False. An emergency is
+        never dropped to make room. `on_linked_radio` also plays the clip on the
+        Linked Radio when that port is up."""
         if len(self._announcements) >= MAX_QUEUED_ANNOUNCEMENTS:
-            _logger.warning("announcement queue full; dropping %s", clip)
-            return False
-        self._announcements.append((clip, on_linked_radio))
+            lowest = min(priority_of for _, _, priority_of in self._announcements)
+            if priority <= lowest:
+                _logger.warning("announcement queue full; dropping %s", clip)
+                return False
+            index = next(i for i, (_, _, p) in enumerate(self._announcements) if p == lowest)
+            dropped = self._announcements.pop(index)
+            _logger.warning("announcement queue full; dropped %s (priority %d) for a higher priority one", dropped[0], dropped[2])
+        position = len(self._announcements)
+        while position > 0 and self._announcements[position - 1][2] < priority:
+            position -= 1
+        self._announcements.insert(position, (clip, on_linked_radio, priority))
         return True
 
     @property
     def queued_announcements(self) -> list[str]:
-        return [clip for clip, _ in self._announcements]
+        return [clip for clip, _, _ in self._announcements]
 
     @property
     def carrier_present(self) -> bool:
@@ -552,7 +575,7 @@ class RepeaterController:
     def _start_announcement(self, now: float) -> list[ControllerCommand]:
         self._note_transmission(now)
         commands: list[ControllerCommand] = [] if self.state == ANNOUNCING else [AssertPTT(active=True)]
-        clip, on_linked_radio = self._announcements.pop(0)
+        clip, on_linked_radio, _ = self._announcements.pop(0)
         self._set_state(ANNOUNCING)
         self._state_deadline = now + (self._clip_duration(clip) or ANNOUNCEMENT_FALLBACK_DURATION)
         return commands + [PlayAudio(clip=clip, on_linked_radio=on_linked_radio)]

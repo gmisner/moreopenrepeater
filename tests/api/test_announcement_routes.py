@@ -6,7 +6,7 @@ import numpy as np
 from fastapi.testclient import TestClient
 
 from controller.announcements import Announcement
-from controller.state_machine import ANNOUNCING, IDLE, RepeaterConfig
+from controller.state_machine import ANNOUNCING, IDLE, PRIORITY_NORMAL, RepeaterConfig
 
 from api.app import create_app
 from api.assets import AudioAssetStore
@@ -141,7 +141,7 @@ def test_play_now_with_linked_radio_flag_queues_it():
     announcement = client.post("/api/announcements", json={**NET_REMINDER, "on_linked_radio": True}).json()
 
     assert client.post(f"/api/announcements/{announcement['id']}/play").status_code == 200
-    assert service.controller._announcements == [("tts:Net tonight at 8pm on {callsign}", True)]
+    assert service.controller._announcements == [("tts:Net tonight at 8pm on {callsign}", True, PRIORITY_NORMAL)]
 
 
 def test_play_now_without_tts_is_503():

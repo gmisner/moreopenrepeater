@@ -16,9 +16,10 @@ from api.loops import run_announcement_loop, run_long_id_warm_loop, run_tick_loo
 from api.supervise import LoopGuard
 
 # Reuse the existing fixtures for the audio senders and the link radio.
-from tests.api import test_allstar_audio as allstar_tests
-from tests.api import test_dmr_audio as dmr_tests
-from tests.api import test_link_radio as link_tests
+# (pytest puts this directory on sys.path, so a plain import finds the sibling test modules.)
+import test_allstar_audio as allstar_tests
+import test_dmr_audio as dmr_tests
+import test_link_radio as link_tests
 
 
 async def run_for(coro, seconds):

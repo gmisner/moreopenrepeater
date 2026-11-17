@@ -123,6 +123,13 @@ by the contract and again by the core.
   answer is `command.simulation_disabled`. Start the core with
   `MOREOPENREPEATER_CORE_SIMULATE=1` to allow it (a bench or test core).
 - `clear_lockout` when nothing is locked out is `command.not_locked_out`.
+- `import_snapshot(snapshot)` replaces the whole configuration, the macros and the
+  announcements (a backup restore). The snapshot is checked with the dashboard's own
+  restore validation (`api.snapshot_import`, shared) and then the core's safety check; a
+  backup from an older version gets defaults for what it lacks. `command.invalid_snapshot`
+  and `command.unsafe_snapshot` (a blank callsign or an unusable number) apply nothing. It
+  carries credentials and is never logged. A `/command` body may be up to 256 KiB for this.
+  There is no export endpoint: the API builds the export from `/config` and `/programming`.
 - `queue_clip(clip, on_linked_radio)` renders a clip (`id`, `asset:<id>`, `tts:<text>`) off
   the event loop with a 30 s deadline, then queues it to play: what the dashboard's play
   buttons and the API's modules do in process. Refusals are `command.unknown_clip`,

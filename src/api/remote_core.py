@@ -37,6 +37,7 @@ from contracts import (
     CoreCommand,
     CoreStatus,
     Header,
+    CommandName,
     PROGRAMMING,
     ProgrammingState,
     Sequencer,
@@ -178,6 +179,19 @@ class RemoteCore:
         if self._macros is None:
             raise CoreUnavailable("the core has not been reached yet, so its macros are not known")
         return list(self._macros)
+
+    def export_snapshot(self) -> dict:
+        """The core's settings, macros and announcements in the shape a backup stores. Built
+        from what the core last reported, which it re-reports as soon as anything changes. It
+        raises `CoreUnavailable` if the core is not being heard from, so a backup is never
+        taken from an old copy."""
+        if self._config is None or self._macros is None or self.stale:
+            raise CoreUnavailable("the core is not being heard from, so its settings cannot be exported now")
+        return {
+            "config": self._config.to_flat_dict(),
+            "macros": [dataclasses.asdict(m) for m in self._macros],
+            "announcements": [dataclasses.asdict(a) for a in self._announcements],
+        }
 
     def list_announcements(self) -> list[Announcement]:
         if self._macros is None:
@@ -462,8 +476,10 @@ class RemoteCore:
                 error.code if error else "command.rejected", error.message if error else "the core refused the command",
                 retryable=bool(error and error.retryable),
             )
-        if request.command in PROGRAMMING:
+        if request.command in PROGRAMMING or request.command is CommandName.IMPORT_SNAPSHOT:
             try:
+                if request.command is CommandName.IMPORT_SNAPSHOT:
+                    await self._fetch_config()
                 await self._fetch_programming()  # so the lists a route returns next are current
             except Exception:  # noqa: BLE001 - it IS applied; the cache catches up on the next event
                 _logger.warning("the change was applied but the lists could not be read back")

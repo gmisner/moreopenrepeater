@@ -451,6 +451,9 @@ class RepeaterService:
     async def change_config(self, **overrides: object) -> RepeaterConfig:
         return self._config.update(**overrides)
 
+    async def recent_link_events(self, limit: int = 50) -> list[dict]:
+        return self.links.recent_events(limit)
+
     async def command(self, name: str, **params: object) -> None:
         """The same commands a remote core takes, applied in process."""
         handlers = {

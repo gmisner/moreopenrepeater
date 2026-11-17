@@ -73,6 +73,11 @@ curl -N --unix-socket /run/moreopenrepeater/core.sock http://core/events
   hangs up, is dropped, and it never slows the controller. Stopping the core ends
   every open stream.
 
+### `GET /link-events`
+
+Recent link activity (connects, disconnects, keying), newest first, as a `link.events`:
+all the core keeps (100). For the API's trusted channel; the dashboard's Links page reads it.
+
 ### `GET /programming`
 
 The macros and the scheduled announcements, as a `programming.state`: each announcement

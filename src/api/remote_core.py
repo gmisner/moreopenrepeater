@@ -37,6 +37,7 @@ from contracts import (
     CoreCommand,
     CoreStatus,
     Header,
+    LinkEvents,
     CommandName,
     PROGRAMMING,
     ProgrammingState,
@@ -432,6 +433,21 @@ class RemoteCore:
             raise
         except Exception as error:  # noqa: BLE001 - nobody is waiting on this
             _logger.warning("could not queue a spoken clip: %s", type(error).__name__)
+
+    async def recent_link_events(self, limit: int = 50) -> list[dict]:
+        """Newest-first link activity, read from the core when asked (it is not cached)."""
+        try:
+            async with self._client() as client:
+                response = await client.get("/link-events")
+        except httpx.HTTPError:
+            raise CoreUnavailable("the core is not reachable, so link activity cannot be read") from None
+        if response.status_code != 200 or len(response.content) > MAX_CONFIG_BYTES:
+            raise CoreUnavailable("the core did not answer the request for link activity")
+        try:
+            events = LinkEvents.model_validate_json(response.content).events
+        except ValueError:
+            raise CoreUnavailable("the core's answer about link activity was not understood") from None
+        return events[: max(0, limit)]
 
     def _header(self) -> Header:
         return Header(

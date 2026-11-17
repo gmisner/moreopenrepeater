@@ -84,9 +84,6 @@ class ApiCoreHandle(Protocol):
     @property
     def programming(self) -> Programming: ...
 
-    @property
-    def links(self) -> LinkSupport: ...
-
     weather_tracker: AlertTracker
     weather_alerts: list[WeatherAlert]
     weather_last_checked: Optional[datetime]
@@ -116,6 +113,10 @@ class ApiCoreHandle(Protocol):
         `simulate_cos(active)`, `simulate_ctcss(tone_hz)`, `simulate_dtmf(digit)` or
         `simulate_remote_keyed(node_id, keyed)`. Routes use this. Against a remote core it
         raises `CommandRefused` or `CoreUnavailable` rather than pretending it worked."""
+        ...
+
+    async def recent_link_events(self, limit: int = 50) -> list[dict]:
+        """Newest-first link activity (connects, disconnects, keying) for the dashboard."""
         ...
 
     def clear_lockout(self) -> None: ...
@@ -149,6 +150,9 @@ class CoreHandle(ApiCoreHandle, Protocol):
     core-side code uses, which always runs in the core's own process."""
 
     # Collaborators and state the audio engines, GPIO, autopatch and the links read.
+    @property
+    def links(self) -> LinkSupport: ...
+
     @property
     def patch(self) -> PatchSupport: ...
 

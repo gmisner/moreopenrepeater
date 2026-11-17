@@ -11,7 +11,9 @@
         "add_macro",
         "delete_macro",
         "save_announcement",
-        "delete_announcement"
+        "delete_announcement",
+        "queue_clip",
+        "import_snapshot"
       ],
       "title": "CommandName",
       "type": "string"

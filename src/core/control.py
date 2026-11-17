@@ -48,6 +48,7 @@ from contracts import (
     ConfigResult,
     ConfigState,
     CoreCommand,
+    LinkEvents,
     ProgrammingState,
     CoreStatus,
     HealthCheck,
@@ -148,7 +149,7 @@ class ControlServer:
         self._ledger = IdempotencyLedger()
         self._get: dict[str, Callable[[], dict]] = {
             "/health": self._health, "/status": self._status, "/config": self._config_state,
-            "/programming": self._programming_state,
+            "/programming": self._programming_state, "/link-events": self._link_events,
         }
         self._post: dict[str, Callable[[bytes], Awaitable[dict]]] = {
             "/speak": self._speak, "/config": self._config_change, "/command": self._command,
@@ -516,6 +517,11 @@ class ControlServer:
             ))
         _logger.info("config.change applied (%d settings: %s)", len(request.values), ", ".join(sorted(request.values)))
         return self._config_result(request, ConfigResult.APPLIED)
+
+    def _link_events(self) -> dict:
+        """`GET /link-events`: recent link activity, newest first (all the core keeps)."""
+        message = LinkEvents(header=self._header(), events=self._service.links.recent_events(500))
+        return json.loads(message.model_dump_json())
 
     def _programming_state(self) -> dict:
         """`GET /programming`: the macros and announcements, each announcement with when the

@@ -49,6 +49,7 @@ from .mixer import apply_saved_levels
 from .monitor import AudioMonitor
 from .recordings import RecordingStore
 from .service.core_handle import CoreHandle
+from .tx_limit import repeater_transmit_limit
 
 _logger = logging.getLogger("moreopenrepeater.audio")
 _receiver_logger = logging.getLogger("moreopenrepeater.receiver")
@@ -275,6 +276,7 @@ class LiveAudio:
                 setattr(settings, field, getattr(config, field))
             settings.local_repeat = config.node_mode == "repeater"
             settings.tone_burst_ms = _tone_burst_ms(config)
+            self.engine.set_max_transmit_seconds(repeater_transmit_limit(config))
 
     def status(self) -> dict:
         config = self._service.config
@@ -617,6 +619,7 @@ class LiveAudio:
             on_glitch=self._on_glitch,
             on_stream_dead=lambda: self._on_stream_dead(generation),
             ptt_allowed=lambda: not self._watchdog_unkeyed.is_set(),
+            max_transmit_seconds=repeater_transmit_limit(config),
         )
         if ptt_output is not None and (recovering or self._stopped_ptt_error is not None):
             if not engine.confirm_ptt_idle():

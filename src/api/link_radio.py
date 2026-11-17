@@ -39,6 +39,7 @@ from .audio_devices import resolve_audio_device
 from .boards import run_amixer
 from .mixer import apply_saved_levels
 from .supervise import LoopGuard
+from .tx_limit import link_radio_transmit_limit
 from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.link_radio")
@@ -160,6 +161,18 @@ class LinkRadio:
     def shutdown(self) -> None:
         self._stop()
 
+    def progress(self) -> Optional[float]:
+        """When the engine last handled a block (time.monotonic()), or None while it isn't running."""
+        engine = self.engine
+        return engine.last_block_at if engine is not None and engine.running else None
+
+    def release_ptt(self) -> None:
+        """Unkey the link radio's transmitter directly, from any thread, without
+        going through the controller: for when the service is about to be killed."""
+        engine = self.engine
+        if engine is not None:
+            engine.release_ptt()
+
     def apply_config(self, config: RepeaterConfig) -> None:
         previous, self._applied = self._applied, config
         self.controller.settings = LinkRadioSettings(
@@ -181,6 +194,7 @@ class LinkRadio:
             settings.squelch_tail_ms = config.link_radio_squelch_tail_ms
             settings.tx_delay_ms = config.link_radio_tx_delay_ms
             settings.dtmf_mute = config.dtmf_mute
+            self.engine.set_max_transmit_seconds(link_radio_transmit_limit(config))
 
     def status(self) -> dict:
         config = self._service.config
@@ -400,6 +414,7 @@ class LinkRadio:
             ptt_output=ptt_output,
             cos_input=cos_input,
             on_stream_dead=self._on_stream_dead,
+            max_transmit_seconds=link_radio_transmit_limit(config),
         )
         apply_saved_levels(config, self._run_mixer, sides=("link_input", "link_output"))
         try:

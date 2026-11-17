@@ -36,6 +36,7 @@ from contracts import (
     ConfigResult,
     ConfigState,
     CoreCommand,
+    CoreLogs,
     CoreStatus,
     Header,
     LinkEvents,
@@ -69,6 +70,7 @@ _logger = logging.getLogger("moreopenrepeater.remote_core")
 STALE_AFTER_SECONDS = 15.0
 CONNECT_TIMEOUT_SECONDS = 2.0
 RETRY_DELAYS = (0.5, 1.0, 2.0, 5.0)  # then the last one, forever
+LOG_POLL_SECONDS = 1.0  # how often the core's log is read when nothing is waiting
 MAX_LINE_BYTES = 64 * 1024
 REQUEST_TIMEOUT_SECONDS = 5.0  # a write must not hang the dashboard
 MAX_CONFIG_BYTES = 1024 * 1024  # what we will read back from the core
@@ -87,6 +89,12 @@ class RemoteCore:
         self._snapshot_at: float = 0.0  # when `_snapshot` arrived, on `clock`
         self._started_at: float = clock()
         self._seen_before = False  # a first status is not a change
+        self._log_hub = None  # where the core's log lines are published (the dashboard's Logs page)
+        self._log_task: Optional[asyncio.Task] = None
+        self._log_cursor = 0
+        self._log_boot: Optional[str] = None
+        # httpx logs every request at INFO; reading the core's log once a second would fill the log.
+        logging.getLogger("httpx").setLevel(logging.WARNING)
         self._status: Optional[CoreStatus] = None
         self._health: Optional[str] = None  # from the latest heartbeat
         self._connected = False
@@ -142,6 +150,8 @@ class RemoteCore:
         if self._task is None:
             self._stopping = False
             self._task = asyncio.ensure_future(self._run())
+        if self._log_hub is not None and self._log_task is None:
+            self._log_task = asyncio.ensure_future(self._pull_logs())
 
     async def stop(self) -> None:
         # The flag matters: on Python 3.11 a cancel that lands inside the HTTP client while
@@ -149,7 +159,7 @@ class RemoteCore:
         self._stopping = True
         for pending in list(self._speaking):
             pending.cancel()
-        for name in ("_task", "_fetching"):
+        for name in ("_task", "_fetching", "_log_task"):
             task, current = getattr(self, name), None
             setattr(self, name, current)
             if task is not None:
@@ -411,8 +421,10 @@ class RemoteCore:
             except asyncio.CancelledError:
                 raise
             except Exception as error:  # noqa: BLE001 - a bad stream must never end the loop
-                if self._connected or attempt == 0:
-                    _logger.warning("core stream ended: %s", error)
+                if self._connected:
+                    _logger.warning("core stream ended: %s", type(error).__name__)
+                elif attempt == 0:
+                    _logger.info("core not reachable yet (%s); retrying", type(error).__name__)
             self._set_connected(False)
             self.reconnects += 1
             await asyncio.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
@@ -547,6 +559,48 @@ class RemoteCore:
                     _logger.warning("a configuration listener failed: %s", type(error).__name__)
             if self._announced_version is None or self._announced_version == state.config_version:
                 return
+
+    def attach_log_hub(self, hub) -> None:
+        """Publish the core's log lines into `hub`, so the dashboard's Logs page, the live stream, the
+        support bundle and remote shipping show the core and the API together. Call before `start()`."""
+        if self._task is not None:
+            raise RuntimeError("attach the log hub before start()")
+        self._log_hub = hub
+
+    async def _pull_logs(self) -> None:
+        """Read the core's log a little at a time. The core keeps a ring of recent lines; this keeps
+        up with it and, after the core restarts (its sequence starts over), begins again from the
+        start of the new run. Lines logged while the API was away are read when it is back, as far as
+        the core's ring reaches."""
+        while True:
+            more = False
+            try:
+                if self._connected:
+                    more = await self._pull_logs_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # noqa: BLE001 - the Logs page is not worth a crash
+                _logger.warning("could not read the core's log: %s", type(error).__name__)
+            await asyncio.sleep(0 if more else LOG_POLL_SECONDS)
+
+    async def _pull_logs_once(self) -> bool:
+        """One read. True if the core had more than it returned (read again at once)."""
+        async with self._client() as client:
+            response = await client.get(f"/logs?after={self._log_cursor}")
+        if response.status_code != 200 or len(response.content) > MAX_CONFIG_BYTES:
+            return False
+        logs = CoreLogs.model_validate_json(response.content)
+        if self._log_boot != logs.header.boot_id:
+            restarted = self._log_boot is not None
+            self._log_boot = logs.header.boot_id
+            if restarted:  # a new run: its sequence starts over, so read it from the start
+                self._log_cursor = 0
+                return True
+        for entry in logs.lines:
+            self._log_hub.publish(str(entry.get("line", "")), str(entry.get("level", "INFO")), at=entry.get("at"))
+        if logs.lines:
+            self._log_cursor = int(logs.lines[-1]["seq"])
+        return bool(logs.lines) and self._log_cursor < logs.cursor
 
     async def _fetch_programming(self) -> None:
         async with self._client() as client:

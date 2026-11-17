@@ -108,3 +108,16 @@ class LinkEvents(Message):
 
     kind: Literal["link.events"] = "link.events"
     events: list[dict[str, Any]] = Field(max_length=500)
+
+
+class CoreLogs(Message):
+    """Recent lines from the core's own log (`GET /logs?after=<cursor>`), oldest first, so the
+    dashboard's Logs page shows the core and the API together. For the API's trusted channel.
+    A `cursor` from before the core restarted means nothing to the new run: `header.boot_id`
+    changes, and the caller starts again from 0."""
+
+    kind: Literal["core.logs"] = "core.logs"
+    #: Ask for lines after this next time.
+    cursor: int = Field(ge=0)
+    #: Each `{"seq": int, "line": str, "level": str, "at": float}`.
+    lines: list[dict[str, Any]] = Field(max_length=1000)

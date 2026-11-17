@@ -577,7 +577,11 @@ class AppRuntime:
         def clip_recording_path(clip_id: str) -> Path:
             return mailbox_store.path_for(clip_id) if is_mailbox_clip(clip_id) else recordings.path_for(clip_id)
 
-        renderer = renderer or ClipRenderer(assets_store.path_for, tts=detect_tts(), recording_path=clip_recording_path)
+        # Apart from the core nothing here speaks: the core renders, so there is no engine to find or warn about.
+        renderer = renderer or ClipRenderer(
+            assets_store.path_for, tts=None if getattr(service, "is_remote", False) else detect_tts(),
+            recording_path=clip_recording_path,
+        )
         service = service or RepeaterService(state_store=state_store)
         if service.renderer is None:
             service.renderer = renderer
@@ -585,6 +589,7 @@ class AppRuntime:
             service.activity = ActivityRecorder(activity_store or ActivityStore())
         activity_store = service.activity.store
         if getattr(service, "is_remote", False):
+            service.attach_log_hub(log_hub)  # the Logs page shows the core's log lines too
             # The core owns these and runs in its own process; this process holds no device.
             live_audio = live_audio or Unavailable("live_audio")
             monitor_receiver = monitor_receiver or Unavailable("monitor_receiver")
@@ -738,12 +743,19 @@ class AppRuntime:
             notifier,
             system_probe or SystemProbe(data_root),
             run_marker or RunMarker(None),
-            audio_status=lambda: live_audio.status(),
-            cm108_path=lambda: _cm108_path(cm108),
-            cm108_ensure=lambda: _cm108_ensure(cm108),
-            link_audio_status=lambda: link_radio.status(),
-            link_cm108_path=lambda: _cm108_path(link_radio.cm108),
-            link_cm108_ensure=lambda: _cm108_ensure(link_radio.cm108),
+            # The core watches its own audio and devices; this process has none to check.
+            **(
+                {}
+                if getattr(service, "is_remote", False)
+                else dict(
+                    audio_status=lambda: live_audio.status(),
+                    cm108_path=lambda: _cm108_path(cm108),
+                    cm108_ensure=lambda: _cm108_ensure(cm108),
+                    link_audio_status=lambda: link_radio.status(),
+                    link_cm108_path=lambda: _cm108_path(link_radio.cm108),
+                    link_cm108_ensure=lambda: _cm108_ensure(link_radio.cm108),
+                )
+            ),
             update_status=updater.status,
         )
         tx_fan = tx_fan or TxFan(service, cm108, temperature=health.probe.temperature_c)

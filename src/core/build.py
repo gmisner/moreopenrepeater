@@ -36,6 +36,7 @@ from api.gpio import GpioControl
 from api.health import SystemProbe
 from api.link_radio import LinkRadio
 from api.live_audio import LiveAudio, cm108_from_env, link_cm108_from_env
+from api.log_hub import LogHub
 from api.logging_config import configure_logging
 from api.monitor_receiver import MonitorReceiverService
 from api.persistence import StateStore
@@ -62,6 +63,7 @@ class CoreApp:
     #: Settings that were replaced because they were not safe numbers.
     config_notes: list[str]
     assets_store: AudioAssetStore
+    log_hub: LogHub
 
 
 def data_root(env: Mapping[str, str]) -> Path:
@@ -79,7 +81,8 @@ def build_core(env: Optional[Mapping[str, str]] = None) -> CoreApp:
     # Check before anything is built, and before anything is opened or keyed.
     config, config_notes = load_config(state_path)
 
-    configure_logging(log_path)
+    log_hub = LogHub()  # the API reads it over the control socket (GET /logs)
+    configure_logging(log_path, hub=log_hub)
     set_cache_path(root / "audio-device-ids.json")
 
     assets_store = AudioAssetStore(root / "audio")
@@ -147,7 +150,7 @@ def build_core(env: Optional[Mapping[str, str]] = None) -> CoreApp:
         dmr_audio=dmr_audio,
         watchdog=watchdog,
     )
-    return CoreApp(runtime, service, activity_store, state_path, config_notes, assets_store)
+    return CoreApp(runtime, service, activity_store, state_path, config_notes, assets_store, log_hub)
 
 
 def _checked_names(notes: list[str]) -> list[str]:

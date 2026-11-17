@@ -104,6 +104,13 @@ client handles the action, the core says what it says today for a missing module
 weather is not set up.", "The mailbox is not available."; net mode only logs). When the control
 server stops, macros fall back to that too.
 
+### `GET /logs`
+
+The core's recent log lines (its in-memory ring of 2000), oldest first from a cursor:
+`GET /logs?after=N&limit=M` (500 at most per read, a line cut at 4000 characters) answers a
+`core.logs` with the lines and the newest sequence. The sequence starts over when the core
+does; `header.boot_id` says which run it is. For the API's Logs page; see docker.md.
+
 ### `GET /link-events`
 
 Recent link activity (connects, disconnects, keying), newest first, as a `link.events`:

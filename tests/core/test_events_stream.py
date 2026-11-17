@@ -207,6 +207,10 @@ def test_stopping_the_server_ends_open_streams(core, sock_dir):
         await next_event(reader)
         await server.stop()
         assert await asyncio.wait_for(reader.read(), 5) == b""  # the stream ended
+        for _ in range(100):  # the server's own cleanup runs a moment later
+            if server._streams == 0:
+                break
+            await asyncio.sleep(0.02)
         assert server._streams == 0 and len(core.service._subscribers) == 0
         writer.close()
 

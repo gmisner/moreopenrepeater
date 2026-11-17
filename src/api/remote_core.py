@@ -23,7 +23,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 
@@ -37,6 +37,7 @@ from contracts import (
     CoreCommand,
     CoreStatus,
     Header,
+    LinkEvents,
     CommandName,
     PROGRAMMING,
     ProgrammingState,
@@ -46,6 +47,7 @@ from contracts import (
 )
 
 from controller.announcements import Announcement
+from controller.events import MailboxCommand
 from controller.config import RepeaterConfig
 from controller.macros import Macro
 from controller.modes import effective_config
@@ -97,9 +99,19 @@ class RemoteCore:
         self._announcements: list[Announcement] = []
         self._next_runs: dict[str, Optional[datetime]] = {}
         self._speaking: set[asyncio.Task] = set()  # fire-and-forget speak() calls in flight
+        self._macro_handlers: dict[str, Callable] = {}  # macro family -> what to call
         self._sequencer = Sequencer()
 
     # -- lifecycle ------------------------------------------------------------
+
+    def register_macro_handler(self, family: str, handler: Callable) -> None:
+        """Take a macro action the API's modules own (`net`, `homeassistant`, `metar`, `sensor`,
+        `mailbox` or `aprs`). `handler` is called with the same arguments the in-process hook gets
+        (`aprs` returns the sentence to speak). The core delivers these actions only to a client that
+        said it handles them when it connected, so register before `start()`."""
+        if self._task is not None:
+            raise RuntimeError("register macro handlers before start(): the core is told what we handle when we connect")
+        self._macro_handlers[family] = handler
 
     def start(self) -> None:
         """Start following the core. Never raises, and does not wait: the core may not be up yet."""
@@ -291,7 +303,8 @@ class RemoteCore:
         transport = httpx.AsyncHTTPTransport(uds=str(self.socket_path))
         timeout = httpx.Timeout(CONNECT_TIMEOUT_SECONDS, read=None)
         async with httpx.AsyncClient(transport=transport, base_url="http://core", timeout=timeout) as client:
-            async with client.stream("GET", "/events") as response:
+            handles = ",".join(sorted(self._macro_handlers))
+            async with client.stream("GET", "/events" + (f"?handles={handles}" if handles else "")) as response:
                 if response.status_code != 200:
                     raise RuntimeError(f"core answered {response.status_code}")
                 lines = response.aiter_lines()
@@ -333,11 +346,35 @@ class RemoteCore:
                 if isinstance(version, int) and version != self._config_version:
                     self._announced_version = version
                     self._refresh_config()
+            elif event == "macro":
+                self._seen()
+                self._run_macro_handler(payload)
             elif event == "heartbeat":
                 self._health = str(payload.get("health"))
                 self._seen()
         except Exception as error:  # noqa: BLE001 - one malformed event is skipped, not fatal
             _logger.warning("ignored a bad %s event from the core: %s", event, type(error).__name__)
+
+    def _run_macro_handler(self, payload: dict) -> None:
+        """A macro action for one of our modules. Never raises, and never logs the arguments
+        (a mailbox PIN, a Home Assistant target)."""
+        family = payload.get("family")
+        handler = self._macro_handlers.get(family)
+        if handler is None:
+            return
+        try:
+            args = list(payload.get("args") or [])
+            if family == "mailbox" and args:
+                args = [MailboxCommand(**args[0])]
+            result = handler(*args)
+            if family == "aprs" and isinstance(result, str):
+                self.speak(TTS_PREFIX + result)
+            elif asyncio.iscoroutine(result):
+                task = asyncio.ensure_future(result)
+                self._speaking.add(task)
+                task.add_done_callback(self._speaking.discard)
+        except Exception as error:  # noqa: BLE001 - one bad action must not end the stream
+            _logger.warning("a %s macro action failed: %s", family, type(error).__name__)
 
     # -- the configuration ---------------------------------------------------------------------
 
@@ -432,6 +469,21 @@ class RemoteCore:
             raise
         except Exception as error:  # noqa: BLE001 - nobody is waiting on this
             _logger.warning("could not queue a spoken clip: %s", type(error).__name__)
+
+    async def recent_link_events(self, limit: int = 50) -> list[dict]:
+        """Newest-first link activity, read from the core when asked (it is not cached)."""
+        try:
+            async with self._client() as client:
+                response = await client.get("/link-events")
+        except httpx.HTTPError:
+            raise CoreUnavailable("the core is not reachable, so link activity cannot be read") from None
+        if response.status_code != 200 or len(response.content) > MAX_CONFIG_BYTES:
+            raise CoreUnavailable("the core did not answer the request for link activity")
+        try:
+            events = LinkEvents.model_validate_json(response.content).events
+        except ValueError:
+            raise CoreUnavailable("the core's answer about link activity was not understood") from None
+        return events[: max(0, limit)]
 
     def _header(self) -> Header:
         return Header(

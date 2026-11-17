@@ -84,9 +84,6 @@ class ApiCoreHandle(Protocol):
     @property
     def programming(self) -> Programming: ...
 
-    @property
-    def links(self) -> LinkSupport: ...
-
     weather_tracker: AlertTracker
     weather_alerts: list[WeatherAlert]
     weather_last_checked: Optional[datetime]
@@ -116,6 +113,20 @@ class ApiCoreHandle(Protocol):
         `simulate_cos(active)`, `simulate_ctcss(tone_hz)`, `simulate_dtmf(digit)` or
         `simulate_remote_keyed(node_id, keyed)`. Routes use this. Against a remote core it
         raises `CommandRefused` or `CoreUnavailable` rather than pretending it worked."""
+        ...
+
+    def register_macro_handler(self, family: str, handler: Callable) -> None:
+        """Take a macro action the API's modules own: `net` (action, source), `homeassistant`
+        (target, source, pattern), `metar` (airport), `sensor` (sensor_id), `mailbox`
+        (MailboxCommand), `aprs` (no arguments; returns the sentence to speak) or `audit` (actor, action,
+        detail: something a macro did that the audit trail records). In process this
+        sets the hook the controller calls. Against a remote core the core sends the action over
+        its event stream, and only if this client said it handles that family; otherwise the caller
+        hears that it is not available."""
+        ...
+
+    async def recent_link_events(self, limit: int = 50) -> list[dict]:
+        """Newest-first link activity (connects, disconnects, keying) for the dashboard."""
         ...
 
     def clear_lockout(self) -> None: ...
@@ -149,6 +160,9 @@ class CoreHandle(ApiCoreHandle, Protocol):
     core-side code uses, which always runs in the core's own process."""
 
     # Collaborators and state the audio engines, GPIO, autopatch and the links read.
+    @property
+    def links(self) -> LinkSupport: ...
+
     @property
     def patch(self) -> PatchSupport: ...
 

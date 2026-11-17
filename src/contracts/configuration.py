@@ -100,3 +100,11 @@ class ProgrammingState(Message):
     version: int = Field(ge=1)
     macros: list[dict[str, Any]] = Field(max_length=1000)
     announcements: list[dict[str, Any]] = Field(max_length=1000)
+
+
+class LinkEvents(Message):
+    """Recent link activity (connects, disconnects, keying) for the dashboard, newest first
+    (`GET /link-events`). For the API's trusted channel."""
+
+    kind: Literal["link.events"] = "link.events"
+    events: list[dict[str, Any]] = Field(max_length=500)

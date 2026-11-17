@@ -45,6 +45,7 @@ from api.service import RepeaterService
 from api.tx_fan import TxFan
 from api.watchdog import Watchdog
 
+from .codes import CoreCodeChecker, paths as codes_paths
 from .config_boundary import load_config
 
 _logger = logging.getLogger("moreopenrepeater.core")
@@ -109,6 +110,10 @@ def build_core(env: Optional[Mapping[str, str]] = None) -> CoreApp:
     remote_base = RemoteBase(service)
     gpio = GpioControl(service, cm108)
     service.programming.gpio_command = gpio.run_command
+    # One-time codes are the core's own (core.codes): a needs-code macro must work with the API down.
+    codes = CoreCodeChecker(*codes_paths(root))
+    service.programming.code_checker = codes.check
+    service.programming.codes_locked = codes.locked
     autopatch = Autopatch(service, patch_settings_from_env(env))
     allstar_node = AllStarNode(
         asterisk_files_from_env(env, backup_dir=root / "asterisk-backups"),

@@ -646,7 +646,7 @@ class AppRuntime:
         agent_access = agent_access if agent_access is not None else AgentAccess()
         audit = audit or AuditLog()
         audit_hook = lambda actor, action, detail: audit.record(time.time(), actor, action, detail)
-        service.programming.audit_hook = audit_hook
+        service.register_macro_handler("audit", audit_hook)
         nets.audit_hook = audit_hook
         control_codes = control_codes or ControlCodes(None)
         service.programming.code_checker = control_codes.check
@@ -675,8 +675,8 @@ class AppRuntime:
         def aprs_window_start() -> float:
             return time.time() - service.config.aprs.aprs_map_hours * 3600
 
-        service.programming.aprs_summary = lambda: spoken_summary(
-            aprs_stations.stations(aprs_window_start()), service.config, time.time()
+        service.register_macro_handler(
+            "aprs", lambda: spoken_summary(aprs_stations.stations(aprs_window_start()), service.config, time.time())
         )
         backups = backups or BackupFolder(None)
         updater = updater or Updater(updater_settings_from_env(os.environ))

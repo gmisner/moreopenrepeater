@@ -130,7 +130,7 @@ class LinkControl:
     async def recent_events(self, limit: int = 50) -> list[dict]:
         """Newest-first connect / key activity for the dashboard."""
         rows = []
-        for event in self._service.links.recent_events(limit):
+        for event in await self._service.recent_link_events(limit):
             node = str(event.get("node") or "")
             if node == LINK_RADIO_NODE:
                 label = "Linked radio"

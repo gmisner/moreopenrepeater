@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Callable, Optional
@@ -46,6 +47,10 @@ class Programming:
         self.sensor_hook: Optional[Callable[[str], None]] = None  # sensor id, or "" for all
         self.remote_base_hook: Optional[Callable[[str, str], None]] = None  # (remote_* action, keyed argument)
         self.mailbox_hook: Optional[Callable[[MailboxCommand], None]] = None
+        #: Set only by a core that runs apart from the API (core.control). It carries an action the
+        #: API's modules own to whichever of them is connected and answers whether anyone took it.
+        #: When set, it replaces the hooks above for those actions; when None, the hooks run as always.
+        self.api_action: Optional[Callable[[str, list], bool]] = None
 
     def run_macro(self, pattern: str, source: str) -> bool:
         """Run a saved macro as if its code had been dialed; `source` names what ran it."""
@@ -79,7 +84,21 @@ class Programming:
         finally:
             self._action_source = "DTMF"
 
+    def _via_api(self, family: str, args: list, unavailable: Optional[str]) -> bool:
+        """Hand an API-owned action to the API. True if this was handled, including by saying
+        it is not available because no API module is connected."""
+        if self.api_action is None:
+            return False
+        if not self.api_action(family, args):
+            if unavailable:
+                self._host.speak(TTS_PREFIX + unavailable)
+            else:
+                _logger.warning("%s isn't available (no API connected)", family)
+        return True
+
     def run_mailbox(self, action: MailboxCommand) -> None:
+        if self._via_api("mailbox", [dataclasses.asdict(action)], "The mailbox is not available."):
+            return
         if self.mailbox_hook is None:
             self._host.speak(TTS_PREFIX + "The mailbox is not available.")
         else:
@@ -132,6 +151,8 @@ class Programming:
                     self.announcement_clip(announcement),
                     on_linked_radio=announcement.on_linked_radio,
                 )
+        elif action.action == "aprs" and self._via_api("aprs", [], "The A P R S map is not set up."):
+            pass
         elif action.action == "aprs":
             text = self.aprs_summary() if self.aprs_summary else "The A P R S map is not set up."
             host.speak(TTS_PREFIX + text)
@@ -142,11 +163,17 @@ class Programming:
             if host.controller.locked_out:
                 host.clear_lockout()
                 host.speak(TTS_PREFIX + "Lockout cleared")
+        elif action.action in ("net_start", "net_end") and self._via_api("net", [action.action, source], None):
+            pass
         elif action.action in ("net_start", "net_end"):
             if self.net_hook is None:
                 _logger.warning("net mode isn't available")
             else:
                 self.net_hook(action.action, source)
+        elif action.action == "homeassistant" and self._via_api(
+            "homeassistant", [action.argument, source, action.pattern], "Home Assistant is not set up."
+        ):
+            pass
         elif action.action == "homeassistant":
             if self.homeassistant_hook is None:
                 host.speak(TTS_PREFIX + "Home Assistant is not set up.")
@@ -155,11 +182,15 @@ class Programming:
         elif action.action == "help":
             text = help_text(host.controller.list_macros(), host.controller.config, action.argument, host.held_reason)
             host.speak(TTS_PREFIX + text)
+        elif action.action == "metar" and self._via_api("metar", [action.argument], "Airport weather is not set up."):
+            pass
         elif action.action == "metar":
             if self.metar_hook is None:
                 host.speak(TTS_PREFIX + "Airport weather is not set up.")
             else:
                 self.metar_hook(action.argument)
+        elif action.action == "sensor" and self._via_api("sensor", [action.argument], "Site sensors are not set up."):
+            pass
         elif action.action == "sensor":
             if self.sensor_hook is None:
                 host.speak(TTS_PREFIX + "Site sensors are not set up.")

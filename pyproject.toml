@@ -29,6 +29,7 @@ dev = [
 
 [project.scripts]
 moreopenrepeater-api = "api.app:main"
+moreopenrepeater-core = "core.main:main"  # the core alone, no web app; off by default (docs/core-only.md)
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

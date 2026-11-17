@@ -1,13 +1,28 @@
 # Running the core in Docker (experimental)
 
 Stage 3 of the modular migration ([#229](https://github.com/gmisner/moreopenrepeater/issues/229)).
-This runs the **core alone** (see [core-only.md](core-only.md)) as a container,
-the way [ADR 0005](adr/0005-container-module-runtime.md) plans for every install.
-It is off by default, `install-pi.sh` does not use it, and the normal service is
-unchanged. There is no dashboard or API in this container yet.
+This runs the **core** (see [core-only.md](core-only.md)) and the **dashboard/API** as two
+containers, the way [ADR 0005](adr/0005-container-module-runtime.md) plans for every install.
+It is off by default, `install-pi.sh` does not use it, and the normal service is unchanged.
+
+- `core` owns the radio, the sound card and PTT, and keeps repeating with the API stopped.
+- `api` holds no device. It follows the core over the control socket (a named volume both mount),
+  so it can be stopped, upgraded or crashed without the repeater noticing. When the core is down
+  the dashboard says `core_unavailable` and refuses writes with a 503; it never shows a state for a
+  core it cannot hear.
+
+What works in the dashboard when the API runs apart from the core: status (live), configuration,
+macros, announcements, nets, link activity, the backup export and restore, accounts, alerts, logs,
+and the pages that are not the radio. What does not yet: the pages about the core's hardware (GPIO,
+link radio, monitor receiver, autopatch and SIP trunk, AllStar node, DMR, audio engine) answer 503
+`core.hardware` ("needs the core's hardware, which runs in another process"). They need the core to
+report that state over the socket, which is later work. The core's weather macro cannot see the
+API's NWS alerts and says weather is not set up; the API's own weather page and alerts work.
 
 Files:
 
+- `docker/Dockerfile.api`: the same base image, the project's own dependency list (read from
+  `pyproject.toml`), the app and the built web assets. No audio libraries.
 - `docker/Dockerfile.core`: `python:3.13-slim-trixie` (pinned by digest, so one
   line builds for amd64 and arm64), the core's four Python packages, Piper and
   its default voice, `espeak-ng` and `libportaudio2`.

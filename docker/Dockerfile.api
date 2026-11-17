@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+#
+# The dashboard and API on their own: accounts, the web app, backups, alerts, the pages and
+# integrations that are not the radio. It holds no device. It talks to the core container over the
+# control socket (docs/docker.md, docs/core-only.md). Set MOREOPENREPEATER_CORE_SOCKET to select that.
+FROM python:3.13-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Same uid as the core, so the data folder and the control socket are shared without chmod games.
+RUN groupadd --system --gid 999 moreopenrepeater \
+    && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
+       --shell /usr/sbin/nologin moreopenrepeater \
+    && mkdir -p /data /run/moreopenrepeater \
+    && chown 999:999 /data /run/moreopenrepeater
+
+# The project's own dependency list, so this image cannot drift from pyproject.toml. numpy and
+# sounddevice come with it (the app imports them) but no audio device is ever opened here.
+COPY pyproject.toml /tmp/pyproject.toml
+RUN python - <<'PY' > /tmp/api-requirements.txt \
+    && pip install -r /tmp/api-requirements.txt
+import tomllib
+print("\n".join(tomllib.load(open("/tmp/pyproject.toml", "rb"))["project"]["dependencies"]))
+PY
+
+# Run from /app so the app finds its web assets (web/dist) beside src, as it does from a checkout.
+COPY src /app/src
+COPY web /app/web
+ENV PYTHONPATH=/app/src \
+    MOREOPENREPEATER_DATA_DIR=/data \
+    # Its own log file: the core rotates /data/moreopenrepeater.log, and two writers must not share one.
+    MOREOPENREPEATER_LOG_PATH=/data/moreopenrepeater-api.log \
+    MOREOPENREPEATER_CORE_SOCKET=/run/moreopenrepeater/core.sock \
+    MOREOPENREPEATER_HOST=0.0.0.0 \
+    MOREOPENREPEATER_PORT=8000
+
+USER 999:999
+WORKDIR /app
+VOLUME ["/data"]
+EXPOSE 8000
+
+# The dashboard answers on its port. (Whether the core is healthy is the core container's own check.)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 5).close()"]
+
+ENTRYPOINT ["python", "-c", "from api.app import main; main()"]

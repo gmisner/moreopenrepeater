@@ -451,6 +451,9 @@ class RepeaterService:
     async def change_config(self, **overrides: object) -> RepeaterConfig:
         return self._config.update(**overrides)
 
+    def sync_net_state(self, active: bool) -> None:
+        self.set_net_active(active)
+
     def register_macro_handler(self, family: str, handler: Callable) -> None:
         hooks = {
             "net": "net_hook", "homeassistant": "homeassistant_hook", "metar": "metar_hook",

@@ -185,7 +185,8 @@ def test_it_notices_the_core_going_away_and_comes_back_when_it_returns(core, soc
             await until(lambda: remote.connected)
             await server.stop()  # the core goes away
             await until(lambda: not remote.connected)
-            assert remote.stale and remote.snapshot().state != UNAVAILABLE_STATE  # the last known value is kept
+            assert remote.stale and remote.snapshot().state == UNAVAILABLE_STATE  # nothing is claimed about a core we cannot hear
+            assert remote.snapshot().callsign == "W1AW" and remote.status is not None  # what does not change by the second is kept
             seen = []
             while not queue.empty():
                 seen.append(queue.get_nowait().state)
@@ -272,7 +273,7 @@ def test_remote_core_imports_no_web_framework():
     assert json.loads(out.stdout.strip().splitlines()[-1]) == dict.fromkeys(names, False)
 
 
-def test_countdowns_run_down_while_connected_and_freeze_when_stale(core, sock_dir):
+def test_countdowns_run_down_while_connected_and_stop_being_claimed_when_stale(core, sock_dir):
     now = {"t": 1000.0}
 
     async def go():
@@ -293,10 +294,11 @@ def test_countdowns_run_down_while_connected_and_freeze_when_stale(core, sock_di
             assert later.tot_remaining == pytest.approx(first.tot_remaining - 10, abs=0.5)
             assert later.id_due_in == pytest.approx(first.id_due_in - 10, abs=0.5)
             now["t"] += 10_000  # the core goes quiet: nothing more is claimed
-            frozen = remote.snapshot()
-            assert frozen.tot_remaining == first.tot_remaining and frozen.id_due_in == first.id_due_in
+            silent = remote.snapshot()
+            assert silent.state == UNAVAILABLE_STATE and not silent.ptt_active and not silent.cos_active
+            assert silent.tot_remaining is None and silent.id_due_in is None
             now["t"] += 5
-            assert remote.snapshot() == frozen
+            assert remote.snapshot() == silent
         finally:
             await remote.stop()
             await server.stop()

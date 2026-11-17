@@ -1,12 +1,13 @@
-# The core as a container (docs/docker.md). Run from this folder:
+# The core and the dashboard/API as two containers (docs/docker.md). Run from this folder:
 #
 #   cp .env.example .env              # host paths and devices (optional)
 #   docker compose up -d --build
 #   docker compose exec core python -m core.healthcheck
 #
-# Nothing here starts the dashboard or API. It is the core alone, and it keeps
-# repeating without them. Stop the moreopenrepeater service first: both would claim
-# the same sound card and PTT line.
+# The core owns the radio, the sound card and PTT, and keeps repeating with the API stopped. The
+# API holds no device: it follows the core over the control socket and can be stopped, upgraded or
+# crashed without the repeater noticing. Stop the moreopenrepeater service first: both it and the
+# core would claim the same sound card and PTT line.
 name: moreopenrepeater
 
 services:
@@ -61,6 +62,48 @@ services:
       # profile for this container is the way to get the filter back without the cost.
       - seccomp=unconfined
 
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    image: moreopenrepeater-api:local
+    restart: unless-stopped
+    init: true
+    user: "999:999"
+    # The same interim host networking as the core: AllStar link control goes to Asterisk's
+    # manager port on the host's loopback. The dashboard is on :8000 (MOREOPENREPEATER_PORT).
+    network_mode: host
+    # It starts without the core (it says "core not reachable") and follows it when it is up.
+    depends_on:
+      core:
+        condition: service_started
+    volumes:
+      # The same data folder as the core: the API keeps its accounts, audio clips, history and
+      # backups here; the core reads the audio clips and the one-time code secrets. The API never
+      # writes state.json (the core owns the saved configuration).
+      - ${MOR_DATA_DIR:-./data}:/data
+      - core-run:/run/moreopenrepeater
+    environment:
+      # Loopback by default. With no accounts set up the dashboard is open and can key the
+      # transmitter, so it is not offered to the network until you choose to (MOR_API_HOST=0.0.0.0,
+      # after creating an account or setting MOREOPENREPEATER_ADMIN_USER and _PASSWORD in api.env).
+      MOREOPENREPEATER_HOST: ${MOR_API_HOST:-127.0.0.1}
+      MOREOPENREPEATER_PORT: ${MOR_API_PORT:-8000}
+    env_file:
+      - path: api.env
+        required: false
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: local
       options:

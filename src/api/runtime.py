@@ -75,7 +75,9 @@ from .net import POLL_SECONDS as NET_POLL_SECONDS
 from .net import NetMode
 from .node_directory import NodeDirectory
 from .notify import Notifier
-from .core_runtime import ANNOUNCEMENT_POLL_SECONDS, AnnouncementQueueFull, CoreRuntime
+from .service.core_handle import CoreUnavailable
+from .split import Unavailable
+from .core_runtime import ANNOUNCEMENT_POLL_SECONDS, AnnouncementQueueFull, CoreRuntime, SplitCoreRuntime
 from .persistence import StateStore
 from .recordings import RecordingStore
 from .remote_base import RemoteBase
@@ -582,6 +584,19 @@ class AppRuntime:
         if service.activity is None:
             service.activity = ActivityRecorder(activity_store or ActivityStore())
         activity_store = service.activity.store
+        if getattr(service, "is_remote", False):
+            # The core owns these and runs in its own process; this process holds no device.
+            live_audio = live_audio or Unavailable("live_audio")
+            monitor_receiver = monitor_receiver or Unavailable("monitor_receiver")
+            link_radio = link_radio or Unavailable("link_radio")
+            remote_base = remote_base or Unavailable("remote_base")
+            gpio = gpio or Unavailable("gpio")
+            tx_fan = tx_fan or Unavailable("tx_fan")
+            autopatch = autopatch or Unavailable("autopatch")
+            sip_trunk = sip_trunk or Unavailable("sip_trunk")
+            allstar_node = allstar_node or Unavailable("allstar_node")
+            dmr_audio = dmr_audio or Unavailable("dmr_audio")
+            dmr = dmr or Unavailable("dmr")
         live_audio = live_audio or LiveAudio(
             service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings, run_mixer=run_mixer
         )
@@ -623,7 +638,10 @@ class AppRuntime:
         )
         link_scheduler = LinkScheduler(links, lambda: service.config.link_schedules)
         nets = NetMode(service, links, net_store)
-        gmrs_mode = [service.saved_config.gmrs_mode]
+        try:
+            gmrs_mode = [service.saved_config.gmrs_mode]
+        except CoreUnavailable:  # the core has not been reached yet; the first read is not a change
+            gmrs_mode = [None]
 
         async def drop_links(node: Optional[str] = None) -> None:
             try:
@@ -633,7 +651,7 @@ class AppRuntime:
 
         def gmrs_changed(_config: RepeaterConfig) -> None:
             on = service.saved_config.gmrs_mode
-            if on and not gmrs_mode[0] and links.client is not None:
+            if on and gmrs_mode[0] is False and links.client is not None:
                 asyncio.get_running_loop().create_task(drop_links())
             gmrs_mode[0] = on
 
@@ -698,7 +716,10 @@ class AppRuntime:
         notifier.audit_hook = lambda at, action, detail: audit.record(at, "alerts", action, detail)
         service.lockout_hook = lambda locked_out: notifier.post(lockout_alert(locked_out))
         log_shipper = log_shipper or LogShipper(log_hub)
-        log_shipper.set_callsign(service.config.callsign)
+        try:
+            log_shipper.set_callsign(service.config.callsign)
+        except CoreUnavailable:  # the core has not been reached yet
+            service.add_config_listener(lambda config: log_shipper.set_callsign(config.callsign))
         if log_shipper.active:
             log_shipper.start()
         data_root = _resolve_data_root(os.environ, _REPO_DATA_DIR)
@@ -730,22 +751,26 @@ class AppRuntime:
             service, users, assets_store, recordings, activity_store, audit, hub_sites=hub_sites
         )
         watchdog = watchdog or Watchdog()
-        core_runtime = CoreRuntime(
-            service=service,
-            renderer=renderer,
-            live_audio=live_audio,
-            monitor_receiver=monitor_receiver,
-            link_radio=link_radio,
-            remote_base=remote_base,
-            gpio=gpio,
-            tx_fan=tx_fan,
-            autopatch=autopatch,
-            allstar_node=allstar_node,
-            dmr=dmr,
-            dmr_audio=dmr_audio,
-            watchdog=watchdog,
-            remember_stall=lambda stalled: health.marker.remember(watchdog=stalled),
-        )
+        if getattr(service, "is_remote", False):
+            # The core runs in its own process: nothing here starts a device (core_runtime.SplitCoreRuntime).
+            core_runtime = SplitCoreRuntime(service)
+        else:
+            core_runtime = CoreRuntime(
+                service=service,
+                renderer=renderer,
+                live_audio=live_audio,
+                monitor_receiver=monitor_receiver,
+                link_radio=link_radio,
+                remote_base=remote_base,
+                gpio=gpio,
+                tx_fan=tx_fan,
+                autopatch=autopatch,
+                allstar_node=allstar_node,
+                dmr=dmr,
+                dmr_audio=dmr_audio,
+                watchdog=watchdog,
+                remember_stall=lambda stalled: health.marker.remember(watchdog=stalled),
+            )
 
         def auth_enabled() -> bool:
             """On once there's an env admin or any stored user -- so adding the

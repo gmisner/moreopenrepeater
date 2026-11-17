@@ -30,8 +30,10 @@ from .models import AuditEntryResponse, ConfigResponse, SessionResponse, Snapsho
 from .node_directory import NodeDirectory
 from .notify import Notifier
 from .persistence import StateStore
+from .remote_core import RemoteCore
 from .snapshot_import import snapshot_to_import, validate_config_values
 from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
+from .split import NotInSplitMode, Unavailable
 from .recordings import RecordingStore
 from .routes import accounts as accounts_routes
 from .routes import activity as activity_routes
@@ -132,9 +134,9 @@ def _status_payload(
 ) -> StatusResponse:
     """Controller snapshot plus live gpio / linked-radio for /api/status and /ws/status."""
     data = dataclasses.asdict(snapshot)
-    if gpio is not None and tx_fan is not None:
+    if gpio is not None and tx_fan is not None and not isinstance(gpio, Unavailable):
         data["gpio"] = {**gpio.status(), "fan": tx_fan.status()}
-    if link_radio is not None and remote_base is not None:
+    if link_radio is not None and remote_base is not None and not isinstance(link_radio, Unavailable):
         data["link_radio"] = {**link_radio.status(), **remote_base.status()}
     return StatusResponse.model_validate(data)
 
@@ -222,6 +224,10 @@ def create_app(
     async def core_refused_a_command(request: Request, error: CommandRefused) -> JSONResponse:
         status = {"command.not_locked_out": 409, "command.simulation_disabled": 403}.get(error.code, 422)
         return JSONResponse(status_code=status, content={"detail": error.message, "code": error.code})
+
+    @app.exception_handler(NotInSplitMode)
+    async def needs_the_core_s_hardware(request: Request, error: NotInSplitMode) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"detail": str(error), "code": "core.hardware"})
 
     @app.exception_handler(CoreUnavailable)
     async def core_is_unavailable(request: Request, error: CoreUnavailable) -> JSONResponse:
@@ -502,8 +508,16 @@ def create_app(
 
 
 _LOG_HUB = LogHub()
+def _remote_core_from_env(env: dict) -> Optional[RemoteCore]:
+    """`MOREOPENREPEATER_CORE_SOCKET` set means the core runs in its own process (docs/docker.md):
+    follow it over that socket instead of running the radio here. Unset, nothing changes."""
+    path = (env.get("MOREOPENREPEATER_CORE_SOCKET") or "").strip()
+    return RemoteCore(Path(path)) if path else None
+
+
 app = create_app(
     core=CoreBundle(
+        service=_remote_core_from_env(dict(os.environ)),
         state_store=StateStore(DEFAULT_STATE_PATH),
         activity_store=ActivityStore(DEFAULT_ACTIVITY_PATH),
     ),

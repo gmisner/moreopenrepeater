@@ -72,6 +72,7 @@ class RemoteCore:
         self._last_event_at: Optional[float] = None
         self._subscribers: set[asyncio.Queue] = set()
         self._task: Optional[asyncio.Task] = None
+        self._stopping = False
         self.reconnects = 0
         self._config: Optional[RepeaterConfig] = None  # the core's saved configuration
         self._config_version: Optional[int] = None  # the version `_config` is at
@@ -84,9 +85,13 @@ class RemoteCore:
     def start(self) -> None:
         """Start following the core. Never raises, and does not wait: the core may not be up yet."""
         if self._task is None:
+            self._stopping = False
             self._task = asyncio.ensure_future(self._run())
 
     async def stop(self) -> None:
+        # The flag matters: on Python 3.11 a cancel that lands inside the HTTP client while
+        # we are retrying a dead socket can be swallowed, and then only the flag ends the loop.
+        self._stopping = True
         for name in ("_task", "_fetching"):
             task, current = getattr(self, name), None
             setattr(self, name, current)
@@ -213,7 +218,7 @@ class RemoteCore:
 
     async def _run(self) -> None:
         attempt = 0
-        while True:
+        while not self._stopping:
             try:
                 await self._follow()
                 attempt = 0  # it connected and then ended cleanly: start the backoff over

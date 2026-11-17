@@ -26,8 +26,6 @@ from controller.state_machine import RepeaterConfig
 from link.aprs_client import APRSClient, format_frequency_comment, format_position_report, format_status_report
 from link.asterisk_files import asterisk_files_from_env
 from link.node_link import NodeLinkClient
-from playout.kokoro_service import KokoroService, KokoroServiceError
-from playout.piper_service import PiperService, PiperServiceError
 from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError, detect_tts
 from wx.nws import fetch_active_alerts, fetch_zone_geometry, missing_zones
@@ -77,7 +75,7 @@ from .net import POLL_SECONDS as NET_POLL_SECONDS
 from .net import NetMode
 from .node_directory import NodeDirectory
 from .notify import Notifier
-from .loops import run_announcement_loop, run_long_id_warm_loop, run_tick_loop
+from .core_runtime import ANNOUNCEMENT_POLL_SECONDS, AnnouncementQueueFull, CoreRuntime
 from .persistence import StateStore
 from .recordings import RecordingStore
 from .remote_base import RemoteBase
@@ -96,33 +94,12 @@ from .tailscale import TailscaleControl, tailscale_settings_from_env
 from .restart import RestartControl, restart_settings_from_env
 from .updates import UpdateChecker, Updater, channel_from_env, installed_version, repo_from_checkout, updater_settings_from_env
 from .users import Role, UserStore
-from .watchdog import Watchdog, ping_interval, sd_notify
+from .watchdog import Watchdog
 
 REPO_DIR = Path(__file__).resolve().parent.parent.parent
 WEB_DIR = REPO_DIR / "web"
 _REPO_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 _tts_logger = logging.getLogger("moreopenrepeater.tts")
-
-
-def _kokoro_service_for(renderer: ClipRenderer) -> Optional[KokoroService]:
-    """Build a serve manager when the clip renderer is using Kokoro."""
-    tts = getattr(renderer, "tts", None)
-    if tts is None or getattr(tts, "name", None) != "kokoro":
-        return None
-    binary = getattr(tts, "binary", "") or "kokoro"
-    return KokoroService(binary=binary)
-
-
-def _piper_service_for(renderer: ClipRenderer, voice: str = "") -> Optional[PiperService]:
-    """Build an HTTP serve manager when the clip renderer is using Piper."""
-    tts = getattr(renderer, "tts", None)
-    if tts is None or getattr(tts, "name", None) != "piper":
-        return None
-    from playout.tts import piper_service_url, sanitize_piper_voice
-
-    if not piper_service_url():
-        return None
-    return PiperService(voice=sanitize_piper_voice(voice))
 
 
 def _resolve_data_root(env: dict, repo_data_dir: Path) -> Path:
@@ -174,13 +151,10 @@ SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 # POSTs that don't change anything, left out of the audit log.
 _UNAUDITED_PATHS = ("/api/audio/preview",)
 DEFAULT_LOG_PATH = _resolve_log_path(os.environ, _REPO_DATA_DIR)
-TICK_INTERVAL_SECONDS = 0.05
 APRS_DISABLED_POLL_SECONDS = 5.0
 LINK_RECONNECT_DELAY_SECONDS = 5.0
 LOGIN_FAILURE_DELAY_SECONDS = 1.0
-ANNOUNCEMENT_POLL_SECONDS = 1.0
 WEATHER_DISABLED_POLL_SECONDS = 5.0
-LONG_ID_WARM_SECONDS = 20.0
 
 _aprs_logger = logging.getLogger("moreopenrepeater.aprs")
 _announce_logger = logging.getLogger("moreopenrepeater.announcements")
@@ -756,23 +730,22 @@ class AppRuntime:
             service, users, assets_store, recordings, activity_store, audit, hub_sites=hub_sites
         )
         watchdog = watchdog or Watchdog()
-        last_tick: list[Optional[float]] = [None]
-        watchdog.watch("controller", lambda: last_tick[0])
-        watchdog.watch("audio engine", live_audio.progress)
-        watchdog.watch("link radio audio engine", link_radio.progress)
-
-        def before_watchdog_restart(stalled: str) -> None:
-            try:
-                try:
-                    live_audio.release_ptt()
-                finally:
-                    link_radio.release_ptt()  # unkey the link radio even if the main one failed
-            finally:
-                # Remember even if unkey fails so the next start reports a watchdog
-                # restart instead of a generic crash.
-                health.marker.remember(watchdog=stalled)
-
-        watchdog.on_stall = before_watchdog_restart
+        core_runtime = CoreRuntime(
+            service=service,
+            renderer=renderer,
+            live_audio=live_audio,
+            monitor_receiver=monitor_receiver,
+            link_radio=link_radio,
+            remote_base=remote_base,
+            gpio=gpio,
+            tx_fan=tx_fan,
+            autopatch=autopatch,
+            allstar_node=allstar_node,
+            dmr=dmr,
+            dmr_audio=dmr_audio,
+            watchdog=watchdog,
+            remember_stall=lambda stalled: health.marker.remember(watchdog=stalled),
+        )
 
         def auth_enabled() -> bool:
             """On once there's an env admin or any stored user -- so adding the
@@ -933,22 +906,15 @@ class AppRuntime:
                 await asyncio.sleep(aprs.aprs_beacon_interval)
 
         async def render_and_queue(clip: str, *, on_linked_radio: bool = False) -> None:
-            """Render off the event loop first, so the controller knows how long
-            the clip is (and a TTS failure surfaces here, not mid-transmission)."""
-            await asyncio.get_running_loop().run_in_executor(None, renderer.render, clip, service.config)
-            if not service.queue_announcement(clip, on_linked_radio=on_linked_radio):
+            try:
+                await core_runtime.render_and_queue(clip, on_linked_radio=on_linked_radio)
+            except AnnouncementQueueFull:
                 raise HTTPException(status_code=429, detail="Too many announcements are already waiting to play")
 
         async def aprs_prune_loop() -> None:
             while True:
                 await asyncio.sleep(APRS_PRUNE_SECONDS)
                 await asyncio.get_running_loop().run_in_executor(None, aprs_stations.prune, aprs_window_start())
-
-        def announcement_loop():
-            return run_announcement_loop(
-                service, render_and_queue, ANNOUNCEMENT_POLL_SECONDS,
-                (UnknownClipError, TTSError, HTTPException), _announce_logger,
-            )
 
         async def weather_schedule_loop() -> None:
             """Routine METAR / alert-summary announcements on wx_schedule_minutes."""
@@ -1068,11 +1034,6 @@ class AppRuntime:
                 await asyncio.sleep(BACKUP_CHECK_SECONDS)
                 await loop.run_in_executor(None, backups.run_schedule, backup_sources, service.config, time.time())
 
-        def long_id_loop():
-            return run_long_id_warm_loop(
-                renderer.warm_long_id, lambda: service.config, LONG_ID_WARM_SECONDS, _announce_logger
-            )
-
         async def activity_flush_loop() -> None:
             while True:
                 await asyncio.sleep(ACTIVITY_FLUSH_SECONDS)
@@ -1113,13 +1074,15 @@ class AppRuntime:
 
         @asynccontextmanager
         async def lifespan(_app: FastAPI):
+            # One process still runs the core and the API together. The core's
+            # steps are in `CoreRuntime` and the rest are here, interleaved in the
+            # order this lifespan has always used. (Stage 3 slice 5, #229.)
             tasks: list[asyncio.Task] = []
-            # Before the audio engines, so a pin taken from the fan is released before they claim it.
-            tx_fan.start()
+            core_runtime.start_fan()
             if start_background_tick:
-                tasks.append(asyncio.create_task(run_tick_loop(service, last_tick, TICK_INTERVAL_SECONDS)))
+                core_runtime.start_tick(tasks)
                 tasks.append(asyncio.create_task(aprs_beacon_loop()))
-                tasks.append(asyncio.create_task(announcement_loop()))
+                core_runtime.start_announcements(tasks)
                 tasks.append(asyncio.create_task(weather_schedule_loop()))
                 tasks.append(asyncio.create_task(weather_loop()))
                 tasks.append(asyncio.create_task(aprs_receiver.run()))
@@ -1127,28 +1090,8 @@ class AppRuntime:
                 activity_store.prune((datetime.now() - timedelta(days=RETENTION_DAYS)).timestamp())
                 audit.prune((datetime.now() - timedelta(days=AUDIT_RETENTION_DAYS)).timestamp())
                 loop = asyncio.get_running_loop()
-                kokoro_service = _kokoro_service_for(renderer)
-                if kokoro_service is not None:
-                    try:
-                        await loop.run_in_executor(None, kokoro_service.start_and_wait)
-                        self.kokoro_service = kokoro_service
-                    except KokoroServiceError:
-                        _tts_logger.exception(
-                            "Kokoro service failed to become ready; voice IDs fall back to CW until it works"
-                        )
-                        await loop.run_in_executor(None, kokoro_service.stop)
-                piper_service = _piper_service_for(renderer, voice=service.config.tts_voice)
-                if piper_service is not None:
-                    try:
-                        await loop.run_in_executor(None, piper_service.start_and_wait)
-                        self.piper_service = piper_service
-                    except PiperServiceError:
-                        _tts_logger.exception(
-                            "Piper service failed to become ready; voice IDs use CLI/espeak until it works"
-                        )
-                        await loop.run_in_executor(None, piper_service.stop)
-                loop.run_in_executor(None, renderer.warm, service.config)
-                service.add_config_listener(lambda config: loop.run_in_executor(None, renderer.warm, config))
+                await core_runtime.start_tts()
+                core_runtime.warm_renderer(loop)
                 tasks.append(asyncio.create_task(backup_loop()))
                 tasks.append(asyncio.create_task(net_loop()))
                 tasks.append(asyncio.create_task(auto_update_loop()))
@@ -1158,48 +1101,24 @@ class AppRuntime:
                 tasks.append(asyncio.create_task(health_loop()))
                 tasks.append(asyncio.create_task(sensor_loop()))
                 tasks.append(asyncio.create_task(activity_flush_loop()))
-                tasks.append(asyncio.create_task(long_id_loop()))
+                core_runtime.start_long_id(tasks)
                 if link_settings is not None:
                     tasks.append(asyncio.create_task(node_link_loop()))
                     tasks.append(asyncio.create_task(node_directory.run()))
                     tasks.append(asyncio.create_task(link_schedule_loop()))
-                live_audio.attach(loop)
-                monitor_receiver.attach(loop)
-                link_radio.attach(loop)
-                tasks.append(asyncio.create_task(link_radio.run()))
-                await autopatch.start()
-                await allstar_node.start()
-                if (dmr.directory / "enabled").exists() if dmr.directory else False:
-                    await dmr_audio.start()
-                sd_notify("READY=1")
-                interval = ping_interval()
-                if interval is not None:
-                    watchdog.start(interval)
-            gpio.start()
-            remote_base.attach(asyncio.get_running_loop())
+                await core_runtime.start_audio_and_links(loop, tasks)
+                core_runtime.notify_ready()
+            core_runtime.start_io()
             async with agent_box[0].running():
                 yield
             if start_background_tick:
-                sd_notify("STOPPING=1")
-                watchdog.stop()
+                core_runtime.announce_stopping()
             for task in tasks:
                 task.cancel()
-            await gpio.stop()
-            await tx_fan.stop()
-            await allstar_node.stop()
-            await dmr_audio.stop()
-            await autopatch.stop()
-            live_audio.shutdown()
-            monitor_receiver.shutdown()
-            link_radio.shutdown()
+            await core_runtime.stop_devices()
             activity_store.flush()
             site_sensors.history.flush()
-            if self.kokoro_service is not None:
-                await asyncio.get_running_loop().run_in_executor(None, self.kokoro_service.stop)
-                self.kokoro_service = None
-            if self.piper_service is not None:
-                await asyncio.get_running_loop().run_in_executor(None, self.piper_service.stop)
-                self.piper_service = None
+            await core_runtime.stop_tts()
             if start_background_tick:
                 health.stopping()
 
@@ -1213,8 +1132,7 @@ class AppRuntime:
         self.mailbox_store = mailbox_store
         self.monitor_recordings = monitor_recordings
         self.renderer = renderer
-        self.kokoro_service: Optional[KokoroService] = None
-        self.piper_service: Optional[PiperService] = None
+        self.core_runtime = core_runtime
         self.live_audio = live_audio
         self.monitor_receiver = monitor_receiver
         self.link_radio = link_radio

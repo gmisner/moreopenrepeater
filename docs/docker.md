@@ -94,9 +94,10 @@ through the volume's socket.
 pair of `audio glitch` lines (a sound card receive overrun and a transmit underrun)
 every one to four minutes while idle, across several runs. The same core run by
 systemd logged none in nine minutes. Turning off the Piper server and turning off
-the health check changed nothing; turning off seccomp (`seccomp=unconfined`) gave
-15 minutes with no glitch after start-up and, with the health check on, 12 more
-minutes with none. The audio worker makes a steady stream of small system calls, and
+the health check changed nothing; turning off seccomp (`seccomp=unconfined`) cut it to
+one pair in about 32 minutes of running (15 minutes with none after start-up, then 17
+with one). The same core under systemd had none in about 25 minutes, so the two are
+not yet distinguishable. The audio worker makes a steady stream of small system calls, and
 the filter adds a cost to each that a Pi cannot always afford. So `compose.yaml`
 sets `seccomp=unconfined`, and keeps the rest: non-root user, read-only root, no
 capabilities, `no-new-privileges`. A tight allowlist profile for this container
@@ -112,6 +113,11 @@ Also found:
 - `docker kill` does not restart the container under `unless-stopped`. A crash of
   the process does (tested: the core was back and followed again in about 24 s).
 
-Still to measure: memory and CPU on a Pi 3B+, the PTT release when the container is
-stopped mid-transmission, and device loss. A stable udev name for the PTT device,
+**Stopping mid-transmission:** `docker stop` sent while the repeater was sending its
+ID (0.2 s in) logged `audio engine stopped` within 0.2 s, and the container exited 0
+in 0.95 s. That is the core's own shutdown path releasing the audio device and PTT;
+nothing here observed the radio itself unkeying.
+
+Still to measure: memory and CPU on a Pi 3B+, the PTT line observed independently
+when the container stops, and device loss. A stable udev name for the PTT device,
 multi-arch publishing, and the API, `logd` and module containers are later slices.

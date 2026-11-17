@@ -25,6 +25,7 @@ from link.usrp import FRAME_SAMPLES, RATE, decode, encode_voice
 
 from .service.core_handle import CoreHandle
 from .service import LINK_AUDIO_NODE
+from .supervise import LoopGuard
 
 _logger = logging.getLogger("moreopenrepeater.allstar_audio")
 
@@ -151,13 +152,22 @@ class AllStarAudio(asyncio.DatagramProtocol):
         loop = asyncio.get_running_loop()
         pending = np.zeros(0, dtype=np.float32)
         next_at = loop.time()
+        guard = LoopGuard("AllStar audio sender", _logger)
         while True:
-            while (block := self._link.take_radio()) is not None:
-                pending = np.concatenate([pending, self._to_node.process(block)])
-            while len(pending) >= FRAME_SAMPLES:
-                self._seq += 1
-                self._transport.sendto(encode_voice(self._seq, _to_pcm(pending[:FRAME_SAMPLES])), (s.node_host, s.node_port))
-                pending = pending[FRAME_SAMPLES:]
+            # An error sending audio must not skip the lost-unkey check below, or a
+            # node that never unkeys would stay transmitted.
+            try:
+                while (block := self._link.take_radio()) is not None:
+                    pending = np.concatenate([pending, self._to_node.process(block)])
+                while len(pending) >= FRAME_SAMPLES:
+                    self._seq += 1
+                    self._transport.sendto(encode_voice(self._seq, _to_pcm(pending[:FRAME_SAMPLES])), (s.node_host, s.node_port))
+                    pending = pending[FRAME_SAMPLES:]
+            except Exception as error:  # noqa: BLE001
+                guard.failed(error)
+                pending = np.zeros(0, dtype=np.float32)
+            else:
+                guard.ok()
             if self.keyed and loop.time() - self._last_packet > UNKEY_TIMEOUT:
                 _logger.warning("no unkey from the node; unkeying")
                 self._set_keyed(False)

@@ -38,6 +38,7 @@ from playout.tts import TTSError
 from .audio_devices import resolve_audio_device
 from .boards import run_amixer
 from .mixer import apply_saved_levels
+from .supervise import LoopGuard
 from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.link_radio")
@@ -202,14 +203,20 @@ class LinkRadio:
 
     async def run(self) -> None:
         """Moves audio across every 20 ms and updates the transmitter."""
+        guard = LoopGuard("link radio audio pump", _logger)
         last_update = 0.0
         while True:
             await asyncio.sleep(BLOCK_SECONDS)
-            self.pump()
-            now = self._clock()
-            if now - last_update >= UPDATE_SECONDS:
-                last_update = now
-                self.update(now)
+            try:
+                self.pump()
+                now = self._clock()
+                if now - last_update >= UPDATE_SECONDS:
+                    last_update = now
+                    self.update(now)
+            except Exception as error:  # noqa: BLE001 - one bad pass must not end the pump for good
+                guard.failed(error)
+            else:
+                guard.ok()
 
     def pump(self) -> None:
         repeater, link = self._repeater_side, self._link_side

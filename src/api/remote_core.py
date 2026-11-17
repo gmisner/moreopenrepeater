@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import types
 import json
 import logging
 import time
@@ -50,6 +51,7 @@ from controller.announcements import Announcement
 from controller.events import MailboxCommand
 from controller.config import RepeaterConfig
 from controller.macros import Macro
+from controller.modes import held_reason as _held_reason
 from controller.modes import effective_config
 
 from .core_runtime import AnnouncementQueueFull
@@ -58,6 +60,7 @@ from playout.renderer import ASSET_PREFIX, TTS_PREFIX, UnknownClipError
 from playout.tts import TTSError
 
 from .service.snapshot import StatusSnapshot
+from .service.weather import WeatherSupport
 
 _logger = logging.getLogger("moreopenrepeater.remote_core")
 
@@ -82,6 +85,8 @@ class RemoteCore:
         self._clock = clock
         self._snapshot: Optional[StatusSnapshot] = None
         self._snapshot_at: float = 0.0  # when `_snapshot` arrived, on `clock`
+        self._started_at: float = clock()
+        self._seen_before = False  # a first status is not a change
         self._status: Optional[CoreStatus] = None
         self._health: Optional[str] = None  # from the latest heartbeat
         self._connected = False
@@ -100,7 +105,26 @@ class RemoteCore:
         self._next_runs: dict[str, Optional[datetime]] = {}
         self._speaking: set[asyncio.Task] = set()  # fire-and-forget speak() calls in flight
         self._macro_handlers: dict[str, Callable] = {}  # macro family -> what to call
+        self._listeners: list[Callable[[RepeaterConfig], None]] = []
+        self._net_hint: Optional[bool] = None  # what the API's saved net state says; resent on every connect
+        self._busy_at: Optional[float] = None  # the last time the repeater was seen in use
+        # Things the in-process service has and the API's composition sets. The core owns the real ones;
+        # setting them here is accepted and does nothing, so one composition works in both modes.
+        self.renderer = None
+        self.activity = None
+        self.link_radio_play = None
+        self.lockout_hook: Optional[Callable[[bool], None]] = None
+        self.programming = types.SimpleNamespace(
+            code_checker=None, codes_locked=lambda: False, audit_hook=None, net_hook=None,
+            gpio_command=None, aprs_summary=None, homeassistant_hook=None, metar_hook=None,
+            sensor_hook=None, remote_base_hook=None, mailbox_hook=None,
+        )
+        # NWS alert state is the API's (it does the polling); the core only plays what it is told.
+        self.weather = WeatherSupport(self)  # type: ignore[arg-type]
         self._sequencer = Sequencer()
+
+    #: The API's composition checks this to run without the core's own parts (audio, PTT, GPIO).
+    is_remote = True
 
     # -- lifecycle ------------------------------------------------------------
 
@@ -223,6 +247,94 @@ class RemoteCore:
     def config_version(self) -> Optional[int]:
         return self._config_version
 
+    @property
+    def controller(self) -> "RemoteCore":
+        """`WeatherSupport` reads `host.controller.config`; this is the API's view of it."""
+        return self
+
+    # -- weather (the API's own state) -------------------------------------------------------------
+
+    @property
+    def weather_tracker(self):
+        return self.weather.tracker
+
+    @property
+    def weather_alerts(self):
+        return self.weather.alerts
+
+    @property
+    def weather_last_checked(self):
+        return self.weather.last_checked
+
+    @property
+    def weather_last_error(self):
+        return self.weather.last_error
+
+    def weather_polled(self, geojson: dict, announce: bool = True) -> list[str]:
+        return self.weather.polled(geojson, announce=announce)
+
+    def weather_poll_failed(self, error: str) -> None:
+        self.weather.poll_failed(error)
+
+    def weather_alert_clip(self, alert) -> str:
+        return self.weather.alert_clip(alert)
+
+    def weather_schedule_due(self) -> bool:
+        return self.weather.take_due_schedule()
+
+    def scheduled_weather_text(self) -> Optional[str]:
+        return self.weather.scheduled_text()
+
+    def next_weather_schedule_run(self):
+        return self.weather.next_schedule_run()
+
+    def weather_summary_text(self) -> str:
+        return self.weather.summary_text()
+
+    # -- small things the API asks of a service ---------------------------------------------------------
+
+    def held_reason(self, feature: str) -> str:
+        """Why `feature` is off right now although it is switched on, else ''."""
+        return _held_reason(self.saved_config, bool(self._snapshot and self._snapshot.net_active), feature)
+
+    def add_config_listener(self, listener: Callable[[RepeaterConfig], None]) -> None:
+        """Called with the settings in force whenever the core's configuration is read again."""
+        self._listeners.append(listener)
+
+    def idle_seconds(self) -> float:
+        """How long the repeater has been quiet, as far as this client has seen (0 while it is in use)."""
+        if self._snapshot is not None and (
+            self._snapshot.state != "idle" or self._snapshot.cos_active or self._snapshot.ptt_active
+        ):
+            return 0.0
+        since = self._busy_at if self._busy_at is not None else self._started_at
+        return max(0.0, self._clock() - since)
+
+    def sync_net_state(self, active: bool) -> None:
+        """Remember what the API's saved state says about net mode, and tell the core: now if it is
+        connected, and again after every reconnect (a restarted core forgets it)."""
+        self._net_hint = active
+        if self._connected:
+            self._send_net_hint()
+
+    def _send_net_hint(self) -> None:
+        if self._net_hint is None:
+            return
+        try:
+            task = asyncio.get_running_loop().create_task(self._send_net_hint_now(self._net_hint))
+        except RuntimeError:
+            return
+        self._speaking.add(task)
+        task.add_done_callback(self._speaking.discard)
+
+    async def _send_net_hint_now(self, active: bool) -> None:
+        try:
+            await self.command("set_net_active", active=active)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001
+            _logger.warning("could not tell the core about net mode: %s", type(error).__name__)
+
     def wall_now(self) -> datetime:
         return datetime.now(timezone.utc)
 
@@ -232,13 +344,18 @@ class RemoteCore:
         The core pushes a status when something an operator would see changes, not
         every tick, so the countdowns (time-out, hang time, next ID) are carried
         forward by the time since the snapshot arrived. They only count down while
-        the core is being heard from; once `stale` they are frozen at their last
-        value. While `stale` is true the whole snapshot is the last known value and
-        may be old."""
+        the core is being heard from. Once `stale` the snapshot claims nothing about what the
+        radio is doing: its state is `core_unavailable`, nothing is keyed or receiving, and
+        no countdown runs. The things that do not change by the second (callsign, whether
+        the transmitter is enabled, GMRS mode) are kept from the last status, and `status`
+        still holds the last message the core sent, with its age in `age_s`."""
         if self._snapshot is None:
             return self._placeholder()
         if self.stale:
-            return self._snapshot
+            return dataclasses.replace(
+                self._snapshot, state=UNAVAILABLE_STATE, ptt_active=False, cos_active=False, ctcss_hz=None,
+                linked_nodes=[], tot_remaining=None, hang_remaining=None, id_due_in=None,
+            )
         elapsed = max(0.0, self._clock() - self._snapshot_at)
 
         def counted(value: Optional[float]) -> Optional[float]:
@@ -279,6 +396,8 @@ class RemoteCore:
         if connected != self._connected:
             self._connected = connected
             _logger.info("core %s", "connected" if connected else "not reachable")
+            if connected:
+                self._send_net_hint()
             if not connected:
                 # Tell subscribers the last value is no longer being confirmed.
                 self._publish(self._placeholder())
@@ -338,8 +457,14 @@ class RemoteCore:
                 status = CoreStatus.model_validate(payload["status"])
                 local = payload.get("local") or {}
                 self._status = status
+                was_locked = bool(self._snapshot and self._snapshot.locked_out)
                 self._snapshot = _snapshot_from(status, local)
                 self._snapshot_at = self._clock()
+                if status.state != "idle" or status.cos_active or status.ptt_commanded:
+                    self._busy_at = self._snapshot_at
+                if self.lockout_hook is not None and was_locked != self._snapshot.locked_out and self._seen_before:
+                    self.lockout_hook(self._snapshot.locked_out)
+                self._seen_before = True
                 self._seen()
                 self._publish(self._snapshot)
                 version = local.get("config_version")
@@ -415,6 +540,11 @@ class RemoteCore:
             state = ConfigState.model_validate_json(response.content)
             self._config = RepeaterConfig.from_flat_dict(state.values)  # values are never logged
             self._config_version = state.config_version
+            for listener in list(self._listeners):
+                try:
+                    listener(self.config)
+                except Exception as error:  # noqa: BLE001 - one listener must not stop the others
+                    _logger.warning("a configuration listener failed: %s", type(error).__name__)
             if self._announced_version is None or self._announced_version == state.config_version:
                 return
 
@@ -516,6 +646,8 @@ class RemoteCore:
         response = await self._exchange("/command", request.model_dump_json())
         if response.status_code != 200:
             raise CommandRefused("command.invalid", "the core did not accept the request")
+        if name == "set_net_active" and isinstance(params.get("active"), bool):
+            self._net_hint = params["active"]
         try:
             result = CommandResult.model_validate_json(response.content)
         except ValueError:

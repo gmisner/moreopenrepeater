@@ -73,7 +73,7 @@ class NetMode:
         self.past: list[dict] = data.get("past", [])
         service.register_macro_handler("net", self._dtmf)
         if self.current is not None:  # a net that was running when the service stopped
-            service.set_net_active(True)
+            service.sync_net_state(True)
 
     def _save(self) -> None:
         if self._store is not None:

@@ -2,5 +2,6 @@
 !docker/core-requirements.txt
 !pyproject.toml
 !src
+!web
 **/__pycache__
 **/*.pyc

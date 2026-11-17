@@ -224,3 +224,38 @@ class CoreRuntime:
         if self.piper_service is not None:
             await loop.run_in_executor(None, self.piper_service.stop)
             self.piper_service = None
+
+
+class SplitCoreRuntime:
+    """Stands in for `CoreRuntime` when the core runs in its own process (Stage 3 slice 7c-7, #229).
+
+    The API's lifespan calls the same steps in the same order. Every one that starts or stops the
+    radio, audio, PTT or text-to-speech does nothing here, because the core owns them. The two that
+    matter are `start_io`, which starts following the core, and `stop_devices`, which stops following
+    it. Nothing here touches a device."""
+
+    def __init__(self, remote) -> None:
+        self.remote = remote
+        self.kokoro_service = None
+        self.piper_service = None
+        self.last_tick: list = [None]
+
+    async def render_and_queue(self, clip: str, *, on_linked_radio: bool = False) -> None:
+        await self.remote.render_and_queue(clip, on_linked_radio=on_linked_radio)
+
+    def start_fan(self) -> None: ...
+    def start_tick(self, tasks: list) -> None: ...
+    def start_announcements(self, tasks: list) -> None: ...
+    async def start_tts(self) -> None: ...
+    def warm_renderer(self, loop) -> None: ...
+    def start_long_id(self, tasks: list) -> None: ...
+    async def start_audio_and_links(self, loop, tasks: list) -> None: ...
+    def notify_ready(self) -> None: ...
+    def announce_stopping(self) -> None: ...
+    async def stop_tts(self) -> None: ...
+
+    def start_io(self) -> None:
+        self.remote.start()  # follow the core; it may not be up yet, and that is fine
+
+    async def stop_devices(self) -> None:
+        await self.remote.stop()

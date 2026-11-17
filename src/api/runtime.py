@@ -76,7 +76,7 @@ from .net import NetMode
 from .node_directory import NodeDirectory
 from .notify import Notifier
 from .service.core_handle import CoreUnavailable
-from .split import Unavailable
+from .split import CoreHardware, Unavailable
 from .core_runtime import ANNOUNCEMENT_POLL_SECONDS, AnnouncementQueueFull, CoreRuntime, SplitCoreRuntime
 from .persistence import StateStore
 from .recordings import RecordingStore
@@ -591,17 +591,18 @@ class AppRuntime:
         if getattr(service, "is_remote", False):
             service.attach_log_hub(log_hub)  # the Logs page shows the core's log lines too
             # The core owns these and runs in its own process; this process holds no device.
-            live_audio = live_audio or Unavailable("live_audio")
-            monitor_receiver = monitor_receiver or Unavailable("monitor_receiver")
-            link_radio = link_radio or Unavailable("link_radio")
-            remote_base = remote_base or Unavailable("remote_base")
-            gpio = gpio or Unavailable("gpio")
-            tx_fan = tx_fan or Unavailable("tx_fan")
-            autopatch = autopatch or Unavailable("autopatch")
+            # Their status is the core's, read over the socket (split.CoreHardware); acting on them is not yet.
+            live_audio = live_audio or CoreHardware("live_audio", service)
+            monitor_receiver = monitor_receiver or CoreHardware("monitor_receiver", service)
+            link_radio = link_radio or CoreHardware("link_radio", service)
+            remote_base = remote_base or CoreHardware("remote_base", service)
+            gpio = gpio or CoreHardware("gpio", service)
+            tx_fan = tx_fan or CoreHardware("tx_fan", service)
+            autopatch = autopatch or CoreHardware("autopatch", service)
             sip_trunk = sip_trunk or Unavailable("sip_trunk")
-            allstar_node = allstar_node or Unavailable("allstar_node")
+            allstar_node = allstar_node or CoreHardware("allstar_node", service, asynchronous=True)
             dmr_audio = dmr_audio or Unavailable("dmr_audio")
-            dmr = dmr or Unavailable("dmr")
+            dmr = dmr or CoreHardware("dmr", service, asynchronous=True)
         live_audio = live_audio or LiveAudio(
             service, renderer, cm108=cm108_from_env(os.environ), recordings=recordings, run_mixer=run_mixer
         )
@@ -974,6 +975,8 @@ class AppRuntime:
                     await render_and_queue(clip, on_linked_radio=on_linked_radio)
                 except (UnknownClipError, TTSError, HTTPException):
                     _weather_logger.exception("couldn't play scheduled weather announcement")
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     _weather_logger.exception("unexpected error in scheduled weather")
 
@@ -1022,6 +1025,8 @@ class AppRuntime:
                     continue
                 try:
                     await check_weather(announce=True)
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     # Keep polling: a missed severe-weather alert is worse than a noisy log.
                     _weather_logger.exception("unexpected error checking NWS alerts")
@@ -1034,6 +1039,8 @@ class AppRuntime:
                 try:
                     await loop.run_in_executor(None, mailbox.prune)
                     mailbox.remind()
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.mailbox").exception("unexpected error in the mailbox")
 
@@ -1045,6 +1052,8 @@ class AppRuntime:
                     continue
                 try:
                     await loop.run_in_executor(None, transcriber.run_pending)
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.transcripts").exception("unexpected error transcribing")
 
@@ -1053,6 +1062,8 @@ class AppRuntime:
                 await asyncio.sleep(NET_POLL_SECONDS)
                 try:
                     await nets.tick()
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.net").exception("unexpected error in net mode")
 
@@ -1062,6 +1073,8 @@ class AppRuntime:
                 await asyncio.sleep(AUTO_UPDATE_POLL_SECONDS)
                 try:
                     await loop.run_in_executor(None, auto_updater.tick)  # runs git and calls GitHub
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.updates").exception("unexpected error in automatic updates")
 
@@ -1085,6 +1098,8 @@ class AppRuntime:
                 try:
                     for alert in await loop.run_in_executor(None, health.check):
                         notifier.post(alert)
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.alerts").exception("unexpected error checking the system's health")
 
@@ -1103,11 +1118,24 @@ class AppRuntime:
                         site_sensors.history.prune,
                         time.time() - SENSOR_HISTORY_DAYS * 86400,
                     )
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.sensors").exception(
                         "unexpected error polling site sensors"
                     )
                 await asyncio.sleep(float(config.sensors_poll_interval or SENSOR_POLL_SECONDS))
+
+        async def supervised(make) -> None:
+            """Run a background loop, and start it again if it cannot proceed because the core has not
+            been reached yet (a loop that reads the settings would otherwise end for good at start-up,
+            when the API comes up before the core). Anything else is the loop's own to handle."""
+            while True:
+                try:
+                    await make()
+                    return
+                except CoreUnavailable:
+                    await asyncio.sleep(2.0)
 
         @asynccontextmanager
         async def lifespan(_app: FastAPI):
@@ -1118,31 +1146,31 @@ class AppRuntime:
             core_runtime.start_fan()
             if start_background_tick:
                 core_runtime.start_tick(tasks)
-                tasks.append(asyncio.create_task(aprs_beacon_loop()))
+                tasks.append(asyncio.create_task(supervised(lambda: aprs_beacon_loop())))
                 core_runtime.start_announcements(tasks)
-                tasks.append(asyncio.create_task(weather_schedule_loop()))
-                tasks.append(asyncio.create_task(weather_loop()))
-                tasks.append(asyncio.create_task(aprs_receiver.run()))
-                tasks.append(asyncio.create_task(aprs_prune_loop()))
+                tasks.append(asyncio.create_task(supervised(lambda: weather_schedule_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: weather_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: aprs_receiver.run())))
+                tasks.append(asyncio.create_task(supervised(lambda: aprs_prune_loop())))
                 activity_store.prune((datetime.now() - timedelta(days=RETENTION_DAYS)).timestamp())
                 audit.prune((datetime.now() - timedelta(days=AUDIT_RETENTION_DAYS)).timestamp())
                 loop = asyncio.get_running_loop()
                 await core_runtime.start_tts()
                 core_runtime.warm_renderer(loop)
-                tasks.append(asyncio.create_task(backup_loop()))
-                tasks.append(asyncio.create_task(net_loop()))
-                tasks.append(asyncio.create_task(auto_update_loop()))
-                tasks.append(asyncio.create_task(streamer.run()))
-                tasks.append(asyncio.create_task(mailbox_loop()))
-                tasks.append(asyncio.create_task(transcribe_loop()))
-                tasks.append(asyncio.create_task(health_loop()))
-                tasks.append(asyncio.create_task(sensor_loop()))
-                tasks.append(asyncio.create_task(activity_flush_loop()))
+                tasks.append(asyncio.create_task(supervised(lambda: backup_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: net_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: auto_update_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: streamer.run())))
+                tasks.append(asyncio.create_task(supervised(lambda: mailbox_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: transcribe_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: health_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: sensor_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: activity_flush_loop())))
                 core_runtime.start_long_id(tasks)
                 if link_settings is not None:
-                    tasks.append(asyncio.create_task(node_link_loop()))
-                    tasks.append(asyncio.create_task(node_directory.run()))
-                    tasks.append(asyncio.create_task(link_schedule_loop()))
+                    tasks.append(asyncio.create_task(supervised(lambda: node_link_loop())))
+                    tasks.append(asyncio.create_task(supervised(lambda: node_directory.run())))
+                    tasks.append(asyncio.create_task(supervised(lambda: link_schedule_loop())))
                 await core_runtime.start_audio_and_links(loop, tasks)
                 core_runtime.notify_ready()
             core_runtime.start_io()

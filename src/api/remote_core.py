@@ -36,6 +36,7 @@ from contracts import (
     ConfigResult,
     ConfigState,
     CoreCommand,
+    CoreHardware,
     CoreLogs,
     CoreStatus,
     Header,
@@ -70,6 +71,8 @@ _logger = logging.getLogger("moreopenrepeater.remote_core")
 STALE_AFTER_SECONDS = 15.0
 CONNECT_TIMEOUT_SECONDS = 2.0
 RETRY_DELAYS = (0.5, 1.0, 2.0, 5.0)  # then the last one, forever
+HARDWARE_POLL_SECONDS = 2.0  # how often the core's hardware status is read
+HARDWARE_STALE_SECONDS = 10.0  # older than this, a hardware page says the core is not being heard
 LOG_POLL_SECONDS = 1.0  # how often the core's log is read when nothing is waiting
 MAX_LINE_BYTES = 64 * 1024
 REQUEST_TIMEOUT_SECONDS = 5.0  # a write must not hang the dashboard
@@ -89,6 +92,9 @@ class RemoteCore:
         self._snapshot_at: float = 0.0  # when `_snapshot` arrived, on `clock`
         self._started_at: float = clock()
         self._seen_before = False  # a first status is not a change
+        self._hardware: dict[str, dict] = {}
+        self._hardware_at: Optional[float] = None
+        self._hardware_task: Optional[asyncio.Task] = None
         self._log_hub = None  # where the core's log lines are published (the dashboard's Logs page)
         self._log_task: Optional[asyncio.Task] = None
         self._log_cursor = 0
@@ -150,6 +156,8 @@ class RemoteCore:
         if self._task is None:
             self._stopping = False
             self._task = asyncio.ensure_future(self._run())
+        if self._hardware_task is None:
+            self._hardware_task = asyncio.ensure_future(self._pull_hardware())
         if self._log_hub is not None and self._log_task is None:
             self._log_task = asyncio.ensure_future(self._pull_logs())
 
@@ -159,7 +167,7 @@ class RemoteCore:
         self._stopping = True
         for pending in list(self._speaking):
             pending.cancel()
-        for name in ("_task", "_fetching", "_log_task"):
+        for name in ("_task", "_fetching", "_log_task", "_hardware_task"):
             task, current = getattr(self, name), None
             setattr(self, name, current)
             if task is not None:
@@ -290,6 +298,8 @@ class RemoteCore:
         return self.weather.alert_clip(alert)
 
     def weather_schedule_due(self) -> bool:
+        if self._config is None:  # the core has not been reached yet: nothing is due
+            return False
         return self.weather.take_due_schedule()
 
     def scheduled_weather_text(self) -> Optional[str]:
@@ -559,6 +569,36 @@ class RemoteCore:
                     _logger.warning("a configuration listener failed: %s", type(error).__name__)
             if self._announced_version is None or self._announced_version == state.config_version:
                 return
+
+    def hardware_status(self, name: str) -> dict:
+        """What the core last reported for one of its hardware parts (`gpio`, `link_radio`, ...).
+        Raises `CoreUnavailable` if the core has not been heard from lately, or did not report that
+        part, so a page never shows an old or invented state."""
+        if (
+            self._hardware_at is None
+            or self.stale
+            or self._clock() - self._hardware_at > HARDWARE_STALE_SECONDS
+        ):
+            raise CoreUnavailable("the core is not being heard from, so its hardware state is not known")
+        try:
+            return self._hardware[name]
+        except KeyError:
+            raise CoreUnavailable(f"the core did not report its {name} state") from None
+
+    async def _pull_hardware(self) -> None:
+        while True:
+            try:
+                if self._connected:
+                    async with self._client() as client:
+                        response = await client.get("/hardware")
+                    if response.status_code == 200 and len(response.content) <= MAX_CONFIG_BYTES:
+                        hardware = CoreHardware.model_validate_json(response.content)
+                        self._hardware, self._hardware_at = dict(hardware.statuses), self._clock()
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # noqa: BLE001 - the pages say "not known" until the next read
+                _logger.debug("could not read the core's hardware state: %s", type(error).__name__)
+            await asyncio.sleep(HARDWARE_POLL_SECONDS)
 
     def attach_log_hub(self, hub) -> None:
         """Publish the core's log lines into `hub`, so the dashboard's Logs page, the live stream, the

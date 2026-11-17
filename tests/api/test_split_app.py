@@ -125,15 +125,55 @@ def test_the_reads_work_against_a_core_in_another_process(split, path):
     assert response.status_code == 200, (path, response.text[:200])
 
 
-@pytest.mark.parametrize("path", [
-    "/api/gpio", "/api/link-radio", "/api/monitor-receiver", "/api/autopatch", "/api/autopatch/trunk",
-    "/api/allstar", "/api/dmr", "/api/audio/engine",
-])
-def test_pages_about_the_core_s_hardware_say_so_instead_of_failing(split, path):
-    client, *_ = split
+HARDWARE_READS = [
+    "/api/gpio", "/api/link-radio", "/api/monitor-receiver", "/api/autopatch", "/api/allstar", "/api/dmr",
+    "/api/audio/engine",
+]
+
+
+@pytest.mark.parametrize("path", HARDWARE_READS)
+def test_the_pages_about_the_core_s_hardware_show_what_the_core_reports(split, path):
+    client, remote, core, _ = split
+    wait_for(lambda: remote._hardware_at is not None)
     response = client.get(path)
+    assert response.status_code == 200, (path, response.text[:200])
+
+
+def test_what_the_pages_show_is_the_core_s_own_status(split):
+    client, remote, core, _ = split
+    wait_for(lambda: remote._hardware_at is not None)
+    assert client.get("/api/gpio").json()["available"] == core.runtime.gpio.status()["available"]
+    assert client.get("/api/audio/engine").json()["enabled"] == core.runtime.live_audio.status()["enabled"]
+    status = client.get("/api/status").json()
+    assert status["gpio"] is not None and status["link_radio"] is not None  # the panels come back
+
+
+@pytest.mark.parametrize("path", HARDWARE_READS)
+def test_with_the_core_away_a_hardware_page_says_so_rather_than_showing_an_old_state(split, path):
+    client, remote, core, thread = split
+    wait_for(lambda: remote._hardware_at is not None)
+    asyncio.run_coroutine_threadsafe(thread.server.stop(), thread.loop).result(5)
+    wait_for(lambda: not remote.connected)
+    response = client.get(path)
+    assert response.status_code == 503 and response.json()["code"] == "core.unavailable"
+    status = client.get("/api/status")
+    assert status.status_code == 200 and status.json().get("gpio") is None  # the panel is left out, not invented
+    assert client.get("/metrics").status_code == 200  # and metrics still answer
+
+
+def test_acting_on_the_hardware_is_not_available_yet(split):
+    client, remote, core, _ = split
+    wait_for(lambda: remote._hardware_at is not None)
+    before = core.runtime.gpio.status()
+    response = client.post("/api/autopatch/hangup")
+    assert response.status_code == 503 and response.json()["code"] == "core.hardware"  # a command, not a status
+    assert core.runtime.gpio.status() == before  # and nothing was touched
+
+
+def test_the_trunk_page_is_still_the_cores_alone(split):
+    client, *_ = split
+    response = client.get("/api/autopatch/trunk")
     assert response.status_code == 503 and response.json()["code"] == "core.hardware"
-    assert "core" in response.json()["detail"]
 
 
 def test_the_status_is_the_core_s_and_the_config_is_the_core_s(split):
@@ -238,3 +278,15 @@ def test_the_logs_page_shows_the_core_s_lines_with_the_api_s(split):
     wait_for(lambda: any("transmitting_id" in line["line"] for line in client.get("/api/logs/since?after=0").json()["lines"]))
     lines = [line["line"] for line in client.get("/api/logs/since?after=0").json()["lines"]]
     assert any("remote_core" in line for line in lines)  # the API's own line is there too
+
+
+def test_starting_before_the_core_is_up_logs_no_errors_and_the_loops_carry_on(sock_dir, caplog):
+    import logging
+
+    caplog.set_level(logging.WARNING)
+    client, remote = split_client(sock_dir / "nothing.sock")
+    with client:
+        time.sleep(2.5)  # long enough for every background loop to have run once with no core to read
+        assert client.get("/api/status").json()["state"] == "core_unavailable"
+    bad = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert bad == [], bad

@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional, Protocol
 
+from .split import safe_status
 from .activity import summarize
 
 
@@ -61,7 +62,7 @@ def render_metrics(
     """Build Prometheus text for the current repeater snapshot."""
     clock = now if now is not None else time.time()
     snap = service.snapshot()
-    audio = live_audio.status() if live_audio is not None else {}
+    audio = safe_status(live_audio) if live_audio is not None else {}  # {} while the core is away
     lines: list[str] = []
 
     lines += _gauge(

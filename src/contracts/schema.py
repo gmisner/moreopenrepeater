@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .commands import CommandResult, CoreCommand
 from .common import Header, StructuredError
-from .configuration import ConfigApplied, ConfigChange, ConfigSnapshot, ConfigState, CoreLogs, LinkEvents, ProgrammingState
+from .configuration import ConfigApplied, ConfigChange, ConfigSnapshot, ConfigState, CoreHardware, CoreLogs, LinkEvents, ProgrammingState
 from .events import core_event_adapter
 from .health import HealthReport
 from .log_event import LogEvent
@@ -40,6 +40,7 @@ MODELS = {
     "programming_state.v1.json": ProgrammingState,
     "link_events.v1.json": LinkEvents,
     "core_logs.v1.json": CoreLogs,
+    "core_hardware.v1.json": CoreHardware,
     "core_command.v1.json": CoreCommand,
     "core_command_result.v1.json": CommandResult,
     "core_status.v1.json": CoreStatus,

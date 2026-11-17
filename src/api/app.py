@@ -32,8 +32,8 @@ from .notify import Notifier
 from .persistence import StateStore
 from .remote_core import RemoteCore
 from .snapshot_import import snapshot_to_import, validate_config_values
-from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
-from .split import NotInSplitMode, Unavailable
+from .service.core_handle import CommandRefused, ConfigRefused, CoreError, CoreUnavailable
+from .split import NotInSplitMode
 from .recordings import RecordingStore
 from .routes import accounts as accounts_routes
 from .routes import activity as activity_routes
@@ -134,10 +134,17 @@ def _status_payload(
 ) -> StatusResponse:
     """Controller snapshot plus live gpio / linked-radio for /api/status and /ws/status."""
     data = dataclasses.asdict(snapshot)
-    if gpio is not None and tx_fan is not None and not isinstance(gpio, Unavailable):
-        data["gpio"] = {**gpio.status(), "fan": tx_fan.status()}
-    if link_radio is not None and remote_base is not None and not isinstance(link_radio, Unavailable):
-        data["link_radio"] = {**link_radio.status(), **remote_base.status()}
+    # Apart from the core these are its reported state; with the core away a panel is left out, never invented.
+    if gpio is not None and tx_fan is not None and not getattr(gpio, "is_stub", False):
+        try:
+            data["gpio"] = {**gpio.status(), "fan": tx_fan.status()}
+        except CoreError:
+            pass
+    if link_radio is not None and remote_base is not None and not getattr(link_radio, "is_stub", False):
+        try:
+            data["link_radio"] = {**link_radio.status(), **remote_base.status()}
+        except CoreError:
+            pass
     return StatusResponse.model_validate(data)
 
 

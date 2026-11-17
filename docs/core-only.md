@@ -21,7 +21,7 @@ AllStar AMI link-control loop (link audio still works; link state shown in the
 dashboard and macro-driven link commands over AMI do not). Scheduled weather
 announcements need the weather module and do not run.
 
-## Control socket (read only)
+## Control socket
 
 When `MOREOPENREPEATER_CORE_SOCKET` is set (the unit sets it to
 `/run/moreopenrepeater/core.sock`), the core serves **health and status** as
@@ -34,8 +34,9 @@ curl --unix-socket /run/moreopenrepeater/core.sock http://core/status
 curl --unix-socket /run/moreopenrepeater/core.sock http://core/health
 ```
 
-- Read only: any method but `GET` gets 405. There are no commands or
-  configuration changes over it yet.
+- `GET /status` and `GET /health` are read only. The one command is
+  `POST /speak`: a `speak.request` in, a `speak.decision` out (below).
+  Configuration changes are not available over the socket yet.
 - Access is the file mode: the socket is `0660` in a `0750` directory, so only
   the core's user and group can open it. The API's user must share the group.
 - `ptt_commanded` is what the controller asked for. `ptt_observed` is null and
@@ -47,6 +48,30 @@ curl --unix-socket /run/moreopenrepeater/core.sock http://core/health
   its own connection. If the socket cannot start (a file is in the way, a
   permission problem) the core logs it and runs without it.
 - Unset, there is no socket.
+
+### `POST /speak`
+
+A module (the weather module, for example) asks the core to say something; the
+core decides. Send a [`speak.request`](contracts/README.md) with
+`Content-Type: application/json` and a `Content-Length` (16 KiB at most; no
+chunked bodies). A well-formed request always gets `200` with a
+`speak.decision`:
+
+| status | meaning |
+|---|---|
+| `accepted` | queued, or held until the net ends if a net is holding announcements. The `transmission_id` is minted by the core |
+| `duplicate` | that idempotency key was already accepted, so it is not spoken twice |
+| `expired` | the deadline passed, before or while the speech was prepared. Nothing was spoken |
+| `rejected` | with an `error`: `speak.transmitter_disabled`, `speak.queue_full`, `speak.render_failed` or `speak.render_timeout`. A rejected request can be retried with the same key |
+
+A malformed body gets `400` with the field locations and error kinds only. The
+text is content: it is never logged and never echoed back. Speech is prepared
+in the executor with a 30 second deadline, so a slow synthesis never holds up
+the controller tick.
+
+Known gap: `priority` is validated but the core's announcement queue has no
+priority yet, so it is not used. The `transmission_id` is not yet the
+correlation ID on PTT and transmission events (those events are not emitted yet).
 
 ## Before you use it
 

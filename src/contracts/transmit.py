@@ -118,6 +118,11 @@ class IdempotencyLedger:
         self._deadlines[key] = _to_utc(deadline)
         return True
 
+    def forget(self, key: str) -> None:
+        """Let `key` be sent again. For a request that was accepted for screening but
+        then could not be queued, so a retry is not wrongly called a duplicate."""
+        self._deadlines.pop(key, None)
+
 
 def screen_speak_request(
     request: SpeakRequest, now: datetime, ledger: IdempotencyLedger

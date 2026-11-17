@@ -30,15 +30,6 @@ def env_for(root: Path) -> dict:
     return {"MOREOPENREPEATER_DATA_DIR": str(root), "MOREOPENREPEATER_LOG_PATH": str(root / "core.log")}
 
 
-@pytest.fixture(autouse=True)
-def no_real_tts(monkeypatch):
-    """Never start a text-to-speech server from a test; a developer machine may have one."""
-    from api import core_runtime
-
-    monkeypatch.setattr(core_runtime, "kokoro_service_for", lambda renderer: None)
-    monkeypatch.setattr(core_runtime, "piper_service_for", lambda renderer, voice="": None)
-
-
 # --- no web framework ---------------------------------------------------------
 
 @pytest.mark.parametrize("module", ["core", "core.config_boundary", "core.build", "core.main", "core.control"])

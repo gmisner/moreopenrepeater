@@ -1,12 +1,9 @@
 """The core's control socket (Stage 3 slice 7a, #229): read-only health and status
 over HTTP on a Unix socket. Simulation only: no devices, no Pi."""
 import asyncio
-import json
 import os
-import shutil
 import socket
 import stat
-import tempfile
 from pathlib import Path
 
 import httpx
@@ -14,52 +11,9 @@ import pytest
 
 from contracts import CoreStatus, HealthReport, HealthState
 from core import control as control_module
-from core.build import build_core
-from core.control import ControlServer, socket_path_from_env
+from core.control import socket_path_from_env
 from core.main import serve
-
-
-@pytest.fixture(autouse=True)
-def no_real_tts(monkeypatch):
-    from api import core_runtime
-
-    monkeypatch.setattr(core_runtime, "kokoro_service_for", lambda renderer: None)
-    monkeypatch.setattr(core_runtime, "piper_service_for", lambda renderer, voice="": None)
-
-
-@pytest.fixture
-def sock_dir():
-    """Short path: AF_UNIX paths are limited to about 104 characters."""
-    path = Path(tempfile.mkdtemp(prefix="mor-", dir="/tmp"))
-    yield path
-    shutil.rmtree(path, ignore_errors=True)
-
-
-@pytest.fixture
-def core(tmp_path):
-    (tmp_path / "state.json").write_text(json.dumps({"config": {"callsign": "W1AW", "audio_enabled": False}}))
-    return build_core({"MOREOPENREPEATER_DATA_DIR": str(tmp_path), "MOREOPENREPEATER_LOG_PATH": str(tmp_path / "c.log")})
-
-
-async def raw(path, request: bytes, *, read=True):
-    reader, writer = await asyncio.open_unix_connection(str(path))
-    writer.write(request)
-    await writer.drain()
-    data = b""
-    if read:
-        data = await asyncio.wait_for(reader.read(), 10)
-    writer.close()
-    return data
-
-
-def parse(data: bytes):
-    head, _, body = data.partition(b"\r\n\r\n")
-    status = int(head.split(b" ", 2)[1])
-    return status, json.loads(body) if body else None
-
-
-async def get(path, target="/status"):
-    return parse(await raw(path, f"GET {target} HTTP/1.1\r\nHost: core\r\n\r\n".encode()))
+from control_helpers import get, make_server, parse, raw
 
 
 async def _accepts(path) -> bool:
@@ -69,11 +23,6 @@ async def _accepts(path) -> bool:
         return False
     writer.close()
     return True
-
-
-def make_server(core, path, **kwargs):
-    server = ControlServer(path, service=core.service, runtime=core.runtime, **kwargs)
-    return server
 
 
 # --- answers ----------------------------------------------------------------------
@@ -132,9 +81,10 @@ def test_unknown_paths_and_other_methods_are_refused(core, sock_dir):
         try:
             assert (await get(sock_dir / "core.sock", "/nope"))[0] == 404
             assert (await get(sock_dir / "core.sock", "/status?x=1"))[0] == 200
-            for method in ("POST", "PUT", "DELETE"):
-                data = await raw(sock_dir / "core.sock", f"{method} /status HTTP/1.1\r\nHost: core\r\n\r\n".encode())
-                assert parse(data)[0] == 405
+            post = b"POST /status HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}"
+            assert parse(await raw(sock_dir / "core.sock", post))[0] == 405
+            for method in ("PUT", "DELETE"):
+                assert parse(await raw(sock_dir / "core.sock", f"{method} /status HTTP/1.1\r\n\r\n".encode()))[0] == 405
         finally:
             await server.stop()
 

@@ -76,7 +76,7 @@ def _sane(value: object, *, allow_zero: bool) -> bool:
     return value >= 0 if allow_zero else value > 0
 
 
-def check_config(config: RepeaterConfig) -> tuple[RepeaterConfig, list[str]]:
+def check_config(config: RepeaterConfig, *, log: bool = True) -> tuple[RepeaterConfig, list[str]]:
     """Returns the configuration to run with and a note for each setting replaced.
     Raises `CoreConfigError` if the core must not start."""
     if not (config.callsign or "").strip():
@@ -94,7 +94,7 @@ def check_config(config: RepeaterConfig) -> tuple[RepeaterConfig, list[str]]:
             notes.append(f"{name} was {value!r}, not a usable number; using the default {fixes[name]!r}")
     if fixes:
         config = config.replace_flat(**fixes)
-    for note in notes:
+    for note in notes if log else ():
         _logger.warning("saved configuration: %s", note)
     return config, notes
 
@@ -147,7 +147,7 @@ def check_change(current: RepeaterConfig, values: dict) -> RepeaterConfig:
         raise ConfigRejected("config.wrong_type", f"wrong kind of value for: {', '.join(wrong)}")
     try:
         candidate = current.replace_flat(**values)
-        checked, notes = check_config(candidate)
+        checked, notes = check_config(candidate, log=False)
     except CoreConfigError as error:
         raise ConfigRejected("config.unsafe", str(error)) from None
     except (TypeError, ValueError):

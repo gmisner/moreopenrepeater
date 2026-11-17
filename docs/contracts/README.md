@@ -79,6 +79,11 @@ lose a value without anyone noticing. Secrets go by name (`secret_refs`) and are
 read from a Docker secret or environment file. A module answers with
 `ConfigApplied`: `applied`, `restart_required` or `rejected` (with an error).
 
+**Contract version 1.1.** `core.status` gained optional fields (`ctcss_hz`,
+`linked_nodes`, `net_active`, `gmrs_mode`, `callsign`), the things the dashboard
+shows beside the state. They are optional, so a module built for 1.0 is
+unaffected (`is_compatible` allows a lower minor).
+
 **Core status.** `ptt_commanded` is what the core asked for. `ptt_observed` and
 `ptt_evidence` say what was seen, and `null` means "could not tell". The
 existing dashboard `ptt_active` is an intent, not a measurement, so it maps to

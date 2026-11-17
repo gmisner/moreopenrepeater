@@ -13,6 +13,7 @@ import json
 import sys
 from pathlib import Path
 
+from .commands import CommandResult, CoreCommand
 from .common import Header, StructuredError
 from .configuration import ConfigApplied, ConfigChange, ConfigSnapshot, ConfigState
 from .events import core_event_adapter
@@ -36,6 +37,8 @@ MODELS = {
     "config_applied.v1.json": ConfigApplied,
     "config_state.v1.json": ConfigState,
     "config_change.v1.json": ConfigChange,
+    "core_command.v1.json": CoreCommand,
+    "core_command_result.v1.json": CommandResult,
     "core_status.v1.json": CoreStatus,
     "site_location.v1.json": SiteLocation,
 }

@@ -109,7 +109,7 @@ class NetMode:
         }
         self._save()
         _logger.info("net %r started by %s", self.current["name"], actor)
-        self._service.set_net_active(True)
+        await self._service.command("set_net_active", active=True)
         self._say(config.net_start_say, self.current["name"])
         await self._link_for_net()
         return self.current
@@ -125,7 +125,7 @@ class NetMode:
         _logger.info("net %r ended by %s", net["name"], actor)
         config = self._service.saved_config
         self._say(config.net_end_say, net["name"])
-        self._service.set_net_active(False)
+        await self._service.command("set_net_active", active=False)
         if net.get("linked_node") and self._links is not None:
             try:
                 await self._links.disconnect(net["linked_node"])

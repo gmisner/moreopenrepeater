@@ -103,6 +103,22 @@ The channel is trusted by file permissions (the socket's mode and group), which 
 may carry secrets. `config.snapshot`, the message modules get, refuses them. See
 [contracts](contracts/README.md).
 
+### `POST /command` (the API's channel)
+
+For the API, not for modules. One-shot commands: a `core.command` in, a
+`core.command.result` out (`applied`, or `rejected` with an error; nothing is done on a
+rejection). The commands are `clear_lockout`, `set_net_active(active)` and the simulator:
+`simulate_cos(active)`, `simulate_ctcss(tone_hz)`, `simulate_dtmf(digit)` and
+`simulate_remote_keyed(node_id, keyed)`. Each takes exactly its own parameters, checked
+by the contract and again by the core.
+
+- **The simulator is refused by default.** A simulated COS makes the repeater transmit,
+  and a core on a real radio has no reason to take events the radio did not send. The
+  answer is `command.simulation_disabled`. Start the core with
+  `MOREOPENREPEATER_CORE_SIMULATE=1` to allow it (a bench or test core).
+- `clear_lockout` when nothing is locked out is `command.not_locked_out`.
+- The log names the command and never its parameters.
+
 ### `POST /speak`
 
 A module (the weather module, for example) asks the core to say something; the

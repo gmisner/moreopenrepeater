@@ -20,7 +20,10 @@ EXIT_CONFIG = 2
 
 
 async def serve(
-    app: CoreApp, stop: Optional[asyncio.Event] = None, control_socket: Optional[Path] = None
+    app: CoreApp,
+    stop: Optional[asyncio.Event] = None,
+    control_socket: Optional[Path] = None,
+    allow_simulate: bool = False,
 ) -> None:
     """Start the core, run until `stop` is set, then shut it down.
 
@@ -44,7 +47,9 @@ async def serve(
     control: Optional[ControlServer] = None
     if control_socket is not None:
         # Last, after the radio is up: if it cannot start the core simply runs without it.
-        control = ControlServer(control_socket, service=app.service, runtime=core)
+        control = ControlServer(
+            control_socket, service=app.service, runtime=core, allow_simulate=allow_simulate
+        )
         await control.start()
     _logger.info("core running alone (no web app); state is %s", app.state_path)
     await stop.wait()
@@ -72,7 +77,11 @@ def main(env: Optional[Mapping[str, str]] = None) -> int:
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, stop.set)
-        await serve(app, stop, socket_path_from_env(dict(os.environ if env is None else env)))
+        environment = dict(os.environ if env is None else env)
+        await serve(
+            app, stop, socket_path_from_env(environment),
+            allow_simulate=environment.get("MOREOPENREPEATER_CORE_SIMULATE", "").strip() == "1",
+        )
 
     asyncio.run(run())
     return 0

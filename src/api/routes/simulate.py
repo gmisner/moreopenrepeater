@@ -24,20 +24,20 @@ def register(
 ) -> None:
     @app.post("/api/simulate/cos", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def simulate_cos(body: SimulateCOSRequest) -> StatusResponse:
-        service.simulate_cos(body.active)
+        await service.command("simulate_cos", active=body.active)
         return status_response(service.snapshot())
 
     @app.post("/api/simulate/ctcss", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def simulate_ctcss(body: SimulateCTCSSRequest) -> StatusResponse:
-        service.simulate_ctcss(body.tone_hz)
+        await service.command("simulate_ctcss", tone_hz=body.tone_hz)
         return status_response(service.snapshot())
 
     @app.post("/api/simulate/dtmf", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def simulate_dtmf(body: SimulateDTMFRequest) -> StatusResponse:
-        service.simulate_dtmf(body.digit)
+        await service.command("simulate_dtmf", digit=body.digit)
         return status_response(service.snapshot())
 
     @app.post("/api/simulate/remote-keyed", response_model=StatusResponse, dependencies=transmit_dependencies)
     async def simulate_remote_keyed(body: SimulateRemoteKeyedRequest) -> StatusResponse:
-        service.simulate_remote_keyed(body.node_id, body.keyed)
+        await service.command("simulate_remote_keyed", node_id=body.node_id, keyed=body.keyed)
         return status_response(service.snapshot())

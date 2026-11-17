@@ -8,11 +8,11 @@ means, is a new major.
 """
 from __future__ import annotations
 
-CONTRACT_VERSION = (1, 2)
+CONTRACT_VERSION = (1, 3)
 
 
 def parse_version(text: str) -> tuple[int, int]:
-    """Parse "1.2" into (1, 2). Raises ValueError on anything else."""
+    """Parse "1.2" into (1, 3). Raises ValueError on anything else."""
     parts = text.split(".")
     if len(parts) != 2 or not all(part.isdigit() for part in parts):
         raise ValueError(f"contract version must look like '1.0', got {text!r}")

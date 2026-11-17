@@ -221,3 +221,125 @@ def test_an_unreachable_core_is_a_503_not_a_success():
         response = client.put("/api/config", json={"tot_duration": 120})
     assert response.status_code == 503
     assert response.json()["code"] == "core.unavailable" and "nothing was changed" in response.json()["detail"]
+
+
+# -- commands (slice 7c-4a) ---------------------------------------------------------------------
+
+
+def run_with(core, sock_dir, scenario, **server_kwargs):
+    async def go():
+        path = sock_dir / "core.sock"
+        server = make_server(core, path, **server_kwargs)
+        await server.start()
+        remote = RemoteCore(path)
+        remote.start()
+        try:
+            await until(lambda: remote.connected)
+            return await scenario(remote, server)
+        finally:
+            await remote.stop()
+            await server.stop()
+
+    return asyncio.run(go())
+
+
+def test_a_command_is_done_by_the_core_and_the_status_follows(core, sock_dir):
+    async def scenario(remote, server):
+        await remote.command("set_net_active", active=True)
+        assert core.service.net_active is True
+        await until(lambda: remote.snapshot().net_active)
+        await remote.command("set_net_active", active=False)
+        await until(lambda: not remote.snapshot().net_active)
+
+    run_with(core, sock_dir, scenario)
+
+
+def test_the_simulator_is_refused_by_a_core_on_a_real_radio(core, sock_dir):
+    from api.service.core_handle import CommandRefused
+
+    async def scenario(remote, server):
+        with pytest.raises(CommandRefused) as caught:
+            await remote.command("simulate_cos", active=True)
+        assert caught.value.code == "command.simulation_disabled"
+        assert core.service.cos_active is False
+
+    run_with(core, sock_dir, scenario)
+
+
+def test_the_simulator_works_when_the_core_allows_it(core, sock_dir):
+    async def scenario(remote, server):
+        await remote.command("simulate_ctcss", tone_hz=110.9)
+        assert core.service.ctcss_hz == 110.9
+
+    run_with(core, sock_dir, scenario, allow_simulate=True)
+
+
+def test_a_bad_command_never_leaves_the_api(core, sock_dir):
+    from api.service.core_handle import CommandRefused
+
+    async def scenario(remote, server):
+        with pytest.raises(CommandRefused) as caught:
+            await remote.command("simulate_dtmf", digit="nope")
+        assert caught.value.code == "command.invalid"
+        with pytest.raises(CommandRefused):
+            await remote.command("reboot")
+
+    run_with(core, sock_dir, scenario, allow_simulate=True)
+
+
+def test_a_command_to_a_core_that_is_down_says_nothing_was_done(core, sock_dir):
+    async def scenario(remote, server):
+        await server.stop()
+        with pytest.raises(CoreUnavailable) as caught:
+            await remote.command("clear_lockout")
+        assert "nothing was changed" in str(caught.value)
+
+    run_with(core, sock_dir, scenario)
+
+
+def test_in_process_the_same_commands_work_and_unknown_ones_are_refused():
+    import asyncio as aio
+
+    from api.service.core_handle import CommandRefused
+
+    service = RepeaterService(config=RepeaterConfig(callsign="W1AW"), clock=lambda: 0.0)
+
+    async def go():
+        await service.command("set_net_active", active=True)
+        assert service.net_active is True
+        with pytest.raises(CommandRefused):
+            await service.command("reboot")
+
+    aio.run(go())
+
+
+def _client_with_command_error(error):
+    service = RepeaterService(config=RepeaterConfig(callsign="W1AW"), clock=lambda: 0.0)
+
+    async def command(name, **params):
+        raise error
+
+    service.command = command  # type: ignore[method-assign]
+    tmp = Path(tempfile.mkdtemp())
+    from api.assets import AudioAssetStore
+
+    return TestClient(create_app(service=service, start_background_tick=False, assets_store=AudioAssetStore(tmp / "audio"), log_path=tmp / "t.log")), service
+
+
+@pytest.mark.parametrize("code, status", [
+    ("command.simulation_disabled", 403), ("command.apply_failed", 422), ("command.invalid", 422),
+])
+def test_a_refused_command_is_the_right_http_answer(code, status):
+    from api.service.core_handle import CommandRefused
+
+    client, _ = _client_with_command_error(CommandRefused(code, "no"))
+    with client:
+        response = client.post("/api/simulate/cos", json={"active": True})
+    assert response.status_code == status and response.json()["code"] == code
+
+
+def test_an_unreachable_core_is_a_503_for_a_command_too():
+    client, _ = _client_with_command_error(CoreUnavailable("the core is not reachable; nothing was changed"))
+    with client:
+        response = client.post("/api/simulate/cos", json={"active": True})
+    assert response.status_code == 503

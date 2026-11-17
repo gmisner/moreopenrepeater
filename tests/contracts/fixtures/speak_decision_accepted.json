@@ -1,0 +1,14 @@
+{
+  "kind": "speak.decision",
+  "header": {
+    "schema_version": 1,
+    "message_id": "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+    "emitted_at": "2026-11-16T18:00:00.250Z",
+    "boot_id": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "seq": 1207,
+    "source": {"module": "core", "version": "0.1.0"},
+    "request_id": "5f1d0c9e7a2b4c3d8e6f001122334455"
+  },
+  "status": "accepted",
+  "transmission_id": "7e7e7e7e8f8f8f8f9a9a9a9ab0b0b0b0"
+}

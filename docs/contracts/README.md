@@ -14,10 +14,12 @@ behavior. Design context: [ADR 0005](../adr/0005-container-module-runtime.md).
 | Structured log event | `contracts.LogEvent` | [log_event.v1.json](schema/log_event.v1.json) |
 | Shared redaction filter | `contracts.redact` | |
 | Version compatibility | `contracts.is_compatible` | |
+| Transmit request from a module | `contracts.SpeakRequest` | [speak_request.v1.json](schema/speak_request.v1.json) |
+| Core's answer to a request | `contracts.SpeakDecision` | [speak_decision.v1.json](schema/speak_decision.v1.json) |
+| PTT, transmission start and end events | `contracts.core_event_adapter` | [core_event.v1.json](schema/core_event.v1.json) |
 
-Still to come in later Stage 2 PRs: commands and events (PTT commanded versus
-PTT feedback), `speak.request`, health, capabilities, config and status, the
-non-blocking emit path design, and the per-module metrics endpoint.
+Still to come in later Stage 2 PRs: health, capabilities, config and status,
+the non-blocking emit path design, and the per-module metrics endpoint.
 
 ## Rules
 
@@ -28,6 +30,28 @@ changes, which lets a collector tell a restart from lost events.
 **Correlation.** One `correlation_id` follows a transmission, or one user
 action, across modules. A reply sets `request_id` to the `message_id` it
 answers.
+
+**Transmit requests.** A module never keys the radio. It sends a
+`SpeakRequest` with an idempotency key, a priority and a required `deadline`
+(at most one hour after it was emitted). The core answers with a
+`SpeakDecision`: `accepted`, `duplicate`, `expired` or `rejected`. Every core
+applies two rules first, in `screen_speak_request`: an expired request is
+dropped unspoken, and a key already accepted is never spoken twice. The
+idempotency ledger forgets a key at its deadline and has a fixed size, so
+memory stays bounded. The request text is message content and is not logged by
+default.
+
+**Transmission ID.** Only the core mints the `transmission_id`, when it accepts
+a request or starts a transmission of its own (ID, announcement, link). It is
+the `correlation_id` on every event for that transmission: `tx.started`,
+`ptt.commanded`, `ptt.feedback`, `tx.ended` and any log event.
+
+**PTT commanded is not PTT keyed.** `ptt.commanded` records that the core asked.
+`ptt.feedback` records what was observed and how (`evidence`).
+`observed_keyed: null` means "could not tell", which is not "unkeyed". Only
+independent evidence (`current_sense`, `rf_detect`) counts as proof of RF
+(`PttFeedback.proves_rf`). A `gpio_readback` shows the pin, not the
+transmitter. Nothing should claim RF went out on a GPIO write alone.
 
 **Names.** Event names and error codes are stable dotted lowercase
 identifiers such as `ptt.commanded` or `tts.unavailable`. Variable data goes

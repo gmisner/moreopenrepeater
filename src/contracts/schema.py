@@ -14,7 +14,9 @@ import sys
 from pathlib import Path
 
 from .common import Header, StructuredError
+from .events import core_event_adapter
 from .log_event import LogEvent
+from .transmit import SpeakDecision, SpeakRequest
 
 SCHEMA_DIR = Path(__file__).resolve().parents[2] / "docs" / "contracts" / "schema"
 
@@ -22,19 +24,24 @@ MODELS = {
     "header.v1.json": Header,
     "error.v1.json": StructuredError,
     "log_event.v1.json": LogEvent,
+    "speak_request.v1.json": SpeakRequest,
+    "speak_decision.v1.json": SpeakDecision,
 }
 
 
 def render() -> dict[str, str]:
-    return {
-        name: json.dumps(model.model_json_schema(), indent=2, sort_keys=True) + "\n"
-        for name, model in MODELS.items()
-    }
+    schemas = {name: model.model_json_schema() for name, model in MODELS.items()}
+    schemas["core_event.v1.json"] = core_event_adapter.json_schema()
+    return {name: json.dumps(schema, indent=2, sort_keys=True) + "\n" for name, schema in schemas.items()}
 
 
 def _shape(text: str) -> dict:
     schema = json.loads(text)
-    return {"properties": sorted(schema.get("properties", {})), "required": sorted(schema.get("required", []))}
+    return {
+        "properties": sorted(schema.get("properties", {})),
+        "required": sorted(schema.get("required", [])),
+        "kinds": sorted(schema.get("discriminator", {}).get("mapping", {})),
+    }
 
 
 def main(argv: list[str]) -> int:

@@ -21,6 +21,33 @@ AllStar AMI link-control loop (link audio still works; link state shown in the
 dashboard and macro-driven link commands over AMI do not). Scheduled weather
 announcements need the weather module and do not run.
 
+## Control socket (read only)
+
+When `MOREOPENREPEATER_CORE_SOCKET` is set (the unit sets it to
+`/run/moreopenrepeater/core.sock`), the core serves **health and status** as
+HTTP/1.1 with JSON over that Unix socket. This is the transport chosen in
+[ADR 0005](adr/0005-container-module-runtime.md). The bodies are the
+[Stage 2 contracts](contracts/README.md) (`core.status`, `health.report`).
+
+```
+curl --unix-socket /run/moreopenrepeater/core.sock http://core/status
+curl --unix-socket /run/moreopenrepeater/core.sock http://core/health
+```
+
+- Read only: any method but `GET` gets 405. There are no commands or
+  configuration changes over it yet.
+- Access is the file mode: the socket is `0660` in a `0750` directory, so only
+  the core's user and group can open it. The API's user must share the group.
+- `ptt_commanded` is what the controller asked for. `ptt_observed` is null and
+  `ptt_evidence` is `none`: nothing here observes PTT or RF, so nothing is
+  claimed.
+- It is built so a client cannot hurt the repeater: it uses only the standard
+  library, requests are small, every connection has a deadline, at most 16 are
+  served at once, and a slow, silent, malformed or vanishing client affects only
+  its own connection. If the socket cannot start (a file is in the way, a
+  permission problem) the core logs it and runs without it.
+- Unset, there is no socket.
+
 ## Before you use it
 
 1. Set the repeater up with the normal service first. The core alone cannot be

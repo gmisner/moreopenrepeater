@@ -41,7 +41,7 @@ def no_real_tts(monkeypatch):
 
 # --- no web framework ---------------------------------------------------------
 
-@pytest.mark.parametrize("module", ["core", "core.config_boundary", "core.build", "core.main"])
+@pytest.mark.parametrize("module", ["core", "core.config_boundary", "core.build", "core.main", "core.control"])
 def test_the_core_imports_no_web_framework(module):
     names = ("fastapi", "starlette", "api.app", "api.runtime")
     code = (

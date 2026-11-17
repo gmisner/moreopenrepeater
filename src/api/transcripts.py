@@ -31,7 +31,7 @@ import numpy as np
 
 from playout.wav import read_wav
 
-from .service.core_handle import CoreHandle
+from .service.core_handle import ApiCoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.transcripts")
 
@@ -229,7 +229,7 @@ class TranscriberStatus:
 class Transcriber:
     def __init__(
         self,
-        service: CoreHandle,
+        service: ApiCoreHandle,
         sources: list[ClipSource],
         vosk: VoskEngine,
         api_key: Optional[str],

@@ -20,7 +20,7 @@ from urllib.parse import quote
 
 from playout.renderer import TTS_PREFIX
 
-from .service.core_handle import CoreHandle
+from .service.core_handle import ApiCoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.homeassistant")
 
@@ -43,7 +43,7 @@ def _post(url: str, body: bytes, headers: dict[str, str], timeout: float) -> Non
 class HomeAssistant:
     def __init__(
         self,
-        service: CoreHandle,
+        service: ApiCoreHandle,
         token: Optional[str] = None,
         post: Callable[[str, bytes, dict[str, str], float], None] = _post,
         clock: Callable[[], float] = time.monotonic,

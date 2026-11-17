@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     from .audit import AuditLog
     from .hub import HubSiteStore
     from .recordings import RecordingStore
-    from .service.core_handle import CoreHandle
+    from .service.core_handle import ApiCoreHandle
     from .users import UserStore
 
 FORMAT = "moreopenrepeater-backup"
@@ -65,7 +65,7 @@ class BackupError(ValueError):
 class BackupSources:
     """Everything a backup reads from and a restore writes to."""
 
-    service: CoreHandle
+    service: ApiCoreHandle
     users: UserStore
     assets: AudioAssetStore
     recordings: RecordingStore

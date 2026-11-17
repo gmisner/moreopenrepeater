@@ -48,6 +48,7 @@ from contracts import (
     ConfigResult,
     ConfigState,
     CoreCommand,
+    CoreLogs,
     LinkEvents,
     ProgrammingState,
     CoreStatus,
@@ -104,6 +105,9 @@ MAX_BODY_BYTES = 16 * 1024
 MAX_CONFIG_BODY_BYTES = 64 * 1024
 #: A command can carry a whole snapshot (a restore): every setting, macro and announcement.
 MAX_COMMAND_BODY_BYTES = 256 * 1024
+LOGS_PER_REQUEST = 500  # the most log lines one GET /logs returns
+LOGS_RING_MAX = 5000  # more than any hub holds
+MAX_LOG_LINE_CHARS = 4000
 #: The macro actions the API's modules own. A client names the ones it handles when it connects.
 MACRO_FAMILIES = frozenset({"net", "homeassistant", "metar", "sensor", "mailbox", "aprs", "audit"})
 MACRO_QUEUE_LIMIT = 32  # per client; a client that cannot keep up loses the newest
@@ -129,6 +133,7 @@ class ControlServer:
         now: Optional[Callable[[], datetime]] = None,
         allow_simulate: bool = False,
         assets_have: Optional[Callable[[str], bool]] = None,
+        log_hub=None,
     ) -> None:
         """`service` is the `RepeaterService`; `runtime` the `CoreRuntime`. `clock` is
         monotonic time (health); `now` is wall-clock time (request deadlines)."""
@@ -138,6 +143,7 @@ class ControlServer:
         #: The simulator injects events the radio did not send, and a simulated COS makes the
         #: repeater transmit. A core on a real radio refuses it unless this was asked for.
         self._allow_simulate = allow_simulate
+        self._log_hub = log_hub  # the core's recent log lines, for GET /logs
         self._assets_have = assets_have  # is there an uploaded clip with this id? None: not checked here
         self._version = version
         self._clock = clock
@@ -313,14 +319,16 @@ class ControlServer:
 
     async def _dispatch(self, method: str, target: str, body: bytes) -> tuple[int, dict]:
         path = target.split("?", 1)[0]
-        if path not in self._get and path not in self._post:
+        if path not in self._get and path not in self._post and path != "/logs":
             return 404, {"error": f"no such path: {path}"}
         try:
+            if method == "GET" and path == "/logs":
+                return 200, self._logs(target)
             if method == "GET" and path in self._get:
                 return 200, self._get[path]()
             if method == "POST" and path in self._post:
                 return 200, await self._post[path](body)
-            allowed = "GET" if path in self._get else "POST"
+            allowed = "GET" if (path in self._get or path == "/logs") else "POST"
             return 405, {"error": f"use {allowed} for {path}"}
         except _BadRequest as error:
             return error.status, error.body()
@@ -566,6 +574,29 @@ class ControlServer:
         the core's log does not."""
         _logger.info("audit: %s: %s", actor, action)
         self._api_action("audit", [actor, action, detail])
+
+    def _logs(self, target: str) -> dict:
+        """`GET /logs?after=N&limit=M`: the core's recent log lines after cursor N, oldest first.
+        The cursor is the hub's own sequence, which starts again when the core does; the answer's
+        `header.boot_id` says which run it is."""
+        query = dict(part.partition("=")[::2] for part in target.partition("?")[2].split("&") if part)
+        try:
+            after = max(0, int(query.get("after", "0")))
+            limit = max(1, min(int(query.get("limit", str(LOGS_PER_REQUEST))), LOGS_PER_REQUEST))
+        except ValueError:
+            raise _BadRequest(400, "after and limit must be whole numbers") from None
+        if self._log_hub is None:
+            lines, cursor = [], 0
+        else:
+            # The oldest `limit` lines after the cursor, so a reader far behind catches up a page at a
+            # time (the hub's own `since` returns the newest, which would skip the middle).
+            everything, cursor = self._log_hub.since(after, LOGS_RING_MAX)
+            found = everything[:limit]
+            lines = [
+                {"seq": e.seq, "line": e.line[:MAX_LOG_LINE_CHARS], "level": e.level, "at": e.at} for e in found
+            ]
+        message = CoreLogs(header=self._header(), cursor=cursor, lines=lines)
+        return json.loads(message.model_dump_json())
 
     def _link_events(self) -> dict:
         """`GET /link-events`: recent link activity, newest first (all the core keeps)."""

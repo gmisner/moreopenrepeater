@@ -585,6 +585,7 @@ class AppRuntime:
             service.activity = ActivityRecorder(activity_store or ActivityStore())
         activity_store = service.activity.store
         if getattr(service, "is_remote", False):
+            service.attach_log_hub(log_hub)  # the Logs page shows the core's log lines too
             # The core owns these and runs in its own process; this process holds no device.
             live_audio = live_audio or Unavailable("live_audio")
             monitor_receiver = monitor_receiver or Unavailable("monitor_receiver")

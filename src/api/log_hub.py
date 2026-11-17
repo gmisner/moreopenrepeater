@@ -68,10 +68,11 @@ class LogHub:
         with self._lock:
             return self._seq
 
-    def publish(self, line: str, level: str = "INFO") -> LogLine:
+    def publish(self, line: str, level: str = "INFO", at: Optional[float] = None) -> LogLine:
+        """`at` is when the line was logged, if that was somewhere else (the core's log)."""
         with self._lock:
             self._seq += 1
-            entry = LogLine(seq=self._seq, line=line, level=level.upper(), at=self._clock())
+            entry = LogLine(seq=self._seq, line=line, level=level.upper(), at=self._clock() if at is None else at)
             self._ring.append(entry)
             subscribers = list(self._subscribers)
         for subscriber in subscribers:

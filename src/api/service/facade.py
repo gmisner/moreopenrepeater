@@ -451,6 +451,9 @@ class RepeaterService:
     async def change_config(self, **overrides: object) -> RepeaterConfig:
         return self._config.update(**overrides)
 
+    def attach_log_hub(self, hub: object) -> None:
+        """Nothing to do: in process, the core's lines are already logged into the API's hub."""
+
     def sync_net_state(self, active: bool) -> None:
         self.set_net_active(active)
 

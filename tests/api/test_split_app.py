@@ -104,7 +104,7 @@ def test_the_app_follows_a_real_core(core, sock_dir):
 
 @pytest.fixture
 def split(core, sock_dir):
-    with CoreThread(core, sock_dir / "core.sock", allow_simulate=False) as thread:
+    with CoreThread(core, sock_dir / "core.sock", allow_simulate=False, log_hub=core.log_hub) as thread:
         client, remote = split_client(sock_dir / "core.sock")
         with client:
             wait_for(lambda: remote.connected and remote._config is not None and remote._macros is not None)
@@ -230,3 +230,11 @@ def test_the_dashboard_never_shows_a_state_for_a_core_it_cannot_hear(split):
     wait_for(lambda: not remote.connected)
     status = client.get("/api/status").json()
     assert status["state"] == "core_unavailable" and status["ptt_active"] is False and status["callsign"] == "W1AW"
+
+
+def test_the_logs_page_shows_the_core_s_lines_with_the_api_s(split):
+    client, remote, core, _ = split
+    core.log_hub.publish("2026-01-01 00:00:00 INFO moreopenrepeater.controller: state idle -> transmitting_id", "INFO")
+    wait_for(lambda: any("transmitting_id" in line["line"] for line in client.get("/api/logs/since?after=0").json()["lines"]))
+    lines = [line["line"] for line in client.get("/api/logs/since?after=0").json()["lines"]]
+    assert any("remote_core" in line for line in lines)  # the API's own line is there too

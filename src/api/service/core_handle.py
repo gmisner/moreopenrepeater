@@ -113,6 +113,12 @@ class ApiCoreHandle(Protocol):
         raises `CommandRefused` or `CoreUnavailable` rather than pretending it worked."""
         ...
 
+    def attach_log_hub(self, hub: object) -> None:
+        """Publish the core's own log lines into `hub` (the dashboard's Logs page). In process the
+        core logs into that hub directly, so this does nothing; against a remote core it reads the
+        core's log over its socket. Call before the service starts."""
+        ...
+
     def register_macro_handler(self, family: str, handler: Callable) -> None:
         """Take a macro action the API's modules own: `net` (action, source), `homeassistant`
         (target, source, pattern), `metar` (airport), `sensor` (sensor_id), `mailbox`

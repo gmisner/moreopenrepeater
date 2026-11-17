@@ -49,7 +49,7 @@ async def serve(
         # Last, after the radio is up: if it cannot start the core simply runs without it.
         control = ControlServer(
             control_socket, service=app.service, runtime=core, allow_simulate=allow_simulate,
-            assets_have=app.assets_store.has,
+            assets_have=app.assets_store.has, log_hub=app.log_hub,
         )
         await control.start()
     _logger.info("core running alone (no web app); state is %s", app.state_path)

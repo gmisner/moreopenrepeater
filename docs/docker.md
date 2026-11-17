@@ -66,6 +66,23 @@ echo MOR_DATA_DIR=/srv/mor-data >> .env
   `127.0.0.1:9092`, USRP) go over loopback to a host Asterisk. This goes away when
   AllStar is its own container.
 
+## Logs
+
+Three places, from the quickest to the most durable:
+
+- **`docker compose logs -f`** (from `docker/`) follows the core and the API together, time-ordered
+  by Docker. Both write to standard output, and the `local` log driver rotates them (10 MB, 3 files
+  each). `docker compose logs -f core` for the radio alone. This works with everything else down.
+- **The dashboard's Logs page** (and its live stream, the support bundle and remote shipping) shows
+  the core's lines with the API's. The API reads the core's recent log over the control socket
+  (`GET /logs`, a page at a time from a cursor) about once a second and publishes the lines into its
+  own log hub, with the time the core logged them. The core keeps its last 2000 lines in memory, so
+  lines logged while the API was away are read when it is back, as far as that reaches; after the core
+  restarts, its new log is read from the start. The core never waits on this.
+- **Files in the data folder:** `moreopenrepeater.log` (the core) and `moreopenrepeater-api.log` (the
+  API), each rotated at 2 MB with three backups. Separate files on purpose: two writers must not share
+  one.
+
 ## Control socket
 
 The socket is `/run/moreopenrepeater/core.sock` in the `core-run` volume, mode

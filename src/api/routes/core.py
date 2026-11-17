@@ -75,7 +75,7 @@ def register(
         if saved.board_preset and any(overrides.get(name, getattr(saved, name)) != getattr(saved, name) for name in WIRING_FIELDS):
             overrides["board_preset"] = ""
         request.state.audit_detail = describe_config_change(dataclasses.asdict(saved), overrides)
-        service.update_config(**overrides)
+        await service.change_config(**overrides)
         return config_response(service)
 
     boards = {board.id: board for board in load_boards()}
@@ -101,7 +101,7 @@ def register(
             raise HTTPException(status_code=409, detail=f"{board.name} isn't supported yet: {board.unsupported}")
         changes = preset_changes(board, body.input_device, body.output_device, body.link_input_device, body.link_output_device)
         request.state.audit_detail = board.name
-        service.update_config(**changes)
+        await service.change_config(**changes)
         config = service.saved_config
         mixer, skipped = [], []
         if body.set_mixer and board.mixer:
@@ -140,7 +140,7 @@ def register(
                 updates[input_key] = inputs
                 updates[output_key] = outputs
             if updates:
-                service.update_config(**updates)
+                await service.change_config(**updates)
         return BoardApplyResponse(config=config_response(service), mixer=mixer, mixer_skipped=skipped)
 
     def sound_levels() -> SoundLevelsResponse:
@@ -203,7 +203,7 @@ def register(
         if error:
             raise HTTPException(status_code=503, detail=f"Couldn't set {volume.control}: {error}")
         field_name = side_levels_field(body.side)
-        service.update_config(**{field_name: {**getattr(service.saved_config, field_name), volume.control: value}})
+        await service.change_config(**{field_name: {**getattr(service.saved_config, field_name), volume.control: value}})
         request.state.audit_detail = f"{volume.control} {body.side} {value}"
         return await loop.run_in_executor(None, sound_levels)
 

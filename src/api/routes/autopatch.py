@@ -86,7 +86,7 @@ def register(
             incoming_from=tuple(body.incoming_from),
         )
         status = await change_trunk(sip_trunk.save(trunk))
-        service.update_config(autopatch_dial_string=TRUNK_DIAL_STRING, autopatch_ten_digit_prefix=body.ten_digit_prefix)
+        await service.change_config(autopatch_dial_string=TRUNK_DIAL_STRING, autopatch_ten_digit_prefix=body.ten_digit_prefix)
         return {**status, "in_use": True, "ten_digit_prefix": body.ten_digit_prefix}
 
     @app.delete("/api/autopatch/trunk", response_model=SipTrunkStatusResponse, dependencies=admin_dependencies)

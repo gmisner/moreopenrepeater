@@ -421,8 +421,10 @@ class RemoteCore:
             except asyncio.CancelledError:
                 raise
             except Exception as error:  # noqa: BLE001 - a bad stream must never end the loop
-                if self._connected or attempt == 0:
-                    _logger.warning("core stream ended: %s", error)
+                if self._connected:
+                    _logger.warning("core stream ended: %s", type(error).__name__)
+                elif attempt == 0:
+                    _logger.info("core not reachable yet (%s); retrying", type(error).__name__)
             self._set_connected(False)
             self.reconnects += 1
             await asyncio.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])

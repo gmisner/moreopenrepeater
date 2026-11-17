@@ -278,3 +278,15 @@ def test_the_logs_page_shows_the_core_s_lines_with_the_api_s(split):
     wait_for(lambda: any("transmitting_id" in line["line"] for line in client.get("/api/logs/since?after=0").json()["lines"]))
     lines = [line["line"] for line in client.get("/api/logs/since?after=0").json()["lines"]]
     assert any("remote_core" in line for line in lines)  # the API's own line is there too
+
+
+def test_starting_before_the_core_is_up_logs_no_errors_and_the_loops_carry_on(sock_dir, caplog):
+    import logging
+
+    caplog.set_level(logging.WARNING)
+    client, remote = split_client(sock_dir / "nothing.sock")
+    with client:
+        time.sleep(2.5)  # long enough for every background loop to have run once with no core to read
+        assert client.get("/api/status").json()["state"] == "core_unavailable"
+    bad = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert bad == [], bad

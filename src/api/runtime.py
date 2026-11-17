@@ -975,6 +975,8 @@ class AppRuntime:
                     await render_and_queue(clip, on_linked_radio=on_linked_radio)
                 except (UnknownClipError, TTSError, HTTPException):
                     _weather_logger.exception("couldn't play scheduled weather announcement")
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     _weather_logger.exception("unexpected error in scheduled weather")
 
@@ -1023,6 +1025,8 @@ class AppRuntime:
                     continue
                 try:
                     await check_weather(announce=True)
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     # Keep polling: a missed severe-weather alert is worse than a noisy log.
                     _weather_logger.exception("unexpected error checking NWS alerts")
@@ -1035,6 +1039,8 @@ class AppRuntime:
                 try:
                     await loop.run_in_executor(None, mailbox.prune)
                     mailbox.remind()
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.mailbox").exception("unexpected error in the mailbox")
 
@@ -1046,6 +1052,8 @@ class AppRuntime:
                     continue
                 try:
                     await loop.run_in_executor(None, transcriber.run_pending)
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.transcripts").exception("unexpected error transcribing")
 
@@ -1054,6 +1062,8 @@ class AppRuntime:
                 await asyncio.sleep(NET_POLL_SECONDS)
                 try:
                     await nets.tick()
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.net").exception("unexpected error in net mode")
 
@@ -1063,6 +1073,8 @@ class AppRuntime:
                 await asyncio.sleep(AUTO_UPDATE_POLL_SECONDS)
                 try:
                     await loop.run_in_executor(None, auto_updater.tick)  # runs git and calls GitHub
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.updates").exception("unexpected error in automatic updates")
 
@@ -1086,6 +1098,8 @@ class AppRuntime:
                 try:
                     for alert in await loop.run_in_executor(None, health.check):
                         notifier.post(alert)
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.alerts").exception("unexpected error checking the system's health")
 
@@ -1104,11 +1118,24 @@ class AppRuntime:
                         site_sensors.history.prune,
                         time.time() - SENSOR_HISTORY_DAYS * 86400,
                     )
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     logging.getLogger("moreopenrepeater.sensors").exception(
                         "unexpected error polling site sensors"
                     )
                 await asyncio.sleep(float(config.sensors_poll_interval or SENSOR_POLL_SECONDS))
+
+        async def supervised(make) -> None:
+            """Run a background loop, and start it again if it cannot proceed because the core has not
+            been reached yet (a loop that reads the settings would otherwise end for good at start-up,
+            when the API comes up before the core). Anything else is the loop's own to handle."""
+            while True:
+                try:
+                    await make()
+                    return
+                except CoreUnavailable:
+                    await asyncio.sleep(2.0)
 
         @asynccontextmanager
         async def lifespan(_app: FastAPI):
@@ -1119,31 +1146,31 @@ class AppRuntime:
             core_runtime.start_fan()
             if start_background_tick:
                 core_runtime.start_tick(tasks)
-                tasks.append(asyncio.create_task(aprs_beacon_loop()))
+                tasks.append(asyncio.create_task(supervised(lambda: aprs_beacon_loop())))
                 core_runtime.start_announcements(tasks)
-                tasks.append(asyncio.create_task(weather_schedule_loop()))
-                tasks.append(asyncio.create_task(weather_loop()))
-                tasks.append(asyncio.create_task(aprs_receiver.run()))
-                tasks.append(asyncio.create_task(aprs_prune_loop()))
+                tasks.append(asyncio.create_task(supervised(lambda: weather_schedule_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: weather_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: aprs_receiver.run())))
+                tasks.append(asyncio.create_task(supervised(lambda: aprs_prune_loop())))
                 activity_store.prune((datetime.now() - timedelta(days=RETENTION_DAYS)).timestamp())
                 audit.prune((datetime.now() - timedelta(days=AUDIT_RETENTION_DAYS)).timestamp())
                 loop = asyncio.get_running_loop()
                 await core_runtime.start_tts()
                 core_runtime.warm_renderer(loop)
-                tasks.append(asyncio.create_task(backup_loop()))
-                tasks.append(asyncio.create_task(net_loop()))
-                tasks.append(asyncio.create_task(auto_update_loop()))
-                tasks.append(asyncio.create_task(streamer.run()))
-                tasks.append(asyncio.create_task(mailbox_loop()))
-                tasks.append(asyncio.create_task(transcribe_loop()))
-                tasks.append(asyncio.create_task(health_loop()))
-                tasks.append(asyncio.create_task(sensor_loop()))
-                tasks.append(asyncio.create_task(activity_flush_loop()))
+                tasks.append(asyncio.create_task(supervised(lambda: backup_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: net_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: auto_update_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: streamer.run())))
+                tasks.append(asyncio.create_task(supervised(lambda: mailbox_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: transcribe_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: health_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: sensor_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: activity_flush_loop())))
                 core_runtime.start_long_id(tasks)
                 if link_settings is not None:
-                    tasks.append(asyncio.create_task(node_link_loop()))
-                    tasks.append(asyncio.create_task(node_directory.run()))
-                    tasks.append(asyncio.create_task(link_schedule_loop()))
+                    tasks.append(asyncio.create_task(supervised(lambda: node_link_loop())))
+                    tasks.append(asyncio.create_task(supervised(lambda: node_directory.run())))
+                    tasks.append(asyncio.create_task(supervised(lambda: link_schedule_loop())))
                 await core_runtime.start_audio_and_links(loop, tasks)
                 core_runtime.notify_ready()
             core_runtime.start_io()

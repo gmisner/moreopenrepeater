@@ -298,6 +298,8 @@ class RemoteCore:
         return self.weather.alert_clip(alert)
 
     def weather_schedule_due(self) -> bool:
+        if self._config is None:  # the core has not been reached yet: nothing is due
+            return False
         return self.weather.take_due_schedule()
 
     def scheduled_weather_text(self) -> Optional[str]:

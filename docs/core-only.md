@@ -72,7 +72,8 @@ the controller tick.
 ### Priority
 
 `priority` is `low` (10), `normal` (20, the default), `high` (30) or `emergency`
-(40). It orders what is waiting. **It never interrupts anything:** a priority
+(40). It orders what is waiting. **A radio transmission always comes first**
+(maintainer decision), so **it never interrupts anything:** a priority
 only moves a clip ahead of the others in the queue, and it plays at the next idle
 like any announcement. It does not cut off a user, the station ID or a
 transmission in progress.

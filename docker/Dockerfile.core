@@ -1,0 +1,69 @@
+# syntax=docker/dockerfile:1
+#
+# The autonomous core on its own: controller, audio, PTT, link radio, text-to-speech.
+# No dashboard, no API, no accounts (docs/core-only.md, docs/docker.md).
+#
+# Base image: ADR 0005, python:3.13-slim-trixie pinned by digest (multi-arch index,
+# so the same line builds for amd64 and arm64).
+FROM python:3.13-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # Multithreaded BLAS makes the audio worker's small matrix products late now and
+    # then on a Pi (waking the other cores costs more than it saves).
+    OPENBLAS_NUM_THREADS=1
+
+# libportaudio2 for sounddevice, espeak-ng as the text-to-speech fallback,
+# alsa-utils for amixer (the sound-card level controls).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libportaudio2 espeak-ng alsa-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# uid/gid 999 matches the `moreopenrepeater` user install-pi.sh creates on a Pi, so a
+# data folder shared with it keeps its owner. Device groups come from compose (group_add).
+RUN groupadd --system --gid 999 moreopenrepeater \
+    && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
+       --shell /usr/sbin/nologin moreopenrepeater \
+    && usermod -aG audio moreopenrepeater \
+    && mkdir -p /data /run/moreopenrepeater \
+    && chown 999:999 /data /run/moreopenrepeater \
+    && chmod 750 /run/moreopenrepeater
+
+COPY docker/core-requirements.txt /tmp/core-requirements.txt
+RUN pip install -r /tmp/core-requirements.txt
+
+# Piper (the baseline voice) keeps its ONNX model warm in piper.http_server. Set
+# WITH_PIPER=0 for a smaller image that uses espeak-ng only.
+ARG WITH_PIPER=1
+ARG PIPER_VOICE=en_US-amy-low
+# The default voice is baked in at /opt/piper, so the first start works offline and the
+# server never races a download. To use another voice, set PIPER_DATA_DIR=/data/piper in
+# core.env (the data volume is writable) and it is downloaded there when first needed.
+RUN if [ "$WITH_PIPER" = "1" ]; then \
+        pip install "piper-tts[http]>=1.2" \
+        && python -m piper.download_voices --data-dir /opt/piper "$PIPER_VOICE"; \
+    fi
+
+COPY pyproject.toml /app/pyproject.toml
+COPY src /app/src
+# --no-deps: the requirements above are the core's. Installing the project gives the
+# `moreopenrepeater-core` command and the packages it imports.
+RUN pip install --no-deps /app && rm -rf /app
+
+ENV MOREOPENREPEATER_DATA_DIR=/data \
+    MOREOPENREPEATER_CORE_SOCKET=/run/moreopenrepeater/core.sock \
+    PIPER_DATA_DIR=/opt/piper \
+    PIPER_VOICE=${PIPER_VOICE} \
+    PIPER_SERVICE_URL=http://127.0.0.1:8766
+
+USER 999:999
+WORKDIR /data
+VOLUME ["/data", "/run/moreopenrepeater"]
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=120s --retries=3 \
+    CMD ["python", "-m", "core.healthcheck"]
+
+# Exit status 2 means the saved configuration is unusable; restarting will not fix it.
+ENTRYPOINT ["moreopenrepeater-core"]

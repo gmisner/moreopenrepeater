@@ -1,0 +1,66 @@
+# The core as a container (docs/docker.md). Run from this folder:
+#
+#   cp .env.example .env              # host paths and devices (optional)
+#   docker compose up -d --build
+#   docker compose exec core python -m core.healthcheck
+#
+# Nothing here starts the dashboard or API. It is the core alone, and it keeps
+# repeating without them. Stop the moreopenrepeater service first: both would claim
+# the same sound card and PTT line.
+name: moreopenrepeater
+
+services:
+  core:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.core
+    image: moreopenrepeater-core:local
+    restart: unless-stopped
+    init: true               # reaps the Piper server and any other child it starts
+    stop_grace_period: 30s   # time to unkey and close the devices
+    user: "999:999"
+
+    # Interim: host networking, because the link audio paths use loopback to a host
+    # Asterisk (AudioSocket on 127.0.0.1:9092, USRP UDP). Once AllStar is its own
+    # container (ADR 0005) the core can move to a private network.
+    network_mode: host
+
+    # Sound card and the CM108 PTT interface. A device must exist on the host or the
+    # container will not start. The hidraw number can change between boots; a stable
+    # udev name is planned (ADR 0005, host prerequisites).
+    devices:
+      - /dev/snd:/dev/snd
+      - ${MOR_PTT_HIDRAW:-/dev/hidraw0}:${MOR_PTT_HIDRAW:-/dev/hidraw0}
+    # audio is 29 on Debian and Pi OS. The gpio group number differs by system
+    # (`getent group gpio`), so it is a number. dialout is for serial PTT.
+    group_add:
+      - audio
+      - dialout
+      - "${MOR_GPIO_GID:-986}"
+
+    volumes:
+      # state.json (the saved configuration) lives here. The core refuses to start
+      # without it, so seed it first (docs/docker.md).
+      - ${MOR_DATA_DIR:-./data}:/data
+      # The control socket. The API container will mount the same volume.
+      - core-run:/run/moreopenrepeater
+
+    env_file:
+      - path: core.env
+        required: false
+
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  core-run:

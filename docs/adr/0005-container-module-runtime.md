@@ -2,8 +2,9 @@
 
 ## Status
 
-Proposed. Needs maintainer approval before any process, transport or hardware
-change (issue #221). Nothing here is verified on physical hardware yet; the
+Proposed. The maintainer has chosen the control transport (see the section
+below). Everything else needs approval before any process or hardware change
+(issue #221). Nothing here is verified on physical hardware yet; the
 gates at the end say what must be measured first.
 
 ## Context
@@ -63,6 +64,44 @@ Constraints we have already agreed:
 9. **Host prerequisites stay on the host** and are checked by the installer:
    udev rules and stable device names, Pi device-tree overlays (I2C, 1-wire,
    PPS), UART setup, chrony and gpsd for GPS time, kernel modules.
+
+## Control transport
+
+Decided by the maintainer: **HTTP/1.1 with JSON bodies over a Unix domain
+socket**, using the message contracts in `src/contracts` (Stage 2) as the
+bodies. It carries commands and status between the API (and later, modules) and
+the core. Logs keep their own path (a Unix datagram socket to `logd`, above).
+
+- The core serves it. The socket lives in a directory the core owns, for
+  example `/run/moreopenrepeater/core.sock` (kept short; Linux limits socket
+  paths to about 108 characters). It is created with a restrictive mode and a
+  shared group for the API's user. File permissions are the access control, so
+  there is no port and no token to manage.
+- Streaming status and events use server-sent events on the same socket.
+- It is debuggable with `curl --unix-socket`. The API client is `httpx`, which
+  is already a dependency and supports Unix sockets.
+- The core's server uses the standard library only. The core stays free of
+  FastAPI and every other web framework.
+- Containers share the socket through a named volume. Docker Desktop on Mac or
+  Windows cannot reach a socket on a bind-mounted host folder, only between
+  containers.
+- Platforms: Linux (Pi OS 32 and 64-bit, Debian, Ubuntu, x86 servers) and macOS
+  natively. Native Windows is not supported by asyncio for Unix sockets and is
+  not a target.
+- A loopback TCP listener (`127.0.0.1`) behind a development flag, off by
+  default, serves the same handler for hosts without Unix sockets. A TCP port
+  can key a transmitter, so it needs authentication before it is ever enabled
+  outside development.
+
+Rejected: a broker (MQTT or NATS), because a broker down would stop control and
+it costs memory on a Pi 3B+, against decision 4. gRPC, ZeroMQ and D-Bus, for
+weight or container awkwardness. A custom binary protocol, for the cost of
+writing and debugging it. HTTP on a TCP port by default, because any local
+process could reach it.
+
+The core must keep repeating with the socket, the API and every client gone.
+A client that disappears mid-request must not affect the controller tick or the
+audio path.
 
 ## Logging
 

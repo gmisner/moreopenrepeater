@@ -39,7 +39,7 @@ echo MOR_DATA_DIR=/srv/mor-data >> .env
 
 ## What the container is allowed to do
 
-- Runs as uid 999 (the same as `install-pi.sh`'s `moreopenrepeater` user), with a
+- Runs as uid 999 (the uid of `install-pi.sh`'s `moreopenrepeater` user on a Pi), with a
   read-only root, no capabilities and `no-new-privileges`.
 - Gets `/dev/snd` and one `hidraw` node (`MOR_PTT_HIDRAW`, default `/dev/hidraw0`).
   The group numbers for `audio` and `dialout` are the same on Debian and Pi OS;
@@ -69,9 +69,11 @@ PY
 `python -m core.healthcheck` asks the core's own `/health` and exits 1 when it
 reports `failed` (a stalled controller tick, say). Docker marks the container
 `unhealthy`, but **Docker does not restart an unhealthy container by itself**.
+(The check has to stay light: it once imported the core's own modules, which took
+over 5 s of CPU on a Pi, timed out and competed with the audio. A test guards that.)
 The systemd install does, through its watchdog (`WatchdogSec`). Until the host
 layer covers this, treat `unhealthy` as something to alert on. `restart:
-unless-stopped` covers crashes and exits.
+unless-stopped` covers crashes and exits, but not a manual `docker kill` or `docker stop`.
 
 ## Voices
 

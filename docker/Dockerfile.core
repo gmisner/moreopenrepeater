@@ -21,8 +21,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libportaudio2 espeak-ng alsa-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# uid/gid 999 matches the `moreopenrepeater` user install-pi.sh creates on a Pi, so a
-# data folder shared with it keeps its owner. Device groups come from compose (group_add).
+# uid 999 is the `moreopenrepeater` user install-pi.sh creates on a Pi, so a data
+# folder shared with it keeps its owner (the group number differs by system). Device
+# groups come from compose (group_add).
 RUN groupadd --system --gid 999 moreopenrepeater \
     && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
        --shell /usr/sbin/nologin moreopenrepeater \
@@ -62,7 +63,7 @@ USER 999:999
 WORKDIR /data
 VOLUME ["/data", "/run/moreopenrepeater"]
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=120s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD ["python", "-m", "core.healthcheck"]
 
 # Exit status 2 means the saved configuration is unusable; restarting will not fix it.

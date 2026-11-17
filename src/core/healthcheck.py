@@ -3,6 +3,11 @@
 `python -m core.healthcheck` exits 0 when the core's own `/health` says it is not
 failed, and 1 when it says failed or cannot be reached. It uses the standard
 library only and never writes anything.
+
+It must stay light. Docker runs it every few seconds, and on a Pi importing the
+core's own modules (asyncio, pydantic, the contracts) took over 5 s of CPU each
+time, which timed the check out and competed with the audio. So it imports nothing
+but the standard library's small modules, and a test keeps it that way.
 """
 from __future__ import annotations
 
@@ -13,8 +18,7 @@ import sys
 from pathlib import Path
 from typing import Mapping, Optional
 
-from .control import socket_path_from_env
-
+SOCKET_VARIABLE = "MOREOPENREPEATER_CORE_SOCKET"  # the same name core.control reads
 TIMEOUT_SECONDS = 3.0
 MAX_BYTES = 64 * 1024
 
@@ -45,11 +49,11 @@ def check(path: Path, timeout: float = TIMEOUT_SECONDS) -> tuple[bool, str]:
 
 
 def main(env: Optional[Mapping[str, str]] = None) -> int:
-    path = socket_path_from_env(dict(os.environ if env is None else env))
-    if path is None:
-        print("MOREOPENREPEATER_CORE_SOCKET is not set", file=sys.stderr)
+    value = ((os.environ if env is None else env).get(SOCKET_VARIABLE) or "").strip()
+    if not value:
+        print(f"{SOCKET_VARIABLE} is not set", file=sys.stderr)
         return 1
-    healthy, reason = check(path)
+    healthy, reason = check(Path(value))
     print(reason, file=sys.stderr if not healthy else sys.stdout)
     return 0 if healthy else 1
 

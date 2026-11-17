@@ -464,6 +464,7 @@ class RepeaterService:
             "delete_macro": self.delete_macro,
             "save_announcement": lambda announcement: self.save_announcement(Announcement(**announcement)),
             "delete_announcement": self.delete_announcement,
+            "import_snapshot": lambda snapshot: self.import_snapshot(snapshot),
         }
         handler = handlers.get(name)
         if handler is None:

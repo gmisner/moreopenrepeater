@@ -30,6 +30,7 @@ from .models import AuditEntryResponse, ConfigResponse, SessionResponse, Snapsho
 from .node_directory import NodeDirectory
 from .notify import Notifier
 from .persistence import StateStore
+from .snapshot_import import snapshot_to_import, validate_config_values
 from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
 from .recordings import RecordingStore
 from .routes import accounts as accounts_routes
@@ -152,19 +153,13 @@ def _validated_config(values: dict) -> RepeaterConfig:
     """Type-check a full config dict through the API model, turning bad
     values into the same 422 FastAPI gives for a bad request body."""
     try:
-        validated = ConfigResponse.model_validate({k: v for k, v in values.items() if k in ConfigResponse.model_fields})
+        return validate_config_values(values)
     except ValidationError as error:
         raise RequestValidationError(error.errors()) from error
-    return RepeaterConfig.from_flat_dict(validated.model_dump())
 
 
 def _snapshot_to_import(snapshot: SnapshotImportRequest) -> dict:
-    config = _validated_config({**RepeaterConfig().to_flat_dict(), **snapshot.config})
-    return {
-        "config": config.to_flat_dict(),
-        "macros": [m.model_dump() for m in snapshot.macros],
-        "announcements": [a.model_dump() for a in snapshot.announcements],
-    }
+    return snapshot_to_import(snapshot, _validated_config)
 
 
 def _apply_overrides(base: RepeaterConfig, overrides: dict) -> RepeaterConfig:
@@ -344,7 +339,7 @@ def create_app(
         """Runs in a worker thread; the settings themselves are applied on the event loop."""
 
         async def import_on_loop(settings: dict) -> None:
-            runtime.service.import_snapshot(settings)
+            await runtime.service.command("import_snapshot", snapshot=settings)
 
         def import_settings(settings: dict) -> None:
             asyncio.run_coroutine_threadsafe(import_on_loop(settings), loop).result()

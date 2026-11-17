@@ -68,13 +68,16 @@ from contracts import (
 )
 import dataclasses as _dc
 
+from api.models import SnapshotImportRequest
 from api.models.programming import AnnouncementFields, MacroCreateRequest
+from api.service.snapshot import config_from_snapshot
+from api.snapshot_import import snapshot_to_import
 from controller.announcements import Announcement
 from controller.macros import Macro
 from api.core_runtime import AnnouncementQueueFull
 from playout.renderer import TTS_PREFIX, UnknownClipError
 
-from .config_boundary import ConfigRejected, check_change
+from .config_boundary import ConfigRejected, CoreConfigError, check_change, check_config
 from playout.tts import TTSError
 
 _logger = logging.getLogger("moreopenrepeater.core.control")
@@ -98,6 +101,8 @@ COUNTDOWN_TOLERANCE_SECONDS = 1.0
 MAX_BODY_BYTES = 16 * 1024
 #: A configuration change can carry a few large settings; still bounded.
 MAX_CONFIG_BODY_BYTES = 64 * 1024
+#: A command can carry a whole snapshot (a restore): every setting, macro and announcement.
+MAX_COMMAND_BODY_BYTES = 256 * 1024
 RENDER_DEADLINE_SECONDS = 30.0  # to prepare speech before giving up on a request
 #: Longer than any normal pause (the tick runs every 50 ms); the same figure the
 #: systemd watchdog uses.
@@ -148,7 +153,7 @@ class ControlServer:
         self._post: dict[str, Callable[[bytes], Awaitable[dict]]] = {
             "/speak": self._speak, "/config": self._config_change, "/command": self._command,
         }
-        self._body_limits = {"/config": MAX_CONFIG_BODY_BYTES}
+        self._body_limits = {"/config": MAX_CONFIG_BODY_BYTES, "/command": MAX_COMMAND_BODY_BYTES}
         #: Rises with every change to the configuration, whoever made it (the API, a macro,
         #: net mode). The API sends the version it last saw to detect a concurrent change.
         self._config_version = 1
@@ -558,6 +563,30 @@ class ControlServer:
         self._config_changed(None)  # macros and announcements count as a change: clients read them again
         return None
 
+    def _import_snapshot(self, request: CoreCommand) -> dict:
+        """Replace the whole configuration, the macros and the announcements (a restore). The
+        snapshot is checked first with the dashboard's own validation and the core's own
+        safety check, and a refused one applies nothing. It carries credentials and is never
+        logged."""
+        try:
+            data = snapshot_to_import(SnapshotImportRequest.model_validate(request.params["snapshot"]))
+        except (ValidationError, ValueError, TypeError):
+            return self._command_refused(request, "command.invalid_snapshot", "that is not a valid settings snapshot")
+        try:
+            _, notes = check_config(config_from_snapshot(data), log=False)
+        except CoreConfigError as error:
+            return self._command_refused(request, "command.unsafe_snapshot", str(error))
+        if notes:
+            names = sorted(note.split(" was ", 1)[0] for note in notes)
+            return self._command_refused(request, "command.unsafe_snapshot", f"not a usable number: {', '.join(names)}")
+        try:
+            self._service.import_snapshot(data)
+        except Exception:  # noqa: BLE001
+            _logger.exception("core.command import_snapshot could not be applied")
+            return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
+        _logger.info("core.command import_snapshot applied")
+        return self._command_result(request, CommandStatus.APPLIED)
+
     async def _queue_clip(self, request: CoreCommand) -> dict:
         """Render a clip (off the event loop, with a deadline) and queue it, as the dashboard's
         play button and the API's modules do in process. The clip can be the text of an
@@ -615,6 +644,8 @@ class ControlServer:
             )
         if name is CommandName.QUEUE_CLIP:
             return await self._queue_clip(request)
+        if name is CommandName.IMPORT_SNAPSHOT:
+            return self._import_snapshot(request)
         if name in PROGRAMMING:
             refusal = self._apply_programming(request)
             if refusal is not None:

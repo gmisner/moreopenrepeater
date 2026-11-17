@@ -79,5 +79,5 @@ def register(
 
     @app.post("/api/snapshot", response_model=SnapshotModel, dependencies=auth_dependencies)
     async def post_snapshot(snapshot: SnapshotImportRequest) -> SnapshotModel:
-        service.import_snapshot(snapshot_to_import(snapshot))
+        await service.command("import_snapshot", snapshot=snapshot_to_import(snapshot))
         return SnapshotModel(**service.export_snapshot())

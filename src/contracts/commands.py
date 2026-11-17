@@ -34,6 +34,7 @@ class CommandName(str, Enum):
     SAVE_ANNOUNCEMENT = "save_announcement"
     DELETE_ANNOUNCEMENT = "delete_announcement"
     QUEUE_CLIP = "queue_clip"
+    IMPORT_SNAPSHOT = "import_snapshot"
 
 
 #: The commands that make the controller act on an event that did not come from the radio.
@@ -71,6 +72,9 @@ _PARAMS: dict[CommandName, dict[str, str]] = {
     # Render a clip (a recording, or text to speech, or "id") and queue it to play. The
     # clip name is content: it can be the text of an announcement, so it is never logged.
     CommandName.QUEUE_CLIP: {"clip": "clip", "on_linked_radio": "bool"},
+    # Replace the whole configuration, macros and announcements (a restore). The core checks
+    # it with the same validation the dashboard's restore uses. It carries credentials.
+    CommandName.IMPORT_SNAPSHOT: {"snapshot": "object"},
 }
 
 

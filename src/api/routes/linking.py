@@ -9,6 +9,7 @@ from typing import Awaitable, Sequence
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi import Path as UrlPath
 
+from ..split import settled
 from ..allstar_node import AllStarNode, AllStarSetupError
 from ..autopatch import Autopatch
 from ..dmr import DmrBridge, DmrSettings, DmrSetupError
@@ -207,10 +208,10 @@ def register(
         return gpio_status()
 
     @app.put("/api/gpio/{pin}", response_model=GpioStatusResponse, dependencies=auth_dependencies)
-    def put_gpio(pin: int, body: GpioOutputRequest, request: Request) -> dict:
+    async def put_gpio(pin: int, body: GpioOutputRequest, request: Request) -> dict:
         request.state.audit_detail = f"GPIO{pin} ({gpio.name(pin)}) {'on' if body.on else 'off'}"
         try:
-            gpio.set_output(pin, body.on)
+            await settled(gpio.set_output(pin, body.on))
         except GpioError as error:
             raise HTTPException(status_code=409, detail=str(error))
         return gpio_status()
@@ -225,6 +226,6 @@ def register(
 
     @app.post("/api/link-radio/tune", response_model=LinkRadioStatus, dependencies=auth_dependencies)
     async def retune_remote_base() -> LinkRadioStatus:
-        remote_base.retune()
+        await settled(remote_base.retune())
         await asyncio.sleep(0)
         return LinkRadioStatus(**link_radio.status(), **remote_base.status())

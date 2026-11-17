@@ -5,6 +5,7 @@ from typing import Awaitable, Sequence
 
 from fastapi import FastAPI, HTTPException, Request
 
+from ..split import settled
 from ..autopatch import Autopatch
 from ..models import (
     AutopatchDialRequest,
@@ -34,14 +35,14 @@ def register(
     @app.post("/api/autopatch/dial", response_model=AutopatchStatusResponse, dependencies=transmit_dependencies)
     async def autopatch_dial(body: AutopatchDialRequest, request: Request) -> dict:
         request.state.audit_detail = body.number
-        error = autopatch.dial(body.number, request.state.identity.username or "local")
+        error = await settled(autopatch.dial(body.number, request.state.identity.username or "local"))
         if error is not None:
             raise HTTPException(status_code=409, detail=error)
         return autopatch.status()
 
     @app.post("/api/autopatch/hangup", response_model=AutopatchStatusResponse, dependencies=auth_dependencies)
     async def autopatch_hangup(request: Request) -> dict:
-        autopatch.hangup(f"hung up from the dashboard by {request.state.identity.username or 'local'}")
+        await settled(autopatch.hangup(f"hung up from the dashboard by {request.state.identity.username or 'local'}"))
         return autopatch.status()
 
     async def trunk_status() -> dict:

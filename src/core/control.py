@@ -39,6 +39,7 @@ from typing import Awaitable, Callable, Optional
 from pydantic import ValidationError
 
 from contracts import (
+    HARDWARE,
     PROGRAMMING,
     SIMULATED,
     CommandName,
@@ -79,6 +80,7 @@ from api.snapshot_import import snapshot_to_import
 from controller.announcements import Announcement
 from controller.macros import Macro
 from api.core_runtime import AnnouncementQueueFull
+from api.gpio import GpioError
 from playout.renderer import TTS_PREFIX, UnknownClipError
 
 from .config_boundary import ConfigRejected, CoreConfigError, check_change, check_config
@@ -686,6 +688,35 @@ class ControlServer:
         self._config_changed(None)  # macros and announcements count as a change: clients read them again
         return None
 
+    def _hardware_command(self, request: CoreCommand) -> dict:
+        """Act on the radio side's hardware for the API. The core's own checks still apply (an output
+        must be set up as one, the transmitter must be on, the number must be allowed), and a refusal
+        says why in words the dashboard can show. Nothing here is logged beyond the command's name:
+        the number dialled and who asked are the API's audit record, not the core's log."""
+        name, params, runtime = request.command, request.params, self._runtime
+
+        def refused(message: str) -> dict:
+            return self._command_refused(request, "command.hardware_refused", message)
+
+        try:
+            if name is CommandName.GPIO_SET_OUTPUT:
+                runtime.gpio.set_output(params["pin"], params["on"])
+            elif name is CommandName.REMOTE_BASE_RETUNE:
+                runtime.remote_base.retune()
+            elif name is CommandName.AUTOPATCH_DIAL:
+                error = runtime.autopatch.dial(params["number"], params["actor"])
+                if error is not None:
+                    return refused(error)
+            elif name is CommandName.AUTOPATCH_HANGUP:
+                runtime.autopatch.hangup(params["reason"])
+        except GpioError as error:
+            return refused(str(error))
+        except Exception:  # noqa: BLE001 - nothing a client sent may reach the radio side as a crash
+            _logger.exception("core.command %s could not be applied", name.value)
+            return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
+        _logger.info("core.command %s applied", name.value)
+        return self._command_result(request, CommandStatus.APPLIED)
+
     def _import_snapshot(self, request: CoreCommand) -> dict:
         """Replace the whole configuration, the macros and the announcements (a restore). The
         snapshot is checked first with the dashboard's own validation and the core's own
@@ -767,6 +798,8 @@ class ControlServer:
             )
         if name is CommandName.QUEUE_CLIP:
             return await self._queue_clip(request)
+        if name in HARDWARE:
+            return self._hardware_command(request)
         if name is CommandName.IMPORT_SNAPSHOT:
             return self._import_snapshot(request)
         if name in PROGRAMMING:

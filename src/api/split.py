@@ -10,9 +10,10 @@ things shows nothing, not an error.
 """
 from __future__ import annotations
 
-from typing import Any
+import inspect
+from typing import Any, Optional
 
-from .service.core_handle import CoreError
+from .service.core_handle import CommandRefused, CoreError
 
 
 class NotInSplitMode(CoreError):
@@ -89,6 +90,43 @@ class CoreHardware(Unavailable):
     async def _status_async(self) -> dict:
         return dict(self._remote.hardware_status(self._name))
 
+    # -- the few things the core takes as commands (each returns a coroutine; see `settled`) ----------
+
+    def _only(self, part: str, what: str) -> None:
+        if self._name != part:
+            raise NotInSplitMode(f"{self._name}.{what} needs the core's hardware, which runs in another process")
+
+    def name(self, pin: int) -> str:
+        """A GPIO output's name, from the pins the core reports."""
+        self._only("gpio", "name")
+        for entry in self._remote.hardware_status("gpio").get("pins", []):
+            if entry.get("pin") == pin and entry.get("name"):
+                return str(entry["name"])
+        return f"Output {pin}"
+
+    def set_output(self, pin: int, on: bool):
+        self._only("gpio", "set_output")
+        return self._remote.command("gpio_set_output", pin=pin, on=on)
+
+    def retune(self):
+        self._only("remote_base", "retune")
+        return self._remote.command("remote_base_retune")
+
+    async def dial(self, number: str, actor: str) -> Optional[str]:
+        """Start a call; returns why not, as the in-process one does. The core decides."""
+        self._only("autopatch", "dial")
+        try:
+            await self._remote.command("autopatch_dial", number=number, actor=actor[:200] or "local")
+        except CommandRefused as refused:
+            if refused.code == "command.hardware_refused":
+                return refused.message
+            raise
+        return None
+
+    def hangup(self, reason: str):
+        self._only("autopatch", "hangup")
+        return self._remote.command("autopatch_hangup", reason=reason[:200] or "hung up")
+
 
 def safe_status(part: Any) -> dict:
     """A part's status, or {} if it cannot be had now (the core is away). For places that report
@@ -97,3 +135,9 @@ def safe_status(part: Any) -> dict:
         return dict(part.status())
     except CoreError:
         return {}
+
+
+async def settled(value: Any) -> Any:
+    """What a hardware action returned, once it is done. In process it is already the result; apart
+    from the core it is a coroutine that sends the command and waits for the core's answer."""
+    return await value if inspect.isawaitable(value) else value

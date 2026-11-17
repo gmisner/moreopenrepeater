@@ -10,7 +10,7 @@ Wants=network-online.target
 Type=notify
 WatchdogSec=30
 # Piper/Kokoro first speak can still take a while while ONNX loads.
-TimeoutStartSec=180
+TimeoutStartSec=300
 User=moreopenrepeater
 Group=moreopenrepeater
 # Support bundles run journalctl -u moreopenrepeater from this process.

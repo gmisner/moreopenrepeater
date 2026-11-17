@@ -4,7 +4,7 @@ import socket
 import tempfile
 import threading
 
-from contracts import Emitter, ListSink, Metrics, Severity, UnixDatagramSink
+from contracts import DeliveryError, Emitter, ListSink, Metrics, Severity, UnixDatagramSink
 
 
 def make(sink=None, **kwargs):
@@ -137,6 +137,7 @@ def test_a_failing_sink_is_counted_and_does_not_stop_the_others():
     emitter.drain_once()
     assert len(good.lines) == 1
     assert emitter.metrics.get("mor_log_sink_errors_total", sink="broken") == 1
+    assert emitter.metrics.get("mor_log_events_dropped_total", reason="sink_failed", severity="ANY") == 1
 
 
 def test_drain_thread_delivers_and_stop_flushes():
@@ -200,3 +201,54 @@ def test_metrics_reject_unregistered_labels_and_bad_names():
         metrics.counter("Bad-Name", "x")
     with pytest.raises(ValueError):
         metrics.gauge("mor_x_total", "X.")  # same name, different kind
+
+
+def test_events_lost_in_a_sink_are_counted_per_event_not_per_batch():
+    class PartialSink:
+        name = "partial"
+
+        def write(self, lines):
+            raise DeliveryError(failed=3, total=len(lines), where="somewhere")
+
+    emitter = Emitter("core", "0.1.0", [PartialSink()])
+    for _ in range(5):
+        emitter.emit(Severity.INFO, "tx.started")
+    emitter.drain_once()
+    assert emitter.metrics.get("mor_log_events_dropped_total", reason="sink_failed", severity="ANY") == 3
+    assert emitter.metrics.get("mor_log_sink_errors_total", sink="partial") == 1
+
+
+class FullThenFree:
+    """A socket whose queue is full for the first `full` sends, like logd falling behind."""
+
+    def __init__(self, full):
+        self.full, self.sent = full, []
+
+    def send(self, data):
+        if self.full > 0:
+            self.full -= 1
+            raise BlockingIOError()
+        self.sent.append(data)
+
+    def close(self):
+        pass
+
+
+def test_sink_waits_for_a_slow_collector_instead_of_dropping_the_batch(monkeypatch):
+    sink = UnixDatagramSink("/unused")
+    sink._sock = FullThenFree(full=30)
+    monkeypatch.setattr(sink, "_wait_writable", lambda timeout: True)
+    sink.write(["a", "b", "c"])
+    assert sink._sock.sent == [b"a", b"b", b"c"]
+
+
+def test_sink_gives_up_within_its_budget_when_the_collector_never_catches_up(monkeypatch):
+    sink = UnixDatagramSink("/unused", batch_budget_s=0.05)
+    sink._sock = FullThenFree(full=10**9)
+    monkeypatch.setattr(sink, "_wait_writable", lambda timeout: True)
+    try:
+        sink.write(["a", "b", "c"])
+    except DeliveryError as error:
+        assert error.failed == 3
+    else:
+        raise AssertionError("expected DeliveryError")

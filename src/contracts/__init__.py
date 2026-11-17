@@ -12,7 +12,7 @@ from .events import (
 )
 from .configuration import ConfigApplied, ConfigResult, ConfigSnapshot
 from .health import HealthCheck, HealthReport, HealthState
-from .emit import Emitter, ListSink, StdoutSink, UnixDatagramSink
+from .emit import DeliveryError, Emitter, ListSink, StdoutSink, UnixDatagramSink
 from .log_event import LogEvent, Severity
 from .metrics import Metrics
 from .manifest import (
@@ -31,6 +31,7 @@ __all__ = [
     "CoreStatus",
     "DeviceAccess",
     "DeviceNeed",
+    "DeliveryError",
     "Emitter",
     "FixQuality",
     "Freshness",

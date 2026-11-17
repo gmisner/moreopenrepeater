@@ -34,9 +34,14 @@ controller tick / audio callback            drain thread (one per process)
   raises is counted and skipped. One bad event is counted and skipped, and it
   does not take its batch with it.
 - **Sinks.** `stdout` is layer 1: it works with everything else down and Docker
-  rotates it. `UnixDatagramSink` is layer 2: one event per datagram to `logd`,
-  non-blocking, so a missing or full `logd` costs a counted error and nothing
-  else. A line over 8 KiB is not sent.
+  rotates it. `UnixDatagramSink` is layer 2: one event per datagram to `logd`.
+  It never blocks the hot path. Linux keeps only 10 datagrams queued per
+  socket by default (`net.unix.max_dgram_qlen`, checked in a Docker VM), so
+  sending a batch at full speed lost most of it. The drain thread now waits
+  for `logd` to catch up, up to 250 ms per batch, then drops the rest. It
+  reconnects after `logd` restarts. A line over 8 KiB is not sent. Events a
+  sink fails to deliver are counted per event
+  (`mor_log_events_dropped_total{reason="sink_failed"}`), not per batch.
 
 ## When it is full
 
@@ -97,7 +102,12 @@ paths is part of the Stage 4 module foundation, not this PR.
 3. **Audio callbacks.** Even at about 1 us, the audio callback should emit
    aggregated metrics, not per-block events (ADR 0005: "audio metrics are
    aggregated"). This design does not change that.
-4. **Dropped is not the same as delivered.** A datagram accepted by the kernel
+4. **Tested across two containers, not on a Pi.** With `logd` stood in for by a
+   small collector in a second container on a shared volume (arm64 Docker
+   Desktop), 1000 of 1000 events arrived. With the collector gone, 100 emit
+   calls took under 1 ms and the 100 lost events were all counted. The kernel
+   queue length and timing on a Pi may differ.
+5. **Dropped is not the same as delivered.** A datagram accepted by the kernel
    can still be lost if `logd` is slow. `logd` must report its own receive
    gaps by checking `seq` against `boot_id`.
 

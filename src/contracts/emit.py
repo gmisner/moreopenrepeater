@@ -13,6 +13,7 @@ blocks. When the queue is full something is dropped, counted and reported.
 from __future__ import annotations
 
 import collections
+import select
 import socket
 import sys
 import threading
@@ -55,33 +56,76 @@ class ListSink:
         self.lines.extend(lines)
 
 
+class DeliveryError(OSError):
+    """A sink could not deliver some events. `failed` says how many, so the
+    emitter can count the loss per event and not per batch."""
+
+    def __init__(self, failed: int, total: int, where: str) -> None:
+        super().__init__(f"{failed} of {total} events not delivered to {where}")
+        self.failed = failed
+
+
 class UnixDatagramSink:
-    """Layer 2: one event per datagram to `logd`. Never blocks: if `logd` is
-    absent or its socket is full, the event is dropped and the caller counts it."""
+    """Layer 2: one event per datagram to `logd`.
+
+    It never blocks the caller. The drain thread may wait briefly for `logd` to
+    catch up, because Linux keeps only 10 datagrams queued per socket by default
+    (`net.unix.max_dgram_qlen`), so sending a batch at full speed would lose most
+    of it. The wait is capped per batch. Past the cap, or with `logd` absent, the
+    remaining events are dropped and reported through `DeliveryError`.
+    """
 
     name = "logd"
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, batch_budget_s: float = 0.25) -> None:
         self.path = path
-        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        self._sock.setblocking(False)
+        self.batch_budget_s = batch_budget_s
+        self._sock: Optional[socket.socket] = None
+
+    def _connect(self) -> bool:
+        if self._sock is None:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            sock.setblocking(False)
+            try:
+                sock.connect(self.path)
+            except OSError:
+                sock.close()
+                return False
+            self._sock = sock
+        return True
+
+    def _wait_writable(self, timeout_s: float) -> bool:
+        _, writable, _ = select.select([], [self._sock], [], timeout_s)
+        return bool(writable)
+
+    def _send(self, data: bytes, deadline: float) -> bool:
+        while self._connect():
+            try:
+                self._sock.send(data)
+                return True
+            except BlockingIOError:  # logd's queue is full: wait for it, within the budget
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not self._wait_writable(min(0.02, remaining)):
+                    return False
+            except OSError:  # logd went away: reconnect on the next event
+                self.close()
+                return False
+        return False
 
     def write(self, lines: list[str]) -> None:
         failed = 0
+        deadline = time.monotonic() + self.batch_budget_s
         for line in lines:
             data = line.encode()
-            if len(data) > MAX_DATAGRAM:
-                failed += 1
-                continue
-            try:
-                self._sock.sendto(data, self.path)
-            except OSError:
+            if len(data) > MAX_DATAGRAM or not self._send(data, deadline):
                 failed += 1
         if failed:
-            raise OSError(f"{failed} of {len(lines)} events not delivered to {self.path}")
+            raise DeliveryError(failed, len(lines), self.path)
 
     def close(self) -> None:
-        self._sock.close()
+        if self._sock is not None:
+            self._sock.close()
+            self._sock = None
 
 
 class Emitter:
@@ -234,8 +278,10 @@ class Emitter:
         for sink in self.sinks:
             try:
                 sink.write(lines)
-            except Exception:  # noqa: BLE001 - a dead sink must not stop the others
+            except Exception as error:  # noqa: BLE001 - a dead sink must not stop the others
                 self.metrics.inc("mor_log_sink_errors_total", sink=sink.name)
+                lost = error.failed if isinstance(error, DeliveryError) else len(lines)
+                self.metrics.inc("mor_log_events_dropped_total", lost, reason="sink_failed", severity="ANY")
         return len(taken)
 
     def _drop_report(self) -> Optional[tuple]:

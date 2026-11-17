@@ -10,36 +10,60 @@ from .events import (
     PttCommanded, PttEvidence, PttFeedback, PttReason, TransmissionEnded, TransmissionStarted, TxEndReason,
     core_event_adapter,
 )
+from .configuration import ConfigApplied, ConfigResult, ConfigSnapshot
+from .health import HealthCheck, HealthReport, HealthState
 from .log_event import LogEvent, Severity
-from .redaction import OMITTED, REDACTED, redact
+from .manifest import (
+    DeviceAccess, DeviceNeed, ModuleAnnounce, ModuleManifest, ResourceBudget, SafeState, find_device_conflicts,
+)
+from .redaction import OMITTED, REDACTED, find_sensitive_keys, redact
+from .status import CoreStatus, FixQuality, LocationSource, SiteLocation
 from .transmit import IdempotencyLedger, Priority, SpeakDecision, SpeakRequest, SpeakStatus, screen_speak_request
 from .versioning import CONTRACT_VERSION, is_compatible
 
 __all__ = [
     "CONTRACT_VERSION",
-    "OMITTED",
-    "REDACTED",
+    "ConfigApplied",
+    "ConfigResult",
+    "ConfigSnapshot",
+    "CoreStatus",
+    "DeviceAccess",
+    "DeviceNeed",
+    "FixQuality",
     "Freshness",
     "Header",
+    "HealthCheck",
+    "HealthReport",
+    "HealthState",
     "IdempotencyLedger",
+    "LocationSource",
     "LogEvent",
     "Message",
+    "ModuleAnnounce",
+    "ModuleManifest",
+    "OMITTED",
     "Priority",
     "PttCommanded",
     "PttEvidence",
     "PttFeedback",
     "PttReason",
+    "REDACTED",
+    "ResourceBudget",
+    "SafeState",
     "Sequencer",
     "Severity",
+    "SiteLocation",
+    "Source",
     "SpeakDecision",
     "SpeakRequest",
     "SpeakStatus",
-    "Source",
     "StructuredError",
     "TransmissionEnded",
     "TransmissionStarted",
     "TxEndReason",
     "core_event_adapter",
+    "find_device_conflicts",
+    "find_sensitive_keys",
     "is_compatible",
     "new_id",
     "redact",

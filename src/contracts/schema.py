@@ -14,8 +14,12 @@ import sys
 from pathlib import Path
 
 from .common import Header, StructuredError
+from .configuration import ConfigApplied, ConfigSnapshot
 from .events import core_event_adapter
+from .health import HealthReport
 from .log_event import LogEvent
+from .manifest import ModuleAnnounce
+from .status import CoreStatus, SiteLocation
 from .transmit import SpeakDecision, SpeakRequest
 
 SCHEMA_DIR = Path(__file__).resolve().parents[2] / "docs" / "contracts" / "schema"
@@ -26,6 +30,12 @@ MODELS = {
     "log_event.v1.json": LogEvent,
     "speak_request.v1.json": SpeakRequest,
     "speak_decision.v1.json": SpeakDecision,
+    "health_report.v1.json": HealthReport,
+    "module_announce.v1.json": ModuleAnnounce,
+    "config_snapshot.v1.json": ConfigSnapshot,
+    "config_applied.v1.json": ConfigApplied,
+    "core_status.v1.json": CoreStatus,
+    "site_location.v1.json": SiteLocation,
 }
 
 

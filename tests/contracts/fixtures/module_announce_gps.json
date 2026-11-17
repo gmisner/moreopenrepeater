@@ -1,0 +1,23 @@
+{
+  "kind": "module.announce",
+  "header": {
+    "schema_version": 1,
+    "message_id": "aaaa1111bbbb2222cccc3333dddd4444",
+    "emitted_at": "2026-11-16T18:00:00Z",
+    "boot_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+    "seq": 0,
+    "source": {"module": "gps", "version": "0.1.0"}
+  },
+  "manifest": {
+    "id": "gps",
+    "version": "0.1.0",
+    "contract_version": "1.0",
+    "capabilities": ["location.position", "time.gps"],
+    "devices": [
+      {"name": "gps_serial", "match": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_7_-_GPS_GNSS_Receiver-if00", "access": "read", "exclusive": true, "required": false, "safe_state_on_loss": "publish_stale"},
+      {"name": "rtc", "match": "i2c:1:0x52", "access": "read_write", "exclusive": false, "required": false, "safe_state_on_loss": "none"}
+    ],
+    "resources": {"memory_mb": 64, "cpu_millicores": 100},
+    "health_port": 9101
+  }
+}

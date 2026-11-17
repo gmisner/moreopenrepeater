@@ -16,10 +16,15 @@ behavior. Design context: [ADR 0005](../adr/0005-container-module-runtime.md).
 | Version compatibility | `contracts.is_compatible` | |
 | Transmit request from a module | `contracts.SpeakRequest` | [speak_request.v1.json](schema/speak_request.v1.json) |
 | Core's answer to a request | `contracts.SpeakDecision` | [speak_decision.v1.json](schema/speak_decision.v1.json) |
+| Health report | `contracts.HealthReport` | [health_report.v1.json](schema/health_report.v1.json) |
+| Module manifest and startup announce | `contracts.ModuleAnnounce` | [module_announce.v1.json](schema/module_announce.v1.json) |
+| Config delivery and acknowledgement | `contracts.ConfigSnapshot`, `ConfigApplied` | [config_snapshot.v1.json](schema/config_snapshot.v1.json), [config_applied.v1.json](schema/config_applied.v1.json) |
+| Core status | `contracts.CoreStatus` | [core_status.v1.json](schema/core_status.v1.json) |
+| Site location (fixed or GPS) | `contracts.SiteLocation` | [site_location.v1.json](schema/site_location.v1.json) |
 | PTT, transmission start and end events | `contracts.core_event_adapter` | [core_event.v1.json](schema/core_event.v1.json) |
 
-Still to come in later Stage 2 PRs: health, capabilities, config and status,
-the non-blocking emit path design, and the per-module metrics endpoint.
+Still to come in later Stage 2 PRs: the non-blocking emit path design and the
+per-module metrics endpoint.
 
 ## Rules
 
@@ -52,6 +57,36 @@ the `correlation_id` on every event for that transmission: `tx.started`,
 independent evidence (`current_sense`, `rf_detect`) counts as proof of RF
 (`PttFeedback.proves_rf`). A `gpio_readback` shows the pin, not the
 transmitter. Nothing should claim RF went out on a GPIO write alone.
+
+**Health.** A module reports `ok`, `degraded`, `failed` or `starting`, plus the
+checks behind it. The overall state may not look better than its worst check,
+so a dashboard can trust the summary.
+
+**Manifest and devices.** A module declares its capabilities, resource budget
+and the devices it needs. A device is named by a stable identity (a udev
+symlink such as `/dev/serial/by-id/...`, or a bus address such as `i2c:1:0x52`),
+never `/dev/ttyUSB0`. Each device says whether it is exclusive, required, and
+what the module does if it is lost. `find_device_conflicts` enforces one owner
+per device: an exclusive device wanted by two modules is reported. Compose
+overrides and the dashboard's ownership view are meant to be generated from
+this. The module's `contract_version` is checked with `is_compatible`.
+
+**Configuration.** The core starts from its own local copy and never waits for
+a config message. `ConfigSnapshot` carries plain values only. A key that looks
+like a credential is rejected, not silently replaced, so a config can never
+lose a value without anyone noticing. Secrets go by name (`secret_refs`) and are
+read from a Docker secret or environment file. A module answers with
+`ConfigApplied`: `applied`, `restart_required` or `rejected` (with an error).
+
+**Core status.** `ptt_commanded` is what the core asked for. `ptt_observed` and
+`ptt_evidence` say what was seen, and `null` means "could not tell". The
+existing dashboard `ptt_active` is an intent, not a measurement, so it maps to
+`ptt_commanded`.
+
+**Site location.** One source of truth, either `fixed` or `gps`. A GPS location
+carries a fix quality and freshness, and `usable(now)` is false for no fix or a
+stale fix, so consumers stop or fall back instead of acting on an old position.
+The coordinates are real; the log filter coarsens them.
 
 **Names.** Event names and error codes are stable dotted lowercase
 identifiers such as `ptt.commanded` or `tts.unavailable`. Variable data goes

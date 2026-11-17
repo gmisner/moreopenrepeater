@@ -1,0 +1,17 @@
+{
+  "kind": "site.location",
+  "header": {
+    "schema_version": 1,
+    "message_id": "bbbb1111cccc2222dddd3333eeee4444",
+    "emitted_at": "2026-11-16T18:00:05Z",
+    "boot_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+    "seq": 12,
+    "source": {"module": "gps", "version": "0.1.0"}
+  },
+  "source": "gps",
+  "latitude": 33.448377,
+  "longitude": -112.074037,
+  "altitude_m": 331.0,
+  "fix": "3d",
+  "freshness": {"observed_at": "2026-11-16T18:00:04Z", "max_age_s": 30}
+}

@@ -105,3 +105,26 @@ def _clean(value: Any, depth: int) -> Any:
 def redact(context: Mapping[str, Any]) -> dict[str, Any]:
     """Return a redacted, JSON-safe copy of `context`."""
     return _clean(dict(context), 0)
+
+
+def find_sensitive_keys(values: Mapping[str, Any], _path: str = "", _depth: int = 0) -> list[str]:
+    """Paths of keys in `values` that look like credentials.
+
+    For messages that must carry real values but must never carry secrets
+    (configuration): reject them rather than silently replace them.
+    """
+    found: list[str] = []
+    if _depth >= MAX_DEPTH:
+        return found
+    for key, item in values.items():
+        name = key if isinstance(key, str) else str(type(key).__name__)
+        path = f"{_path}.{name}" if _path else name
+        if _is_secret(_words(name)) and item not in (None, "", False):
+            found.append(path)
+        elif isinstance(item, Mapping):
+            found.extend(find_sensitive_keys(item, path, _depth + 1))
+        elif isinstance(item, (list, tuple)):
+            for index, element in enumerate(item):
+                if isinstance(element, Mapping):
+                    found.extend(find_sensitive_keys(element, f"{path}[{index}]", _depth + 1))
+    return found

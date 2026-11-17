@@ -380,6 +380,11 @@ class RepeaterService:
     def end_patch(self) -> None:
         self._patch.end()
 
+    @property
+    def locked_out(self) -> bool:
+        """The stuck-carrier lockout is engaged (the controller's own flag)."""
+        return self.controller.locked_out
+
     def clear_lockout(self) -> None:
         self._apply_commands(self.controller.clear_lockout(self._clock()))
 

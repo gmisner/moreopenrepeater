@@ -13,13 +13,13 @@ from ..models import (
     ControlCodeStatus,
     ControlCodeUser,
 )
-from ..service.core_handle import CoreHandle
+from ..service.core_handle import ApiCoreHandle
 
 
 def register(
     app: FastAPI,
     *,
-    service: CoreHandle,
+    service: ApiCoreHandle,
     control_codes: ControlCodes,
     auth_dependencies: Sequence,
     admin_dependencies: Sequence,

@@ -15,12 +15,13 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .app import app, create_app
-    from .service import CoreHandle, RepeaterService, StatusSnapshot
+    from .service import ApiCoreHandle, CoreHandle, RepeaterService, StatusSnapshot
 
-__all__ = ["app", "create_app", "CoreHandle", "RepeaterService", "StatusSnapshot"]
+__all__ = ["app", "create_app", "ApiCoreHandle", "CoreHandle", "RepeaterService", "StatusSnapshot"]
 
 _EXPORTS = {
     "create_app": ".app",
+    "ApiCoreHandle": ".service",
     "CoreHandle": ".service",
     "RepeaterService": ".service",
     "StatusSnapshot": ".service",

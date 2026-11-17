@@ -32,7 +32,7 @@ from ..models import (
     SoundLevelsResponse,
     StatusResponse,
 )
-from ..service.core_handle import CoreHandle
+from ..service.core_handle import ApiCoreHandle
 from ..updates import installed_version
 from playout.tts import TTSError
 
@@ -40,7 +40,7 @@ from playout.tts import TTSError
 def register(
     app: FastAPI,
     *,
-    service: CoreHandle,
+    service: ApiCoreHandle,
     run_mixer: Callable,
     render_and_queue: Callable[..., Awaitable[None]],
     status_response: Callable[..., StatusResponse],
@@ -219,7 +219,7 @@ def register(
 
     @app.post("/api/lockout/clear", response_model=StatusResponse, dependencies=auth_dependencies)
     async def clear_lockout() -> StatusResponse:
-        if not service.controller.locked_out:
+        if not service.locked_out:
             raise HTTPException(status_code=409, detail="The repeater isn't locked out")
         service.clear_lockout()
         return status_response(service.snapshot())

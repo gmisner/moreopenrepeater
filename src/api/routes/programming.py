@@ -23,20 +23,20 @@ from ..models import (
     WeatherAlertResponse,
     WeatherStatusResponse,
 )
-from ..service.core_handle import CoreHandle
+from ..service.core_handle import ApiCoreHandle
 
 
 def _macro_response(macro: Macro) -> MacroResponse:
     return MacroResponse(**{**dataclasses.asdict(macro), "help_hidden": macro.hidden_from_help})
 
 
-def _announcement_response(service: CoreHandle, announcement: Announcement) -> AnnouncementResponse:
+def _announcement_response(service: ApiCoreHandle, announcement: Announcement) -> AnnouncementResponse:
     return AnnouncementResponse(
         **dataclasses.asdict(announcement), next_run=service.next_announcement_run(announcement.id)
     )
 
 
-def _weather_response(service: CoreHandle) -> WeatherStatusResponse:
+def _weather_response(service: ApiCoreHandle) -> WeatherStatusResponse:
     alerts = [
         WeatherAlertResponse(
             id=a.id, event=a.event, severity=a.severity, urgency=a.urgency, headline=a.headline, area=a.area,
@@ -56,7 +56,7 @@ def _weather_response(service: CoreHandle) -> WeatherStatusResponse:
 def register(
     app: FastAPI,
     *,
-    service: CoreHandle,
+    service: ApiCoreHandle,
     assets_store: AudioAssetStore,
     zone_shapes: dict,
     render_and_queue: Callable[..., Awaitable[None]],

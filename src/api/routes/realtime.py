@@ -19,7 +19,7 @@ from ..models import ListenSource, PublicStatus, StatusResponse
 from ..monitor import AudioMonitor
 from ..monitor_receiver import MonitorReceiverService
 from ..net import NetMode
-from ..service.core_handle import CoreHandle
+from ..service.core_handle import ApiCoreHandle
 from playout.renderer import ClipRenderer
 
 PUBLIC_LISTENERS_PER_ADDRESS = 3
@@ -86,7 +86,7 @@ async def stream(
 def register(
     app: FastAPI,
     *,
-    service: CoreHandle,
+    service: ApiCoreHandle,
     nets: NetMode,
     live_audio: LiveAudio,
     monitor_receiver: MonitorReceiverService,

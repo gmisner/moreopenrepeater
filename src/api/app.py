@@ -93,7 +93,7 @@ from .runtime import (
     bundles_from_overrides,
     link_settings_from_env,
 )
-from .service.core_handle import CoreHandle
+from .service.core_handle import ApiCoreHandle
 from .service import StatusSnapshot
 from .site_sensors import SensorHistoryStore
 from .tokens import TokenStore
@@ -136,7 +136,7 @@ def _status_payload(
     return StatusResponse.model_validate(data)
 
 
-def _config_response(service: CoreHandle) -> ConfigResponse:
+def _config_response(service: ApiCoreHandle) -> ConfigResponse:
     return ConfigResponse.model_validate(service.saved_config.to_flat_dict())
 
 

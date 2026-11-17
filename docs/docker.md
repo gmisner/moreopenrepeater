@@ -83,10 +83,29 @@ and `PIPER_VOICE=<name>` in `core.env`; it downloads into the data folder when
 first needed. Build with `--build-arg WITH_PIPER=0` for a smaller image that
 uses `espeak-ng` only. Kokoro is not in the image.
 
-## Not done yet
+## Measured on a Pi, and not yet explained
 
-Nothing here has been judged on a Pi until the gates in ADR 0005 are measured:
-audio glitch counters, memory and CPU on a Pi 3B+, the PTT release time when the
-container stops, and the `docker kill` and device-loss cases. A stable udev name
-for the PTT device, multi-arch publishing, and the API, `logd` and module
-containers are later slices.
+On a Pi 4 (Debian 13, AIOC, 4 cores) the container starts, finds the sound card and
+the CM108, keys for the scheduled ID and unkeys, and is followed by `RemoteCore`
+through the volume's socket. One result is **not good yet**: while idle the
+container logs a pair of `audio glitch` lines (a sound card receive overrun and a
+transmit underrun, "not transmitting") about every one to four minutes. The same
+core run directly by systemd on the same Pi, over nine minutes, logged none. Turning
+off the Piper server did not change it, and the scheduled ID in the container
+transmitted without a glitch, so the cause is something about running in the
+container. Candidates to try: Docker's default seccomp profile, the container's CPU
+weight (the systemd unit sets `Nice=-10` and `CPUWeight=200`), and the log driver.
+Do not rely on the container for a repeater people use until this is understood.
+
+Also found:
+
+- Raspberry Pi OS boots with `cgroup_disable=memory`, so memory limits and
+  `docker stats` memory do not work until `cgroup_enable=memory cgroup_memory=1`
+  is added to `/boot/firmware/cmdline.txt` and the Pi reboots. ADR 0005's
+  per-module resource budgets need that.
+- `docker kill` does not restart the container under `unless-stopped`. A crash of
+  the process does (tested: the core was back and followed again in about 24 s).
+
+Still to measure: memory and CPU on a Pi 3B+, the PTT release when the container is
+stopped mid-transmission, and device loss. A stable udev name for the PTT device,
+multi-arch publishing, and the API, `logd` and module containers are later slices.

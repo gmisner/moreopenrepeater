@@ -19,7 +19,7 @@ from .node_directory import NodeDirectory
 from .service.snapshot import LINK_RADIO_NODE
 
 if TYPE_CHECKING:
-    from .service import RepeaterService
+    from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.link")
 
@@ -39,7 +39,7 @@ def echolink_number(node: str) -> Optional[str]:
 
 
 class LinkControl:
-    def __init__(self, service: RepeaterService, directory: NodeDirectory, local_node: Callable[[], str] = lambda: "") -> None:
+    def __init__(self, service: CoreHandle, directory: NodeDirectory, local_node: Callable[[], str] = lambda: "") -> None:
         """`local_node()` is the repeater's node number, which can change while connected."""
         self._service = service
         self._directory = directory

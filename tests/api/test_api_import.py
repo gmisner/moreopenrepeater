@@ -44,12 +44,13 @@ def test_controller_does_not_import_the_web_stack():
 def test_package_exports_still_resolve():
     import api
 
-    assert set(api.__all__) == {"app", "create_app", "RepeaterService", "StatusSnapshot"}
+    assert set(api.__all__) == {"app", "create_app", "CoreHandle", "RepeaterService", "StatusSnapshot"}
     app_module = importlib.import_module("api.app")
     service_module = importlib.import_module("api.service")
     assert api.create_app is app_module.create_app
     assert api.RepeaterService is service_module.RepeaterService
     assert api.StatusSnapshot is service_module.StatusSnapshot
+    assert api.CoreHandle is service_module.CoreHandle
     assert api.app is app_module.app  # `uvicorn api:app` keeps working
 
 

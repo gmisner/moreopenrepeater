@@ -48,7 +48,7 @@ from link.ami_client import AMIClient, AMIMessage
 from link.audiosocket import FrameType, encode_frame, read_frame_async
 from playout.renderer import TTS_PREFIX
 
-from .service import RepeaterService
+from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.autopatch")
 
@@ -305,7 +305,7 @@ class PhoneLine:
 class Autopatch:
     def __init__(
         self,
-        service: RepeaterService,
+        service: CoreHandle,
         settings: Optional[PatchSettings],
         ami_factory: Callable[..., AMIClient] = AMIClient,
         clock: Callable[[], float] = time.time,

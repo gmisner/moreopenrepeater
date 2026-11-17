@@ -12,13 +12,13 @@ from ..models import (
     SimulateRemoteKeyedRequest,
     StatusResponse,
 )
-from ..service import RepeaterService
+from ..service.core_handle import CoreHandle
 
 
 def register(
     app: FastAPI,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     transmit_dependencies: Sequence,
     status_response: Callable[..., StatusResponse],
 ) -> None:

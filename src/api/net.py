@@ -26,7 +26,7 @@ from playout.renderer import TTS_PREFIX
 
 from .links import LinkControl, LinkError
 from .persistence import StateStore
-from .service import RepeaterService
+from .service.core_handle import CoreHandle
 from .weekly import last_start, next_start, window_end
 
 _logger = logging.getLogger("moreopenrepeater.net")
@@ -55,7 +55,7 @@ class NetMode:
 
     def __init__(
         self,
-        service: RepeaterService,
+        service: CoreHandle,
         links: Optional[LinkControl],
         store: Optional[StateStore],
         clock: Callable[[], float] = time.time,

@@ -13,13 +13,13 @@ from ..models import (
     SnapshotModel,
     TransmissionResponse,
 )
-from ..service import RepeaterService
+from ..service.core_handle import CoreHandle
 
 
 def register(
     app: FastAPI,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     activity_store: ActivityStore,
     snapshot_to_import: Callable[[SnapshotImportRequest], dict],
     auth_dependencies: Sequence,

@@ -11,7 +11,7 @@ from typing import Callable
 from playout.renderer import TTS_PREFIX
 from wx.metar import MetarCache, speech_text, spell
 
-from .service import RepeaterService
+from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.airport_weather")
 
@@ -19,7 +19,7 @@ MAX_AIRPORTS_SPOKEN = 3
 
 
 class AirportWeather:
-    def __init__(self, service: RepeaterService, cache: MetarCache | None = None, wall_clock: Callable[[], float] = time.time) -> None:
+    def __init__(self, service: CoreHandle, cache: MetarCache | None = None, wall_clock: Callable[[], float] = time.time) -> None:
         self._service = service
         self._cache = cache or MetarCache()
         self._wall_clock = wall_clock

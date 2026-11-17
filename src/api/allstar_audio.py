@@ -23,7 +23,8 @@ from audio_io.resample import StreamResampler
 from controller.events import RemoteKeyed
 from link.usrp import FRAME_SAMPLES, RATE, decode, encode_voice
 
-from .service import LINK_AUDIO_NODE, RepeaterService
+from .service.core_handle import CoreHandle
+from .service import LINK_AUDIO_NODE
 
 _logger = logging.getLogger("moreopenrepeater.allstar_audio")
 
@@ -66,7 +67,7 @@ def _from_pcm(payload: bytes) -> np.ndarray:
 
 
 class AllStarAudio(asyncio.DatagramProtocol):
-    def __init__(self, service: RepeaterService, settings: Optional[UsrpSettings]) -> None:
+    def __init__(self, service: CoreHandle, settings: Optional[UsrpSettings]) -> None:
         self._service = service
         self.settings = settings
         self.error: Optional[str] = None

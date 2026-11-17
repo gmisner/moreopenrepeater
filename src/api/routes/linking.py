@@ -36,7 +36,7 @@ from ..models import (
 )
 from ..monitor_receiver import MonitorReceiverService
 from ..remote_base import RemoteBase
-from ..service import RepeaterService
+from ..service.core_handle import CoreHandle
 from ..tx_fan import TxFan
 
 _logger = logging.getLogger("moreopenrepeater.routes.linking")
@@ -45,7 +45,7 @@ _logger = logging.getLogger("moreopenrepeater.routes.linking")
 def register(
     app: FastAPI,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     autopatch: Autopatch,
     allstar_node: AllStarNode,
     dmr: DmrBridge,

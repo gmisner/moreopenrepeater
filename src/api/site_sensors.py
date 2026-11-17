@@ -24,7 +24,7 @@ from sensors.speech import speak_reading
 
 from .notify import Alert
 from .persistence import open_database
-from .service import RepeaterService
+from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.sensors")
 
@@ -131,7 +131,7 @@ def default_reader(sensor: SiteSensorDef) -> Optional[float]:
 class SiteSensors:
     def __init__(
         self,
-        service: RepeaterService,
+        service: CoreHandle,
         *,
         reader: Reader = default_reader,
         history: Optional[SensorHistoryStore] = None,

@@ -15,7 +15,7 @@ from typing import Any, Callable, Optional
 
 from .boards import alsa_card
 from .mixer import parse_volumes
-from .service import RepeaterService
+from .service.core_handle import CoreHandle
 from .updates import Updater, installed_version, read_log
 
 LOG_LINES = 5000
@@ -138,7 +138,7 @@ def _mixer_for_device(device_name: str, run: Callable[..., subprocess.CompletedP
 
 
 def _devices_snapshot(
-    service: RepeaterService,
+    service: CoreHandle,
     *,
     audio_devices: Optional[list],
     serial_ports: Optional[list],
@@ -181,7 +181,7 @@ def _devices_snapshot(
 def write_support_bundle(
     path: Path,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     log_path: Path,
     repo_dir: Path,
     update_channel: str,

@@ -12,7 +12,7 @@ from ..models import (
     SipTrunkRequest,
     SipTrunkStatusResponse,
 )
-from ..service import RepeaterService
+from ..service.core_handle import CoreHandle
 from ..sip_trunk import DIAL_STRING as TRUNK_DIAL_STRING
 from ..sip_trunk import AsteriskSetupError, SipTrunk, TrunkSettings
 
@@ -20,7 +20,7 @@ from ..sip_trunk import AsteriskSetupError, SipTrunk, TrunkSettings
 def register(
     app: FastAPI,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     autopatch: Autopatch,
     sip_trunk: SipTrunk,
     auth_dependencies: Sequence,

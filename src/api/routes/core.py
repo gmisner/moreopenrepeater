@@ -32,7 +32,7 @@ from ..models import (
     SoundLevelsResponse,
     StatusResponse,
 )
-from ..service import RepeaterService
+from ..service.core_handle import CoreHandle
 from ..updates import installed_version
 from playout.tts import TTSError
 
@@ -40,7 +40,7 @@ from playout.tts import TTSError
 def register(
     app: FastAPI,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     run_mixer: Callable,
     render_and_queue: Callable[..., Awaitable[None]],
     status_response: Callable[..., StatusResponse],

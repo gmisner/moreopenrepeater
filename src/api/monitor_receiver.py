@@ -19,7 +19,7 @@ from controller.state_machine import RepeaterConfig
 
 from .monitor import AudioMonitor
 from .recordings import RecordingStore
-from .service import RepeaterService
+from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.monitor_receiver")
 
@@ -47,7 +47,7 @@ def setup_problem(config: RepeaterConfig) -> Optional[str]:
 class MonitorReceiverService:
     def __init__(
         self,
-        service: RepeaterService,
+        service: CoreHandle,
         sample_rate: int,
         recordings: Optional[RecordingStore] = None,
         receiver_factory: Callable[..., MonitorReceiver] = MonitorReceiver,

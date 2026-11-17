@@ -48,7 +48,7 @@ from .boards import run_amixer
 from .mixer import apply_saved_levels
 from .monitor import AudioMonitor
 from .recordings import RecordingStore
-from .service import RepeaterService
+from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.audio")
 _receiver_logger = logging.getLogger("moreopenrepeater.receiver")
@@ -169,7 +169,7 @@ def _unkeyed(interface: CM108Interface) -> CM108Interface:
 class LiveAudio:
     def __init__(
         self,
-        service: RepeaterService,
+        service: CoreHandle,
         renderer: ClipRenderer,
         cm108: Optional[CM108Interface] = None,
         engine_factory: Callable[..., AudioEngine] = AudioEngine,

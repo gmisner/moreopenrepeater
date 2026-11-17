@@ -30,14 +30,14 @@ from ..models import (
     StreamResponse,
     StreamSettingsRequest,
 )
-from ..service import RepeaterService
+from ..service.core_handle import CoreHandle
 from ..stream import Streamer
 
 
 def register(
     app: FastAPI,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     log_path: Path,
     log_hub: LogHub,
     aprs_stations: StationStore,

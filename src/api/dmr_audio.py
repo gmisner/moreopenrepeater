@@ -30,7 +30,8 @@ from audio_io.resample import StreamResampler
 from controller.events import RemoteKeyed
 from link.usrp import FRAME_SAMPLES, RATE, SetInfo, decode, encode_voice, set_info_from_packet
 
-from .service import LINK_DMR_NODE, RepeaterService
+from .service.core_handle import CoreHandle
+from .service import LINK_DMR_NODE
 
 _logger = logging.getLogger("moreopenrepeater.dmr_audio")
 
@@ -80,7 +81,7 @@ def _from_pcm(payload: bytes) -> np.ndarray:
 
 
 class DmrAudio(asyncio.DatagramProtocol):
-    def __init__(self, service: RepeaterService, settings: Optional[DmrUsrpSettings]) -> None:
+    def __init__(self, service: CoreHandle, settings: Optional[DmrUsrpSettings]) -> None:
         self._service = service
         self.settings = settings
         self.error: Optional[str] = None

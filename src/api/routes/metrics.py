@@ -7,13 +7,13 @@ from typing import Optional
 from fastapi import FastAPI, Response
 
 from ..metrics import render_metrics
-from ..service import RepeaterService
+from ..service.core_handle import CoreHandle
 
 
 def register(
     app: FastAPI,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     live_audio=None,
     activity_store=None,
     process_started_at: Optional[float] = None,

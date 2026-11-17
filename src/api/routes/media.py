@@ -19,7 +19,7 @@ from ..models import (
     TranscriptionStatus,
 )
 from ..recordings import RecordingInfo, RecordingStore
-from ..service import RepeaterService
+from ..service.core_handle import CoreHandle
 from ..transcripts import Transcriber, callsigns, read_transcript
 
 RECORDING_SEARCH_LIMIT = 5000
@@ -73,7 +73,7 @@ def _sort_recordings(items: list[RecordingResponse], sort: RecordingSort) -> lis
 def register(
     app: FastAPI,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     assets_store: AudioAssetStore,
     recordings: RecordingStore,
     monitor_recordings: RecordingStore,

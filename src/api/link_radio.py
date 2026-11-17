@@ -11,7 +11,7 @@ repeater to a far station (another repeater's input, or a simplex link).
   - Audio crosses between the two engines through a pair of `LinkAudio`
     buffers, moved every 20 ms on the event loop.
   - The far end keys the repeater like a linked node
-    (`RepeaterService.link_radio_keyed`): link courtesy tone, shared timeout.
+    (`CoreHandle.link_radio_keyed`): link courtesy tone, shared timeout.
   - `controller.link_radio` decides when the link transmitter keys, and
     when it sends its timeout tone, courtesy tone and ID.
 """
@@ -38,7 +38,7 @@ from playout.tts import TTSError
 from .audio_devices import resolve_audio_device
 from .boards import run_amixer
 from .mixer import apply_saved_levels
-from .service import RepeaterService
+from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.link_radio")
 
@@ -110,7 +110,7 @@ def setup_problem(config: RepeaterConfig, cm108: Optional[CM108Interface]) -> Op
 class LinkRadio:
     def __init__(
         self,
-        service: RepeaterService,
+        service: CoreHandle,
         renderer: ClipRenderer,
         sending: Callable[[], bool],
         attach_port: Callable[[Optional[LinkAudio]], None],

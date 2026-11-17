@@ -88,7 +88,8 @@ main() {
   local unit file
   for unit in moreopenrepeater.service moreopenrepeater-update.service moreopenrepeater-update.path \
       moreopenrepeater-tailscale.service moreopenrepeater-tailscale.path \
-      moreopenrepeater-restart.service moreopenrepeater-restart.path; do
+      moreopenrepeater-restart.service moreopenrepeater-restart.path \
+      moreopenrepeater-dmr-restart.service moreopenrepeater-dmr-restart.path; do
     files+=("$UNIT_DIR/$unit")
   done
   local snapshot

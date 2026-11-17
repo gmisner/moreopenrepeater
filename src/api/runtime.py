@@ -646,7 +646,7 @@ class AppRuntime:
         agent_access = agent_access if agent_access is not None else AgentAccess()
         audit = audit or AuditLog()
         audit_hook = lambda actor, action, detail: audit.record(time.time(), actor, action, detail)
-        service.programming.audit_hook = audit_hook
+        service.register_macro_handler("audit", audit_hook)
         nets.audit_hook = audit_hook
         control_codes = control_codes or ControlCodes(None)
         service.programming.code_checker = control_codes.check

@@ -105,7 +105,7 @@ MAX_CONFIG_BODY_BYTES = 64 * 1024
 #: A command can carry a whole snapshot (a restore): every setting, macro and announcement.
 MAX_COMMAND_BODY_BYTES = 256 * 1024
 #: The macro actions the API's modules own. A client names the ones it handles when it connects.
-MACRO_FAMILIES = frozenset({"net", "homeassistant", "metar", "sensor", "mailbox", "aprs"})
+MACRO_FAMILIES = frozenset({"net", "homeassistant", "metar", "sensor", "mailbox", "aprs", "audit"})
 MACRO_QUEUE_LIMIT = 32  # per client; a client that cannot keep up loses the newest
 RENDER_DEADLINE_SECONDS = 30.0  # to prepare speech before giving up on a request
 #: Longer than any normal pause (the tick runs every 50 ms); the same figure the
@@ -165,6 +165,8 @@ class ControlServer:
         #: One per open /events stream: the macro families it handles and a queue for its events.
         self._macro_clients: list[tuple[frozenset, asyncio.Queue]] = []
         service.programming.api_action = self._api_action
+        if service.programming.audit_hook is None:
+            service.programming.audit_hook = self._audit
         service.add_config_listener(self._config_changed)
 
     # -- lifecycle ------------------------------------------------------------
@@ -201,6 +203,8 @@ class ControlServer:
     async def stop(self) -> None:
         if self._service.programming.api_action == self._api_action:
             self._service.programming.api_action = None  # macros fall back to "not available"
+        if self._service.programming.audit_hook == self._audit:
+            self._service.programming.audit_hook = None
         server, self._server = self._server, None
         if server is not None:
             server.close()
@@ -554,6 +558,14 @@ class ControlServer:
                 except asyncio.QueueFull:
                     _logger.warning("a client is not keeping up; dropped a %s macro action for it", family)
         return taken
+
+    def _audit(self, actor: str, action: str, detail: str) -> None:
+        """Something a macro did that the dashboard's audit trail records. The core logs who and
+        what (the detail can be a command or a message, so it is left out of the log) and tells
+        every connected client that handles `audit`. While none is connected the trail has a gap;
+        the core's log does not."""
+        _logger.info("audit: %s: %s", actor, action)
+        self._api_action("audit", [actor, action, detail])
 
     def _link_events(self) -> dict:
         """`GET /link-events`: recent link activity, newest first (all the core keeps)."""

@@ -91,7 +91,10 @@ its copy of the secrets file).
 ### Macro actions that belong to the API (`macro` events)
 
 Some macro actions are done by the API's modules, not the core: `net` (net_start, net_end),
-`homeassistant`, `metar`, `sensor`, `mailbox` and `aprs`. A client names the ones it handles
+`homeassistant`, `metar`, `sensor`, `mailbox` and `aprs`, plus `audit`: what a macro did, for the
+dashboard's audit trail (`actor`, `action`, `detail`). The core logs who and what, and leaves the
+detail out of its log because it can be a command or a message; with no client handling `audit`
+the trail has a gap and the core's log does not. A client names the ones it handles
 when it connects, `GET /events?handles=net,metar`, and the core sends each such action to
 every connected client that handles it as an `event: macro` with `{"family", "args"}`
 (`args` are the arguments the in-process hook gets; a mailbox command carries its PIN, so

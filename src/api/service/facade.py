@@ -454,7 +454,7 @@ class RepeaterService:
     def register_macro_handler(self, family: str, handler: Callable) -> None:
         hooks = {
             "net": "net_hook", "homeassistant": "homeassistant_hook", "metar": "metar_hook",
-            "sensor": "sensor_hook", "mailbox": "mailbox_hook", "aprs": "aprs_summary",
+            "sensor": "sensor_hook", "mailbox": "mailbox_hook", "aprs": "aprs_summary", "audit": "audit_hook",
         }
         if family not in hooks:
             raise ValueError(f"not a macro family: {family}")

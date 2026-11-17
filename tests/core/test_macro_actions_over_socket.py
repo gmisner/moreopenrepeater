@@ -294,3 +294,72 @@ def test_in_process_the_registered_handler_is_the_hook():
     assert calls == ["KPHX"]
     with pytest.raises(ValueError):
         service.register_macro_handler("reboot", lambda: None)
+
+
+# -- audit (slice 7c-6d) ------------------------------------------------------------------------------
+
+
+def test_what_a_macro_did_reaches_a_client_that_handles_audit(core, sock_dir, spoken):
+    seen = []
+
+    def register(remote):
+        remote.register_macro_handler("audit", lambda actor, what, detail: seen.append((actor, what, detail)))
+
+    async def scenario(remote, server):
+        core.service.programming.audit_hook("DTMF (alice)", "DTMF (alice) tx_disable", "")
+        await until(lambda: seen)
+
+    run_remote(core, sock_dir, scenario, register)
+    assert seen == [("DTMF (alice)", "DTMF (alice) tx_disable", "")]
+    assert spoken == []  # an audit record is never spoken, handled or not
+
+
+def test_with_no_client_the_core_logs_who_and_what_but_not_the_detail(core, sock_dir, spoken, caplog):
+    caplog.set_level(logging.INFO)
+
+    async def scenario(path, server):
+        core.service.programming.audit_hook("DTMF", "DTMF say", "a message that must stay out of the log")
+
+    run(core, sock_dir, scenario)
+    assert "audit: DTMF: DTMF say" in caplog.text
+    assert "must stay out of the log" not in caplog.text
+    assert spoken == []
+
+
+def test_a_macro_action_is_audited_through_the_core(core, sock_dir, spoken):
+    seen = []
+
+    def register(remote):
+        remote.register_macro_handler("audit", lambda actor, what, detail: seen.append((actor, what, detail)))
+
+    async def scenario(remote, server):
+        core.service.programming.run_action(action("say", "hello", "*8"))
+        await until(lambda: seen)
+
+    run_remote(core, sock_dir, scenario, register)
+    assert seen == [("DTMF", "DTMF say", "hello")]
+
+
+def test_the_hook_is_released_when_the_server_stops_and_an_existing_one_is_kept(core, sock_dir, spoken):
+    async def scenario(path, server):
+        assert core.service.programming.audit_hook is not None
+        await server.stop()
+        assert core.service.programming.audit_hook is None
+
+    run(core, sock_dir, scenario)
+
+    mine = lambda actor, action, detail: None  # noqa: E731
+    core.service.programming.audit_hook = mine
+
+    async def keeps(path, server):
+        assert core.service.programming.audit_hook is mine  # not replaced
+
+    run(core, sock_dir, keeps)
+
+
+def test_in_process_audit_registers_the_same_hook():
+    service = RepeaterService(config=RepeaterConfig(callsign="W1AW"), clock=lambda: 0.0)
+    records = []
+    service.register_macro_handler("audit", lambda actor, what, detail: records.append((actor, what, detail)))
+    service.programming.run_action(action("say", "hi"))
+    assert records == [("DTMF", "DTMF say", "hi")]

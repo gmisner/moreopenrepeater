@@ -118,7 +118,8 @@ class ApiCoreHandle(Protocol):
     def register_macro_handler(self, family: str, handler: Callable) -> None:
         """Take a macro action the API's modules own: `net` (action, source), `homeassistant`
         (target, source, pattern), `metar` (airport), `sensor` (sensor_id), `mailbox`
-        (MailboxCommand) or `aprs` (no arguments; returns the sentence to speak). In process this
+        (MailboxCommand), `aprs` (no arguments; returns the sentence to speak) or `audit` (actor, action,
+        detail: something a macro did that the audit trail records). In process this
         sets the hook the controller calls. Against a remote core the core sends the action over
         its event stream, and only if this client said it handles that family; otherwise the caller
         hears that it is not available."""

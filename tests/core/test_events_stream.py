@@ -60,7 +60,7 @@ def test_the_stream_starts_with_the_current_status(core, sock_dir):
         status = CoreStatus.model_validate(data["status"])
         assert status.state == "idle"
         assert status.callsign == "W1AW" and status.net_active is False and status.linked_nodes == []
-        assert set(data["local"]) == {"last_clip", "timestamp"}  # the API-only extras
+        assert set(data["local"]) == {"last_clip", "timestamp", "config_version"}  # the API-only extras
         writer.close()
 
     run(core, sock_dir, scenario)
@@ -278,6 +278,19 @@ def test_an_idle_stream_sends_no_status_for_ticking_countdowns_but_still_heartbe
             await asyncio.sleep(0.05)
         assert "status" not in names
         assert "heartbeat" in names
+        writer.close()
+
+    run(core, sock_dir, scenario)
+
+
+def test_a_configuration_change_is_announced_with_a_new_version(core, sock_dir):
+    async def scenario(path, server):
+        reader, writer, _ = await open_stream(path)
+        _, first = await next_event(reader)
+        core.service.update_config(tot_duration=95)  # nothing an operator sees on the status changes
+        name, second = await next_event(reader)
+        assert name == "status"
+        assert second["local"]["config_version"] > first["local"]["config_version"]
         writer.close()
 
     run(core, sock_dir, scenario)

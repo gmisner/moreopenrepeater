@@ -447,6 +447,9 @@ class RepeaterService:
     def update_config(self, **overrides: object) -> RepeaterConfig:
         return self._config.update(**overrides)
 
+    async def change_config(self, **overrides: object) -> RepeaterConfig:
+        return self._config.update(**overrides)
+
     def _apply_config(self, saved: RepeaterConfig, persist: bool = False) -> None:
         self._config.apply(saved, persist=persist)
 

@@ -37,6 +37,26 @@ if TYPE_CHECKING:
     from .weather import WeatherSupport
 
 
+class CoreError(Exception):
+    """The core did not do what the API asked. Routes turn these into HTTP answers."""
+
+
+class CoreUnavailable(CoreError):
+    """The core could not be reached (or has not been heard from yet). Nothing was changed."""
+
+
+class ConfigRefused(CoreError):
+    """The core checked a configuration change and refused it. Nothing was applied.
+
+    `code` is stable, `message` names settings and never values."""
+
+    def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.retryable = retryable
+
+
 @runtime_checkable
 class ApiCoreHandle(Protocol):
     """The members of the core that API-side code uses."""
@@ -73,6 +93,13 @@ class ApiCoreHandle(Protocol):
 
     # Changes.
     def update_config(self, **overrides: object) -> RepeaterConfig: ...
+
+    async def change_config(self, **overrides: object) -> RepeaterConfig:
+        """Change saved settings and return the new saved settings. In process this is
+        `update_config`; against a remote core it waits for the core's answer, and raises
+        `ConfigRefused` or `CoreUnavailable` instead of pretending it worked. Routes use
+        this one."""
+        ...
     def clear_lockout(self) -> None: ...
     def set_net_active(self, active: bool) -> None: ...
     def held_reason(self, feature: str) -> str: ...

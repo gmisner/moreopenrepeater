@@ -1,9 +1,12 @@
-"""A read-only view of a core that runs in its own process (Stage 3 slice 7c-2, #229).
+"""The API's view of a core that runs in its own process (Stage 3 slices 7c-2 and 7c-3b, #229).
 
 `RemoteCore` follows the core's `GET /events` stream over its control socket and
-keeps the latest status in memory. Reading it never touches the socket, so it is
-instant and can be called from any route. It never starts or stops anything and
-never sends a command: this slice is read only.
+keeps the latest status and the saved configuration in memory. Reading it never
+touches the socket, so it is instant and can be called from any route. It never
+starts or stops anything. The one thing it can do is `change_config`: it asks the
+core to change settings, waits for the core's own answer, and says so plainly if the
+core refuses or cannot be reached. It never claims a change that the core did not
+confirm.
 
 The core does not depend on this in any way. If the core is down, slow or
 restarting, `RemoteCore` says so (`connected`, `stale`, `age_s`) and keeps trying
@@ -24,8 +27,21 @@ from typing import Optional
 
 import httpx
 
-from contracts import CoreStatus
+from contracts import (
+    ConfigApplied,
+    ConfigChange,
+    ConfigResult,
+    ConfigState,
+    CoreStatus,
+    Header,
+    Sequencer,
+    Source,
+    new_id,
+)
+from controller.config import RepeaterConfig
+from controller.modes import effective_config
 
+from .service.core_handle import ConfigRefused, CoreUnavailable
 from .service.snapshot import StatusSnapshot
 
 _logger = logging.getLogger("moreopenrepeater.remote_core")
@@ -36,6 +52,8 @@ STALE_AFTER_SECONDS = 15.0
 CONNECT_TIMEOUT_SECONDS = 2.0
 RETRY_DELAYS = (0.5, 1.0, 2.0, 5.0)  # then the last one, forever
 MAX_LINE_BYTES = 64 * 1024
+REQUEST_TIMEOUT_SECONDS = 5.0  # a write must not hang the dashboard
+MAX_CONFIG_BYTES = 1024 * 1024  # what we will read back from the core
 
 #: What a snapshot says while nothing is known. The state is not one the controller
 #: has, so a dashboard cannot mistake it for the radio's state.
@@ -54,23 +72,35 @@ class RemoteCore:
         self._last_event_at: Optional[float] = None
         self._subscribers: set[asyncio.Queue] = set()
         self._task: Optional[asyncio.Task] = None
+        self._stopping = False
         self.reconnects = 0
+        self._config: Optional[RepeaterConfig] = None  # the core's saved configuration
+        self._config_version: Optional[int] = None  # the version `_config` is at
+        self._announced_version: Optional[int] = None  # the newest version the core has told us of
+        self._fetching: Optional[asyncio.Task] = None
+        self._sequencer = Sequencer()
 
     # -- lifecycle ------------------------------------------------------------
 
     def start(self) -> None:
         """Start following the core. Never raises, and does not wait: the core may not be up yet."""
         if self._task is None:
+            self._stopping = False
             self._task = asyncio.ensure_future(self._run())
 
     async def stop(self) -> None:
-        task, self._task = self._task, None
-        if task is not None:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        # The flag matters: on Python 3.11 a cancel that lands inside the HTTP client while
+        # we are retrying a dead socket can be swallowed, and then only the flag ends the loop.
+        self._stopping = True
+        for name in ("_task", "_fetching"):
+            task, current = getattr(self, name), None
+            setattr(self, name, current)
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         self._connected = False
 
     # -- what the API reads -------------------------------------------------------
@@ -107,6 +137,24 @@ class RemoteCore:
     @property
     def linked_nodes(self) -> set[str]:
         return set(self._snapshot.linked_nodes) if self._snapshot else set()
+
+    @property
+    def saved_config(self) -> RepeaterConfig:
+        """The core's saved configuration, as last read. Raises `CoreUnavailable` if the
+        core has never been heard from, so a page cannot show made-up defaults."""
+        if self._config is None:
+            raise CoreUnavailable("the core has not been reached yet, so its configuration is not known")
+        return self._config
+
+    @property
+    def config(self) -> RepeaterConfig:
+        """The settings in force: the saved ones with net mode applied, as the controller runs them."""
+        net_active = bool(self._snapshot and self._snapshot.net_active)
+        return effective_config(self.saved_config, net_active)
+
+    @property
+    def config_version(self) -> Optional[int]:
+        return self._config_version
 
     def wall_now(self) -> datetime:
         return datetime.now(timezone.utc)
@@ -170,7 +218,7 @@ class RemoteCore:
 
     async def _run(self) -> None:
         attempt = 0
-        while True:
+        while not self._stopping:
             try:
                 await self._follow()
                 attempt = 0  # it connected and then ended cleanly: start the backoff over
@@ -226,11 +274,96 @@ class RemoteCore:
                 self._snapshot_at = self._clock()
                 self._seen()
                 self._publish(self._snapshot)
+                version = local.get("config_version")
+                if isinstance(version, int) and version != self._config_version:
+                    self._announced_version = version
+                    self._refresh_config()
             elif event == "heartbeat":
                 self._health = str(payload.get("health"))
                 self._seen()
         except Exception as error:  # noqa: BLE001 - one malformed event is skipped, not fatal
             _logger.warning("ignored a bad %s event from the core: %s", event, type(error).__name__)
+
+    # -- the configuration ---------------------------------------------------------------------
+
+    def _client(self) -> httpx.AsyncClient:
+        transport = httpx.AsyncHTTPTransport(uds=str(self.socket_path))
+        timeout = httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS)
+        return httpx.AsyncClient(transport=transport, base_url="http://core", timeout=timeout)
+
+    def _refresh_config(self) -> None:
+        """Read the configuration again, soon. One read at a time; it picks up the newest."""
+        if self._fetching is None or self._fetching.done():
+            self._fetching = asyncio.ensure_future(self._fetch_config_quietly())
+
+    async def _fetch_config_quietly(self) -> None:
+        try:
+            await self._fetch_config()
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - the next status event tries again
+            _logger.warning("could not read the core's configuration: %s", type(error).__name__)
+
+    async def _fetch_config(self) -> None:
+        async with self._client() as client:
+            response = await client.get("/config")
+        if response.status_code != 200 or len(response.content) > MAX_CONFIG_BYTES:
+            raise RuntimeError(f"core answered {response.status_code}")
+        state = ConfigState.model_validate_json(response.content)
+        self._config = RepeaterConfig.from_flat_dict(state.values)  # values are never logged
+        self._config_version = state.config_version
+        if self._announced_version is not None and self._announced_version != state.config_version:
+            self._refresh_config()  # it moved on while we were reading
+
+    async def change_config(self, **overrides: object) -> RepeaterConfig:
+        """Ask the core to change settings and wait for its answer.
+
+        Returns the saved configuration the core confirms. Raises `ConfigRefused` if the
+        core checked the change and refused it (nothing was applied) and `CoreUnavailable`
+        if the core could not be reached or did not answer cleanly; in that case the
+        change may or may not have been applied, and the message says so."""
+        request = ConfigChange(
+            header=Header(
+                schema_version=1, message_id=new_id(), emitted_at=datetime.now(timezone.utc),
+                boot_id=self._sequencer.boot_id, seq=self._sequencer.next(),
+                source=Source(module="api", version="0.1.0"),
+            ),
+            values=dict(overrides),
+        )
+        try:
+            async with self._client() as client:
+                response = await client.post(
+                    "/config", content=request.model_dump_json(), headers={"Content-Type": "application/json"}
+                )
+        except httpx.ConnectError:
+            raise CoreUnavailable("the core is not reachable; nothing was changed") from None
+        except httpx.TimeoutException:
+            raise CoreUnavailable("the core did not answer in time; the change may or may not have been applied") from None
+        except httpx.HTTPError:
+            raise CoreUnavailable("the connection to the core failed; the change may or may not have been applied") from None
+        if response.status_code != 200:
+            raise ConfigRefused("config.invalid", "the core did not accept the request")
+        try:
+            applied = ConfigApplied.model_validate_json(response.content)
+        except ValueError:
+            raise CoreUnavailable("the core's answer was not understood; the change may or may not have been applied") from None
+        if applied.header.request_id != request.header.message_id:
+            raise CoreUnavailable("the core's answer did not match the request; the change may or may not have been applied")
+        if applied.result is ConfigResult.REJECTED:
+            error = applied.error
+            raise ConfigRefused(
+                error.code if error else "config.rejected", error.message if error else "the core refused the change",
+                retryable=bool(error and error.retryable),
+            )
+        self._announced_version = applied.config_version
+        try:
+            await self._fetch_config()  # so what we return is what the core now has
+        except Exception:  # noqa: BLE001 - the change IS applied; the cache catches up on the next event
+            _logger.warning("the change was applied but the configuration could not be read back")
+            self._refresh_config()
+            if self._config is None:
+                raise CoreUnavailable("applied, but the core's configuration could not be read back") from None
+        return self.saved_config
 
     def _seen(self) -> None:
         self._last_event_at = self._clock()

@@ -252,10 +252,11 @@ def test_a_malformed_event_is_skipped_and_the_stream_goes_on(sock_dir):
 
 # --- scope -------------------------------------------------------------------------------------
 
-def test_this_slice_is_read_only():
+def test_the_only_write_is_change_config():
     remote = RemoteCore(Path("/nonexistent"))
     for write in ("update_config", "clear_lockout", "set_net_active", "simulate_cos", "import_snapshot", "speak"):
         assert not hasattr(remote, write), f"RemoteCore must not offer {write} yet"
+    assert hasattr(remote, "change_config")  # slice 7c-3b: waits for the core's own answer
 
 
 def test_remote_core_imports_no_web_framework():

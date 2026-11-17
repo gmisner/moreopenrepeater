@@ -11,6 +11,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from controller.state_machine import RepeaterConfig
@@ -29,6 +30,7 @@ from .models import AuditEntryResponse, ConfigResponse, SessionResponse, Snapsho
 from .node_directory import NodeDirectory
 from .notify import Notifier
 from .persistence import StateStore
+from .service.core_handle import ConfigRefused, CoreUnavailable
 from .recordings import RecordingStore
 from .routes import accounts as accounts_routes
 from .routes import activity as activity_routes
@@ -215,6 +217,15 @@ def create_app(
     app = FastAPI(title="moreopenrepeater API", lifespan=runtime.lifespan)
     app.state.service = runtime.service
     agent_endpoint = runtime.attach_agent(app)
+
+    @app.exception_handler(ConfigRefused)
+    async def core_refused_a_change(request: Request, error: ConfigRefused) -> JSONResponse:
+        # The core checked the change and refused it. Nothing was applied.
+        return JSONResponse(status_code=422, content={"detail": error.message, "code": error.code})
+
+    @app.exception_handler(CoreUnavailable)
+    async def core_is_unavailable(request: Request, error: CoreUnavailable) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"detail": str(error), "code": "core.unavailable"})
 
     @app.middleware("http")
     async def revalidate_static_files(request: Request, call_next):

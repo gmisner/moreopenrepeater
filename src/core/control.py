@@ -130,6 +130,7 @@ class ControlServer:
         #: Rises with every change to the configuration, whoever made it (the API, a macro,
         #: net mode). The API sends the version it last saw to detect a concurrent change.
         self._config_version = 1
+        self._config_waiters: set[asyncio.Event] = set()  # one per open /events stream
         service.add_config_listener(self._config_changed)
 
     # -- lifecycle ------------------------------------------------------------
@@ -351,7 +352,10 @@ class ControlServer:
         self._streams += 1
         queue = self._service.subscribe()  # holds only the latest snapshot
         gone = asyncio.ensure_future(_until_eof(reader))  # finishes when the client hangs up
-        waiting: Optional[asyncio.Future] = None
+        config_event = asyncio.Event()  # set when the configuration changes
+        self._config_waiters.add(config_event)
+        waiting: Optional[asyncio.Future] = None  # the next snapshot
+        config_changed: Optional[asyncio.Future] = None
         try:
             writer.write(
                 b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n"
@@ -361,15 +365,29 @@ class ControlServer:
             await self._send_event(writer, "status", self._event_payload(sent))
             last_write = time.monotonic()
             while True:
-                waiting = asyncio.ensure_future(queue.get())
+                if waiting is None:
+                    waiting = asyncio.ensure_future(queue.get())
+                if config_changed is None:
+                    config_changed = asyncio.ensure_future(config_event.wait())
                 # A heartbeat is due HEARTBEAT_SECONDS after the last thing written, even
                 # while snapshots keep arriving that are not worth sending.
                 due = max(0.0, HEARTBEAT_SECONDS - (time.monotonic() - last_write))
-                done, _ = await asyncio.wait({waiting, gone}, timeout=due, return_when=asyncio.FIRST_COMPLETED)
+                done, _ = await asyncio.wait(
+                    {waiting, gone, config_changed}, timeout=due, return_when=asyncio.FIRST_COMPLETED
+                )
                 if gone in done:
                     return
+                if config_changed in done:
+                    # The status may not have changed, but the version in it has: the client
+                    # reads the configuration again when it sees a new version.
+                    config_event.clear()
+                    config_changed = None
+                    sent = self._service.snapshot()
+                    await self._send_event(writer, "status", self._event_payload(sent))
+                    last_write = time.monotonic()
                 if waiting in done:
                     snapshot = waiting.result()
+                    waiting = None
                     now = time.monotonic()
                     if _is_news(sent, snapshot):
                         await self._send_event(writer, "status", self._event_payload(snapshot))
@@ -379,21 +397,23 @@ class ControlServer:
                     elif now - last_write >= HEARTBEAT_SECONDS:
                         await self._send_event(writer, "heartbeat", self._heartbeat_payload())
                         last_write = time.monotonic()
-                else:
-                    waiting.cancel()
+                if not done:
                     await self._send_event(writer, "heartbeat", self._heartbeat_payload())
                     last_write = time.monotonic()
         finally:
-            for task in (gone, waiting):
+            for task in (gone, waiting, config_changed):
                 if task is not None and not task.done():
                     task.cancel()
+            self._config_waiters.discard(config_event)
             self._service.unsubscribe(queue)
             self._streams -= 1
 
     def _event_payload(self, snapshot) -> dict:
         # `local` is for the API only (the trusted channel): the last clip name can carry
         # the text of an announcement, so it is not part of the module-facing contract.
-        return {"status": self._status_from(snapshot), "local": {"last_clip": snapshot.last_clip, "timestamp": snapshot.timestamp}}
+        return {"status": self._status_from(snapshot), "local": {
+            "last_clip": snapshot.last_clip, "timestamp": snapshot.timestamp, "config_version": self._config_version,
+        }}
 
     def _heartbeat_payload(self) -> dict:
         health = self._health()
@@ -421,6 +441,8 @@ class ControlServer:
 
     def _config_changed(self, _config) -> None:
         self._config_version += 1
+        for waiter in self._config_waiters:
+            waiter.set()  # wake each /events stream: a client may need to read the configuration again
 
     def _config_state(self) -> dict:
         """`GET /config`: the whole saved configuration, secrets included. This channel is the

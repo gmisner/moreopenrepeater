@@ -12,7 +12,9 @@ from .events import (
 )
 from .configuration import ConfigApplied, ConfigResult, ConfigSnapshot
 from .health import HealthCheck, HealthReport, HealthState
+from .emit import DeliveryError, Emitter, ListSink, StdoutSink, UnixDatagramSink
 from .log_event import LogEvent, Severity
+from .metrics import Metrics
 from .manifest import (
     DeviceAccess, DeviceNeed, ModuleAnnounce, ModuleManifest, ResourceBudget, SafeState, find_device_conflicts,
 )
@@ -29,6 +31,8 @@ __all__ = [
     "CoreStatus",
     "DeviceAccess",
     "DeviceNeed",
+    "DeliveryError",
+    "Emitter",
     "FixQuality",
     "Freshness",
     "Header",
@@ -36,9 +40,11 @@ __all__ = [
     "HealthReport",
     "HealthState",
     "IdempotencyLedger",
+    "ListSink",
     "LocationSource",
     "LogEvent",
     "Message",
+    "Metrics",
     "ModuleAnnounce",
     "ModuleManifest",
     "OMITTED",
@@ -57,10 +63,12 @@ __all__ = [
     "SpeakDecision",
     "SpeakRequest",
     "SpeakStatus",
+    "StdoutSink",
     "StructuredError",
     "TransmissionEnded",
     "TransmissionStarted",
     "TxEndReason",
+    "UnixDatagramSink",
     "core_event_adapter",
     "find_device_conflicts",
     "find_sensitive_keys",

@@ -81,6 +81,7 @@ from .persistence import StateStore
 from .recordings import RecordingStore
 from .remote_base import RemoteBase
 from .service import RepeaterService
+from .service.core_handle import CoreHandle
 from .sip_trunk import SipTrunk
 from .site_sensors import HISTORY_RETENTION_DAYS as SENSOR_HISTORY_DAYS
 from .site_sensors import POLL_SECONDS_DEFAULT as SENSOR_POLL_SECONDS
@@ -249,7 +250,7 @@ from dataclasses import dataclass, fields
 class CoreBundle:
     """Service core, logging, weather fetch hooks, and hardware probes."""
 
-    service: Optional[RepeaterService] = None
+    service: Optional[CoreHandle] = None
     start_background_tick: bool = True
     log_path: Optional[Path] = None
     state_store: Optional[StateStore] = None
@@ -351,7 +352,7 @@ for _bag_type in _BAG_TYPES:
 class RuntimeBuilder:
     """Flat overrides for tests; packs into typed bags for AppRuntime."""
 
-    service: Optional[RepeaterService] = None
+    service: Optional[CoreHandle] = None
     start_background_tick: bool = True
     assets_store: Optional[AudioAssetStore] = None
     log_path: Optional[Path] = None

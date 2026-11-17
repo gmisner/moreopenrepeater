@@ -18,7 +18,7 @@ from audio_io.pi_gpio import GpioLine, open_header_pin
 from controller.state_machine import RepeaterConfig
 
 if TYPE_CHECKING:
-    from .service import RepeaterService
+    from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.tx_fan")
 
@@ -68,7 +68,7 @@ def setup_problem(config: RepeaterConfig, cm108: Optional[CM108Interface]) -> Op
 class TxFan:
     def __init__(
         self,
-        service: RepeaterService,
+        service: CoreHandle,
         cm108: Optional[CM108Interface],
         open_pin: Callable[..., GpioLine] = open_header_pin,
         temperature: Callable[[], Optional[float]] = lambda: None,

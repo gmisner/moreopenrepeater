@@ -24,7 +24,7 @@ from ..models import (
     TTSInfoResponse,
     TTSVoiceOption,
 )
-from ..service import RepeaterService
+from ..service.core_handle import CoreHandle
 
 MAX_PREVIEW_CLIP_LENGTH = 2000
 MAX_SCORE_WAV_BYTES = 5_000_000
@@ -35,7 +35,7 @@ MAX_RECORD_SECONDS = 30.0
 def register(
     app: FastAPI,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     renderer: ClipRenderer,
     live_audio: LiveAudio,
     audio_devices: Callable[[], list[dict]],

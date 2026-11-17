@@ -35,7 +35,7 @@ from .tx_fan import fan_cm108_pin
 from .weekly import last_start, next_start, window_end
 
 if TYPE_CHECKING:
-    from .service import RepeaterService
+    from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.gpio")
 
@@ -75,7 +75,7 @@ def _pins(config: RepeaterConfig) -> dict[int, dict]:
 class GpioControl:
     def __init__(
         self,
-        service: RepeaterService,
+        service: CoreHandle,
         cm108: Optional[CM108Interface],
         poll_seconds: float = POLL_SECONDS,
         settle_seconds: float = SETTLE_SECONDS,

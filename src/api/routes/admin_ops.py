@@ -48,7 +48,7 @@ from ..models import (
 )
 from ..notify import SECRET_FIELDS, Notifier
 from ..restart import RestartControl
-from ..service import RepeaterService
+from ..service.core_handle import CoreHandle
 from ..auto_update import AutoUpdater
 from ..support_bundle import support_bundle_name, write_support_bundle
 from ..tailscale import TailscaleControl, read_log as read_tailscale_log
@@ -58,7 +58,7 @@ from ..updates import UpdateChecker, Updater, installed_version, read_log
 def register(
     app: FastAPI,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     backups: BackupFolder,
     backup_sources: BackupSources,
     audit: AuditLog,

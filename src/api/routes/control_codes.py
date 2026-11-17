@@ -13,13 +13,13 @@ from ..models import (
     ControlCodeStatus,
     ControlCodeUser,
 )
-from ..service import RepeaterService
+from ..service.core_handle import CoreHandle
 
 
 def register(
     app: FastAPI,
     *,
-    service: RepeaterService,
+    service: CoreHandle,
     control_codes: ControlCodes,
     auth_dependencies: Sequence,
     admin_dependencies: Sequence,

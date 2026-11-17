@@ -30,7 +30,8 @@ from playout.wav import encode_wav, read_wav
 
 from .persistence import StateStore
 from .safe_paths import child_path
-from .service import RepeaterService, spoken_time
+from .service.core_handle import CoreHandle
+from .service import spoken_time
 
 _logger = logging.getLogger("moreopenrepeater.mailbox")
 
@@ -179,7 +180,7 @@ class MailboxStore:
 class Mailbox:
     def __init__(
         self,
-        service: RepeaterService,
+        service: CoreHandle,
         store: MailboxStore,
         renderer: ClipRenderer,
         net_active: Callable[[], bool] = lambda: False,

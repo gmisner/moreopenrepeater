@@ -18,7 +18,7 @@ from controller.state_machine import RepeaterConfig
 from playout.renderer import TTS_PREFIX
 
 from .rig_control import RigError, Rigctld, Tuning
-from .service import RepeaterService
+from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.remote_base")
 
@@ -36,7 +36,7 @@ def spoken_state(config: RepeaterConfig) -> str:
 
 
 class RemoteBase:
-    def __init__(self, service: RepeaterService, rig_factory: Callable[[str], Rigctld] = Rigctld) -> None:
+    def __init__(self, service: CoreHandle, rig_factory: Callable[[str], Rigctld] = Rigctld) -> None:
         self._service = service
         self._rig_factory = rig_factory
         self._loop: Optional[asyncio.AbstractEventLoop] = None

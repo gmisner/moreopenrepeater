@@ -2,6 +2,7 @@
 from playout.tts import spoken_time
 
 from .facade import RepeaterService
+from .core_handle import CoreHandle
 from .protocols import AudioOutput, PatchCalls
 from .snapshot import (
     LINK_AUDIO_NODE,
@@ -18,6 +19,7 @@ from .snapshot import (
 
 __all__ = [
     "AudioOutput",
+    "CoreHandle",
     "LINK_AUDIO_NODE",
     "LINK_DMR_NODE",
     "LINK_RADIO_NODE",

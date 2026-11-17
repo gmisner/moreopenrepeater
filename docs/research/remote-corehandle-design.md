@@ -121,15 +121,25 @@ core stopped mid-request, core restarted, core slow, core never started.
 Unset `MOREOPENREPEATER_CORE_SOCKET` on the API and start the normal service.
 Every slice leaves the in-process path untouched and the default.
 
-## Decisions for the maintainer
+## Decisions
 
-1. **Split the protocol** into `ApiCoreHandle` and core-side members. Yes?
-2. **Write path.** Make the write routes await or thread-offload (mechanical,
-   touches about 12 route handlers), or keep a sync client in the thread pool?
-   I recommend awaiting.
-3. **`config.state`** as a separate message for the trusted channel, with the
-   rule that credentials never go to modules. Agreed?
-4. **Scope for the first release.** Is the remote mode needed through 7c-6, or
-   is read-only live status (7c-2) enough to show the split on a Pi first and
-   decide after? I recommend stopping at 7c-2, running the Pi checks, then
-   continuing.
+Decided by the maintainer:
+
+1. **Split the protocol** into `ApiCoreHandle` and the core-side members. Yes.
+   (Done in 7c-1.)
+2. **Write path.** The write routes await the remote call. Yes.
+3. **Scope for the first release.** Stop at read-only live status (7c-2), run the
+   Pi checks, then decide how far to go. Yes.
+
+Open:
+
+4. **`config.state`**, a separate message for the trusted API-to-core channel.
+   It is only needed from 7c-3, so it does not block 7c-1 or 7c-2. What it is for:
+   the API and the core are the same machine and the same user group, so the API
+   must be able to read and change the **whole** configuration, including the
+   autopatch PIN and other credentials. The module-facing `config.snapshot`
+   contract refuses credential-like keys on purpose, so a weather module can never
+   be sent a secret. Without a second message the API could not manage those
+   settings from a remote core. The rule that stays: credentials cross only this
+   file-permission-protected socket between the core and the API, never to a
+   module.

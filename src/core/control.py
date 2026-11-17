@@ -71,6 +71,7 @@ import dataclasses as _dc
 from api.models.programming import AnnouncementFields, MacroCreateRequest
 from controller.announcements import Announcement
 from controller.macros import Macro
+from api.core_runtime import AnnouncementQueueFull
 from playout.renderer import TTS_PREFIX, UnknownClipError
 
 from .config_boundary import ConfigRejected, check_change
@@ -557,6 +558,31 @@ class ControlServer:
         self._config_changed(None)  # macros and announcements count as a change: clients read them again
         return None
 
+    async def _queue_clip(self, request: CoreCommand) -> dict:
+        """Render a clip (off the event loop, with a deadline) and queue it, as the dashboard's
+        play button and the API's modules do in process. The clip can be the text of an
+        announcement, so it is never logged."""
+        clip, on_linked_radio = request.params["clip"], request.params["on_linked_radio"]
+        try:
+            await asyncio.wait_for(
+                self._runtime.render_and_queue(clip, on_linked_radio=on_linked_radio), RENDER_DEADLINE_SECONDS
+            )
+        except asyncio.TimeoutError:
+            return self._command_refused(request, "command.render_timeout", "Preparing the audio took too long.", True)
+        except UnknownClipError:
+            return self._command_refused(request, "command.unknown_clip", "There is no such clip.")
+        except TTSError:
+            return self._command_refused(request, "command.render_failed", "The speech could not be prepared.", True)
+        except AnnouncementQueueFull:
+            return self._command_refused(
+                request, "command.queue_full", "Too many announcements are already waiting to play.", True
+            )
+        except Exception:  # noqa: BLE001
+            _logger.exception("core.command queue_clip could not be applied")
+            return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
+        _logger.info("core.command queue_clip applied")
+        return self._command_result(request, CommandStatus.APPLIED)
+
     # -- commands (the trusted API channel) -----------------------------------------------------
 
     def _command_result(self, request: CoreCommand, status: CommandStatus, error: Optional[StructuredError] = None) -> dict:
@@ -587,6 +613,8 @@ class ControlServer:
                 "This core is on a real radio and does not accept simulated events. "
                 "Start it with MOREOPENREPEATER_CORE_SIMULATE=1 to allow them.",
             )
+        if name is CommandName.QUEUE_CLIP:
+            return await self._queue_clip(request)
         if name in PROGRAMMING:
             refusal = self._apply_programming(request)
             if refusal is not None:

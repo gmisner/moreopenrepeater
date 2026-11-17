@@ -123,6 +123,12 @@ by the contract and again by the core.
   answer is `command.simulation_disabled`. Start the core with
   `MOREOPENREPEATER_CORE_SIMULATE=1` to allow it (a bench or test core).
 - `clear_lockout` when nothing is locked out is `command.not_locked_out`.
+- `queue_clip(clip, on_linked_radio)` renders a clip (`id`, `asset:<id>`, `tts:<text>`) off
+  the event loop with a 30 s deadline, then queues it to play: what the dashboard's play
+  buttons and the API's modules do in process. Refusals are `command.unknown_clip`,
+  `command.render_failed` and `command.render_timeout` (retryable) and
+  `command.queue_full` (retryable). The clip can be the text of an announcement, so it
+  is never logged. It never interrupts a transmission in progress.
 - `add_macro(macro)`, `delete_macro(pattern)`, `save_announcement(announcement)` and
   `delete_announcement(announcement_id)` change the macros and the scheduled
   announcements. The core validates a macro or an announcement with the same models the

@@ -35,8 +35,9 @@ auth, backups, updates, notifications, hub polling, recordings, transcripts,
 APRS receive, and weather fetching (which becomes the `geo` module and asks the
 core to speak through `speak.request`).
 
-Not yet decided, listed under the questions at the end: autopatch and SIP,
-mailbox, the monitor receiver.
+Decided by the maintainer: autopatch belongs in `core`, because it holds PTT up
+for a call. Still open: how its SIP leg is split from it, the mailbox, and the
+monitor receiver.
 
 ## How coupled the API is to the core today
 
@@ -142,18 +143,22 @@ single-process mode available behind one setting. Slice 8 flips the default
 and keeps the flag for one release. Reverting any slice restores the previous
 behavior.
 
-## Questions for the maintainer
+## Decisions and open questions
 
-1. **Order.** Is the slice order right? In particular, should the hardening
-   fixes (slice 4) go before the runtime split, as shown, or alongside it?
-2. **Autopatch, SIP, mailbox, monitor receiver.** In `core` or `api`? The
-   autopatch holds PTT up for a call, so it likely belongs in the core, but it
-   also pulls in SIP.
-3. **Scheduled announcements.** The announcement scheduler must keep working
-   with the API down, so it stays in `core`. Confirm that weather announcements
-   instead arrive as `speak.request` from the `geo` module.
-4. **One process or two for audio.** This design keeps the audio engine inside
+Decided by the maintainer:
+
+- **Autopatch is in `core`.** Its SIP leg is split out when that slice is
+  designed.
+- **Scheduled announcements stay in `core`.** Weather announcements arrive as
+  `speak.request` from the `geo` module.
+
+Still open:
+
+1. **Order.** Should the hardening fixes (slice 4) go before the runtime split,
+   as shown, or alongside it?
+2. **Mailbox and monitor receiver.** In `core` or `api`?
+3. **One process or two for audio.** This design keeps the audio engine inside
    the core process. Moving it to its own process is a larger step and is not
    proposed here.
-5. **Approval.** Slices 1 and 3 need none and can start now. Which of the
+4. **Approval.** Slices 1 and 3 need none and can start now. Which of the
    others do you approve, and when?

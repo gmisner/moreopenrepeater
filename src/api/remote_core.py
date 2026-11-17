@@ -91,6 +91,7 @@ class RemoteCore:
         self._config_version: Optional[int] = None  # the version `_config` is at
         self._announced_version: Optional[int] = None  # the newest version the core has told us of
         self._fetching: Optional[asyncio.Task] = None
+        self._read_again = False  # a refresh was asked for while a read was running
         self._macros: Optional[list[Macro]] = None
         self._announcements: list[Announcement] = []
         self._next_runs: dict[str, Optional[datetime]] = {}
@@ -332,17 +333,22 @@ class RemoteCore:
         return httpx.AsyncClient(transport=transport, base_url="http://core", timeout=timeout)
 
     def _refresh_config(self) -> None:
-        """Read the configuration again, soon. One read at a time; it picks up the newest."""
+        """Read the configuration (and programming) again, soon. One read runs at a time. A
+        request that arrives while one runs is not dropped: the running read goes round again."""
+        self._read_again = True
         if self._fetching is None or self._fetching.done():
             self._fetching = asyncio.ensure_future(self._fetch_config_quietly())
 
     async def _fetch_config_quietly(self) -> None:
         try:
-            await self._fetch_config()
-            await self._fetch_programming()
+            while self._read_again:
+                self._read_again = False
+                await self._fetch_config()
+                await self._fetch_programming()
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 - the next status event tries again
+            self._read_again = False
             _logger.warning("could not read the core's configuration: %s", type(error).__name__)
 
     async def _fetch_config(self) -> None:

@@ -1,0 +1,6 @@
+*
+!docker/core-requirements.txt
+!pyproject.toml
+!src
+**/__pycache__
+**/*.pyc

@@ -73,6 +73,21 @@ curl -N --unix-socket /run/moreopenrepeater/core.sock http://core/events
   hangs up, is dropped, and it never slows the controller. Stopping the core ends
   every open stream.
 
+### One-time codes
+
+A macro that needs a one-time code (`tx_disable` is the obvious one) is checked **by the core**,
+never by the API, so it works with the dashboard down. The rules are `api.control_codes`'s: RFC
+6238 TOTP, a code accepted once, a step either side allowed, five wrong codes in ten minutes
+locks all codes out for ten minutes (the lockout is in memory and a restart clears it).
+
+Each file has one writer. `control-codes.json` (the secrets and who is enrolled) is written
+only by the API, which enrolls and removes users; the core reads it and re-reads it when it
+changes. `control-codes-replay.json` (the last step each code was accepted at) is written only
+by the core, mode 0600, so a used code cannot be replayed after a restart. The core fails
+closed: no secrets file, or one it cannot read, and every code is refused. With the core and API
+in separate processes the API must not check codes itself (its own `ControlCodes.check` writes
+its copy of the secrets file).
+
 ### Macro actions that belong to the API (`macro` events)
 
 Some macro actions are done by the API's modules, not the core: `net` (net_start, net_end),

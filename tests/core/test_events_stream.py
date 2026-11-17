@@ -1,6 +1,7 @@
 """GET /events on the core's control socket (Stage 3 slice 7c-2, #229): status changes
 and a heartbeat as server-sent events. Simulation only: no devices, no Pi."""
 import asyncio
+import dataclasses
 import json
 import socket
 import time
@@ -215,3 +216,68 @@ def test_stopping_the_server_ends_open_streams(core, sock_dir):
         writer.close()
 
     asyncio.run(go())
+
+
+# -- countdowns are not news ---------------------------------------------------------------------
+
+
+def _snap(**changes):
+    from api.service.snapshot import StatusSnapshot
+
+    base = dict(
+        state="idle", ptt_active=False, cos_active=False, ctcss_hz=None, linked_nodes=[], last_clip=None,
+        timestamp=100.0, tot_remaining=None, hang_remaining=None, id_due_in=500.0,
+    )
+    base.update(changes)
+    return StatusSnapshot(**base)
+
+
+def test_a_countdown_that_just_counts_down_is_not_news():
+    assert not control_module._is_news(_snap(), _snap(timestamp=100.25, id_due_in=499.75))
+    assert not control_module._is_news(_snap(), _snap(timestamp=130.0, id_due_in=470.0))
+
+
+def test_a_countdown_that_jumps_or_appears_or_ends_is_news():
+    assert control_module._is_news(_snap(), _snap(timestamp=100.25, id_due_in=600.0))  # the ID was sent
+    assert control_module._is_news(_snap(), _snap(timestamp=101.0, id_due_in=None))
+    assert control_module._is_news(_snap(), _snap(timestamp=101.0, tot_remaining=180.0))
+    assert control_module._is_news(_snap(tot_remaining=10.0), _snap(timestamp=111.0, tot_remaining=10.0))  # was reset
+
+
+def test_any_other_change_is_news():
+    assert control_module._is_news(_snap(), _snap(cos_active=True))
+    assert control_module._is_news(_snap(), _snap(last_clip="id"))
+    assert control_module._is_news(_snap(), _snap(linked_nodes=["1999"]))
+
+
+def test_an_idle_stream_sends_no_status_for_ticking_countdowns_but_still_heartbeats(core, sock_dir, monkeypatch):
+    """Found on the Pi: the next-ID countdown made an idle core push four status events a
+    second, and starved the heartbeat. Ticks alone must not."""
+    monkeypatch.setattr(control_module, "HEARTBEAT_SECONDS", 0.4)
+    # Start from the real clock: the controller armed its ID deadline from it when built, and
+    # a fixed start can be past that deadline on a machine that booted recently (CI did).
+    clock = [time.monotonic()]
+    core.service._clock = lambda: clock[0]
+    core.service.controller.config = dataclasses.replace(core.service.controller.config, idle_id=True)
+    core.service.tick()
+    assert core.service.snapshot().id_due_in is not None  # the countdown that moves on an idle repeater
+
+    async def scenario(path, server):
+        reader, writer, _ = await open_stream(path)
+        await next_event(reader)  # the initial status
+        names = []
+        deadline = time.monotonic() + 1.3
+        while time.monotonic() < deadline:
+            clock[0] += 0.3  # a quarter-second bucket each time, so the service does publish
+            core.service.tick()
+            try:
+                name, _ = await next_event(reader, timeout=0.05)
+                names.append(name)
+            except asyncio.TimeoutError:
+                pass
+            await asyncio.sleep(0.05)
+        assert "status" not in names
+        assert "heartbeat" in names
+        writer.close()
+
+    run(core, sock_dir, scenario)

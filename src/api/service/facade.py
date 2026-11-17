@@ -41,6 +41,7 @@ from wx.nws import WeatherAlert
 from ..activity import ActivityRecorder
 from ..persistence import StateStore
 from .config_persist import ConfigPersistence
+from .core_handle import CommandRefused
 from .links import LinkSupport
 from .patch import PatchSupport
 from .programming import Programming
@@ -449,6 +450,21 @@ class RepeaterService:
 
     async def change_config(self, **overrides: object) -> RepeaterConfig:
         return self._config.update(**overrides)
+
+    async def command(self, name: str, **params: object) -> None:
+        """The same commands a remote core takes, applied in process."""
+        handlers = {
+            "clear_lockout": self.clear_lockout,
+            "set_net_active": self.set_net_active,
+            "simulate_cos": self.simulate_cos,
+            "simulate_ctcss": self.simulate_ctcss,
+            "simulate_dtmf": self.simulate_dtmf,
+            "simulate_remote_keyed": self.simulate_remote_keyed,
+        }
+        handler = handlers.get(name)
+        if handler is None:
+            raise CommandRefused("command.unknown", f"not a command: {name}")
+        handler(**params)
 
     def _apply_config(self, saved: RepeaterConfig, persist: bool = False) -> None:
         self._config.apply(saved, persist=persist)

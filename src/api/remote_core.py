@@ -28,10 +28,13 @@ from typing import Optional
 import httpx
 
 from contracts import (
+    CommandResult,
+    CommandStatus,
     ConfigApplied,
     ConfigChange,
     ConfigResult,
     ConfigState,
+    CoreCommand,
     CoreStatus,
     Header,
     Sequencer,
@@ -41,7 +44,7 @@ from contracts import (
 from controller.config import RepeaterConfig
 from controller.modes import effective_config
 
-from .service.core_handle import ConfigRefused, CoreUnavailable
+from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
 from .service.snapshot import StatusSnapshot
 
 _logger = logging.getLogger("moreopenrepeater.remote_core")
@@ -315,6 +318,50 @@ class RemoteCore:
         if self._announced_version is not None and self._announced_version != state.config_version:
             self._refresh_config()  # it moved on while we were reading
 
+    def _header(self) -> Header:
+        return Header(
+            schema_version=1, message_id=new_id(), emitted_at=datetime.now(timezone.utc),
+            boot_id=self._sequencer.boot_id, seq=self._sequencer.next(),
+            source=Source(module="api", version="0.1.0"),
+        )
+
+    async def _exchange(self, path: str, body: str) -> httpx.Response:
+        """POST to the core. Raises `CoreUnavailable` for anything that is not an answer,
+        and says whether the request may have been applied."""
+        try:
+            async with self._client() as client:
+                return await client.post(path, content=body, headers={"Content-Type": "application/json"})
+        except httpx.ConnectError:
+            raise CoreUnavailable("the core is not reachable; nothing was changed") from None
+        except httpx.TimeoutException:
+            raise CoreUnavailable("the core did not answer in time; it may or may not have been applied") from None
+        except httpx.HTTPError:
+            raise CoreUnavailable("the connection to the core failed; it may or may not have been applied") from None
+
+    async def command(self, name: str, **params: object) -> None:
+        """Send the core a one-shot command and wait for its answer. Raises `CommandRefused`
+        if the core refused it (nothing was done) and `CoreUnavailable` if it could not be
+        reached or did not answer cleanly."""
+        try:
+            request = CoreCommand(header=self._header(), command=name, params=dict(params))
+        except ValueError:
+            raise CommandRefused("command.invalid", f"not a valid {name} command") from None
+        response = await self._exchange("/command", request.model_dump_json())
+        if response.status_code != 200:
+            raise CommandRefused("command.invalid", "the core did not accept the request")
+        try:
+            result = CommandResult.model_validate_json(response.content)
+        except ValueError:
+            raise CoreUnavailable("the core's answer was not understood; it may or may not have been applied") from None
+        if result.header.request_id != request.header.message_id:
+            raise CoreUnavailable("the core's answer did not match the request; it may or may not have been applied")
+        if result.status is CommandStatus.REJECTED:
+            error = result.error
+            raise CommandRefused(
+                error.code if error else "command.rejected", error.message if error else "the core refused the command",
+                retryable=bool(error and error.retryable),
+            )
+
     async def change_config(self, **overrides: object) -> RepeaterConfig:
         """Ask the core to change settings and wait for its answer.
 
@@ -323,24 +370,9 @@ class RemoteCore:
         if the core could not be reached or did not answer cleanly; in that case the
         change may or may not have been applied, and the message says so."""
         request = ConfigChange(
-            header=Header(
-                schema_version=1, message_id=new_id(), emitted_at=datetime.now(timezone.utc),
-                boot_id=self._sequencer.boot_id, seq=self._sequencer.next(),
-                source=Source(module="api", version="0.1.0"),
-            ),
-            values=dict(overrides),
+            header=self._header(), values=dict(overrides),
         )
-        try:
-            async with self._client() as client:
-                response = await client.post(
-                    "/config", content=request.model_dump_json(), headers={"Content-Type": "application/json"}
-                )
-        except httpx.ConnectError:
-            raise CoreUnavailable("the core is not reachable; nothing was changed") from None
-        except httpx.TimeoutException:
-            raise CoreUnavailable("the core did not answer in time; the change may or may not have been applied") from None
-        except httpx.HTTPError:
-            raise CoreUnavailable("the connection to the core failed; the change may or may not have been applied") from None
+        response = await self._exchange("/config", request.model_dump_json())
         if response.status_code != 200:
             raise ConfigRefused("config.invalid", "the core did not accept the request")
         try:

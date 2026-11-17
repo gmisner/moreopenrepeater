@@ -57,6 +57,17 @@ class ConfigRefused(CoreError):
         self.retryable = retryable
 
 
+class CommandRefused(CoreError):
+    """The core refused a command (a lockout that is not there, a simulator on a real radio).
+    Nothing was done. `code` is stable."""
+
+    def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.retryable = retryable
+
+
 @runtime_checkable
 class ApiCoreHandle(Protocol):
     """The members of the core that API-side code uses."""
@@ -100,6 +111,13 @@ class ApiCoreHandle(Protocol):
         `ConfigRefused` or `CoreUnavailable` instead of pretending it worked. Routes use
         this one."""
         ...
+    async def command(self, name: str, **params: object) -> None:
+        """Send the core a one-shot command: `clear_lockout`, `set_net_active(active)`,
+        `simulate_cos(active)`, `simulate_ctcss(tone_hz)`, `simulate_dtmf(digit)` or
+        `simulate_remote_keyed(node_id, keyed)`. Routes use this. Against a remote core it
+        raises `CommandRefused` or `CoreUnavailable` rather than pretending it worked."""
+        ...
+
     def clear_lockout(self) -> None: ...
     def set_net_active(self, active: bool) -> None: ...
     def held_reason(self, feature: str) -> str: ...

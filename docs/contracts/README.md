@@ -19,6 +19,7 @@ behavior. Design context: [ADR 0005](../adr/0005-container-module-runtime.md).
 | Health report | `contracts.HealthReport` | [health_report.v1.json](schema/health_report.v1.json) |
 | Module manifest and startup announce | `contracts.ModuleAnnounce` | [module_announce.v1.json](schema/module_announce.v1.json) |
 | Whole configuration and a change to it (API to core only, carries secrets) | `contracts.ConfigState`, `ConfigChange` | [config_state.v1.json](schema/config_state.v1.json), [config_change.v1.json](schema/config_change.v1.json) |
+| One-shot commands and their result (API to core only) | `contracts.CoreCommand`, `CommandResult` | [core_command.v1.json](schema/core_command.v1.json), [core_command_result.v1.json](schema/core_command_result.v1.json) |
 | Config delivery and acknowledgement | `contracts.ConfigSnapshot`, `ConfigApplied` | [config_snapshot.v1.json](schema/config_snapshot.v1.json), [config_applied.v1.json](schema/config_applied.v1.json) |
 | Core status | `contracts.CoreStatus` | [core_status.v1.json](schema/core_status.v1.json) |
 | Site location (fixed or GPS) | `contracts.SiteLocation` | [site_location.v1.json](schema/site_location.v1.json) |
@@ -79,6 +80,10 @@ like a credential is rejected, not silently replaced, so a config can never
 lose a value without anyone noticing. Secrets go by name (`secret_refs`) and are
 read from a Docker secret or environment file. A module answers with
 `ConfigApplied`: `applied`, `restart_required` or `rejected` (with an error).
+
+**Contract version 1.3.** `CoreCommand` and `CommandResult`: the API's one-shot commands
+to the core (clear a lockout, net mode, the simulator), on the same trusted channel as
+1.2 and not for modules.
 
 **Contract version 1.2.** Two messages for the trusted channel between the API and the
 core (below): `ConfigState` and `ConfigChange`. Nothing else changed.

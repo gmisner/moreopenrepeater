@@ -221,5 +221,5 @@ def register(
     async def clear_lockout() -> StatusResponse:
         if not service.locked_out:
             raise HTTPException(status_code=409, detail="The repeater isn't locked out")
-        service.clear_lockout()
+        await service.command("clear_lockout")
         return status_response(service.snapshot())

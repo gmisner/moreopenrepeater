@@ -38,10 +38,15 @@ from typing import Awaitable, Callable, Optional
 from pydantic import ValidationError
 
 from contracts import (
+    SIMULATED,
+    CommandName,
+    CommandResult,
+    CommandStatus,
     ConfigApplied,
     ConfigChange,
     ConfigResult,
     ConfigState,
+    CoreCommand,
     CoreStatus,
     HealthCheck,
     HealthReport,
@@ -105,12 +110,16 @@ class ControlServer:
         version: str = "0.1.0",
         clock: Callable[[], float] = time.monotonic,
         now: Optional[Callable[[], datetime]] = None,
+        allow_simulate: bool = False,
     ) -> None:
         """`service` is the `RepeaterService`; `runtime` the `CoreRuntime`. `clock` is
         monotonic time (health); `now` is wall-clock time (request deadlines)."""
         self.path = path
         self._service = service
         self._runtime = runtime
+        #: The simulator injects events the radio did not send, and a simulated COS makes the
+        #: repeater transmit. A core on a real radio refuses it unless this was asked for.
+        self._allow_simulate = allow_simulate
         self._version = version
         self._clock = clock
         self._started = clock()
@@ -125,7 +134,9 @@ class ControlServer:
         self._get: dict[str, Callable[[], dict]] = {
             "/health": self._health, "/status": self._status, "/config": self._config_state,
         }
-        self._post: dict[str, Callable[[bytes], Awaitable[dict]]] = {"/speak": self._speak, "/config": self._config_change}
+        self._post: dict[str, Callable[[bytes], Awaitable[dict]]] = {
+            "/speak": self._speak, "/config": self._config_change, "/command": self._command,
+        }
         self._body_limits = {"/config": MAX_CONFIG_BODY_BYTES}
         #: Rises with every change to the configuration, whoever made it (the API, a macro,
         #: net mode). The API sends the version it last saw to detect a concurrent change.
@@ -489,6 +500,57 @@ class ControlServer:
             ))
         _logger.info("config.change applied (%d settings: %s)", len(request.values), ", ".join(sorted(request.values)))
         return self._config_result(request, ConfigResult.APPLIED)
+
+    # -- commands (the trusted API channel) -----------------------------------------------------
+
+    def _command_result(self, request: CoreCommand, status: CommandStatus, error: Optional[StructuredError] = None) -> dict:
+        message = CommandResult(
+            header=self._header(request_id=request.header.message_id, correlation_id=request.header.correlation_id),
+            status=status, error=error,
+        )
+        return json.loads(message.model_dump_json())
+
+    def _command_refused(self, request: CoreCommand, code: str, message: str, retryable: bool = False) -> dict:
+        _logger.warning("core.command %s refused (%s)", request.command.value, code)
+        return self._command_result(
+            request, CommandStatus.REJECTED, StructuredError(code=code, message=message, retryable=retryable)
+        )
+
+    async def _command(self, body: bytes) -> dict:
+        """`POST /command`: a `core.command` in, a `core.command.result` out. Parameters are
+        checked here as well as by the contract; a refused command does nothing."""
+        try:
+            request = CoreCommand.model_validate_json(body)
+        except ValidationError as error:
+            problems = [{"at": [str(part) for part in e["loc"]], "type": e["type"]} for e in error.errors()]
+            raise _BadRequest(400, "not a valid core.command", problems=problems) from None
+        service, name, params = self._service, request.command, request.params
+        if name in SIMULATED and not self._allow_simulate:
+            return self._command_refused(
+                request, "command.simulation_disabled",
+                "This core is on a real radio and does not accept simulated events. "
+                "Start it with MOREOPENREPEATER_CORE_SIMULATE=1 to allow them.",
+            )
+        if name is CommandName.CLEAR_LOCKOUT and not service.locked_out:
+            return self._command_refused(request, "command.not_locked_out", "The repeater isn't locked out.")
+        try:
+            if name is CommandName.CLEAR_LOCKOUT:
+                service.clear_lockout()
+            elif name is CommandName.SET_NET_ACTIVE:
+                service.set_net_active(params["active"])
+            elif name is CommandName.SIMULATE_COS:
+                service.simulate_cos(params["active"])
+            elif name is CommandName.SIMULATE_CTCSS:
+                service.simulate_ctcss(params["tone_hz"])
+            elif name is CommandName.SIMULATE_DTMF:
+                service.simulate_dtmf(params["digit"])
+            elif name is CommandName.SIMULATE_REMOTE_KEYED:
+                service.simulate_remote_keyed(params["node_id"], params["keyed"])
+        except Exception:  # noqa: BLE001 - nothing a client sent may reach the controller as a crash
+            _logger.exception("core.command %s could not be applied", name.value)
+            return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
+        _logger.info("core.command %s applied", name.value)  # names only, never parameters
+        return self._command_result(request, CommandStatus.APPLIED)
 
     # -- speak.request ----------------------------------------------------------------
 

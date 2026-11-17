@@ -10,6 +10,7 @@ from .events import (
     PttCommanded, PttEvidence, PttFeedback, PttReason, TransmissionEnded, TransmissionStarted, TxEndReason,
     core_event_adapter,
 )
+from .commands import SIMULATED, CommandName, CommandResult, CommandStatus, CoreCommand
 from .configuration import ConfigApplied, ConfigChange, ConfigResult, ConfigSnapshot, ConfigState
 from .health import HealthCheck, HealthReport, HealthState
 from .emit import DeliveryError, Emitter, ListSink, StdoutSink, UnixDatagramSink
@@ -25,11 +26,16 @@ from .versioning import CONTRACT_VERSION, is_compatible
 
 __all__ = [
     "CONTRACT_VERSION",
+    "SIMULATED",
+    "CommandName",
+    "CommandResult",
+    "CommandStatus",
     "ConfigApplied",
     "ConfigChange",
     "ConfigResult",
     "ConfigSnapshot",
     "ConfigState",
+    "CoreCommand",
     "CoreStatus",
     "DeviceAccess",
     "DeviceNeed",

@@ -30,7 +30,7 @@ from .models import AuditEntryResponse, ConfigResponse, SessionResponse, Snapsho
 from .node_directory import NodeDirectory
 from .notify import Notifier
 from .persistence import StateStore
-from .service.core_handle import ConfigRefused, CoreUnavailable
+from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
 from .recordings import RecordingStore
 from .routes import accounts as accounts_routes
 from .routes import activity as activity_routes
@@ -222,6 +222,11 @@ def create_app(
     async def core_refused_a_change(request: Request, error: ConfigRefused) -> JSONResponse:
         # The core checked the change and refused it. Nothing was applied.
         return JSONResponse(status_code=422, content={"detail": error.message, "code": error.code})
+
+    @app.exception_handler(CommandRefused)
+    async def core_refused_a_command(request: Request, error: CommandRefused) -> JSONResponse:
+        status = {"command.not_locked_out": 409, "command.simulation_disabled": 403}.get(error.code, 422)
+        return JSONResponse(status_code=status, content={"detail": error.message, "code": error.code})
 
     @app.exception_handler(CoreUnavailable)
     async def core_is_unavailable(request: Request, error: CoreUnavailable) -> JSONResponse:

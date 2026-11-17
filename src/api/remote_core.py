@@ -49,8 +49,10 @@ from controller.config import RepeaterConfig
 from controller.macros import Macro
 from controller.modes import effective_config
 
+from .core_runtime import AnnouncementQueueFull
 from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
-from playout.renderer import ASSET_PREFIX, TTS_PREFIX
+from playout.renderer import ASSET_PREFIX, TTS_PREFIX, UnknownClipError
+from playout.tts import TTSError
 
 from .service.snapshot import StatusSnapshot
 
@@ -89,9 +91,11 @@ class RemoteCore:
         self._config_version: Optional[int] = None  # the version `_config` is at
         self._announced_version: Optional[int] = None  # the newest version the core has told us of
         self._fetching: Optional[asyncio.Task] = None
+        self._read_again = False  # a refresh was asked for while a read was running
         self._macros: Optional[list[Macro]] = None
         self._announcements: list[Announcement] = []
         self._next_runs: dict[str, Optional[datetime]] = {}
+        self._speaking: set[asyncio.Task] = set()  # fire-and-forget speak() calls in flight
         self._sequencer = Sequencer()
 
     # -- lifecycle ------------------------------------------------------------
@@ -106,6 +110,8 @@ class RemoteCore:
         # The flag matters: on Python 3.11 a cancel that lands inside the HTTP client while
         # we are retrying a dead socket can be swallowed, and then only the flag ends the loop.
         self._stopping = True
+        for pending in list(self._speaking):
+            pending.cancel()
         for name in ("_task", "_fetching"):
             task, current = getattr(self, name), None
             setattr(self, name, current)
@@ -327,17 +333,22 @@ class RemoteCore:
         return httpx.AsyncClient(transport=transport, base_url="http://core", timeout=timeout)
 
     def _refresh_config(self) -> None:
-        """Read the configuration again, soon. One read at a time; it picks up the newest."""
+        """Read the configuration (and programming) again, soon. One read runs at a time. A
+        request that arrives while one runs is not dropped: the running read goes round again."""
+        self._read_again = True
         if self._fetching is None or self._fetching.done():
             self._fetching = asyncio.ensure_future(self._fetch_config_quietly())
 
     async def _fetch_config_quietly(self) -> None:
         try:
-            await self._fetch_config()
-            await self._fetch_programming()
+            while self._read_again:
+                self._read_again = False
+                await self._fetch_config()
+                await self._fetch_programming()
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 - the next status event tries again
+            self._read_again = False
             _logger.warning("could not read the core's configuration: %s", type(error).__name__)
 
     async def _fetch_config(self) -> None:
@@ -372,6 +383,41 @@ class RemoteCore:
             when = item.get("next_run")
             runs[announcement.id] = datetime.fromisoformat(when) if when else None
         self._macros, self._announcements, self._next_runs = macros, announcements, runs
+
+    async def render_and_queue(self, clip: str, *, on_linked_radio: bool = False) -> None:
+        """Have the core render a clip and queue it to play, like `CoreRuntime.render_and_queue`,
+        and raise the same errors: `UnknownClipError`, `TTSError`, `AnnouncementQueueFull`.
+        Raises `CoreUnavailable` if the core could not be reached."""
+        try:
+            await self.command("queue_clip", clip=clip, on_linked_radio=on_linked_radio)
+        except CommandRefused as refused:
+            if refused.code == "command.unknown_clip":
+                raise UnknownClipError(refused.message) from None
+            if refused.code in ("command.render_failed", "command.render_timeout"):
+                raise TTSError(refused.message) from None
+            if refused.code == "command.queue_full":
+                raise AnnouncementQueueFull(refused.message) from None
+            raise
+
+    def speak(self, clip: str, *, on_linked_radio: bool = False) -> None:
+        """Queue a clip without waiting, as the service's `speak` does in process: the
+        caller is not told how it went, and a failure is logged (never the clip, which can
+        be the text of an announcement). Needs a running event loop."""
+        try:
+            task = asyncio.get_running_loop().create_task(self._speak_quietly(clip, on_linked_radio))
+        except RuntimeError:
+            _logger.warning("speak() needs a running event loop; the clip was dropped")
+            return
+        self._speaking.add(task)
+        task.add_done_callback(self._speaking.discard)
+
+    async def _speak_quietly(self, clip: str, on_linked_radio: bool) -> None:
+        try:
+            await self.render_and_queue(clip, on_linked_radio=on_linked_radio)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - nobody is waiting on this
+            _logger.warning("could not queue a spoken clip: %s", type(error).__name__)
 
     def _header(self) -> Header:
         return Header(

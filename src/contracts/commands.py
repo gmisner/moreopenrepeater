@@ -33,6 +33,7 @@ class CommandName(str, Enum):
     DELETE_MACRO = "delete_macro"
     SAVE_ANNOUNCEMENT = "save_announcement"
     DELETE_ANNOUNCEMENT = "delete_announcement"
+    QUEUE_CLIP = "queue_clip"
 
 
 #: The commands that make the controller act on an event that did not come from the radio.
@@ -47,6 +48,8 @@ PROGRAMMING = frozenset(
 
 _DTMF = re.compile(r"^[0-9A-D*#]$")
 _NODE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+#: The longest clip name the core takes: "tts:" and up to 2000 characters of text, with room.
+MAX_CLIP_CHARS = 2100
 _PATTERN = re.compile(r"^[0-9A-D*#]{1,32}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 MAX_OBJECT_KEYS = 32
@@ -65,6 +68,9 @@ _PARAMS: dict[CommandName, dict[str, str]] = {
     CommandName.DELETE_MACRO: {"pattern": "pattern"},
     CommandName.SAVE_ANNOUNCEMENT: {"announcement": "object"},
     CommandName.DELETE_ANNOUNCEMENT: {"announcement_id": "identifier"},
+    # Render a clip (a recording, or text to speech, or "id") and queue it to play. The
+    # clip name is content: it can be the text of an announcement, so it is never logged.
+    CommandName.QUEUE_CLIP: {"clip": "clip", "on_linked_radio": "bool"},
 }
 
 
@@ -79,6 +85,8 @@ def _valid(kind: str, value: Any) -> bool:
         return isinstance(value, str) and bool(_DTMF.match(value))
     if kind == "node":
         return isinstance(value, str) and bool(_NODE.match(value))
+    if kind == "clip":
+        return isinstance(value, str) and 0 < len(value) <= MAX_CLIP_CHARS and "\x00" not in value
     if kind == "pattern":
         return isinstance(value, str) and bool(_PATTERN.match(value))
     if kind == "identifier":

@@ -136,6 +136,30 @@ def test_a_change_announced_while_the_configuration_is_being_read_is_not_lost(co
     run(core, sock_dir, scenario)
 
 
+def test_a_change_announced_while_the_programming_is_being_read_is_not_lost(core, sock_dir):
+    """A read is the configuration and then the programming. A version announced during
+    either part must make the cache read again, not be dropped because a read is running."""
+
+    async def scenario(remote, server):
+        started, gate = asyncio.Event(), asyncio.Event()
+        real = remote._fetch_programming
+
+        async def held():
+            started.set()
+            await gate.wait()
+            await real()
+
+        remote._fetch_programming = held
+        core.service.update_config(tot_duration=11.0)
+        await asyncio.wait_for(started.wait(), 5)  # a read is now running, held at its second part
+        core.service.update_config(tot_duration=77.0)  # announced while it runs
+        await asyncio.sleep(0.2)  # let the announcement reach the cache and be dropped, or not
+        gate.set()
+        await until(lambda: remote.saved_config.tot_duration == 77.0)
+
+    run(core, sock_dir, scenario)
+
+
 def test_the_effective_configuration_follows_net_mode(core, sock_dir):
     core.service.update_config(tot_duration=100.0, net_tot_duration=500.0)
 

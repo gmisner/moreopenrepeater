@@ -252,11 +252,12 @@ def test_a_malformed_event_is_skipped_and_the_stream_goes_on(sock_dir):
 
 # --- scope -------------------------------------------------------------------------------------
 
-def test_the_only_write_is_change_config():
+def test_writes_only_go_through_the_core_s_own_answer():
     remote = RemoteCore(Path("/nonexistent"))
-    for write in ("update_config", "clear_lockout", "set_net_active", "simulate_cos", "import_snapshot", "speak"):
+    for write in ("update_config", "clear_lockout", "set_net_active", "simulate_cos", "import_snapshot"):
         assert not hasattr(remote, write), f"RemoteCore must not offer {write} yet"
-    assert hasattr(remote, "change_config")  # slice 7c-3b: waits for the core's own answer
+    # The ways it can act, each of which waits for (or, for speak, hands off to) the core.
+    assert all(hasattr(remote, name) for name in ("change_config", "command", "render_and_queue", "speak"))
 
 
 def test_remote_core_imports_no_web_framework():

@@ -77,6 +77,7 @@ from .net import POLL_SECONDS as NET_POLL_SECONDS
 from .net import NetMode
 from .node_directory import NodeDirectory
 from .notify import Notifier
+from .loops import run_announcement_loop, run_long_id_warm_loop, run_tick_loop
 from .persistence import StateStore
 from .recordings import RecordingStore
 from .remote_base import RemoteBase
@@ -939,14 +940,11 @@ class AppRuntime:
                 await asyncio.sleep(APRS_PRUNE_SECONDS)
                 await asyncio.get_running_loop().run_in_executor(None, aprs_stations.prune, aprs_window_start())
 
-        async def announcement_loop() -> None:
-            while True:
-                await asyncio.sleep(ANNOUNCEMENT_POLL_SECONDS)
-                for clip, on_linked_radio in service.due_announcements():
-                    try:
-                        await render_and_queue(clip, on_linked_radio=on_linked_radio)
-                    except (UnknownClipError, TTSError, HTTPException):
-                        _announce_logger.exception("couldn't play scheduled announcement %s", clip)
+        def announcement_loop():
+            return run_announcement_loop(
+                service, render_and_queue, ANNOUNCEMENT_POLL_SECONDS,
+                (UnknownClipError, TTSError, HTTPException), _announce_logger,
+            )
 
         async def weather_schedule_loop() -> None:
             """Routine METAR / alert-summary announcements on wx_schedule_minutes."""
@@ -1066,10 +1064,10 @@ class AppRuntime:
                 await asyncio.sleep(BACKUP_CHECK_SECONDS)
                 await loop.run_in_executor(None, backups.run_schedule, backup_sources, service.config, time.time())
 
-        async def long_id_loop() -> None:
-            while True:
-                await asyncio.sleep(LONG_ID_WARM_SECONDS)
-                await asyncio.get_running_loop().run_in_executor(None, renderer.warm_long_id, service.config)
+        def long_id_loop():
+            return run_long_id_warm_loop(
+                renderer.warm_long_id, lambda: service.config, LONG_ID_WARM_SECONDS, _announce_logger
+            )
 
         async def activity_flush_loop() -> None:
             while True:
@@ -1115,14 +1113,7 @@ class AppRuntime:
             # Before the audio engines, so a pin taken from the fan is released before they claim it.
             tx_fan.start()
             if start_background_tick:
-                async def tick_loop() -> None:
-                    last_tick[0] = time.monotonic()
-                    while True:
-                        await asyncio.sleep(TICK_INTERVAL_SECONDS)
-                        service.tick()
-                        last_tick[0] = time.monotonic()
-
-                tasks.append(asyncio.create_task(tick_loop()))
+                tasks.append(asyncio.create_task(run_tick_loop(service, last_tick, TICK_INTERVAL_SECONDS)))
                 tasks.append(asyncio.create_task(aprs_beacon_loop()))
                 tasks.append(asyncio.create_task(announcement_loop()))
                 tasks.append(asyncio.create_task(weather_schedule_loop()))

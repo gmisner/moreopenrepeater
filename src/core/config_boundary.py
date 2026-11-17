@@ -23,8 +23,10 @@ import logging
 import math
 from pathlib import Path
 
+import dataclasses
+
 from api.service.snapshot import config_from_snapshot
-from controller.config import RepeaterConfig
+from controller.config import CONFIG_FIELDS, RepeaterConfig
 
 _logger = logging.getLogger("moreopenrepeater.core")
 
@@ -100,3 +102,57 @@ def check_config(config: RepeaterConfig) -> tuple[RepeaterConfig, list[str]]:
 def load_config(path: Path) -> tuple[RepeaterConfig, list[str]]:
     """The saved configuration at `path`, checked."""
     return check_config(config_from_snapshot(read_snapshot(path)))
+
+
+class ConfigRejected(Exception):
+    """A change the core will not apply. `code` is stable; `message` names settings, never values."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def _type_ok(current: object, value: object, optional: bool) -> bool:
+    if value is None:
+        return optional or current is None
+    if isinstance(current, bool):
+        return isinstance(value, bool)
+    if isinstance(current, (int, float)):
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if isinstance(current, str):
+        # An enum that is also a string (a style, a mode) arrives as its text.
+        return isinstance(value, str)
+    if isinstance(current, (list, dict)):
+        return isinstance(value, type(current))
+    return True  # nothing here the core can compare safely; the checks below still run
+
+
+def check_change(current: RepeaterConfig, values: dict) -> RepeaterConfig:
+    """The configuration that results from changing `current` by `values`, or `ConfigRejected`.
+
+    This is the core's own check of a change that arrives over the control socket, so a bug
+    or a hand-written client cannot hand the controller a zero time-out. It is stricter than
+    the start-up check: a start-up repairs an unsafe number to keep the repeater up, but a
+    change that asks for one is refused and nothing is applied."""
+    unknown = sorted(k for k in values if k not in CONFIG_FIELDS)
+    if unknown:
+        raise ConfigRejected("config.unknown_setting", f"not a setting: {', '.join(unknown)}")
+    annotations = {f.name: str(f.type) for f in dataclasses.fields(RepeaterConfig)}
+    wrong = sorted(
+        k for k, v in values.items()
+        if not _type_ok(getattr(current, k), v, "Optional" in annotations[k] or "None" in annotations[k])
+    )
+    if wrong:
+        raise ConfigRejected("config.wrong_type", f"wrong kind of value for: {', '.join(wrong)}")
+    try:
+        candidate = current.replace_flat(**values)
+        checked, notes = check_config(candidate)
+    except CoreConfigError as error:
+        raise ConfigRejected("config.unsafe", str(error)) from None
+    except (TypeError, ValueError):
+        raise ConfigRejected("config.invalid", "the settings could not be combined into a configuration") from None
+    if notes:
+        names = sorted(k for k in values if k in _POSITIVE + _NON_NEGATIVE)
+        raise ConfigRejected("config.unsafe", f"not a usable number: {', '.join(names)}")
+    return checked

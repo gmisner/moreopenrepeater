@@ -98,9 +98,9 @@ def test_severity_matches_logging_levels():
 
 
 def test_contract_compatibility_rules():
-    assert CONTRACT_VERSION == (1, 1)
-    assert is_compatible((1, 0))  # a module built for 1.0 still works with a 1.1 core
-    assert not is_compatible((1, 2))
+    assert CONTRACT_VERSION == (1, 2)
+    assert is_compatible((1, 0)) and is_compatible((1, 1))  # older modules still work with a 1.2 core
+    assert not is_compatible((1, 3))
     assert is_compatible((1, 0), (1, 2))
     assert not is_compatible((1, 3), (1, 2))
     assert not is_compatible((2, 0), (1, 2))

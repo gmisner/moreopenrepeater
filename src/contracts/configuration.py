@@ -56,3 +56,35 @@ class ConfigApplied(Message):
         if self.result is ConfigResult.REJECTED and self.error is None:
             raise ValueError("a rejected config needs an error")
         return self
+
+
+# -- The trusted channel between the API and the core -------------------------------------
+#
+# `ConfigSnapshot` goes to modules and refuses secrets. These two go over the core's
+# control socket to the API, which is the same machine and the same user group, and the
+# API must be able to read and change the WHOLE configuration, the autopatch PIN and the
+# other credentials included. They are not for modules and must never be sent to one.
+# Nothing may log `values`.
+
+
+class ConfigState(Message):
+    """The core's whole saved configuration, as the API reads it (`GET /config`)."""
+
+    kind: Literal["config.state"] = "config.state"
+    #: Starts at 1 when the core starts and rises with every change to its configuration.
+    config_version: int = Field(ge=1)
+    #: Every setting by its flat name, secrets included. Never logged.
+    values: dict[str, Any] = Field(repr=False)
+
+
+class ConfigChange(Message):
+    """The API asks the core to change some settings (`POST /config`). The core checks the
+    change itself and answers with a `ConfigApplied` whose `header.request_id` is this
+    message's `header.message_id`."""
+
+    kind: Literal["config.change"] = "config.change"
+    #: Only the settings to change, by flat name. Never logged.
+    values: dict[str, Any] = Field(min_length=1, max_length=400, repr=False)
+    #: When set, the change is refused unless the core is still at this version, so two
+    #: writers cannot silently overwrite each other.
+    expected_version: Optional[int] = Field(default=None, ge=1)

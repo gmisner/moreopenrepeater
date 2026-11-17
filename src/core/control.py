@@ -38,6 +38,10 @@ from typing import Awaitable, Callable, Optional
 from pydantic import ValidationError
 
 from contracts import (
+    ConfigApplied,
+    ConfigChange,
+    ConfigResult,
+    ConfigState,
     CoreStatus,
     HealthCheck,
     HealthReport,
@@ -56,6 +60,8 @@ from contracts import (
     screen_speak_request,
 )
 from playout.renderer import TTS_PREFIX, UnknownClipError
+
+from .config_boundary import ConfigRejected, check_change
 from playout.tts import TTSError
 
 _logger = logging.getLogger("moreopenrepeater.core.control")
@@ -77,6 +83,8 @@ MIN_EVENT_INTERVAL_SECONDS = 0.1  # status events are coalesced to at most ten a
 #: real value is off from that count by more than this, or starts or stops existing.
 COUNTDOWN_TOLERANCE_SECONDS = 1.0
 MAX_BODY_BYTES = 16 * 1024
+#: A configuration change can carry a few large settings; still bounded.
+MAX_CONFIG_BODY_BYTES = 64 * 1024
 RENDER_DEADLINE_SECONDS = 30.0  # to prepare speech before giving up on a request
 #: Longer than any normal pause (the tick runs every 50 ms); the same figure the
 #: systemd watchdog uses.
@@ -114,8 +122,15 @@ class ControlServer:
         self.refused = 0  # connections turned away at the limit
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._ledger = IdempotencyLedger()
-        self._get: dict[str, Callable[[], dict]] = {"/health": self._health, "/status": self._status}
-        self._post: dict[str, Callable[[bytes], Awaitable[dict]]] = {"/speak": self._speak}
+        self._get: dict[str, Callable[[], dict]] = {
+            "/health": self._health, "/status": self._status, "/config": self._config_state,
+        }
+        self._post: dict[str, Callable[[bytes], Awaitable[dict]]] = {"/speak": self._speak, "/config": self._config_change}
+        self._body_limits = {"/config": MAX_CONFIG_BODY_BYTES}
+        #: Rises with every change to the configuration, whoever made it (the API, a macro,
+        #: net mode). The API sends the version it last saw to detect a concurrent change.
+        self._config_version = 1
+        service.add_config_listener(self._config_changed)
 
     # -- lifecycle ------------------------------------------------------------
 
@@ -244,8 +259,9 @@ class ControlServer:
             raise _BadRequest(411, "a content-length is required")
         if not length.isdigit():
             raise _BadRequest(400, "bad content-length")
-        if int(length) > MAX_BODY_BYTES:
-            raise _BadRequest(413, f"the body may be at most {MAX_BODY_BYTES} bytes")
+        limit = self._body_limits.get(target.split("?", 1)[0], MAX_BODY_BYTES)
+        if int(length) > limit:
+            raise _BadRequest(413, f"the body may be at most {limit} bytes")
         if content_type != "application/json":
             raise _BadRequest(415, "send application/json")
         try:
@@ -400,6 +416,57 @@ class ControlServer:
             checks=checks,
         )
         return json.loads(message.model_dump_json())
+
+    # -- configuration (the trusted API channel) ------------------------------------------
+
+    def _config_changed(self, _config) -> None:
+        self._config_version += 1
+
+    def _config_state(self) -> dict:
+        """`GET /config`: the whole saved configuration, secrets included. This channel is the
+        socket's file permissions; the body is never logged."""
+        message = ConfigState(
+            header=self._header(), config_version=self._config_version,
+            values=self._service.saved_config.to_flat_dict(),
+        )
+        return json.loads(message.model_dump_json())
+
+    def _config_result(self, request: ConfigChange, result: ConfigResult, error: Optional[StructuredError] = None) -> dict:
+        message = ConfigApplied(
+            header=self._header(request_id=request.header.message_id, correlation_id=request.header.correlation_id),
+            config_version=self._config_version, result=result, error=error,
+        )
+        return json.loads(message.model_dump_json())
+
+    async def _config_change(self, body: bytes) -> dict:
+        """`POST /config`: a `config.change` in, a `config.applied` out. The core checks the
+        change itself; a refused change applies nothing. The values are never logged or echoed."""
+        try:
+            request = ConfigChange.model_validate_json(body)
+        except ValidationError as error:
+            problems = [{"at": [str(part) for part in e["loc"]], "type": e["type"]} for e in error.errors()]
+            raise _BadRequest(400, "not a valid config.change", problems=problems) from None
+        if request.expected_version is not None and request.expected_version != self._config_version:
+            return self._config_result(request, ConfigResult.REJECTED, StructuredError(
+                code="config.conflict", retryable=True,
+                message=f"the configuration changed since version {request.expected_version}; read it again",
+            ))
+        try:
+            check_change(self._service.saved_config, request.values)
+        except ConfigRejected as rejected:
+            _logger.warning("config.change refused (%s)", rejected.code)
+            return self._config_result(request, ConfigResult.REJECTED, StructuredError(
+                code=rejected.code, message=rejected.message, retryable=False,
+            ))
+        try:
+            self._service.update_config(**request.values)
+        except Exception:  # noqa: BLE001 - nothing the client sent may reach the controller as a crash
+            _logger.exception("config.change could not be applied")
+            return self._config_result(request, ConfigResult.REJECTED, StructuredError(
+                code="config.apply_failed", message="the core could not apply the change", retryable=True,
+            ))
+        _logger.info("config.change applied (%d settings: %s)", len(request.values), ", ".join(sorted(request.values)))
+        return self._config_result(request, ConfigResult.APPLIED)
 
     # -- speak.request ----------------------------------------------------------------
 

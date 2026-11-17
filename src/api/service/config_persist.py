@@ -30,7 +30,9 @@ class ConfigPersistence:
 
     def update(self, **overrides: object) -> RepeaterConfig:
         """Change saved settings; returns the new saved settings."""
-        _logger.info("update_config(%s)", overrides)
+        # Names only. The values can be credentials (the autopatch PIN, for one) and a log
+        # is copied into support bundles and shipped off the machine.
+        _logger.info("update_config(%s)", ", ".join(sorted(overrides)))
         self.apply(self.saved.replace_flat(**overrides), persist=True)
         return self.saved
 

@@ -64,6 +64,7 @@ RETRY_DELAYS = (0.5, 1.0, 2.0, 5.0)  # then the last one, forever
 MAX_LINE_BYTES = 64 * 1024
 REQUEST_TIMEOUT_SECONDS = 5.0  # a write must not hang the dashboard
 MAX_CONFIG_BYTES = 1024 * 1024  # what we will read back from the core
+MAX_CONFIG_READS = 5  # reads in a row while the core keeps announcing something newer
 
 #: What a snapshot says while nothing is known. The state is not one the controller
 #: has, so a dashboard cannot mistake it for the radio's state.
@@ -340,15 +341,20 @@ class RemoteCore:
             _logger.warning("could not read the core's configuration: %s", type(error).__name__)
 
     async def _fetch_config(self) -> None:
-        async with self._client() as client:
-            response = await client.get("/config")
-        if response.status_code != 200 or len(response.content) > MAX_CONFIG_BYTES:
-            raise RuntimeError(f"core answered {response.status_code}")
-        state = ConfigState.model_validate_json(response.content)
-        self._config = RepeaterConfig.from_flat_dict(state.values)  # values are never logged
-        self._config_version = state.config_version
-        if self._announced_version is not None and self._announced_version != state.config_version:
-            self._refresh_config()  # it moved on while we were reading
+        # Read again while the core has announced a newer version than the one we got. A
+        # new announcement that arrives mid-read cannot start its own read (one at a time),
+        # so this loop is what keeps it from being lost. Bounded: a stale announcement, for
+        # example from before a core restart, must not make us spin.
+        for _ in range(MAX_CONFIG_READS):
+            async with self._client() as client:
+                response = await client.get("/config")
+            if response.status_code != 200 or len(response.content) > MAX_CONFIG_BYTES:
+                raise RuntimeError(f"core answered {response.status_code}")
+            state = ConfigState.model_validate_json(response.content)
+            self._config = RepeaterConfig.from_flat_dict(state.values)  # values are never logged
+            self._config_version = state.config_version
+            if self._announced_version is None or self._announced_version == state.config_version:
+                return
 
     async def _fetch_programming(self) -> None:
         async with self._client() as client:

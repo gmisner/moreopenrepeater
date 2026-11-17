@@ -72,13 +72,15 @@ def register(
     @app.post("/api/macros", response_model=list[MacroResponse], dependencies=auth_dependencies)
     async def add_macro(body: MacroCreateRequest) -> list[MacroResponse]:
         macro = Macro(**body.model_dump())
-        return [_macro_response(m) for m in service.add_macro(macro)]
+        await service.command("add_macro", macro=dataclasses.asdict(macro))
+        return [_macro_response(m) for m in service.list_macros()]
 
     @app.delete("/api/macros/{pattern}", response_model=list[MacroResponse], dependencies=auth_dependencies)
     async def delete_macro(pattern: str) -> list[MacroResponse]:
         if pattern not in {m.pattern for m in service.list_macros()}:
             raise HTTPException(status_code=404, detail=f"No macro with pattern {pattern!r}")
-        return [_macro_response(m) for m in service.delete_macro(pattern)]
+        await service.command("delete_macro", pattern=pattern)
+        return [_macro_response(m) for m in service.list_macros()]
 
     def find_announcement(announcement_id: str) -> Announcement:
         for announcement in service.list_announcements():
@@ -86,11 +88,12 @@ def register(
                 return announcement
         raise HTTPException(status_code=404, detail=f"No announcement with id {announcement_id!r}")
 
-    def save_announcement(announcement_id: str, body: AnnouncementFields) -> AnnouncementResponse:
+    async def save_announcement(announcement_id: str, body: AnnouncementFields) -> AnnouncementResponse:
         if body.asset_id and not assets_store.has(body.asset_id):
             raise HTTPException(status_code=400, detail=f"No audio clip with id {body.asset_id!r}")
         announcement = Announcement(id=announcement_id, **body.model_dump())
-        return _announcement_response(service, service.save_announcement(announcement))
+        await service.command("save_announcement", announcement=dataclasses.asdict(announcement))
+        return _announcement_response(service, announcement)
 
     @app.get("/api/announcements", response_model=list[AnnouncementResponse], dependencies=auth_dependencies)
     def list_announcements() -> list[AnnouncementResponse]:
@@ -98,17 +101,17 @@ def register(
 
     @app.post("/api/announcements", response_model=AnnouncementResponse, dependencies=auth_dependencies)
     async def create_announcement(body: AnnouncementFields) -> AnnouncementResponse:
-        return save_announcement(uuid.uuid4().hex, body)
+        return await save_announcement(uuid.uuid4().hex, body)
 
     @app.put("/api/announcements/{announcement_id}", response_model=AnnouncementResponse, dependencies=auth_dependencies)
     async def update_announcement(announcement_id: str, body: AnnouncementFields) -> AnnouncementResponse:
         find_announcement(announcement_id)
-        return save_announcement(announcement_id, body)
+        return await save_announcement(announcement_id, body)
 
     @app.delete("/api/announcements/{announcement_id}", dependencies=auth_dependencies)
     async def delete_announcement(announcement_id: str) -> dict:
         find_announcement(announcement_id)
-        service.delete_announcement(announcement_id)
+        await service.command("delete_announcement", announcement_id=announcement_id)
         return {"deleted": announcement_id}
 
     @app.post("/api/announcements/{announcement_id}/play", response_model=StatusResponse, dependencies=transmit_dependencies)

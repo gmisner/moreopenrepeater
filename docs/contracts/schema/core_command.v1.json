@@ -7,7 +7,11 @@
         "simulate_cos",
         "simulate_ctcss",
         "simulate_dtmf",
-        "simulate_remote_keyed"
+        "simulate_remote_keyed",
+        "add_macro",
+        "delete_macro",
+        "save_announcement",
+        "delete_announcement"
       ],
       "title": "CommandName",
       "type": "string"

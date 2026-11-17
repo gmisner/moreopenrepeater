@@ -88,3 +88,15 @@ class ConfigChange(Message):
     #: When set, the change is refused unless the core is still at this version, so two
     #: writers cannot silently overwrite each other.
     expected_version: Optional[int] = Field(default=None, ge=1)
+
+
+class ProgrammingState(Message):
+    """The macros and scheduled announcements the core holds (`GET /programming`). For the
+    API's trusted channel, like `ConfigState`. An announcement carries `next_run` (an ISO
+    time or null), which only the core's scheduler knows."""
+
+    kind: Literal["programming.state"] = "programming.state"
+    #: The same number `config.state` carries: it rises when either changes.
+    version: int = Field(ge=1)
+    macros: list[dict[str, Any]] = Field(max_length=1000)
+    announcements: list[dict[str, Any]] = Field(max_length=1000)

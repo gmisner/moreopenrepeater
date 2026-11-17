@@ -115,6 +115,27 @@ def test_a_change_made_elsewhere_reaches_the_cache(core, sock_dir):
     run(core, sock_dir, scenario)
 
 
+def test_a_change_announced_while_the_configuration_is_being_read_is_not_lost(core, sock_dir):
+    """The first read after the announcement can return the configuration from just before the
+    change. The cache must notice it is behind and read again, not wait for the next status."""
+
+    async def scenario(remote, server):
+        real = server._get["/config"]
+        stale = real()
+        reads = []
+
+        def first_read_is_stale():
+            reads.append(1)
+            return stale if len(reads) == 1 else real()
+
+        server._get["/config"] = first_read_is_stale
+        core.service.update_config(tot_duration=77.0)
+        await until(lambda: remote.saved_config.tot_duration == 77.0)
+        assert len(reads) >= 2
+
+    run(core, sock_dir, scenario)
+
+
 def test_the_effective_configuration_follows_net_mode(core, sock_dir):
     core.service.update_config(tot_duration=100.0, net_tot_duration=500.0)
 

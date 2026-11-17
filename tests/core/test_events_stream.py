@@ -154,7 +154,7 @@ def test_streams_beyond_the_limit_are_refused_and_do_not_use_up_other_slots(core
 
 
 def test_a_client_that_never_reads_is_dropped_without_slowing_the_core(core, sock_dir, monkeypatch):
-    monkeypatch.setattr(control_module, "STREAM_WRITE_DEADLINE_SECONDS", 0.3)
+    monkeypatch.setattr(control_module, "STREAM_WRITE_DEADLINE_SECONDS", 1.0)  # a real block would hold the loop this long
     monkeypatch.setattr(control_module, "MIN_EVENT_INTERVAL_SECONDS", 0.0)
 
     async def scenario(path, server):
@@ -185,7 +185,7 @@ def test_a_client_that_never_reads_is_dropped_without_slowing_the_core(core, soc
         sock.close()
         assert server._streams == 0, "the stalled client was not dropped"
         gaps = [b - a for a, b in zip(beats, beats[1:])]
-        assert max(gaps) < 0.25, "the event loop was held up"
+        assert max(gaps) < 0.6, "the event loop was held up"  # a block lasts the write deadline (1 s); CI noise does not
         assert time.monotonic() - before < 15
 
     run(core, sock_dir, scenario)

@@ -73,6 +73,12 @@ curl -N --unix-socket /run/moreopenrepeater/core.sock http://core/events
   hangs up, is dropped, and it never slows the controller. Stopping the core ends
   every open stream.
 
+### `GET /programming`
+
+The macros and the scheduled announcements, as a `programming.state`: each announcement
+carries `next_run`, which only the core's scheduler knows. It carries the same
+`version` as `/config`. For the API's trusted channel.
+
 ### `GET /config` and `POST /config` (the API's channel)
 
 For the API, not for modules. `GET /config` returns a `config.state`: the whole saved
@@ -117,6 +123,13 @@ by the contract and again by the core.
   answer is `command.simulation_disabled`. Start the core with
   `MOREOPENREPEATER_CORE_SIMULATE=1` to allow it (a bench or test core).
 - `clear_lockout` when nothing is locked out is `command.not_locked_out`.
+- `add_macro(macro)`, `delete_macro(pattern)`, `save_announcement(announcement)` and
+  `delete_announcement(announcement_id)` change the macros and the scheduled
+  announcements. The core validates a macro or an announcement with the same models the
+  dashboard's routes use (`api.models.programming`), so the rules cannot drift
+  (`command.invalid_macro`, `command.invalid_announcement`, `command.unknown_asset`).
+  They are saved to `state.json` and count as a change for `config_version`. Deleting
+  something that is not there is not an error.
 - The log names the command and never its parameters.
 
 ### `POST /speak`

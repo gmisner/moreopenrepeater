@@ -60,6 +60,7 @@ class CoreApp:
     state_path: Path
     #: Settings that were replaced because they were not safe numbers.
     config_notes: list[str]
+    assets_store: AudioAssetStore
 
 
 def data_root(env: Mapping[str, str]) -> Path:
@@ -141,7 +142,7 @@ def build_core(env: Optional[Mapping[str, str]] = None) -> CoreApp:
         dmr_audio=dmr_audio,
         watchdog=watchdog,
     )
-    return CoreApp(runtime, service, activity_store, state_path, config_notes)
+    return CoreApp(runtime, service, activity_store, state_path, config_notes, assets_store)
 
 
 def _checked_names(notes: list[str]) -> list[str]:

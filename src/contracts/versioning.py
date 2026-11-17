@@ -8,7 +8,7 @@ means, is a new major.
 """
 from __future__ import annotations
 
-CONTRACT_VERSION = (1, 0)
+CONTRACT_VERSION = (1, 1)
 
 
 def parse_version(text: str) -> tuple[int, int]:

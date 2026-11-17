@@ -107,8 +107,31 @@
   "additionalProperties": false,
   "description": "A snapshot of the repeater, with commanded and observed PTT kept apart.\n\n`ptt_commanded` is what the core asked for. It is not proof of\ntransmission. `ptt_observed` and `ptt_evidence` say what was seen, and\n`ptt_observed: null` means \"could not tell\".",
   "properties": {
+    "callsign": {
+      "default": "",
+      "maxLength": 16,
+      "title": "Callsign",
+      "type": "string"
+    },
     "cos_active": {
       "title": "Cos Active",
+      "type": "boolean"
+    },
+    "ctcss_hz": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ctcss Hz"
+    },
+    "gmrs_mode": {
+      "default": false,
+      "title": "Gmrs Mode",
       "type": "boolean"
     },
     "hang_remaining_s": {
@@ -146,8 +169,21 @@
       "title": "Kind",
       "type": "string"
     },
+    "linked_nodes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Linked Nodes",
+      "type": "array"
+    },
     "locked_out": {
       "title": "Locked Out",
+      "type": "boolean"
+    },
+    "net_active": {
+      "default": false,
+      "title": "Net Active",
       "type": "boolean"
     },
     "ptt_commanded": {

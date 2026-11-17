@@ -31,6 +31,13 @@ class CoreStatus(Message):
     tot_remaining_s: Optional[float] = Field(default=None, ge=0)
     hang_remaining_s: Optional[float] = Field(default=None, ge=0)
     id_due_in_s: Optional[float] = Field(default=None, ge=0)
+    # Added in contract 1.1 (optional, so a 1.0 reader is unaffected): what the
+    # dashboard shows beside the state.
+    ctcss_hz: Optional[float] = None
+    linked_nodes: list[str] = Field(default_factory=list, max_length=32)
+    net_active: bool = False
+    gmrs_mode: bool = False
+    callsign: str = Field(default="", max_length=16)
 
 
 class LocationSource(str, Enum):

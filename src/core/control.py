@@ -2,7 +2,8 @@
 
 Stage 3 slice 7 (#229). This is the transport chosen in ADR 0005 ("Control
 transport"). Health and status are read only, as the Stage 2 contract messages.
-`POST /speak` (slice 7b) is the first command: a `speak.request` in, a
+`GET /events` (slice 7c-2) streams status changes and a heartbeat as server-sent
+events. `POST /speak` (slice 7b) is the first command: a `speak.request` in, a
 `speak.decision` out. Configuration changes come in later slices.
 
 Rules the server keeps, because it runs in the process that keeps the
@@ -66,6 +67,10 @@ MAX_HEADERS = 50
 REQUEST_DEADLINE_SECONDS = 5.0  # to send a whole request
 RESPONSE_DEADLINE_SECONDS = 5.0  # to take the answer
 MAX_CONNECTIONS = 16
+MAX_STREAMS = 4  # long-lived /events connections; fewer than MAX_CONNECTIONS so they cannot starve the rest
+HEARTBEAT_SECONDS = 5.0
+STREAM_WRITE_DEADLINE_SECONDS = 5.0  # a client that cannot take an event in this long is dropped
+MIN_EVENT_INTERVAL_SECONDS = 0.1  # status events are coalesced to at most ten a second
 MAX_BODY_BYTES = 16 * 1024
 RENDER_DEADLINE_SECONDS = 30.0  # to prepare speech before giving up on a request
 #: Longer than any normal pause (the tick runs every 50 ms); the same figure the
@@ -99,6 +104,8 @@ class ControlServer:
         self._sequencer = Sequencer()
         self._server: Optional[asyncio.AbstractServer] = None
         self._open = 0
+        self._streams = 0
+        self._writers: set[asyncio.StreamWriter] = set()
         self.refused = 0  # connections turned away at the limit
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._ledger = IdempotencyLedger()
@@ -140,6 +147,8 @@ class ControlServer:
         server, self._server = self._server, None
         if server is not None:
             server.close()
+            for writer in list(self._writers):  # end open connections too, /events streams included
+                writer.close()
             try:
                 await asyncio.wait_for(server.wait_closed(), 2.0)
             except asyncio.TimeoutError:
@@ -158,6 +167,7 @@ class ControlServer:
             writer.close()
             return
         self._open += 1
+        self._writers.add(writer)
         try:
             try:
                 method, target, body = await asyncio.wait_for(self._read_request(reader), REQUEST_DEADLINE_SECONDS)
@@ -167,6 +177,9 @@ class ControlServer:
             except _BadRequest as error:
                 await self._respond(writer, error.status, error.body())
                 return
+            if method == "GET" and target.split("?", 1)[0] == "/events":
+                await self._stream_events(reader, writer)
+                return
             status, answer = await self._dispatch(method, target, body)
             await self._respond(writer, status, answer)
         except (ConnectionError, OSError):
@@ -175,6 +188,7 @@ class ControlServer:
             _logger.exception("control socket: unexpected error")
         finally:
             self._open -= 1
+            self._writers.discard(writer)
             try:
                 writer.close()
             except Exception:  # noqa: BLE001
@@ -279,7 +293,9 @@ class ControlServer:
         )
 
     def _status(self) -> dict:
-        snapshot = self._service.snapshot()
+        return self._status_from(self._service.snapshot())
+
+    def _status_from(self, snapshot) -> dict:
         message = CoreStatus(
             header=self._header(),
             state=snapshot.state,
@@ -294,8 +310,63 @@ class ControlServer:
             tot_remaining_s=snapshot.tot_remaining,
             hang_remaining_s=snapshot.hang_remaining,
             id_due_in_s=snapshot.id_due_in,
+            ctcss_hz=snapshot.ctcss_hz,
+            linked_nodes=sorted(snapshot.linked_nodes),
+            net_active=snapshot.net_active,
+            gmrs_mode=snapshot.gmrs_mode,
+            callsign=snapshot.callsign,
         )
         return json.loads(message.model_dump_json())
+
+    # -- events (server-sent) ------------------------------------------------------------
+
+    async def _stream_events(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """`GET /events`: the current status at once, then a `status` event whenever it
+        changes (at most ten a second) and a `heartbeat` every few seconds. A client
+        that falls behind or goes away is dropped; it never slows the core."""
+        if self._streams >= MAX_STREAMS:
+            await self._respond(writer, 503, {"error": "too many event streams"})
+            return
+        self._streams += 1
+        queue = self._service.subscribe()  # holds only the latest snapshot
+        gone = asyncio.ensure_future(_until_eof(reader))  # finishes when the client hangs up
+        waiting: Optional[asyncio.Future] = None
+        try:
+            writer.write(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n"
+                b"Connection: close\r\nX-Accel-Buffering: no\r\n\r\n"
+            )
+            await self._send_event(writer, "status", self._event_payload(self._service.snapshot()))
+            while True:
+                waiting = asyncio.ensure_future(queue.get())
+                done, _ = await asyncio.wait({waiting, gone}, timeout=HEARTBEAT_SECONDS, return_when=asyncio.FIRST_COMPLETED)
+                if gone in done:
+                    return
+                if waiting in done:
+                    await self._send_event(writer, "status", self._event_payload(waiting.result()))
+                    await asyncio.sleep(MIN_EVENT_INTERVAL_SECONDS)  # coalesce a burst into the latest
+                else:
+                    waiting.cancel()
+                    await self._send_event(writer, "heartbeat", self._heartbeat_payload())
+        finally:
+            for task in (gone, waiting):
+                if task is not None and not task.done():
+                    task.cancel()
+            self._service.unsubscribe(queue)
+            self._streams -= 1
+
+    def _event_payload(self, snapshot) -> dict:
+        # `local` is for the API only (the trusted channel): the last clip name can carry
+        # the text of an announcement, so it is not part of the module-facing contract.
+        return {"status": self._status_from(snapshot), "local": {"last_clip": snapshot.last_clip, "timestamp": snapshot.timestamp}}
+
+    def _heartbeat_payload(self) -> dict:
+        health = self._health()
+        return {"at": datetime.now(timezone.utc).isoformat(), "seq": self._sequencer.next(), "health": health["state"]}
+
+    async def _send_event(self, writer: asyncio.StreamWriter, name: str, data: dict) -> None:
+        writer.write(f"event: {name}\ndata: {json.dumps(data)}\n\n".encode())
+        await asyncio.wait_for(writer.drain(), STREAM_WRITE_DEADLINE_SECONDS)
 
     def _health(self) -> dict:
         now = self._clock()
@@ -411,6 +482,14 @@ class ControlServer:
 
 
 _RANK = {HealthState.OK: 0, HealthState.DEGRADED: 1, HealthState.FAILED: 2, HealthState.STARTING: 0}
+
+
+async def _until_eof(reader: asyncio.StreamReader) -> None:
+    """Returns when the client closes its end (or the connection breaks)."""
+    try:
+        await reader.read()
+    except (ConnectionError, OSError):
+        pass
 
 
 class _BadRequest(Exception):

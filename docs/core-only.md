@@ -49,6 +49,29 @@ curl --unix-socket /run/moreopenrepeater/core.sock http://core/health
   permission problem) the core logs it and runs without it.
 - Unset, there is no socket.
 
+### `GET /events`
+
+A server-sent event stream for a client that wants to follow the core (the API in
+remote mode, in a later slice):
+
+```
+curl -N --unix-socket /run/moreopenrepeater/core.sock http://core/events
+```
+
+- It starts with the current `status`, then sends a `status` event whenever
+  something an operator would see changes (at most ten a second; a burst is
+  coalesced to the latest), and a `heartbeat` every 5 seconds.
+- A `status` event is `{"status": <core.status contract>, "local": {...}}`.
+  `local` (the last clip name and a timestamp) is for the API only: the clip name
+  can carry the text of an announcement, so it is not in the module-facing
+  contract.
+- Countdowns (time-out, hang time, next ID) are not pushed every tick. A client
+  carries them forward by the time since the event.
+- At most 4 streams are open at once (a fifth gets 503) so they cannot use up the
+  connection limit. A client that cannot take an event within 5 seconds, or that
+  hangs up, is dropped, and it never slows the controller. Stopping the core ends
+  every open stream.
+
 ### `POST /speak`
 
 A module (the weather module, for example) asks the core to say something; the

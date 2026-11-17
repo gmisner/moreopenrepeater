@@ -35,7 +35,10 @@ EnvironmentFile=/etc/moreopenrepeater/env
 # /run/moreopenrepeater (in memory) holds the log when the SD card is
 # protected (install-pi.sh --protect-sd); kept across restarts until reboot.
 RuntimeDirectory=moreopenrepeater
+RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
+# The control socket (read-only status and health for now; docs/core-only.md).
+Environment=MOREOPENREPEATER_CORE_SOCKET=/run/moreopenrepeater/core.sock
 ExecStart=/opt/moreopenrepeater/.venv/bin/moreopenrepeater-core
 Restart=on-failure
 # Exit 2 means the saved configuration is unusable. Restarting will not fix it.

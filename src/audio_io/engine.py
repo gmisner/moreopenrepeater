@@ -31,9 +31,19 @@ _logger = logging.getLogger("moreopenrepeater.audio")
 QUEUE_BLOCKS = 10
 PRIME_BLOCKS = 2  # output cushion so the first callbacks aren't starved
 COS_POLL_SECONDS = 0.02
+def _monotonic() -> float:
+    """The cap's clock, in one place so tests can move it."""
+    return time.monotonic()
+
+
 PTT_RETRY_SECONDS = 0.05
 PTT_RETRY_MAX_SECONDS = 1.0
 PTT_RELEASE_DELAYS = (0, 0.05, 0.1, 0.2)
+# How long past the longest limit the controller is configured to enforce a
+# transmission may run before the engine ends it itself. Large on purpose: the
+# cap is a backstop for a stuck controller and must never fire during a normal
+# time-out, a net, an autopatch call or a long announcement.
+TX_LIMIT_MARGIN_SECONDS = 300.0
 # The stream's glitch counters, each reported to `on_glitch` as it goes up.
 GLITCH_COUNTERS = ("dropped_input_blocks", "starved_output_blocks", "input_overflows", "output_underflows")
 
@@ -53,8 +63,17 @@ class AudioEngine:
         on_glitch: Optional[Callable[[str, int], None]] = None,
         on_stream_dead: Optional[Callable[[], None]] = None,
         ptt_allowed: Optional[Callable[[], bool]] = None,
+        max_transmit_seconds: Optional[float] = None,
+        on_transmit_capped: Optional[Callable[[float], None]] = None,
     ) -> None:
-        """`on_audio(received, transmitted)` sees every processing block, on
+        """`max_transmit_seconds`: the longest the transmitter may stay keyed
+        without a break, enforced here on the audio worker thread, independent of
+        the controller and the event loop. `None` means no limit. When it trips
+        the engine unkeys and silences its output until the source stops, then
+        allows keying again. `on_transmit_capped(seconds)` runs on the worker
+        thread when it trips.
+
+        `on_audio(received, transmitted)` sees every processing block, on
         the worker thread -- it must be quick. `on_glitch(counter, count)`
         too: a GLITCH_COUNTERS name and how much it just went up.
         `on_stream_dead` runs once when the PortAudio stream goes inactive
@@ -85,6 +104,11 @@ class AudioEngine:
         self._ptt_retry_delay = PTT_RETRY_SECONDS
         self.ptt_error: Optional[str] = None
         self.transmitting = False
+        self.max_transmit_seconds = max_transmit_seconds
+        self._on_transmit_capped = on_transmit_capped
+        self._tx_since: Optional[float] = None  # when the current unbroken transmission began
+        self.tx_capped = False  # the cap tripped and the source has not stopped yet
+        self.tx_cap_trips = 0
         self.last_block_at: Optional[float] = None  # time.monotonic(); the watchdog checks it
         self._configure_device(processor.settings.sample_rate, block_size)
 
@@ -181,8 +205,9 @@ class AudioEngine:
             result = self.processor.process(chunk)
             if self._on_audio is not None:
                 self._on_audio(chunk, result.out)
-            self._tx_pending = np.concatenate([self._tx_pending, self._tx_resampler.process(result.out)])
             self._set_transmitting(result.transmitting)
+            out = np.zeros_like(result.out) if self.tx_capped else result.out  # also stops a VOX radio
+            self._tx_pending = np.concatenate([self._tx_pending, self._tx_resampler.process(out)])
             if result.events:
                 self._on_events(result.events)
         while len(self._tx_pending) >= self._device_block_size:
@@ -261,12 +286,42 @@ class AudioEngine:
             if self.ptt_error is not None and not self._ptt_inhibited and time.monotonic() >= self._ptt_retry_at:
                 self._write_ptt(False)
 
+    def set_max_transmit_seconds(self, seconds: Optional[float]) -> None:
+        """Change the limit while running (the controller's own limits changed)."""
+        self.max_transmit_seconds = seconds
+
+    def _apply_transmit_cap(self, wanted: bool) -> bool:
+        """What the transmitter should do after the cap. Caller holds the PTT lock."""
+        if not wanted:
+            self._tx_since = None
+            self.tx_capped = False  # the source stopped; the next transmission may key
+            return False
+        now = _monotonic()
+        if self._tx_since is None:
+            self._tx_since = now
+        limit = self.max_transmit_seconds
+        if limit is not None and not self.tx_capped and now - self._tx_since > limit:
+            self.tx_capped = True
+            self.tx_cap_trips += 1
+            _logger.critical(
+                "transmitter was keyed for %.0f s without a break, past the %.0f s limit; unkeying until the source stops",
+                now - self._tx_since, limit,
+            )
+            callback = self._on_transmit_capped
+            if callback is not None:
+                try:
+                    callback(now - self._tx_since)
+                except Exception:
+                    _logger.exception("transmit-cap handler failed")
+        return not self.tx_capped
+
     def _set_transmitting(self, active: bool) -> None:
         with self._ptt_lock:
             if self._ptt_inhibited:
                 return
             if active and self._ptt_allowed is not None and not self._ptt_allowed():
                 active = False
+            active = self._apply_transmit_cap(active)
             if not active:
                 self._ptt_blocked = False
             if self.ptt_error is not None:

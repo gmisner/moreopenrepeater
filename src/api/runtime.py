@@ -599,7 +599,9 @@ class AppRuntime:
             gpio = gpio or CoreHardware("gpio", service)
             tx_fan = tx_fan or CoreHardware("tx_fan", service)
             autopatch = autopatch or CoreHardware("autopatch", service)
-            sip_trunk = sip_trunk or Unavailable("sip_trunk")
+            # The SIP trunk is set up over AMI, a network call with no device and no host file, so the
+            # API owns it. It reads the same MOREOPENREPEATER_AMI_* settings the core does.
+            sip_trunk = sip_trunk or SipTrunk(patch_settings_from_env(os.environ))
             allstar_node = allstar_node or CoreHardware("allstar_node", service, asynchronous=True)
             dmr_audio = dmr_audio or Unavailable("dmr_audio")
             dmr = dmr or CoreHardware("dmr", service, asynchronous=True)

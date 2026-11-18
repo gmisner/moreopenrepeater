@@ -112,7 +112,9 @@ as `GET /audio?device=live|monitor&source=rx|tx`, and the API opens one such str
 anyone is listening to that source, and none when nobody is. Every frame is a 4-byte big-endian
 length and that many bytes: the first is a JSON header with the sample rate, the rest are 16-bit
 little-endian mono PCM of about 100 ms each. A listener that falls behind loses audio and one that
-stops reading is dropped, so listening never slows the radio. At most four listeners at a time
+stops reading is dropped, so listening never slows the radio. The Audio page's record and score
+tool records from the same stream (the receiver's audio as it comes in, before the repeater's delay),
+so it works too. At most four listeners at a time
 (`MAX_AUDIO_STREAMS`). The "listeners" count the Audio page shows for the engine counts these
 streams, not browsers.
 

@@ -10,10 +10,16 @@ things shows nothing, not an error.
 """
 from __future__ import annotations
 
+import asyncio
 import inspect
 from typing import Any, Optional
 
+import numpy as np
+
 from .service.core_handle import CommandRefused, CoreError
+
+#: How much longer than the recording itself to wait for the core's audio before giving up.
+RECORD_GRACE_SECONDS = 3.0
 
 
 class NotInSplitMode(CoreError):
@@ -113,6 +119,34 @@ class CoreHardware(Unavailable):
     def retune(self):
         self._only("remote_base", "retune")
         return self._remote.command("remote_base_retune")
+
+    async def record_rx(self, seconds: float) -> tuple[np.ndarray, int]:
+        """Record `seconds` of what the core's receiver hears, for the commissioning score. It is read
+        from the core's audio stream, so nothing is asked of the core beyond listening. Raises
+        `RuntimeError` (the same as in process) when the core is not running live audio or sends none."""
+        self._only("live_audio", "record_rx")
+        if not self._remote.hardware_status("live_audio").get("running"):  # CoreUnavailable if the core is away
+            raise RuntimeError("Live audio isn't running")
+        monitor = self.monitor
+        queue = monitor.subscribe("rx")
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + seconds + RECORD_GRACE_SECONDS
+        frames: list[bytes] = []
+        have = 0
+        try:
+            while True:
+                try:
+                    frames.append(await asyncio.wait_for(queue.get(), max(0.0, deadline - loop.time())))
+                except asyncio.TimeoutError:
+                    raise RuntimeError("The core's audio did not arrive") from None
+                have += len(frames[-1]) // 2
+                rate = monitor.sample_rate  # known once the stream has said so, which is before its first frame
+                if rate and have >= int(seconds * rate):
+                    break
+        finally:
+            monitor.unsubscribe(queue)
+        pcm = np.frombuffer(b"".join(frames), dtype="<i2")[: int(seconds * rate)]
+        return pcm.astype(np.float32) / 32767.0, rate
 
     async def dial(self, number: str, actor: str) -> Optional[str]:
         """Start a call; returns why not, as the in-process one does. The core decides."""

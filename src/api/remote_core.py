@@ -57,6 +57,7 @@ from controller.modes import held_reason as _held_reason
 from controller.modes import effective_config
 
 from .core_runtime import AnnouncementQueueFull
+from .remote_activity import RemoteActivityStore
 from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, UnknownClipError
 from playout.tts import TTSError
@@ -599,6 +600,10 @@ class RemoteCore:
             except Exception as error:  # noqa: BLE001 - the pages say "not known" until the next read
                 _logger.debug("could not read the core's hardware state: %s", type(error).__name__)
             await asyncio.sleep(HARDWARE_POLL_SECONDS)
+
+    def remote_activity_store(self) -> RemoteActivityStore:
+        """The activity history, which the core records and keeps; this reads it over the socket."""
+        return RemoteActivityStore(self.socket_path)
 
     def attach_log_hub(self, hub) -> None:
         """Publish the core's log lines into `hub`, so the dashboard's Logs page, the live stream, the

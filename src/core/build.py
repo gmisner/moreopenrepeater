@@ -94,7 +94,9 @@ def build_core(env: Optional[Mapping[str, str]] = None) -> CoreApp:
     if service.saved_config != config:
         service.update_config(**{k: getattr(config, k) for k in _checked_names(config_notes)})
     service.renderer = renderer
-    activity_store = ActivityStore()
+    # The core sees every transmission, so it records them, in the file the dashboard's history has
+    # always been in. The API reads them over the control socket.
+    activity_store = ActivityStore(data_root(env) / "activity.db")
     service.activity = ActivityRecorder(activity_store)
 
     cm108 = cm108_from_env(env)

@@ -12,8 +12,8 @@ It is off by default, `install-pi.sh` does not use it, and the normal service is
   core it cannot hear.
 
 What works in the dashboard when the API runs apart from the core: status (live), configuration,
-macros, announcements, nets, link activity, the backup export and restore, accounts, alerts, logs,
-and the pages that are not the radio. **The pages about the core's hardware show what the core
+macros, announcements, nets, link activity, the activity history (receptions, airtime, IDs), the
+backup export and restore, accounts, alerts, logs, and the pages that are not the radio. **The pages about the core's hardware show what the core
 reports** (audio engine, GPIO and fan, link radio and remote base, monitor receiver, autopatch, the
 AllStar node, DMR), read over the socket every couple of seconds. With the core away they say so
 (a 503 `core.unavailable`) instead of showing an old state, and the status panels are left out.
@@ -47,6 +47,13 @@ cp .env.example .env        # then edit: PTT device, gpio group, data folder
 docker compose up -d --build
 docker compose exec core python -m core.healthcheck
 ```
+
+The core records the activity history (receptions, airtime, IDs, kerchunks) in `activity.db` in
+the data folder, because it is the one that sees every transmission, and keeps recording with the
+API stopped. If you copy an installed Pi's data, copy `activity.db` too and the history carries over.
+The dashboard reads it from the core. Two things follow: a backup made while the API runs apart from
+the core holds an empty history file (the history stays in the core's data folder), and restoring a
+backup does not put history back.
 
 `MOR_DATA_DIR` must hold a `state.json` (the saved configuration). The core
 refuses to start without one and exits with status 2, so Compose will not

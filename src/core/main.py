@@ -12,6 +12,7 @@ from typing import Mapping, Optional
 from .build import CoreApp, build_core
 from .config_boundary import CoreConfigError
 from .control import ControlServer, socket_path_from_env
+from .latency import LatencyWatch, enabled_from_env
 
 _logger = logging.getLogger("moreopenrepeater.core")
 
@@ -24,6 +25,7 @@ async def serve(
     stop: Optional[asyncio.Event] = None,
     control_socket: Optional[Path] = None,
     allow_simulate: bool = False,
+    watch_latency: bool = False,
 ) -> None:
     """Start the core, run until `stop` is set, then shut it down.
 
@@ -35,6 +37,9 @@ async def serve(
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
     tasks: list[asyncio.Task] = []
+    latency = LatencyWatch() if watch_latency else None
+    if latency is not None:
+        latency.start(loop)
     core.start_fan()
     core.start_tick(tasks)
     core.start_announcements(tasks)
@@ -60,6 +65,8 @@ async def serve(
     for task in tasks:
         task.cancel()
     await core.stop_devices()
+    if latency is not None:
+        latency.stop()
     app.activity_store.flush()
     await core.stop_tts()
 
@@ -82,6 +89,7 @@ def main(env: Optional[Mapping[str, str]] = None) -> int:
         await serve(
             app, stop, socket_path_from_env(environment),
             allow_simulate=environment.get("MOREOPENREPEATER_CORE_SIMULATE", "").strip() == "1",
+            watch_latency=enabled_from_env(environment),
         )
 
     asyncio.run(run())

@@ -17,7 +17,8 @@
         "gpio_set_output",
         "remote_base_retune",
         "autopatch_dial",
-        "autopatch_hangup"
+        "autopatch_hangup",
+        "arm_capture"
       ],
       "title": "CommandName",
       "type": "string"

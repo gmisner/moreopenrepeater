@@ -39,6 +39,7 @@ class CommandName(str, Enum):
     REMOTE_BASE_RETUNE = "remote_base_retune"
     AUTOPATCH_DIAL = "autopatch_dial"
     AUTOPATCH_HANGUP = "autopatch_hangup"
+    ARM_CAPTURE = "arm_capture"
 
 
 #: The commands that make the controller act on an event that did not come from the radio.
@@ -51,11 +52,12 @@ PROGRAMMING = frozenset(
     {CommandName.ADD_MACRO, CommandName.DELETE_MACRO, CommandName.SAVE_ANNOUNCEMENT, CommandName.DELETE_ANNOUNCEMENT}
 )
 
-#: The commands that act on the radio side's hardware: an output pin, the remote base, a phone call.
+#: The commands that act on the radio side's hardware: an output pin, the remote base, a phone call,
+#: recording the next transmission.
 HARDWARE = frozenset(
     {
         CommandName.GPIO_SET_OUTPUT, CommandName.REMOTE_BASE_RETUNE, CommandName.AUTOPATCH_DIAL,
-        CommandName.AUTOPATCH_HANGUP,
+        CommandName.AUTOPATCH_HANGUP, CommandName.ARM_CAPTURE,
     }
 )
 
@@ -67,6 +69,7 @@ _DIGITS = re.compile(r"^[0-9]{1,15}$")
 _PATTERN = re.compile(r"^[0-9A-D*#]{1,32}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 MAX_OBJECT_KEYS = 32
+MAX_CAPTURE_SECONDS = 600  # the longest message the core will record
 
 #: command -> parameter name -> the kind of value it must be
 _PARAMS: dict[CommandName, dict[str, str]] = {
@@ -94,6 +97,9 @@ _PARAMS: dict[CommandName, dict[str, str]] = {
     CommandName.REMOTE_BASE_RETUNE: {},
     CommandName.AUTOPATCH_DIAL: {"number": "digits", "actor": "text"},
     CommandName.AUTOPATCH_HANGUP: {"reason": "text"},
+    # Record the next transmission instead of repeating it, for at most this many seconds. The core
+    # hands the audio to the client that asked, as a file it names in a `capture` event.
+    CommandName.ARM_CAPTURE: {"max_seconds": "seconds"},
 }
 
 
@@ -110,6 +116,11 @@ def _valid(kind: str, value: Any) -> bool:
         return isinstance(value, str) and bool(_NODE.match(value))
     if kind == "clip":
         return isinstance(value, str) and 0 < len(value) <= MAX_CLIP_CHARS and "\x00" not in value
+    if kind == "seconds":  # a recording length: a real number, not a bool, within what one can be
+        return (
+            isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+            and 1 <= value <= MAX_CAPTURE_SECONDS
+        )
     if kind == "pin":
         return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 64
     if kind == "digits":

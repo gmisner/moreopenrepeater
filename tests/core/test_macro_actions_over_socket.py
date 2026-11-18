@@ -280,7 +280,7 @@ def test_an_async_handler_is_run(core, sock_dir, spoken):
 def test_the_core_is_told_only_what_was_registered(core, sock_dir, spoken):
     async def scenario(remote, server):
         (handles, _), = server._macro_clients
-        assert handles == frozenset({"metar"})
+        assert handles == frozenset({"metar", "capture"})  # what the test registered, and the RemoteCore's own
         core.service.programming.run_action(action("sensor", "x"))  # not ours: nobody took it
         assert [c.removeprefix("tts:") for c in spoken] == ["Site sensors are not set up."]
 

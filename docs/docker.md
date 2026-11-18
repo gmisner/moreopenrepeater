@@ -104,6 +104,18 @@ s.sendall(b"GET /status HTTP/1.1\r\nHost: core\r\nConnection: close\r\n\r\n");pr
 PY
 ```
 
+## Listening
+
+The dashboard's live listening (the Listen page, the public page, the monitor receiver, the
+stream) works with the API apart from the core. The core serves its audio on the control socket
+as `GET /audio?device=live|monitor&source=rx|tx`, and the API opens one such stream for as long as
+anyone is listening to that source, and none when nobody is. Every frame is a 4-byte big-endian
+length and that many bytes: the first is a JSON header with the sample rate, the rest are 16-bit
+little-endian mono PCM of about 100 ms each. A listener that falls behind loses audio and one that
+stops reading is dropped, so listening never slows the radio. At most four listeners at a time
+(`MAX_AUDIO_STREAMS`). The "listeners" count the Audio page shows for the engine counts these
+streams, not browsers.
+
 ## Health and restarts
 
 `python -m core.healthcheck` asks the core's own `/health` and exits 1 when it

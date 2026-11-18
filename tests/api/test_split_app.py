@@ -283,6 +283,40 @@ def test_a_dashboard_can_watch_the_core_over_the_websocket(split):
         assert first["callsign"] == "W1AW" and first["state"] == "idle"
 
 
+def _feed_audio(core, rx, tx, device="live_audio"):
+    """The audio thread's side: hand the monitor the blocks that make one frame."""
+    import numpy as np
+
+    monitor = getattr(core.runtime, device).monitor
+    for _ in range(5):
+        monitor.feed(np.full(160, rx, dtype=np.float32), np.full(160, tx, dtype=np.float32))
+
+
+def test_a_dashboard_can_listen_to_the_core_s_audio(split):
+    import numpy as np
+
+    client, remote, core, _ = split
+    for source, device, expected in (("rx", "live_audio", 16383), ("tx", "live_audio", -16383), ("monitor", "monitor_receiver", 16383)):
+        with client.websocket_connect(f"/ws/audio?source={source}") as ws:
+            first = ws.receive_json()
+            assert first["sample_rate"] == core.runtime.renderer.sample_rate and first["source"] == source
+            wait_for(lambda: getattr(core.runtime, device).monitor.listener_count == 1)  # the API is listening to the core
+            _feed_audio(core, 0.5, -0.5, device)
+            pcm = np.frombuffer(ws.receive_bytes(), dtype="<i2")
+            assert set(pcm.tolist()) == {expected}, source
+        wait_for(lambda: getattr(core.runtime, device).monitor.listener_count == 0)  # and stops when the page closes
+
+
+def test_two_browsers_listening_cost_the_core_one_stream(split):
+    client, remote, core, thread = split
+    with client.websocket_connect("/ws/audio?source=rx") as one, client.websocket_connect("/ws/audio?source=rx") as two:
+        one.receive_json(), two.receive_json()
+        wait_for(lambda: core.runtime.live_audio.monitor.listener_count == 1)
+        assert thread.server._audio_streams == 1
+        _feed_audio(core, 0.5, 0.5)
+        assert len(one.receive_bytes()) == len(two.receive_bytes()) == 5 * 160 * 2
+
+
 def test_the_environment_chooses_the_remote_core():
     import importlib
 

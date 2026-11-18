@@ -31,6 +31,7 @@ import json
 import logging
 import os
 import stat
+import struct
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -97,6 +98,7 @@ REQUEST_DEADLINE_SECONDS = 5.0  # to send a whole request
 RESPONSE_DEADLINE_SECONDS = 5.0  # to take the answer
 MAX_CONNECTIONS = 16
 MAX_STREAMS = 4  # long-lived /events connections; fewer than MAX_CONNECTIONS so they cannot starve the rest
+MAX_AUDIO_STREAMS = 4  # long-lived /audio connections, counted apart from the event streams
 HEARTBEAT_SECONDS = 5.0
 STREAM_WRITE_DEADLINE_SECONDS = 5.0  # a client that cannot take an event in this long is dropped
 MIN_EVENT_INTERVAL_SECONDS = 0.1  # status events are coalesced to at most ten a second
@@ -160,6 +162,7 @@ class ControlServer:
         self._server: Optional[asyncio.AbstractServer] = None
         self._open = 0
         self._streams = 0
+        self._audio_streams = 0
         self._writers: set[asyncio.StreamWriter] = set()
         self.refused = 0  # connections turned away at the limit
         self._now = now or (lambda: datetime.now(timezone.utc))
@@ -255,6 +258,12 @@ class ControlServer:
                 return
             if method == "GET" and target.split("?", 1)[0] == "/events":
                 await self._stream_events(reader, writer, _handled_families(target))
+                return
+            if target.split("?", 1)[0] == "/audio":
+                if method != "GET":
+                    await self._respond(writer, 405, {"error": "use GET for /audio"})
+                else:
+                    await self._stream_audio(reader, writer, target)
                 return
             status, answer = await self._dispatch(method, target, body)
             await self._respond(writer, status, answer)
@@ -493,6 +502,56 @@ class ControlServer:
     def _heartbeat_payload(self) -> dict:
         health = self._health()
         return {"at": datetime.now(timezone.utc).isoformat(), "seq": self._sequencer.next(), "health": health["state"]}
+
+    async def _stream_audio(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, target: str) -> None:
+        """`GET /audio?device=live|monitor&source=rx|tx`: the core's live audio for a dashboard that runs
+        apart from it. `live` is the repeater (`rx` what the receiver hears, `tx` what is sent), `monitor`
+        is the monitor receiver (`rx` only). The answer never ends until either side hangs up. Every
+        frame is a 4-byte big-endian length and that many bytes. The first is a JSON header with the
+        sample rate; the rest are 16-bit little-endian mono PCM, about 100 ms each. A listener that falls
+        behind loses frames (the monitor's own queue), and one that stops reading is dropped, so
+        listening never slows the radio."""
+        query = dict(part.partition("=")[::2] for part in target.partition("?")[2].split("&") if part)
+        device, source = query.get("device", "live"), query.get("source", "tx")
+        if device not in ("live", "monitor") or source not in ("rx", "tx") or (device == "monitor" and source != "rx"):
+            await self._respond(writer, 400, {"error": "device is live or monitor, source is rx or tx (the monitor has only rx)"})
+            return
+        part = getattr(self._runtime, "live_audio" if device == "live" else "monitor_receiver", None)
+        monitor = getattr(part, "monitor", None)
+        if monitor is None:
+            await self._respond(writer, 404, {"error": f"this core has no {device} audio"})
+            return
+        if self._audio_streams >= MAX_AUDIO_STREAMS:
+            await self._respond(writer, 503, {"error": "too many audio listeners"})
+            return
+        self._audio_streams += 1
+        queue = monitor.subscribe(source)
+        gone = asyncio.ensure_future(_until_eof(reader))
+        try:
+            writer.write(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nCache-Control: no-store\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+            header = {"sample_rate": self._runtime.renderer.sample_rate, "device": device, "source": source}
+            await self._send_audio_frame(writer, json.dumps(header).encode())
+            while True:
+                waiting = asyncio.ensure_future(queue.get())
+                done, _ = await asyncio.wait({waiting, gone}, return_when=asyncio.FIRST_COMPLETED)
+                if gone in done:
+                    waiting.cancel()
+                    return
+                await self._send_audio_frame(writer, waiting.result())
+        except (asyncio.TimeoutError, ConnectionError, OSError):
+            pass  # the listener stopped reading or went away: let it go
+        finally:
+            monitor.unsubscribe(queue)
+            if not gone.done():
+                gone.cancel()
+            self._audio_streams -= 1
+
+    async def _send_audio_frame(self, writer: asyncio.StreamWriter, payload: bytes) -> None:
+        writer.write(struct.pack(">I", len(payload)) + payload)
+        await asyncio.wait_for(writer.drain(), STREAM_WRITE_DEADLINE_SECONDS)
 
     async def _send_event(self, writer: asyncio.StreamWriter, name: str, data: dict) -> None:
         writer.write(f"event: {name}\ndata: {json.dumps(data)}\n\n".encode())

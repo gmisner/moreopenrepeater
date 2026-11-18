@@ -77,10 +77,12 @@ class CoreHardware(Unavailable):
     the core does not take them over the socket yet. `asynchronous` is for the parts whose status
     the dashboard awaits."""
 
-    def __init__(self, name: str, remote, *, asynchronous: bool = False) -> None:
+    def __init__(self, name: str, remote, *, asynchronous: bool = False, monitor=None) -> None:
         super().__init__(name)
         self._remote = remote
         self.is_stub = False
+        if monitor is not None:
+            self.monitor = monitor  # what listeners subscribe to: the core's audio, over the socket
         if asynchronous:
             self.status = self._status_async  # type: ignore[assignment]
 

@@ -119,6 +119,12 @@ class ApiCoreHandle(Protocol):
         core's log over its socket. Call before the service starts."""
         ...
 
+    def remote_audio_monitor(self, device: str) -> Optional[object]:
+        """The core's live audio as a monitor the dashboard's listeners can subscribe to
+        (`subscribe(source)`, `unsubscribe(queue)`), when the core is a separate process. `device` is
+        `live` or `monitor`. In process the audio engine's own monitor serves them, so this is None."""
+        ...
+
     def register_macro_handler(self, family: str, handler: Callable) -> None:
         """Take a macro action the API's modules own: `net` (action, source), `homeassistant`
         (target, source, pattern), `metar` (airport), `sensor` (sensor_id), `mailbox`

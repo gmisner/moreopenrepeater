@@ -146,6 +146,8 @@ was measured, not guessed. Counting receive overruns:
 | The core container with the API container, many runs over two hours | one every 3.5 min |
 | Core alone, plus two memory-heavy processes at 60% | 158 in 10 min |
 | Core alone, plus two CPU-only processes at 60% | 2 in 10 min |
+| With `dwc_otg.speed=1`: core alone, plus two memory-heavy processes at 60% | 0 in 10 min |
+| With `dwc_otg.speed=1`: core and API together, no extra load | 0 in 18 min |
 
 Docker's default seccomp profile was part of it: with it the core alone glitched every one to four
 minutes, and `seccomp=unconfined` (kept in `compose.yaml`) cut that to one in about 30, which is the
@@ -168,17 +170,31 @@ split transaction that the controller's interrupt code has to time exactly. A se
 even a quiet API container, is enough to make it miss one now and then. I have not proved the exact
 mechanism, only that the glitches follow memory traffic and nothing else I tried.
 
-What to do about it, in the order I would try:
+**The fix on a 3B+ is `dwc_otg.speed=1`.** Add it to `/boot/firmware/cmdline.txt` (the file is one
+line; append it to the end) and reboot. It forces the USB controller to full speed, so the AIOC is
+no longer reached through split transactions. It was tried here and it worked: no overruns under the
+memory-heavy load that gave 158 without it, and none in 18 minutes of the core and API running
+together, where one every 3.5 minutes was normal. The setting cannot be changed without a reboot,
+and the installer should do it. The cost is that every USB device on the Pi is held to 12 Mbit/s,
+including the wired Ethernet port, which is fine for a repeater on Wi-Fi and worth knowing about on a
+wired one. A Pi 4 or 5 has a different USB controller and should not need it; that has not been
+tested.
 
-- Use a Pi 4 or 5 for container installs. Their USB is a different controller. This is the likely
-  fix and has not been tested.
-- On a 3B+, add `dwc_otg.speed=1` to `/boot/firmware/cmdline.txt` and reboot. That forces the USB
-  controller to full speed, so there are no split transactions. It has not been tried: the setting
-  cannot be changed without a reboot. Test it with the memory-heavy load above before relying on it.
+Two smaller things follow from the same work:
+
 - Keep the other processes light. The API polls the core's hardware every 2 seconds and its log every
   second, and builds a new HTTP client for each request, so 17% of its Python time goes on making
-  SSL contexts for a local socket. That is wasteful on its own, though cutting the polling did
-  not stop the glitches.
+  SSL contexts for a local socket. Cutting the polling did not stop the glitches (the USB setting
+  did), but it is wasteful and is being fixed.
+- **The native service starts at boot.** After the reboot the old `moreopenrepeater` service, still
+  enabled, started by itself, took the sound card and port 8000, so the core container logged
+  `couldn't open audio devices` and the API restarted every 20 seconds. Two engines cannot share one
+  sound card. Run `systemctl disable --now moreopenrepeater` when the containers take over. The
+  first zero-glitch result I got after the reboot was invalid for exactly this reason (the container
+  had no audio engine), so the numbers above are from a rerun that checked the engine was running.
+- The reboot changed the AIOC's `hidraw` number again (`hidraw2` to `hidraw0`), which left the core
+  unable to start until the path was corrected. A stable udev name for the PTT device is no longer a
+  nice-to-have.
 
 To see whether a glitch is the process holding the audio thread up, set
 `MOREOPENREPEATER_DIAG_LATENCY=1` in `core.env`. The core then logs, next to the glitch lines, a
@@ -203,5 +219,5 @@ logged `audio engine stopped` within 0.2 s, and the container exited 0 in 0.95 s
 own shutdown path releasing the audio device and PTT; nothing here observed the radio itself unkeying.
 
 Still to measure: the PTT line observed independently when the container stops (it needs a scope or a
-second receiver), the 3B+ with `dwc_otg.speed=1`, and a Pi 4 or 5. A stable udev name for the PTT
+second receiver), and a Pi 4 or 5. A stable udev name for the PTT
 device, multi-arch publishing, and the API, `logd` and module containers are later slices.

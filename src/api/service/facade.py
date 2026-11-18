@@ -458,6 +458,8 @@ class RepeaterService:
         self.set_net_active(active)
 
     def register_macro_handler(self, family: str, handler: Callable) -> None:
+        if family == "weather":
+            return  # in process the weather action reads this service's own weather state; nothing to hook
         hooks = {
             "net": "net_hook", "homeassistant": "homeassistant_hook", "metar": "metar_hook",
             "sensor": "sensor_hook", "mailbox": "mailbox_hook", "aprs": "aprs_summary", "audit": "audit_hook",

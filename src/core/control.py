@@ -117,7 +117,7 @@ LOGS_PER_REQUEST = 500  # the most log lines one GET /logs returns
 LOGS_RING_MAX = 5000  # more than any hub holds
 MAX_LOG_LINE_CHARS = 4000
 #: The macro actions the API's modules own. A client names the ones it handles when it connects.
-MACRO_FAMILIES = frozenset({"net", "homeassistant", "metar", "sensor", "mailbox", "aprs", "audit"})
+MACRO_FAMILIES = frozenset({"net", "homeassistant", "metar", "sensor", "mailbox", "aprs", "weather", "audit"})
 MACRO_QUEUE_LIMIT = 32  # per client; a client that cannot keep up loses the newest
 RENDER_DEADLINE_SECONDS = 30.0  # to prepare speech before giving up on a request
 #: Longer than any normal pause (the tick runs every 50 ms); the same figure the

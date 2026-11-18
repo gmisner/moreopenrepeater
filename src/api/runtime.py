@@ -699,6 +699,8 @@ class AppRuntime:
         def aprs_window_start() -> float:
             return time.time() - service.config.aprs.aprs_map_hours * 3600
 
+        # The NWS alerts are the API's (it does the polling), so it words the weather and the core says it.
+        service.register_macro_handler("weather", service.weather.summary_text)
         service.register_macro_handler(
             "aprs", lambda: spoken_summary(aprs_stations.stations(aprs_window_start()), service.config, time.time())
         )

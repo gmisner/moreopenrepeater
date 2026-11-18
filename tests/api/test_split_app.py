@@ -206,6 +206,30 @@ def test_the_trunk_page_is_still_the_cores_alone(split):
     assert response.status_code == 503 and response.json()["code"] == "core.hardware"
 
 
+def test_the_weather_macro_is_worded_by_the_api_and_said_by_the_core(split, monkeypatch):
+    """The NWS alerts are the API's (it does the polling). A caller who dials the weather macro on the
+    radio used to hear the core's own, empty, weather state; the API words it now."""
+    from controller.events import RunAction
+
+    client, remote, core, thread = split
+    core.service.update_config(wx_lat=35.2, wx_lon=-101.8)
+    wait_for(lambda: remote.config.weather.wx_lat == 35.2)
+    said = []
+    monkeypatch.setattr(remote, "speak", lambda clip, on_linked_radio=False: said.append(clip))
+    wait_for(lambda: thread.server._macro_clients)  # the API has told the core it handles weather
+    macro = RunAction(action="weather", argument="", pattern="*5")
+    thread.loop.call_soon_threadsafe(lambda: core.service.programming.run_action(macro))
+    wait_for(lambda: said)
+    assert said == ["tts:There are no active weather alerts."]
+    # And it is the API's own state it spoke from: give the API an alert and ask again.
+    remote.weather.alerts = [type("A", (), {"event": "Flood Warning", "headline": "", "id": "x"})()]
+    monkeypatch.setattr("api.service.weather.speech_text", lambda alert: f"{alert.event} in effect.")
+    said.clear()
+    thread.loop.call_soon_threadsafe(lambda: core.service.programming.run_action(macro))
+    wait_for(lambda: said)
+    assert said == ["tts:There is one active weather alert. Flood Warning in effect."]
+
+
 def test_the_status_is_the_core_s_and_the_config_is_the_core_s(split):
     client, remote, core, _ = split
     status = client.get("/api/status").json()

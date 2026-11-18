@@ -23,8 +23,9 @@ be set up as one, the transmitter must be on, the number must be allowed), and i
 in its own words (a 409). The rest does not yet: selecting a DMR talkgroup, the AllStar node and DMR
 setup (they edit the host's Asterisk and DMR files), saving a trunk, and the audio tools answer 503
 `core.hardware`. The SIP trunk page needs the core's Asterisk
-files and is unavailable. The core's weather macro cannot see the API's NWS alerts and says weather is
-not set up; the API's own weather page and alerts work.
+files and is unavailable. The weather macro (a caller dialling for the weather) is worded by the API,
+which does the NWS polling, and said by the core; with the API away the caller hears that weather is
+not available.
 
 Files:
 

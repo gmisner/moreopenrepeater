@@ -125,38 +125,83 @@ uses `espeak-ng` only. Kokoro is not in the image.
 
 ## Measured on a Pi
 
-On a Pi 4 (Debian 13, AIOC, 4 cores) the container starts, finds the sound card and
-the CM108, keys for the scheduled ID and unkeys, and is followed by `RemoteCore`
-through the volume's socket.
+All of this is on a Raspberry Pi 3 Model B+ (Debian 13, an AIOC, 4 cores, 905 MB of RAM, on Wi-Fi). The
+container starts, finds the sound card and the CM108, keys for the scheduled ID and unkeys, and is
+followed by `RemoteCore` through the volume's socket. With the core, the API and Piper running, memory
+is about 265 MB available with 270 MB of swap in use (the core 70 MB, the API 110 to 140 MB, Piper
+210 MB), the CPU is under 1.3 load and 44 to 49 C. The Pi has hit under-voltage at some point since it
+booted (`vcgencmd get_throttled` says `0x50000`), though not during any test here.
 
-**Docker's default seccomp profile broke the audio.** With it, the container logged a
-pair of `audio glitch` lines (a sound card receive overrun and a transmit underrun)
-every one to four minutes while idle, across several runs. The same core run by
-systemd logged none in nine minutes. Turning off the Piper server and turning off
-the health check changed nothing; turning off seccomp (`seccomp=unconfined`) cut it to
-one pair in about 32 minutes of running (15 minutes with none after start-up, then 17
-with one). The same core under systemd had none in about 25 minutes, so the two are
-not yet distinguishable. The audio worker makes a steady stream of small system calls, and
-the filter adds a cost to each that a Pi cannot always afford. So `compose.yaml`
-sets `seccomp=unconfined`, and keeps the rest: non-root user, read-only root, no
-capabilities, `no-new-privileges`. A tight allowlist profile for this container
-(the core uses few system calls) would restore the filter; that is a later slice,
-and it must be measured the same way.
+### Audio glitches
 
-Also found:
+Run as containers, the core logs a pair of `audio glitch` lines (a sound card receive overrun and a
+transmit underrun) about every 3.5 minutes while idle. The same code does not do that natively. This
+was measured, not guessed. Counting receive overruns:
 
-- Raspberry Pi OS boots with `cgroup_disable=memory`, so memory limits and
-  `docker stats` memory do not work until `cgroup_enable=memory cgroup_memory=1`
-  is added to `/boot/firmware/cmdline.txt` and the Pi reboots. ADR 0005's
-  per-module resource budgets need that.
-- `docker kill` does not restart the container under `unless-stopped`. A crash of
-  the process does (tested: the core was back and followed again in about 24 s).
+| Setup | Overruns |
+|---|---|
+| Native install (API and core in one process), 30 min | 1 |
+| The core run on the host with no Docker, same user and priority, 20 min | 0 |
+| The core container alone, health check off, 25 min | 1 |
+| The core container with the API container, many runs over two hours | one every 3.5 min |
+| Core alone, plus two memory-heavy processes at 60% | 158 in 10 min |
+| Core alone, plus two CPU-only processes at 60% | 2 in 10 min |
 
-**Stopping mid-transmission:** `docker stop` sent while the repeater was sending its
-ID (0.2 s in) logged `audio engine stopped` within 0.2 s, and the container exited 0
-in 0.95 s. That is the core's own shutdown path releasing the audio device and PTT;
-nothing here observed the radio itself unkeying.
+Docker's default seccomp profile was part of it: with it the core alone glitched every one to four
+minutes, and `seccomp=unconfined` (kept in `compose.yaml`) cut that to one in about 30, which is the
+core-alone figure above. A tight allowlist profile is a later slice and has to be measured this way.
 
-Still to measure: memory and CPU on a Pi 3B+, the PTT line observed independently
-when the container stops, and device loss. A stable udev name for the PTT device,
-multi-arch publishing, and the API, `logd` and module containers are later slices.
+What the rest of the work ruled out, each with a run of its own: the Python interpreter (an opt-in
+diagnostic, below, saw no garbage collection or held thread near any glitch), the scheduler (a trace of
+the core's threads showed them running within a millisecond of being woken, 0.03 ms typical and 20 ms
+the worst in 2.5 minutes), CPU priority and weight (nice -10 and a cgroup weight matching the native
+unit's 200 changed nothing; nice only ranks threads inside one cgroup), memory pressure (no page
+faults or swap-ins near a glitch), disk (almost no writes), the health check, the API's polling, the
+weather poll, and a larger sound card buffer, which made it worse (265 overruns under the same memory
+load that gave 158 with the default). At every glitch the USB interrupt count dips by 500 to 800 in
+that second: the card's audio did not arrive on time.
+
+What did matter is memory traffic from other processes. Memory-heavy load caused the glitches and the
+same amount of CPU-only load did not. On this Pi the USB controller's DMA shares the memory bus with
+the CPU, and the AIOC is a full-speed device behind the Pi's high-speed hub, so every transfer is a
+split transaction that the controller's interrupt code has to time exactly. A second busy process,
+even a quiet API container, is enough to make it miss one now and then. I have not proved the exact
+mechanism, only that the glitches follow memory traffic and nothing else I tried.
+
+What to do about it, in the order I would try:
+
+- Use a Pi 4 or 5 for container installs. Their USB is a different controller. This is the likely
+  fix and has not been tested.
+- On a 3B+, add `dwc_otg.speed=1` to `/boot/firmware/cmdline.txt` and reboot. That forces the USB
+  controller to full speed, so there are no split transactions. It has not been tried: the setting
+  cannot be changed without a reboot. Test it with the memory-heavy load above before relying on it.
+- Keep the other processes light. The API polls the core's hardware every 2 seconds and its log every
+  second, and builds a new HTTP client for each request, so 17% of its Python time goes on making
+  SSL contexts for a local socket. That is wasteful on its own, though cutting the polling did
+  not stop the glitches.
+
+To see whether a glitch is the process holding the audio thread up, set
+`MOREOPENREPEATER_DIAG_LATENCY=1` in `core.env`. The core then logs, next to the glitch lines, a
+garbage collection over 10 ms, a thread held 15 ms or more, and an event loop 15 ms or more late. It
+is off by default and only logs when a threshold is crossed.
+
+### Also found
+
+- **Device loss.** With the AIOC unplugged and plugged back in, the core's own health reported
+  `audio.engine` failed within 10 seconds, but Docker kept showing the container healthy for a minute or
+  more, nothing restarted it, and the AIOC came back as `hidraw2` instead of `hidraw0`, so the core's
+  PTT path no longer existed and nothing said so. It needs a stable udev name for the PTT device and the
+  core exiting when audio stays failed, so that Docker restarts it.
+- Raspberry Pi OS boots with `cgroup_disable=memory`, so memory limits and `docker stats` memory do not
+  work until `cgroup_enable=memory cgroup_memory=1` is added to `/boot/firmware/cmdline.txt` and the Pi
+  reboots. ADR 0005's per-module resource budgets need that.
+- `docker kill` does not restart the container under `unless-stopped`. A crash of the process does
+  (tested: the core was back and followed again in about 24 s).
+
+**Stopping mid-transmission:** `docker stop` sent while the repeater was sending its ID (0.2 s in)
+logged `audio engine stopped` within 0.2 s, and the container exited 0 in 0.95 s. That is the core's
+own shutdown path releasing the audio device and PTT; nothing here observed the radio itself unkeying.
+
+Still to measure: the PTT line observed independently when the container stops (it needs a scope or a
+second receiver), the 3B+ with `dwc_otg.speed=1`, and a Pi 4 or 5. A stable udev name for the PTT
+device, multi-arch publishing, and the API, `logd` and module containers are later slices.

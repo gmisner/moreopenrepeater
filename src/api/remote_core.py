@@ -57,6 +57,7 @@ from controller.modes import held_reason as _held_reason
 from controller.modes import effective_config
 
 from .core_runtime import AnnouncementQueueFull
+from .remote_activity import RemoteActivityStore
 from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, UnknownClipError
 from playout.tts import TTSError
@@ -441,9 +442,8 @@ class RemoteCore:
             attempt += 1
 
     async def _follow(self) -> None:
-        transport = httpx.AsyncHTTPTransport(uds=str(self.socket_path))
         timeout = httpx.Timeout(CONNECT_TIMEOUT_SECONDS, read=None)
-        async with httpx.AsyncClient(transport=transport, base_url="http://core", timeout=timeout) as client:
+        async with self._socket_client(timeout) as client:
             handles = ",".join(sorted(self._macro_handlers))
             async with client.stream("GET", "/events" + (f"?handles={handles}" if handles else "")) as response:
                 if response.status_code != 200:
@@ -526,8 +526,13 @@ class RemoteCore:
     # -- the configuration ---------------------------------------------------------------------
 
     def _client(self) -> httpx.AsyncClient:
-        transport = httpx.AsyncHTTPTransport(uds=str(self.socket_path))
-        timeout = httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS)
+        return self._socket_client(httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS))
+
+    def _socket_client(self, timeout: httpx.Timeout) -> httpx.AsyncClient:
+        """A client for the core's socket. It is plain HTTP over a Unix socket, so `verify=False`: httpx
+        otherwise builds a TLS context for every client, loading and parsing the whole certificate
+        bundle, which on a Pi was a sixth of the API's Python time (a client is made per request)."""
+        transport = httpx.AsyncHTTPTransport(uds=str(self.socket_path), verify=False)
         return httpx.AsyncClient(transport=transport, base_url="http://core", timeout=timeout)
 
     def _refresh_config(self) -> None:
@@ -599,6 +604,10 @@ class RemoteCore:
             except Exception as error:  # noqa: BLE001 - the pages say "not known" until the next read
                 _logger.debug("could not read the core's hardware state: %s", type(error).__name__)
             await asyncio.sleep(HARDWARE_POLL_SECONDS)
+
+    def remote_activity_store(self) -> RemoteActivityStore:
+        """The activity history, which the core records and keeps; this reads it over the socket."""
+        return RemoteActivityStore(self.socket_path)
 
     def attach_log_hub(self, hub) -> None:
         """Publish the core's log lines into `hub`, so the dashboard's Logs page, the live stream, the

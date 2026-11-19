@@ -116,6 +116,7 @@ def test_write_support_bundle_holds_logs_and_settings_without_secrets(tmp_path, 
             "usb.txt",
             "moreopenrepeater.log",
             "journal.txt",
+            "event-history.json",
             "update.log",
         }
         assert "users" not in names

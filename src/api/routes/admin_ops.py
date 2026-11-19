@@ -8,7 +8,7 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Optional, Sequence
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -51,6 +51,7 @@ from ..notify import SECRET_FIELDS, Notifier
 from ..restart import RestartControl
 from ..service.core_handle import ApiCoreHandle
 from ..auto_update import AutoUpdater
+from ..log_history import LogHistory
 from ..support_bundle import support_bundle_name, write_support_bundle
 from ..tailscale import TailscaleControl, read_log as read_tailscale_log
 from ..updates import UpdateChecker, Updater, installed_version, read_log
@@ -60,6 +61,7 @@ def register(
     app: FastAPI,
     *,
     service: ApiCoreHandle,
+    log_history: Optional[LogHistory] = None,
     backups: BackupFolder,
     backup_sources: BackupSources,
     audit: AuditLog,
@@ -122,6 +124,7 @@ def register(
                 serial_ports=find_serial_ports(),
                 cm108_interfaces=find_interfaces(),
                 cm108_path=getattr(getattr(live_audio.cm108, "device", None), "path", None),
+                log_history=log_history,
             )
         except BaseException:
             path.unlink(missing_ok=True)

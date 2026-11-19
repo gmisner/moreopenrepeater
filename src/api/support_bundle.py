@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .boards import alsa_card
+from .log_history import LogHistory, LogHistoryRefused, LogHistoryUnavailable
 from .mixer import parse_volumes
 from .service.core_handle import ApiCoreHandle
 from .updates import Updater, installed_version, read_log
@@ -22,6 +23,7 @@ LOG_LINES = 5000
 JOURNAL_LINES = 500
 UPDATE_LOG_LINES = 500
 KERNEL_LINES = 400
+HISTORY_EVENTS = 500  # warnings and worse from the collector, newest first
 _USB_KERNEL = re.compile(r"usb|hidraw|hid-generic|cm108|aioc|disconnect|reset full-speed|cdc_acm", re.I)
 _HID_UDEV_KEYS = (
     "DEVNAME",
@@ -33,6 +35,22 @@ _HID_UDEV_KEYS = (
     "ID_USB_DRIVER",
     "ID_USB_INTERFACE_NUM",
 )
+
+
+def _event_history(log_history: Optional[LogHistory]) -> dict:
+    """The collector's warnings and worse, and the gaps it knows of, or why there is none. The events were
+    redacted when they were made; nothing here reads more than the collector keeps."""
+    if log_history is None or not log_history.configured:
+        return {"available": False, "reason": "the log collector is not set up on this install"}
+    try:
+        return {
+            "available": True,
+            "stats": log_history.stats(),
+            "gaps": log_history.gaps(limit=100)["gaps"],
+            "events": log_history.events(min_severity="warning", limit=HISTORY_EVENTS)["events"],
+        }
+    except (LogHistoryUnavailable, LogHistoryRefused) as error:
+        return {"available": False, "reason": str(error)}
 
 
 def support_bundle_name(callsign: str, now: float) -> str:
@@ -196,6 +214,7 @@ def write_support_bundle(
     serial_ports: Optional[list] = None,
     cm108_interfaces: Optional[list] = None,
     cm108_path: Optional[str] = None,
+    log_history: Optional[LogHistory] = None,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> None:
     """Writes a support-bundle archive to `path`."""
@@ -233,6 +252,7 @@ def write_support_bundle(
         "  health.json         Pi readings + last unexpected stop\n"
         "  usb.txt             lsusb, ALSA cards, hidraw, USB kernel lines\n"
         "  moreopenrepeater.log / journal.txt / update.log\n"
+        "  event-history.json  warnings and worse from the log collector, with what it knows is missing\n"
         "\n"
         "It does not include passwords, the env file, users, tokens or recordings.\n"
         "Share the whole .zip with whoever is helping you.\n"
@@ -266,4 +286,5 @@ def write_support_bundle(
         archive.writestr("usb.txt", _usb_snapshot(run))
         archive.writestr("moreopenrepeater.log", "\n".join(_tail_lines(log_path, LOG_LINES)) + "\n")
         archive.writestr("journal.txt", _journal(run, JOURNAL_LINES))
+        archive.writestr("event-history.json", json.dumps(_event_history(log_history), indent=2, default=str) + "\n")
         archive.writestr("update.log", "\n".join(update_lines) + ("\n" if update_lines else ""))

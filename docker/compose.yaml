@@ -10,6 +10,16 @@
 # core would claim the same sound card and PTT line.
 name: moreopenrepeater
 
+# Where the core and the AllStar node find each other (docs/docker.md, The private network). Addresses, not names: Asterisk's
+# USRP channel and its AudioSocket dialplan take an IP, and the core only accepts radio audio from the node's address.
+# They must be inside MOR_SERVICES_SUBNET. Both services need the same values, since the API writes the node's
+# configuration and the core listens.
+x-link-addresses: &link_addresses
+  MOREOPENREPEATER_USRP_LISTEN: 0.0.0.0:34001  # inside the container; nothing publishes it, and only the node's address is heard
+  MOREOPENREPEATER_USRP_ADDRESS: ${MOR_CORE_IP:-172.28.0.10}  # what Asterisk is told to send the radio's audio to
+  MOREOPENREPEATER_AUDIOSOCKET_LISTEN: 0.0.0.0:9092  # autopatch calls, when the node's AMI is set
+  MOREOPENREPEATER_AUDIOSOCKET_ADDRESS: ${MOR_CORE_IP:-172.28.0.10}:9092
+
 services:
   core:
     build:
@@ -21,10 +31,12 @@ services:
     stop_grace_period: 30s   # time to unkey and close the devices
     user: "999:999"
 
-    # Interim: host networking, because the link audio paths use loopback to a host
-    # Asterisk (AudioSocket on 127.0.0.1:9092, USRP UDP). Once AllStar is its own
-    # container (ADR 0005) the core can move to a private network.
-    network_mode: host
+    # The private services network, not the host's: the AllStar node's container reaches the core here (USRP audio,
+    # AudioSocket calls) and nothing on the host's network or loopback is involved. Nothing is published from the
+    # core. To keep the old layout (a host Asterisk on the loopback) use compose.host-network.yaml.
+    networks:
+      services:
+        ipv4_address: ${MOR_CORE_IP:-172.28.0.10}
 
     # Sound card and the CM108 PTT interface. A device must exist on the host or the
     # container will not start. The PTT device is found by a stable name that a udev rule makes
@@ -56,6 +68,7 @@ services:
       # Docker does not restart an unhealthy container, so a core whose audio stalls (the sound card dropped off USB
       # and came back, say) stops itself, with the transmitter off the air, and `restart` brings it back.
       MOREOPENREPEATER_EXIT_ON_STALL: "1"
+      <<: *link_addresses
       # The one PTT device the core is given, by the path it has inside the container. The default "auto"
       # would read the host's /dev/hidrawN numbers, which are not the container's.
       MOREOPENREPEATER_CM108_HIDRAW: ${MOR_PTT_HIDRAW:-/dev/moreopenrepeater-ptt}
@@ -91,9 +104,14 @@ services:
     restart: unless-stopped
     init: true
     user: "999:999"
-    # The same interim host networking as the core: AllStar link control goes to Asterisk's
-    # manager port on the host's loopback. The dashboard is on :8000 (MOREOPENREPEATER_PORT).
-    network_mode: host
+    # The same private network as the core: AllStar link control goes to the node's manager port (AMI) as `allstar:5038`.
+    # The dashboard is published on the host's loopback by default. With no accounts set up it is open and can key the
+    # transmitter, so it is not offered to the network until you choose to (MOR_API_HOST=0.0.0.0, after creating an
+    # account or setting MOREOPENREPEATER_ADMIN_USER and _PASSWORD in api.env).
+    networks:
+      - services
+    ports:
+      - "${MOR_API_HOST:-127.0.0.1}:${MOR_API_PORT:-8000}:8000"
     # It starts without the core (it says "core not reachable") and follows it when it is up.
     depends_on:
       core:
@@ -112,11 +130,11 @@ services:
       MOREOPENREPEATER_LOG_FORMAT: json
       MOREOPENREPEATER_LOGD_SOCKET: /run/logd/events.sock
       MOREOPENREPEATER_LOGD_QUERY_SOCKET: /run/logd/query.sock  # the Logs page's history; without logd it says so
-      # Loopback by default. With no accounts set up the dashboard is open and can key the
-      # transmitter, so it is not offered to the network until you choose to (MOR_API_HOST=0.0.0.0,
-      # after creating an account or setting MOREOPENREPEATER_ADMIN_USER and _PASSWORD in api.env).
-      MOREOPENREPEATER_HOST: ${MOR_API_HOST:-127.0.0.1}
-      MOREOPENREPEATER_PORT: ${MOR_API_PORT:-8000}
+      # Inside the container it listens on every address of its own network; what the host can reach is the
+      # published port above (loopback by default).
+      MOREOPENREPEATER_HOST: 0.0.0.0
+      MOREOPENREPEATER_PORT: "8000"
+      <<: *link_addresses
     env_file:
       - path: api.env
         required: false
@@ -183,7 +201,8 @@ services:
     user: "999:999"
     stop_grace_period: 20s
     networks:
-      - services
+      services:
+        ipv4_address: ${MOR_ALLSTAR_IP:-172.28.0.20}  # an address, not a name: it is what the radio's USRP audio is sent to
     ports:
       - "${MOR_ALLSTAR_IAX_PORT:-4569}:4569/udp"
     environment:

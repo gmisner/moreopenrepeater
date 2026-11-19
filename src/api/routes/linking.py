@@ -62,7 +62,7 @@ def register(
     transmit_dependencies: Sequence,
 ) -> None:
     def no_call_in_progress() -> None:
-        if autopatch.call is not None:
+        if autopatch.status()["call"] is not None:  # the status is the same in-process and from the core
             raise HTTPException(status_code=409, detail="Hang up the call first.")
 
     async def change_allstar(change: Awaitable[dict]) -> dict:

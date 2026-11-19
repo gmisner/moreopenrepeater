@@ -43,6 +43,8 @@ from contracts import (
     HARDWARE,
     PROGRAMMING,
     SIMULATED,
+    ActivityEntry,
+    ActivityRows,
     CommandName,
     CommandResult,
     CommandStatus,
@@ -116,6 +118,7 @@ HARDWARE_PARTS = (
     "live_audio", "gpio", "tx_fan", "link_radio", "remote_base", "monitor_receiver", "autopatch", "allstar_node", "dmr",
 )
 LOGS_PER_REQUEST = 500  # the most log lines one GET /logs returns
+MAX_ACTIVITY_ROWS = 20_000  # the most rows one GET /activity returns; a reader asks again for the rest
 LOGS_RING_MAX = 5000  # more than any hub holds
 MAX_LOG_LINE_CHARS = 4000
 #: The macro actions the API's modules own. A client names the ones it handles when it connects.
@@ -144,6 +147,7 @@ class ControlServer:
         allow_simulate: bool = False,
         assets_have: Optional[Callable[[str], bool]] = None,
         log_hub=None,
+        activity_store=None,
     ) -> None:
         """`service` is the `RepeaterService`; `runtime` the `CoreRuntime`. `clock` is
         monotonic time (health); `now` is wall-clock time (request deadlines)."""
@@ -154,6 +158,7 @@ class ControlServer:
         #: repeater transmit. A core on a real radio refuses it unless this was asked for.
         self._allow_simulate = allow_simulate
         self._log_hub = log_hub  # the core's recent log lines, for GET /logs
+        self._activity_store = activity_store  # what the core recorded about use, for GET /activity
         self._assets_have = assets_have  # is there an uploaded clip with this id? None: not checked here
         self._version = version
         self._clock = clock
@@ -337,11 +342,13 @@ class ControlServer:
 
     async def _dispatch(self, method: str, target: str, body: bytes) -> tuple[int, dict]:
         path = target.split("?", 1)[0]
-        if path not in self._get and path not in self._post and path != "/logs":
+        if path not in self._get and path not in self._post and path not in _QUERY_PATHS:
             return 404, {"error": f"no such path: {path}"}
         try:
             if method == "GET" and path == "/logs":
                 return 200, self._logs(target)
+            if method == "GET" and path == "/activity":
+                return 200, await self._activity(target)
             if method == "GET" and path in self._get:
                 result = self._get[path]()
                 if asyncio.iscoroutine(result):
@@ -349,7 +356,7 @@ class ControlServer:
                 return 200, result
             if method == "POST" and path in self._post:
                 return 200, await self._post[path](body)
-            allowed = "GET" if (path in self._get or path == "/logs") else "POST"
+            allowed = "GET" if (path in self._get or path in _QUERY_PATHS) else "POST"
             return 405, {"error": f"use {allowed} for {path}"}
         except _BadRequest as error:
             return error.status, error.body()
@@ -667,6 +674,43 @@ class ControlServer:
                 {"seq": e.seq, "line": e.line[:MAX_LOG_LINE_CHARS], "level": e.level, "at": e.at} for e in found
             ]
         message = CoreLogs(header=self._header(), cursor=cursor, lines=lines)
+        return json.loads(message.model_dump_json())
+
+    async def _activity(self, target: str) -> dict:
+        """`GET /activity?since=&until=&kind=&limit=&newest=1`: what the core recorded about use of
+        the repeater. By default the rows from `since` (unix time) up to `until`, oldest first, at
+        most MAX_ACTIVITY_ROWS (`truncated` says there were more). With `newest=1` it is the most
+        recent `limit` rows of one `kind`, newest first. The database is read off the event loop, so
+        a long history cannot hold up the controller."""
+        query = dict(part.partition("=")[::2] for part in target.partition("?")[2].split("&") if part)
+        try:
+            since = float(query.get("since", "0"))
+            until = float(query["until"]) if "until" in query else time.time() + 1
+            limit = max(1, min(int(query.get("limit", str(MAX_ACTIVITY_ROWS))), MAX_ACTIVITY_ROWS))
+        except ValueError:
+            raise _BadRequest(400, "since and until must be numbers and limit a whole number") from None
+        kind = query.get("kind") or None
+        newest = query.get("newest") == "1"
+        if newest and kind is None:
+            raise _BadRequest(400, "newest needs a kind")
+        store = self._activity_store
+        truncated = False
+        if store is None:
+            found: list = []
+        elif newest:
+            found = await asyncio.get_running_loop().run_in_executor(None, store.recent, kind, limit)
+        else:
+            found = await asyncio.get_running_loop().run_in_executor(None, store.rows, since, until, kind)
+            if len(found) > limit:
+                found, truncated = found[:limit], True
+        message = ActivityRows(
+            header=self._header(),
+            rows=[
+                ActivityEntry(kind=r.kind, started_at=r.started_at, duration=max(0.0, r.duration), timed_out=r.timed_out)
+                for r in found
+            ],
+            truncated=truncated,
+        )
         return json.loads(message.model_dump_json())
 
     async def _hardware(self) -> dict:
@@ -1037,6 +1081,10 @@ class _BadRequest(Exception):
         if self.problems is not None:
             body["problems"] = self.problems
         return body
+
+
+#: GET paths that read their query string themselves, so they are not in `_get`.
+_QUERY_PATHS = frozenset({"/logs", "/activity"})
 
 
 def socket_path_from_env(env: dict[str, str]) -> Optional[Path]:

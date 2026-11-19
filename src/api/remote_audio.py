@@ -80,7 +80,7 @@ class RemoteAudioMonitor:
             attempt += 1
 
     async def _read(self, source: str) -> None:
-        transport = httpx.AsyncHTTPTransport(uds=str(self._socket_path))
+        transport = httpx.AsyncHTTPTransport(uds=str(self._socket_path), verify=False)
         # No read timeout: a core with its audio off sends nothing, and that is not an error.
         timeout = httpx.Timeout(CONNECT_TIMEOUT_SECONDS, read=None)
         async with httpx.AsyncClient(transport=transport, base_url="http://core", timeout=timeout) as client:

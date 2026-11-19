@@ -458,6 +458,10 @@ class RepeaterService:
         """In process the audio engine's own monitor serves the listeners; there is no remote one."""
         return None
 
+    def remote_activity_store(self) -> None:
+        """In process the activity is recorded by the API's own recorder; there is no remote one."""
+        return None
+
     def sync_net_state(self, active: bool) -> None:
         self.set_net_active(active)
 

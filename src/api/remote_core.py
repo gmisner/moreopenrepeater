@@ -22,6 +22,7 @@ import dataclasses
 import types
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,6 +64,7 @@ from .remote_activity import RemoteActivityStore
 from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, UnknownClipError
 from playout.tts import TTSError
+from playout.wav import WavError, decode_wav
 
 from .service.snapshot import StatusSnapshot
 from .service.weather import WeatherSupport
@@ -124,6 +126,10 @@ class RemoteCore:
         self._speaking: set[asyncio.Task] = set()  # fire-and-forget speak() calls in flight
         self._macro_handlers: dict[str, Callable] = {}  # macro family -> what to call
         self._audio_monitors: dict[str, RemoteAudioMonitor] = {}
+        #: What to call with the next recorded transmission, if the mailbox is waiting for one.
+        self._capture_waiting: Optional[Callable] = None
+        self._macro_handlers["capture"] = self._captured  # the core names the recording in a `capture` event
+        self.audio_output = _RemoteCapture(self)
         self._listeners: list[Callable[[RepeaterConfig], None]] = []
         self._deferred: collections.deque = collections.deque(maxlen=MAX_DEFERRED)  # (clip, on_linked_radio) held for a net
         self._net_hint: Optional[bool] = None  # what the API's saved net state says; resent on every connect
@@ -633,6 +639,36 @@ class RemoteCore:
                 _logger.debug("could not read the core's hardware state: %s", type(error).__name__)
             await asyncio.sleep(HARDWARE_POLL_SECONDS)
 
+    async def _arm_capture(self, max_seconds: float) -> None:
+        try:
+            await self.command("arm_capture", max_seconds=max_seconds)
+        except (CommandRefused, CoreUnavailable):
+            self._capture_waiting = None  # nothing will come
+            self.speak(TTS_PREFIX + "Messages need live audio, which is not running.")
+
+    async def _captured(self, filename: str, started_at: float) -> None:
+        """The core recorded a transmission for us and put it in a file. Hand it to whoever armed it
+        (the mailbox), on a worker thread as in process, and remove the file. Only the core's own
+        recording files are ever opened: a path that is not one is ignored."""
+        path = Path(filename)
+        if path.parent.name != "captures" or not _CAPTURE_NAME.fullmatch(path.name):
+            _logger.warning("ignored a recording that is not one of the core's files")
+            return
+        waiting, self._capture_waiting = self._capture_waiting, None
+        loop = asyncio.get_running_loop()
+        try:
+            if waiting is None:
+                _logger.warning("a recorded transmission arrived and no one was waiting for it; it was dropped")
+                return
+            try:
+                samples, _rate = await loop.run_in_executor(None, lambda: decode_wav(path.read_bytes()))
+            except (OSError, WavError):
+                _logger.warning("could not read the recorded transmission")
+                return
+            await loop.run_in_executor(None, waiting, samples, float(started_at))
+        finally:
+            path.unlink(missing_ok=True)
+
     def remote_audio_monitor(self, device: str) -> RemoteAudioMonitor:
         """The core's live audio (`live` or `monitor`), read over the socket for as long as someone listens."""
         if device not in self._audio_monitors:
@@ -866,3 +902,31 @@ def _snapshot_from(status: CoreStatus, local: dict) -> StatusSnapshot:
         hang_remaining=status.hang_remaining_s,
         id_due_in=status.id_due_in_s,
     )
+
+
+#: The files the core records into: `capture-` and sixteen hex digits.
+_CAPTURE_NAME = re.compile(r"capture-[0-9a-f]{16}\.wav")
+
+
+class _RemoteCapture:
+    """What `service.audio_output` is when the core is a separate process: the one thing the mailbox
+    asks of it, recording the next transmission instead of repeating it."""
+
+    def __init__(self, core: RemoteCore) -> None:
+        self._core = core
+
+    def arm_capture(self, max_seconds: float, on_done: Callable) -> bool:
+        """Ask the core to record the next transmission and call `on_done(samples, started_at)` with it.
+        False, at once, if the core is not running live audio or cannot be heard from. A core that
+        refuses after this said yes is spoken about by `RemoteCore._arm_capture`."""
+        core = self._core
+        try:
+            if not core.hardware_status("live_audio").get("running"):
+                return False
+        except CoreUnavailable:
+            return False
+        core._capture_waiting = on_done  # one slot, as in the engine: a newer arm replaces an older one
+        task = asyncio.ensure_future(core._arm_capture(max_seconds))
+        core._speaking.add(task)
+        task.add_done_callback(core._speaking.discard)
+        return True

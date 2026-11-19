@@ -545,6 +545,43 @@ def test_the_link_loop_is_not_started_against_a_remote_core_and_the_api_says_so(
     assert "AllStar linking is not available" in caplog.text
 
 
+def test_a_caller_leaves_a_mailbox_message_through_the_core(core, sock_dir, tmp_path, monkeypatch):
+    """The whole path: a caller keys the mailbox macro on the radio, the core hands it to the API's mailbox,
+    the mailbox has the core record the next transmission, and the message ends up in the mailbox."""
+    import numpy as np
+
+    from api.mailbox import MailboxStore
+    from controller.events import MailboxCommand
+
+    store = MailboxStore(tmp_path / "mailbox", None, sample_rate=core.runtime.renderer.sample_rate)
+    store.set_box("1", "Net control", None)
+    armed = []
+    monkeypatch.setattr(core.runtime.live_audio, "arm_capture", lambda seconds, done: armed.append((seconds, done)) or True)
+    real = core.runtime.live_audio.status
+    monkeypatch.setattr(core.runtime.live_audio, "status", lambda: {**real(), "running": True})
+    with CoreThread(core, sock_dir / "core.sock", allow_simulate=False, capture_dir=tmp_path / "captures") as thread:
+        client, remote = split_client(sock_dir / "core.sock", mailbox_store=store)
+        with client:
+            wait_for(lambda: remote.connected and remote._config is not None and remote._hardware_at is not None)
+            wait_for(lambda: thread.server._macro_clients and any("capture" in h for h, _ in thread.server._macro_clients))
+            wait_for(lambda: (remote.hardware_status("live_audio") or {}).get("running"), timeout=8.0)
+            said = []
+            monkeypatch.setattr(remote, "speak", lambda clip, on_linked_radio=False: said.append(clip))
+            leave = MailboxCommand(action="leave", box="1")
+            thread.loop.call_soon_threadsafe(lambda: core.service.programming.run_mailbox(leave))
+            wait_for(lambda: armed)  # the mailbox had the core record the next transmission
+            assert said and "leave your message" in said[0]
+            tone = (np.sin(np.linspace(0, 600, core.runtime.renderer.sample_rate)) * 0.5).astype(np.float32)
+            worker = threading.Thread(target=armed[0][1], args=(tone, 1700000000.0))  # the engine, when it ends
+            worker.start()
+            worker.join(5)
+            wait_for(lambda: client.get("/api/mailbox").json()["messages"])
+            message = client.get("/api/mailbox").json()["messages"][0]
+            assert message["box"] == "1" and abs(message["duration"] - 1.0) < 0.05
+            assert not list((tmp_path / "captures").glob("*"))  # the hand-over file is gone
+            wait_for(lambda: any("Message saved" in clip for clip in said))
+
+
 def test_the_environment_chooses_the_remote_core():
     import importlib
 

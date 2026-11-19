@@ -30,6 +30,7 @@ import inspect
 import json
 import logging
 import os
+import secrets
 import stat
 import struct
 import time
@@ -85,6 +86,7 @@ from controller.macros import Macro
 from api.core_runtime import AnnouncementQueueFull
 from api.gpio import GpioError
 from playout.renderer import TTS_PREFIX, UnknownClipError
+from playout.wav import encode_wav
 
 from .config_boundary import ConfigRejected, CoreConfigError, check_change, check_config
 from playout.tts import TTSError
@@ -122,7 +124,7 @@ MAX_ACTIVITY_ROWS = 20_000  # the most rows one GET /activity returns; a reader 
 LOGS_RING_MAX = 5000  # more than any hub holds
 MAX_LOG_LINE_CHARS = 4000
 #: The macro actions the API's modules own. A client names the ones it handles when it connects.
-MACRO_FAMILIES = frozenset({"net", "homeassistant", "metar", "sensor", "mailbox", "aprs", "weather", "audit"})
+MACRO_FAMILIES = frozenset({"net", "homeassistant", "metar", "sensor", "mailbox", "aprs", "weather", "audit", "capture"})
 MACRO_QUEUE_LIMIT = 32  # per client; a client that cannot keep up loses the newest
 RENDER_DEADLINE_SECONDS = 30.0  # to prepare speech before giving up on a request
 #: Longer than any normal pause (the tick runs every 50 ms); the same figure the
@@ -148,6 +150,7 @@ class ControlServer:
         assets_have: Optional[Callable[[str], bool]] = None,
         log_hub=None,
         activity_store=None,
+        capture_dir: Optional[Path] = None,
     ) -> None:
         """`service` is the `RepeaterService`; `runtime` the `CoreRuntime`. `clock` is
         monotonic time (health); `now` is wall-clock time (request deadlines)."""
@@ -159,6 +162,7 @@ class ControlServer:
         self._allow_simulate = allow_simulate
         self._log_hub = log_hub  # the core's recent log lines, for GET /logs
         self._activity_store = activity_store  # what the core recorded about use, for GET /activity
+        self._capture_dir = capture_dir  # where a recorded transmission waits for the API to take it
         self._assets_have = assets_have  # is there an uploaded clip with this id? None: not checked here
         self._version = version
         self._clock = clock
@@ -200,6 +204,7 @@ class ControlServer:
             directory = self.path.parent
             directory.mkdir(parents=True, exist_ok=True, mode=DIRECTORY_MODE)
             self._remove_stale()
+            self._clear_captures()
             previous = os.umask(0o117)  # the socket is created 0660 whatever the umask
             try:
                 self._server = await asyncio.start_unix_server(self._connection, path=str(self.path))
@@ -812,6 +817,15 @@ class ControlServer:
                     return refused(error)
             elif name is CommandName.AUTOPATCH_HANGUP:
                 runtime.autopatch.hangup(params["reason"])
+            elif name is CommandName.ARM_CAPTURE:
+                if self._capture_dir is None:
+                    return refused("Recording is not set up on this core.")
+                self._capture_dir.mkdir(parents=True, exist_ok=True)
+                loop = asyncio.get_running_loop()
+                if not runtime.live_audio.arm_capture(
+                    float(params["max_seconds"]), lambda samples, at: self._capture_finished(loop, samples, at)
+                ):
+                    return refused("Live audio is not running.")
         except GpioError as error:
             return refused(str(error))
         except Exception:  # noqa: BLE001 - nothing a client sent may reach the radio side as a crash
@@ -819,6 +833,31 @@ class ControlServer:
             return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
         _logger.info("core.command %s applied", name.value)
         return self._command_result(request, CommandStatus.APPLIED)
+
+    def _capture_finished(self, loop: asyncio.AbstractEventLoop, samples, started_at: float) -> None:
+        """A transmission the engine was told to record has ended (a worker thread). The audio waits in a
+        file for the API, which is named in a `capture` event; with no API to tell, it is not kept. What was
+        said is never logged."""
+        try:
+            path = self._capture_dir / f"capture-{secrets.token_hex(8)}.wav"
+            path.write_bytes(encode_wav(samples, self._runtime.renderer.sample_rate))
+        except OSError:
+            _logger.exception("could not keep a recorded transmission")
+            return
+        loop.call_soon_threadsafe(self._hand_over_capture, path, started_at)
+
+    def _hand_over_capture(self, path: Path, started_at: float) -> None:
+        if self._api_action("capture", [str(path), started_at]):
+            _logger.info("a recorded transmission was handed to the API")
+        else:
+            path.unlink(missing_ok=True)  # nobody to take it: do not leave someone's message lying around
+            _logger.warning("a recorded transmission was dropped: no API is connected to take it")
+
+    def _clear_captures(self) -> None:
+        """Recordings the API never took (it or the core stopped first) are not kept across a restart."""
+        if self._capture_dir is not None and self._capture_dir.is_dir():
+            for stale in self._capture_dir.glob("capture-*.wav"):
+                stale.unlink(missing_ok=True)
 
     def _import_snapshot(self, request: CoreCommand) -> dict:
         """Replace the whole configuration, the macros and the announcements (a restore). The

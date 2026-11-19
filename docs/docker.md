@@ -135,7 +135,7 @@ s.sendall(b"GET /status HTTP/1.1\r\nHost: core\r\nConnection: close\r\n\r\n");pr
 PY
 ```
 
-## Listening
+## Listening and recording
 
 The dashboard's live listening (the Listen page, the public page, the monitor receiver, the
 stream) works with the API apart from the core. The core serves its audio on the control socket
@@ -143,11 +143,18 @@ as `GET /audio?device=live|monitor&source=rx|tx`, and the API opens one such str
 anyone is listening to that source, and none when nobody is. Every frame is a 4-byte big-endian
 length and that many bytes: the first is a JSON header with the sample rate, the rest are 16-bit
 little-endian mono PCM of about 100 ms each. A listener that falls behind loses audio and one that
-stops reading is dropped, so listening never slows the radio. The Audio page's record and score
-tool records from the same stream (the receiver's audio as it comes in, before the repeater's delay),
-so it works too. At most four listeners at a time
-(`MAX_AUDIO_STREAMS`). The "listeners" count the Audio page shows for the engine counts these
-streams, not browsers.
+stops reading is dropped, so listening never slows the radio. There can be at most four listeners
+at a time (`MAX_AUDIO_STREAMS`). The "listeners" count the Audio page shows for the engine counts
+these streams, not browsers. The Audio page's record and score tool records from the same stream
+(the receiver's audio as it comes in, before the repeater's delay), so it works too.
+
+Leaving a mailbox message goes the other way round. The mailbox (the API's) asks the core, with the
+`arm_capture` command, to record the next transmission instead of repeating it, which only the core
+can do. When the transmission ends the core writes the audio to a file in `captures/` in the data
+folder and names it in a `capture` event. The API reads it, deletes it, and the mailbox saves it.
+The API only opens files in a `captures` folder that are named `capture-` and sixteen hex digits. If
+no API is there to take a recording the core deletes it, and the core clears any it finds left from
+before a restart. A caller is told straight away if the core is not running live audio.
 
 ## Health and restarts
 

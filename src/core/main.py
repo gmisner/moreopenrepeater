@@ -60,6 +60,7 @@ async def serve(
         control = ControlServer(
             control_socket, service=app.service, runtime=core, allow_simulate=allow_simulate,
             assets_have=app.assets_store.has, log_hub=app.log_hub, activity_store=app.activity_store,
+            capture_dir=app.state_path.parent / "captures",
         )
         await control.start()
     _logger.info("core running alone (no web app); state is %s", app.state_path)

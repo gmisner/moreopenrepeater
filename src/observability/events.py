@@ -119,9 +119,12 @@ def record_to_event(snap: RecordSnapshot, identity: ProcessIdentity, seq: int) -
         when = datetime.fromtimestamp(snap.created, timezone.utc)
         structured = snap.structured
         if structured is not None:
+            facts = dict(structured.get("context") or {})
+            if snap.exception:
+                facts.setdefault("exception", snap.exception)
             return LogEvent(
                 time=when, event=structured["event"], message=_clean_message(structured["message"]) if structured.get("message") else None,
-                error_code=structured.get("error_code"), context=structured.get("context") or {},
+                error_code=structured.get("error_code"), context=facts,
                 correlation_id=structured.get("correlation_id") or snap.correlation_id, **common,
             )
         context: dict[str, Any] = {"logger": snap.name}
@@ -148,13 +151,15 @@ def log_event(
     error_code: Optional[str] = None,
     correlation_id: Optional[str] = None,
     facts_in_text: bool = True,
+    exc_info: bool = False,
     **context: Any,
 ) -> None:
     """Log a named event with facts. `event` is a stable dotted lowercase name (`audio.glitch`); put what
     varies in `context`, not in the name or the message, so events can be counted and filtered. Context is
     redacted when the event is built, and the text line written to the log file shows only the redacted form.
     `facts_in_text=False` keeps the text line to the message alone, for a message that already says it all
-    in words (the event still carries the facts)."""
+    in words (the event still carries the facts). `exc_info=True` is for use inside an `except`: the text log
+    gets the traceback, and the event gets the exception's type as `exception` (never its text)."""
     level = int(severity)
     if not logger.isEnabledFor(level):
         return
@@ -168,7 +173,7 @@ def log_event(
     if shown and facts_in_text:
         text += " " + " ".join(f"{key}={value}" for key, value in shown.items())
     logger.log(
-        level, "%s", text[:MAX_MESSAGE * 2], stacklevel=2,
+        level, "%s", text[:MAX_MESSAGE * 2], stacklevel=2, exc_info=exc_info,
         extra={EXTRA_KEY: {
             "event": event, "message": message, "error_code": error_code,
             "correlation_id": correlation_id, "context": context,

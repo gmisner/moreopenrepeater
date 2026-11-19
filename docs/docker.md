@@ -181,6 +181,14 @@ keeps its readable text line in the log file exactly as before:
 | `audio.glitch` | info | `counter`, `count`, `state`, `transmitting` |
 | `audio.engine_started`, `audio.engine_stopped`, `audio.stream_died` | info, info, error | rates for the first |
 | `receiver.opened` | info | `duration_s`, `open_dbfs`, `peak_dbfs`, `ctcss_hz`, `after_tx_s` (never DTMF digits) |
+| `dtmf.digit_received` | info | none: that a digit arrived, never which one (it could be part of a PIN or a code) |
+| `command.applied` | info | `command`: the name of a `core.command` the API sent, never its parameters |
+| `command.refused` | warning | `command`; `error_code` says why (`command.simulation_disabled`, `command.unknown_clip`, `command.queue_full`, ...) |
+| `command.failed` | error | `command`, `exception` (the type, never its text); `error_code` `command.apply_failed` |
+| `config.changed` | info | `settings`: the names of what was changed, never the values |
+| `config.refused` | warning | `error_code` says why (`config.unsafe`, `config.unknown_setting`, `config.wrong_type`, `config.conflict`) |
+| `config.failed` | error | `exception`; `error_code` `config.apply_failed` |
+| `speech.accepted` | info | `topic`: the core took a `speak.request` |
 
 **One cycle, one id.** When the repeater leaves idle, the core starts an activity cycle with a fresh
 `correlation_id`, and every event any of its threads logs until the repeater is idle again carries it,

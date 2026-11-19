@@ -66,11 +66,11 @@ def core(tmp_path):
     return build_core({"MOREOPENREPEATER_DATA_DIR": str(tmp_path), "MOREOPENREPEATER_LOG_PATH": str(tmp_path / "c.log")})
 
 
-def split_client(path):
+def split_client(path, **overrides):
     tmp = Path(tempfile.mkdtemp())
     remote = RemoteCore(path)
     app = create_app(
-        service=remote, assets_store=AudioAssetStore(tmp / "audio"), log_path=tmp / "api.log",
+        service=remote, assets_store=AudioAssetStore(tmp / "audio"), log_path=tmp / "api.log", **overrides,
     )
     return TestClient(app), remote
 
@@ -200,10 +200,54 @@ def test_with_the_core_away_a_hardware_command_says_nothing_was_done(split):
     assert response.status_code == 503 and response.json()["code"] == "core.unavailable"
 
 
-def test_the_trunk_page_is_still_the_cores_alone(split):
+def test_the_trunk_page_is_the_apis_own_and_works_with_no_asterisk_configured(split):
+    """The SIP trunk is set up over AMI, a network call, so the API owns it. With no AMI settings
+    the page loads and says so, rather than answering that it needs the core's hardware."""
     client, *_ = split
     response = client.get("/api/autopatch/trunk")
-    assert response.status_code == 503 and response.json()["code"] == "core.hardware"
+    assert response.status_code == 200, response.text
+    assert response.json()["configured"] is False and response.json()["error"] is None
+
+
+@pytest.fixture
+def split_with_asterisk(core, sock_dir):
+    from test_sip_trunk import SETTINGS, FakeAsterisk
+
+    from api.sip_trunk import SipTrunk
+
+    asterisk = FakeAsterisk()
+    with CoreThread(core, sock_dir / "core.sock", allow_simulate=False, log_hub=core.log_hub):
+        client, remote = split_client(sock_dir / "core.sock", sip_trunk=SipTrunk(SETTINGS, asterisk.client))
+        with client:
+            wait_for(lambda: remote.connected and remote._config is not None and remote._hardware_at is not None)
+            yield client, remote, core, asterisk
+
+
+def test_the_trunk_is_set_up_from_the_dashboard_and_the_core_takes_the_new_settings(split_with_asterisk):
+    from api.sip_trunk import DIAL_STRING
+
+    client, remote, core, asterisk = split_with_asterisk
+    body = {"server": "sip.telnyx.com", "username": "alice", "password": "s3cret;x", "ten_digit_prefix": "+1"}
+    assert client.get("/api/autopatch/trunk").json()["configured"] is True
+    assert client.post("/api/autopatch/trunk/modules").json()["missing_modules"] == []
+    response = client.put("/api/autopatch/trunk", json=body)
+    assert response.status_code == 200, response.text  # no call is running: it must not claim one is
+    assert response.json()["in_use"] is True and "s3cret" not in response.text
+    # The configuration belongs to the core, so that is where the change landed.
+    assert core.service.config.autopatch_dial_string == DIAL_STRING
+    assert core.service.config.autopatch_ten_digit_prefix == "+1"
+    assert client.delete("/api/autopatch/trunk").json()["trunk"] is None
+
+
+def test_a_call_in_progress_still_blocks_a_trunk_change(split_with_asterisk, monkeypatch):
+    client, remote, core, asterisk = split_with_asterisk
+    real = core.runtime.autopatch.status
+    monkeypatch.setattr(core.runtime.autopatch, "status", lambda: {**real(), "call": {"number": "5551234"}})
+    wait_for(lambda: (remote.hardware_status("autopatch") or {}).get("call"), timeout=8.0)
+    body = {"server": "sip.telnyx.com", "username": "alice", "password": "x", "ten_digit_prefix": "+1"}
+    response = client.put("/api/autopatch/trunk", json=body)
+    assert response.status_code == 409 and "Hang up" in response.json()["detail"]
+    assert client.delete("/api/autopatch/trunk").status_code == 409
 
 
 def test_the_status_is_the_core_s_and_the_config_is_the_core_s(split):

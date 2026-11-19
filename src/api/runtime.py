@@ -26,6 +26,7 @@ from controller.state_machine import RepeaterConfig
 from link.aprs_client import APRSClient, format_frequency_comment, format_position_report, format_status_report
 from link.asterisk_files import asterisk_files_from_env
 from link.node_link import NodeLinkClient
+from observability import log_event
 from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError, detect_tts
 from wx.nws import fetch_active_alerts, fetch_zone_geometry, missing_zones
@@ -162,6 +163,15 @@ _aprs_logger = logging.getLogger("moreopenrepeater.aprs")
 _announce_logger = logging.getLogger("moreopenrepeater.announcements")
 _weather_logger = logging.getLogger("moreopenrepeater.weather")
 _link_logger = logging.getLogger("moreopenrepeater.link")
+
+
+def _loop_failed(area: str, what: str, **facts: str) -> None:
+    """A background loop hit something it did not expect and carries on. For use inside an `except`: the traceback
+    goes to the text log, and the event (`<area>.loop_failed`, code `<area>.unexpected`) has the exception's type."""
+    log_event(
+        logging.getLogger(f"moreopenrepeater.{area}"), logging.ERROR, f"{area}.loop_failed", f"unexpected error {what}",
+        error_code=f"{area}.unexpected", exc_info=True, facts_in_text=False, **facts,
+    )
 
 
 class Identity(NamedTuple):
@@ -663,7 +673,10 @@ class AppRuntime:
             try:
                 await (links.disconnect(node) if node else links.disconnect_all())
             except LinkError as error:
-                _link_logger.warning("couldn't drop links for GMRS mode: %s", error)
+                log_event(
+                    _link_logger, logging.WARNING, "link.drop_failed", f"couldn't drop links for GMRS mode: {error}",
+                    error_code="link.drop", exception=type(error).__name__, facts_in_text=False,
+                )
 
         def gmrs_changed(_config: RepeaterConfig) -> None:
             on = service.saved_config.gmrs_mode
@@ -901,11 +914,10 @@ class AppRuntime:
                 )
                 try:
                     await client.connect()
-                    _link_logger.info(
-                        "connected to app_rpt AMI at %s:%s (node %s)",
-                        link_settings.host,
-                        link_settings.port,
-                        node_id or "not chosen yet",
+                    log_event(
+                        _link_logger, logging.INFO, "link.connected",
+                        f"connected to app_rpt AMI at {link_settings.host}:{link_settings.port} (node {node_id or 'not chosen yet'})",
+                        host=link_settings.host, port=link_settings.port, node=node_id or None, facts_in_text=False,
                     )
 
                     def sink(command: SendLinkCommand, _client: NodeLinkClient = client) -> None:
@@ -918,7 +930,11 @@ class AppRuntime:
                         if isinstance(event, LinkStateChanged) and event.linked and service.held_reason("links"):
                             asyncio.create_task(drop_links(event.node_id))  # a node linked to us from outside
                 except (OSError, ConnectionError):
-                    _link_logger.exception("app_rpt AMI connection lost; reconnecting in %ss", LINK_RECONNECT_DELAY_SECONDS)
+                    log_event(
+                        _link_logger, logging.ERROR, "link.connection_lost",
+                        f"app_rpt AMI connection lost; reconnecting in {LINK_RECONNECT_DELAY_SECONDS}s",
+                        error_code="link.ami_connection", retry_s=LINK_RECONNECT_DELAY_SECONDS, exc_info=True, facts_in_text=False,
+                    )
                 finally:
                     links.client = None
                     await client.close()
@@ -930,7 +946,7 @@ class AppRuntime:
                 try:
                     await link_scheduler.tick(service.wall_now())
                 except Exception:
-                    _link_logger.exception("unexpected error in the link schedule")
+                    _loop_failed("link", "in the link schedule", loop="schedule")
 
         async def send_aprs_beacon() -> None:
             config = service.config
@@ -950,9 +966,15 @@ class AppRuntime:
                     continue
                 try:
                     await send_aprs_beacon()
-                    _aprs_logger.info("APRS beacon sent to %s:%s", aprs.aprs_server, aprs.aprs_port)
+                    log_event(
+                        _aprs_logger, logging.INFO, "aprs.beacon_sent", f"APRS beacon sent to {aprs.aprs_server}:{aprs.aprs_port}",
+                        server=aprs.aprs_server, port=aprs.aprs_port, facts_in_text=False,
+                    )
                 except OSError:
-                    _aprs_logger.exception("APRS beacon failed")
+                    log_event(
+                        _aprs_logger, logging.ERROR, "aprs.beacon_failed", "APRS beacon failed",
+                        error_code="aprs.beacon", server=aprs.aprs_server, port=aprs.aprs_port, exc_info=True, facts_in_text=False,
+                    )
                 await asyncio.sleep(aprs.aprs_beacon_interval)
 
         async def render_and_queue(clip: str, *, on_linked_radio: bool = False) -> None:
@@ -980,17 +1002,20 @@ class AppRuntime:
                     if not text:
                         continue
                     clip = TTS_PREFIX + text
-                    _weather_logger.info("scheduled weather announcement due")
+                    log_event(_weather_logger, logging.INFO, "weather.scheduled_due", "scheduled weather announcement due")
                     if service.net_active and service.saved_config.net_hold_announcements:
                         service.defer_announcement(clip, on_linked_radio=on_linked_radio)
                         continue
                     await render_and_queue(clip, on_linked_radio=on_linked_radio)
                 except (UnknownClipError, TTSError, HTTPException):
-                    _weather_logger.exception("couldn't play scheduled weather announcement")
+                    log_event(
+                        _weather_logger, logging.ERROR, "weather.announce_failed", "couldn't play scheduled weather announcement",
+                        error_code="weather.announce", kind="scheduled", exc_info=True, facts_in_text=False,
+                    )
                 except CoreUnavailable:
                     raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
-                    _weather_logger.exception("unexpected error in scheduled weather")
+                    _loop_failed("weather", "in scheduled weather", loop="schedule")
 
         async def check_weather(announce: bool) -> None:
             config = service.config
@@ -1002,14 +1027,21 @@ class AppRuntime:
                     None, fetch_weather, wx.wx_lat, wx.wx_lon, config.callsign
                 )
             except (OSError, ValueError) as error:  # URLError/timeouts are OSErrors; bad JSON is a ValueError
-                _weather_logger.warning("NWS alert check failed: %s", error)
+                log_event(
+                    _weather_logger, logging.WARNING, "weather.check_failed", f"NWS alert check failed: {error}",
+                    error_code="weather.fetch", exception=type(error).__name__, facts_in_text=False,
+                )
                 service.weather_poll_failed(str(error))
                 return
             for clip in service.weather_polled(data, announce=announce):
                 try:
                     await render_and_queue(clip)
                 except (UnknownClipError, TTSError, HTTPException):
-                    _weather_logger.exception("couldn't announce weather alert %s", clip)
+                    # Not the clip: it is the text of the alert. Which alert is in weather.alert_announced.
+                    log_event(
+                        _weather_logger, logging.ERROR, "weather.announce_failed", "couldn't announce a weather alert",
+                        error_code="weather.announce", kind="alert", exc_info=True, facts_in_text=False,
+                    )
             if aprs.aprs_map_enabled:
                 await fetch_zone_shapes(config.callsign)
 
@@ -1024,7 +1056,10 @@ class AppRuntime:
                 try:
                     shape = await asyncio.get_running_loop().run_in_executor(None, fetch_zone, zone, contact)
                 except Exception as error:  # noqa: BLE001 -- the map just goes without that outline
-                    _weather_logger.warning("couldn't fetch NWS zone %s: %s", zone, error)
+                    log_event(
+                        _weather_logger, logging.WARNING, "weather.zone_failed", f"couldn't fetch NWS zone {zone}: {error}",
+                        error_code="weather.fetch", zone=zone, exception=type(error).__name__, facts_in_text=False,
+                    )
                     continue
                 if shape:
                     zone_shapes[zone] = shape
@@ -1041,7 +1076,7 @@ class AppRuntime:
                     raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
                     # Keep polling: a missed severe-weather alert is worse than a noisy log.
-                    _weather_logger.exception("unexpected error checking NWS alerts")
+                    _loop_failed("weather", "checking NWS alerts", loop="alerts")
                 await asyncio.sleep(wx.wx_poll_interval)
 
         async def mailbox_loop() -> None:
@@ -1054,7 +1089,7 @@ class AppRuntime:
                 except CoreUnavailable:
                     raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
-                    logging.getLogger("moreopenrepeater.mailbox").exception("unexpected error in the mailbox")
+                    _loop_failed("mailbox", "in the mailbox")
 
         async def transcribe_loop() -> None:
             loop = asyncio.get_running_loop()
@@ -1067,7 +1102,7 @@ class AppRuntime:
                 except CoreUnavailable:
                     raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
-                    logging.getLogger("moreopenrepeater.transcripts").exception("unexpected error transcribing")
+                    _loop_failed("transcripts", "transcribing")
 
         async def net_loop() -> None:
             while True:
@@ -1077,7 +1112,7 @@ class AppRuntime:
                 except CoreUnavailable:
                     raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
-                    logging.getLogger("moreopenrepeater.net").exception("unexpected error in net mode")
+                    _loop_failed("net", "in net mode")
 
         async def auto_update_loop() -> None:
             loop = asyncio.get_running_loop()
@@ -1088,7 +1123,7 @@ class AppRuntime:
                 except CoreUnavailable:
                     raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
-                    logging.getLogger("moreopenrepeater.updates").exception("unexpected error in automatic updates")
+                    _loop_failed("updates", "in automatic updates")
 
         async def backup_loop() -> None:
             loop = asyncio.get_running_loop()
@@ -1113,7 +1148,7 @@ class AppRuntime:
                 except CoreUnavailable:
                     raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
-                    logging.getLogger("moreopenrepeater.alerts").exception("unexpected error checking the system's health")
+                    _loop_failed("alerts", "checking the system's health")
 
         async def sensor_loop() -> None:
             loop = asyncio.get_running_loop()
@@ -1133,9 +1168,7 @@ class AppRuntime:
                 except CoreUnavailable:
                     raise  # the core is not reached yet: the supervisor starts this loop again
                 except Exception:
-                    logging.getLogger("moreopenrepeater.sensors").exception(
-                        "unexpected error polling site sensors"
-                    )
+                    _loop_failed("sensors", "polling site sensors")
                 await asyncio.sleep(float(config.sensors_poll_interval or SENSOR_POLL_SECONDS))
 
         async def supervised(make) -> None:

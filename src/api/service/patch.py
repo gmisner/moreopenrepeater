@@ -5,6 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Optional, Union
 
 from controller.events import DialPatch, HangupPatch
+from observability import log_event
 from playout.renderer import TTS_PREFIX
 
 from .protocols import PatchCalls
@@ -27,7 +28,7 @@ class PatchSupport:
             if self.calls is not None:
                 self.calls.hangup("hung up by a user")
             return
-        _logger.info("autopatch dial requested over DTMF")
+        log_event(_logger, logging.INFO, "autopatch.dial_requested", "autopatch dial requested over DTMF")  # never the number
         if self.calls is None:
             self._host.speak(TTS_PREFIX + "Autopatch is not available.")
             return

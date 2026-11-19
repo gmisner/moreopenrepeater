@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Callable, Optional
 
+from observability import log_event
 from playout.renderer import TTS_PREFIX
 from wx.nws import AlertTracker, WeatherAlert, meets_severity, parse_alerts, speech_text
 
@@ -57,7 +58,10 @@ class WeatherSupport:
         repeat = timedelta(minutes=wx.wx_repeat_minutes) if wx.wx_repeat_minutes > 0 else None
         to_announce = self.tracker.update(alerts, self._host.wall_now(), wx.wx_min_severity, repeat)
         for alert in to_announce:
-            _logger.info("announcing weather alert: %s (%s)", alert.event, alert.id)
+            log_event(
+                _logger, logging.INFO, "weather.alert_announced", f"announcing weather alert: {alert.event} ({alert.id})",
+                alert=alert.event, alert_id=alert.id, facts_in_text=False,
+            )
         return [self.alert_clip(a) for a in to_announce]
 
     def poll_failed(self, error: str) -> None:

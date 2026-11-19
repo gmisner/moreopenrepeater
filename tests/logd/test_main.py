@@ -195,3 +195,11 @@ def test_the_query_command_imports_nothing_heavy():
     code = "import sys, logd.query; print(sorted({'asyncio', 'contracts', 'pydantic', 'sqlite3'} & set(sys.modules)))"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(Path(__file__).parents[2] / "src"))
     assert out.stdout.strip() == "[]", out.stdout + out.stderr
+
+
+def test_the_query_command_shows_whole_and_fractional_seconds_alike():
+    from logd.query import line
+
+    base = {"severity": 40, "module": "core", "event": "x.y", "message": "m", "context": {}}
+    assert line({**base, "time": "2026-11-19T11:40:00+00:00"}).startswith("2026-11-19T11:40:00Z ")
+    assert line({**base, "time": "2026-11-19T11:40:00.123456+00:00"}).startswith("2026-11-19T11:40:00.123Z ")

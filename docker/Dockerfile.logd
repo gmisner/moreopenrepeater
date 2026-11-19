@@ -16,8 +16,8 @@ ENV PYTHONUNBUFFERED=1 \
 RUN groupadd --system --gid 999 moreopenrepeater \
     && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
        --shell /usr/sbin/nologin moreopenrepeater \
-    && mkdir -p /var/lib/logd /run/logd \
-    && chown 999:999 /var/lib/logd /run/logd \
+    && mkdir -p /var/lib/logd /var/lib/logd-critical /run/logd \
+    && chown 999:999 /var/lib/logd /var/lib/logd-critical /run/logd \
     && chmod 750 /run/logd
 
 COPY docker/logd-requirements.txt /tmp/logd-requirements.txt

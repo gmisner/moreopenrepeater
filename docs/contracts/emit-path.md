@@ -116,5 +116,5 @@ paths is part of the Stage 4 module foundation, not this PR.
 - Whether the controller runs the drain thread or hands events to a separate
   process. Decide after the Pi benchmark.
 - The `logd` wire format beyond "one JSON line per datagram".
-- Where the `--protect-sd` on-disk critical-events file is written. That
-  belongs with `logd`.
+- ~~Where the `--protect-sd` on-disk critical-events file is written.~~ Decided: `logd` writes it
+  (`logd.critical`, enabled by `MOREOPENREPEATER_LOGD_CRITICAL_DIR`; see `docs/docker.md`).

@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+#
+# Dire Wolf, the soundcard packet modem (1200 baud AFSK) for the Winlink gateway, with a KISS port on TCP for the `winlink`
+# container (docs/winlink.md). Built from a pinned commit of upstream's source (GPL-2.0, version 1.8.1). It is given one sound
+# card and one PTT device by compose.yaml, never all of /dev/snd, so it cannot open the repeater's.
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+ARG DIREWOLF_COMMIT=a231971a652bfb574a4bae9a5d875fbce53d2267
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates build-essential cmake libasound2-dev libudev-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN git init -q /src && cd /src \
+    && git fetch -q --depth 1 https://github.com/wb2osz/direwolf.git "$DIREWOLF_COMMIT" \
+    && git checkout -q FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "$DIREWOLF_COMMIT" \
+    && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. >/dev/null && make -j2 direwolf \
+    && test -x /src/build/src/direwolf
+
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libasound2t64 libudev1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/build/src/direwolf /usr/local/bin/direwolf
+
+RUN groupadd --system --gid 999 moreopenrepeater \
+    && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
+       --shell /usr/sbin/nologin --groups audio moreopenrepeater \
+    && mkdir -p /run/direwolf && chown 999:999 /run/direwolf
+COPY docker/direwolf-entrypoint.sh /usr/local/bin/direwolf-entrypoint.sh
+RUN chmod 755 /usr/local/bin/direwolf-entrypoint.sh
+USER 999:999
+WORKDIR /run/direwolf
+ENTRYPOINT ["/usr/local/bin/direwolf-entrypoint.sh"]

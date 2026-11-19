@@ -16,3 +16,4 @@ __pycache__/
 /docker/api.env
 /docker/logd.env
 /docker/allstar.env
+/docker/winlink.env

@@ -276,6 +276,93 @@ services:
         max-size: 10m
         max-file: "3"
 
+  # The Winlink RMS gateway, in two containers and off by default: `docker compose --profile winlink up -d --build`
+  # (docs/winlink.md, docs/adr/0006-winlink-rms-gateway.md). `direwolf` is the packet modem on its own radio and sound card,
+  # `winlink` is the gateway (LinBPQ) that connects to Winlink and speaks KISS to the modem. Neither touches the repeater's
+  # radio, sound card or PTT, and the core is not involved: a packet radio of its own is the design. Neither publishes a port.
+  direwolf:
+    profiles: ["winlink"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.direwolf
+    image: moreopenrepeater-direwolf:local
+    restart: unless-stopped
+    init: true
+    user: "999:999"
+    networks:
+      services:
+        ipv4_address: ${MOR_DIREWOLF_IP:-172.28.0.40}  # an address, not a name: the gateway takes the modem's address as an IP
+    # One sound card (its number from /proc/asound/cards on the host: MOR_PACKET_CARD in .env) and optionally one PTT
+    # device, never /dev/snd as a whole: the repeater's own sound card is not in this container, so it cannot be opened.
+    devices:
+      - /dev/snd/controlC${MOR_PACKET_CARD:-9}:/dev/snd/controlC${MOR_PACKET_CARD:-9}
+      - /dev/snd/pcmC${MOR_PACKET_CARD:-9}D0c:/dev/snd/pcmC${MOR_PACKET_CARD:-9}D0c
+      - /dev/snd/pcmC${MOR_PACKET_CARD:-9}D0p:/dev/snd/pcmC${MOR_PACKET_CARD:-9}D0p
+      - ${MOR_PACKET_PTT_HIDRAW:-/dev/null}:/dev/packet-ptt
+    group_add:
+      - audio
+    env_file:
+      - path: winlink.env
+        required: false
+    environment:
+      MOR_PACKET_CARD: ${MOR_PACKET_CARD:-9}
+    read_only: true
+    tmpfs:
+      - /run/direwolf:size=1m,mode=01777  # its configuration, made at every start
+      - /tmp:size=4m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/direwolf-entrypoint.sh", "--check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  winlink:
+    profiles: ["winlink"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.winlink
+    image: moreopenrepeater-winlink:local
+    restart: unless-stopped
+    init: true
+    user: "999:999"
+    networks:
+      - services
+    environment:
+      MOR_WINLINK_KISS_HOST: ${MOR_DIREWOLF_IP:-172.28.0.40}  # winlink.env can name another modem (a hardware TNC)
+    # No port is published: its admin page (8080) and telnet port (8010) answer on the private network only, and it reaches
+    # Winlink by an outbound connection. The callsign, locator, passwords and the Winlink gateway password are in winlink.env.
+    env_file:
+      - path: winlink.env
+        required: false
+    read_only: true
+    tmpfs:
+      - /run/bpq:size=16m,mode=01777  # its configuration (it holds the passwords), its logs and what it keeps while running
+      - /tmp:size=4m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/winlink-entrypoint.sh", "--check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    cpu_shares: 256  # the repeater's processes come first
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
 networks:
   # Where the services talk to each other. Nothing is published from it except what a service names itself.
   services:

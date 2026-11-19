@@ -12,3 +12,5 @@
 !packaging/dmr/Analog_Bridge.ini
 !packaging/dmr/MMDVM_Bridge.ini
 !packaging/dmr/DVSwitch.ini
+!docker/winlink-entrypoint.sh
+!docker/direwolf-entrypoint.sh

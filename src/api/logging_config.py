@@ -11,19 +11,28 @@ SSE stream, MCP cursor polls, and optional remote shipping.
 from __future__ import annotations
 
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
+
+from observability import CollectorHandler, JsonLineHandler, ProcessIdentity
 
 from .log_hub import HubHandler, LogHub
 
 LOGGER_NAME = "moreopenrepeater"
+LOG_FORMAT_ENV = "MOREOPENREPEATER_LOG_FORMAT"  # "json": one structured event per line on stdout, for a container's log driver
+LOGD_SOCKET_ENV = "MOREOPENREPEATER_LOGD_SOCKET"  # send each event to the logd collector on this Unix socket
+MODULE_VERSION = "0.1.0"
 
 
 def configure_logging(
     log_path: Path,
     level: int = logging.INFO,
     hub: Optional[LogHub] = None,
+    *,
+    module: str = "api",
+    env: Optional[Mapping[str, str]] = None,
 ) -> logging.Logger:
     logger = logging.getLogger(LOGGER_NAME)
     logger.setLevel(level)
@@ -36,6 +45,7 @@ def configure_logging(
     for handler in list(logger.handlers):
         if getattr(handler, "_moreopenrepeater_managed", False):
             logger.removeHandler(handler)
+            handler.close()  # a collector sender has a thread to stop
 
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -44,10 +54,22 @@ def configure_logging(
     file_handler._moreopenrepeater_managed = True  # type: ignore[attr-defined]
     logger.addHandler(file_handler)
 
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
+    env = os.environ if env is None else env
+    identity = ProcessIdentity(module, MODULE_VERSION)  # one identity: the same boot id and counter for every way out
+    # The console copy is text for a person at a terminal, or JSON events for a container's log driver.
+    if (env.get(LOG_FORMAT_ENV) or "").strip().lower() == "json":
+        stream_handler: logging.Handler = JsonLineHandler(identity)
+    else:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
     stream_handler._moreopenrepeater_managed = True  # type: ignore[attr-defined]
     logger.addHandler(stream_handler)
+
+    collector = (env.get(LOGD_SOCKET_ENV) or "").strip()
+    if collector:
+        collector_handler = CollectorHandler(identity, Path(collector))
+        collector_handler._moreopenrepeater_managed = True  # type: ignore[attr-defined]
+        logger.addHandler(collector_handler)
 
     if hub is not None:
         hub_handler = HubHandler(hub)

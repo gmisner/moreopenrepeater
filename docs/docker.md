@@ -78,14 +78,35 @@ echo MOR_DATA_DIR=/srv/mor-data >> .env
 Three places, from the quickest to the most durable:
 
 - **`docker compose logs -f`** (from `docker/`) follows the core and the API together, time-ordered
-  by Docker. Both write to standard output, and the `local` log driver rotates them (10 MB, 3 files
-  each). `docker compose logs -f core` for the radio alone. This works with everything else down.
+  by Docker. Both write one structured event per line, as JSON, to standard output
+  (`MOREOPENREPEATER_LOG_FORMAT=json`, set in `compose.yaml`), and the `local` log driver rotates them
+  (10 MB, 3 files each). `docker compose logs -f core` for the radio alone. This works with everything
+  else down. To read them as lines:
+  `docker compose logs --no-log-prefix core | jq -r '[.time, .module, .event, .message] | @tsv'`.
+  A line looks like `{"schema_version":1,"time":"...","boot_id":"...","seq":41,"severity":20,
+  "event":"legacy.audio","module":"core","module_version":"0.1.0","message":"audio engine started ...",
+  "context":{"logger":"moreopenrepeater.audio"}}`. Code that has not been given a proper event name yet
+  logs as `legacy.<area>` with its text as the message (bearer tokens and `user:pass@host` masked, cut to 200
+  characters, an exception recorded by its type only). Code that has something to count says so with
+  `observability.log_event(logger, Severity.WARNING, "audio.glitch", count=1, state="idle")`, which has a
+  stable dotted name and a context of facts that is redacted by the contract's rules (credentials,
+  PINs, message and DTMF content, and exact coordinates never reach a log). `boot_id` changes on every
+  restart and `seq` counts within one, so a restart can be told from lost events, and a record that
+  leaves two ways (stdout and the collector) is one event with one number.
 - **The dashboard's Logs page** (and its live stream, the support bundle and remote shipping) shows
   the core's lines with the API's. The API reads the core's recent log over the control socket
   (`GET /logs`, a page at a time from a cursor) about once a second and publishes the lines into its
   own log hub, with the time the core logged them. The core keeps its last 2000 lines in memory, so
   lines logged while the API was away are read when it is back, as far as that reaches; after the core
   restarts, its new log is read from the start. The core never waits on this.
+- **The `logd` collector** (the next slice) will keep events searchable for 14 days (30 for errors)
+  in a bounded SQLite file. A process that logs to it sets `MOREOPENREPEATER_LOGD_SOCKET` to its socket,
+  and each event is then also sent as a datagram. That path is built never to hold up the radio: the
+  code that logs only takes a small snapshot and puts it on a bounded queue (1000 events), and a
+  separate thread builds and sends each event without waiting. A collector that is absent, slow or full
+  means the event is dropped, never that anything waits. Every drop is counted, and the next time the
+  collector is reachable it is told how many it missed (a `logging.dropped` event), so a gap in the
+  record is reported, not hidden.
 - **Files in the data folder:** `moreopenrepeater.log` (the core) and `moreopenrepeater-api.log` (the
   API), each rotated at 2 MB with three backups. Separate files on purpose: two writers must not share
   one.

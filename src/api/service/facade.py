@@ -454,10 +454,16 @@ class RepeaterService:
     def attach_log_hub(self, hub: object) -> None:
         """Nothing to do: in process, the core's lines are already logged into the API's hub."""
 
+    def remote_activity_store(self) -> None:
+        """In process the activity is recorded by the API's own recorder; there is no remote one."""
+        return None
+
     def sync_net_state(self, active: bool) -> None:
         self.set_net_active(active)
 
     def register_macro_handler(self, family: str, handler: Callable) -> None:
+        if family == "weather":
+            return  # in process the weather action reads this service's own weather state; nothing to hook
         hooks = {
             "net": "net_hook", "homeassistant": "homeassistant_hook", "metar": "metar_hook",
             "sensor": "sensor_hook", "mailbox": "mailbox_hook", "aprs": "aprs_summary", "audit": "audit_hook",

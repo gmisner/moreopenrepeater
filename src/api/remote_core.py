@@ -17,6 +17,7 @@ It imports no web framework.
 from __future__ import annotations
 
 import asyncio
+import collections
 import dataclasses
 import types
 import json
@@ -57,6 +58,7 @@ from controller.modes import held_reason as _held_reason
 from controller.modes import effective_config
 
 from .core_runtime import AnnouncementQueueFull
+from .remote_activity import RemoteActivityStore
 from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, UnknownClipError
 from playout.tts import TTSError
@@ -76,6 +78,7 @@ HARDWARE_STALE_SECONDS = 10.0  # older than this, a hardware page says the core 
 LOG_POLL_SECONDS = 1.0  # how often the core's log is read when nothing is waiting
 MAX_LINE_BYTES = 64 * 1024
 REQUEST_TIMEOUT_SECONDS = 5.0  # a write must not hang the dashboard
+MAX_DEFERRED = 20  # announcements held for a net; a long net does not grow this without bound
 MAX_CONFIG_BYTES = 1024 * 1024  # what we will read back from the core
 MAX_CONFIG_READS = 5  # reads in a row while the core keeps announcing something newer
 
@@ -120,6 +123,7 @@ class RemoteCore:
         self._speaking: set[asyncio.Task] = set()  # fire-and-forget speak() calls in flight
         self._macro_handlers: dict[str, Callable] = {}  # macro family -> what to call
         self._listeners: list[Callable[[RepeaterConfig], None]] = []
+        self._deferred: collections.deque = collections.deque(maxlen=MAX_DEFERRED)  # (clip, on_linked_radio) held for a net
         self._net_hint: Optional[bool] = None  # what the API's saved net state says; resent on every connect
         self._busy_at: Optional[float] = None  # the last time the repeater was seen in use
         # Things the in-process service has and the API's composition sets. The core owns the real ones;
@@ -144,8 +148,8 @@ class RemoteCore:
 
     def register_macro_handler(self, family: str, handler: Callable) -> None:
         """Take a macro action the API's modules own (`net`, `homeassistant`, `metar`, `sensor`,
-        `mailbox` or `aprs`). `handler` is called with the same arguments the in-process hook gets
-        (`aprs` returns the sentence to speak). The core delivers these actions only to a client that
+        `mailbox`, `aprs` or `weather`). `handler` is called with the same arguments the in-process hook
+        gets (`aprs` and `weather` return the sentence to speak). The core delivers these actions only to a client that
         said it handles them when it connected, so register before `start()`."""
         if self._task is not None:
             raise RuntimeError("register macro handlers before start(): the core is told what we handle when we connect")
@@ -313,6 +317,25 @@ class RemoteCore:
 
     # -- small things the API asks of a service ---------------------------------------------------------
 
+    @property
+    def net_active(self) -> bool:
+        """Whether a net is on, as the core last said (False while nothing is known)."""
+        return bool(self._snapshot and self._snapshot.net_active)
+
+    def defer_announcement(self, clip: str, *, on_linked_radio: bool = False) -> None:
+        """Hold an announcement until the net ends, then play it (the weather schedule does this when the
+        repeater says nets should not be interrupted). With no net on it plays now. The oldest are dropped
+        past MAX_DEFERRED. Held here, in the API: lost if the API restarts, as the in-process list is."""
+        if not self.net_active:
+            self.speak(clip, on_linked_radio=on_linked_radio)
+            return
+        self._deferred.append((clip, on_linked_radio))
+
+    def _release_deferred(self) -> None:
+        while self._deferred:
+            clip, on_linked_radio = self._deferred.popleft()
+            self.speak(clip, on_linked_radio=on_linked_radio)
+
     def held_reason(self, feature: str) -> str:
         """Why `feature` is off right now although it is switched on, else ''."""
         return _held_reason(self.saved_config, bool(self._snapshot and self._snapshot.net_active), feature)
@@ -441,9 +464,8 @@ class RemoteCore:
             attempt += 1
 
     async def _follow(self) -> None:
-        transport = httpx.AsyncHTTPTransport(uds=str(self.socket_path))
         timeout = httpx.Timeout(CONNECT_TIMEOUT_SECONDS, read=None)
-        async with httpx.AsyncClient(transport=transport, base_url="http://core", timeout=timeout) as client:
+        async with self._socket_client(timeout) as client:
             handles = ",".join(sorted(self._macro_handlers))
             async with client.stream("GET", "/events" + (f"?handles={handles}" if handles else "")) as response:
                 if response.status_code != 200:
@@ -489,6 +511,8 @@ class RemoteCore:
                 self._seen_before = True
                 self._seen()
                 self._publish(self._snapshot)
+                if self._deferred and not self.net_active:
+                    self._release_deferred()  # the net ended: play what was held for it
                 version = local.get("config_version")
                 if isinstance(version, int) and version != self._config_version:
                     self._announced_version = version
@@ -514,7 +538,7 @@ class RemoteCore:
             if family == "mailbox" and args:
                 args = [MailboxCommand(**args[0])]
             result = handler(*args)
-            if family == "aprs" and isinstance(result, str):
+            if family in ("aprs", "weather") and isinstance(result, str):
                 self.speak(TTS_PREFIX + result)
             elif asyncio.iscoroutine(result):
                 task = asyncio.ensure_future(result)
@@ -526,8 +550,13 @@ class RemoteCore:
     # -- the configuration ---------------------------------------------------------------------
 
     def _client(self) -> httpx.AsyncClient:
-        transport = httpx.AsyncHTTPTransport(uds=str(self.socket_path))
-        timeout = httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS)
+        return self._socket_client(httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS))
+
+    def _socket_client(self, timeout: httpx.Timeout) -> httpx.AsyncClient:
+        """A client for the core's socket. It is plain HTTP over a Unix socket, so `verify=False`: httpx
+        otherwise builds a TLS context for every client, loading and parsing the whole certificate
+        bundle, which on a Pi was a sixth of the API's Python time (a client is made per request)."""
+        transport = httpx.AsyncHTTPTransport(uds=str(self.socket_path), verify=False)
         return httpx.AsyncClient(transport=transport, base_url="http://core", timeout=timeout)
 
     def _refresh_config(self) -> None:
@@ -599,6 +628,10 @@ class RemoteCore:
             except Exception as error:  # noqa: BLE001 - the pages say "not known" until the next read
                 _logger.debug("could not read the core's hardware state: %s", type(error).__name__)
             await asyncio.sleep(HARDWARE_POLL_SECONDS)
+
+    def remote_activity_store(self) -> RemoteActivityStore:
+        """The activity history, which the core records and keeps; this reads it over the socket."""
+        return RemoteActivityStore(self.socket_path)
 
     def attach_log_hub(self, hub) -> None:
         """Publish the core's log lines into `hub`, so the dashboard's Logs page, the live stream, the

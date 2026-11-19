@@ -27,6 +27,57 @@ def test_repeater_service_provides_every_core_handle_member() -> None:
     assert not missing, f"RepeaterService is missing CoreHandle members: {', '.join(missing)}"
 
 
+def test_remote_core_provides_every_api_core_handle_member(tmp_path) -> None:
+    """The API runs against a RemoteCore when the core is a separate process, so a member the API's protocol
+    declares that it lacks is an AttributeError waiting for the first time something asks: the scheduled
+    weather announcement did, every hour, for as long as the API has been split."""
+    from api.remote_core import RemoteCore
+
+    remote = RemoteCore(tmp_path / "core.sock")
+
+    def present(name: str) -> bool:
+        try:
+            getattr(remote, name)
+        except AttributeError:
+            return False
+        except Exception:  # noqa: BLE001 - a property that says the core is not reached yet is still there
+            return True
+        return True
+
+    missing = sorted(name for name in _declared_members(ApiCoreHandle) if not present(name))
+    assert not missing, f"RemoteCore is missing ApiCoreHandle members: {', '.join(missing)}"
+
+
+def test_everything_the_api_composition_reads_from_the_service_exists_on_remote_core(tmp_path) -> None:
+    """`runtime.py` is the part of the API that runs when the core is another process, so every attribute it
+    reads from `service` has to exist on `RemoteCore`, not merely on the in-process protocol. The hardware
+    modules are excluded: they run inside the core."""
+    from api.remote_core import RemoteCore
+
+    remote = RemoteCore(tmp_path / "core.sock")
+    tree = ast.parse((API_ROOT / "runtime.py").read_text(encoding="utf-8"))
+    used = {
+        node.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "service"
+    }
+
+    def present(name: str) -> bool:
+        try:
+            getattr(remote, name)
+        except AttributeError:
+            return False
+        except Exception:  # noqa: BLE001 - a property that says the core is not reached yet is still there
+            return True
+        return True
+
+    # Only read by `node_link_loop`, which is not started when the core is a separate process: AllStar
+    # linking has no split implementation yet, and the API says so in its log instead of failing.
+    not_in_split_yet = {"handle_link_event", "set_link_command_sink"}
+    missing = sorted(name for name in used - not_in_split_yet if not present(name))
+    assert not missing, f"runtime.py reads these from the service but RemoteCore has no such attribute: {', '.join(missing)}"
+
+
 def test_api_service_attributes_are_declared_by_core_handle() -> None:
     declared = _declared_members()
     used: dict[str, set[str]] = {}

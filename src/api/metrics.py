@@ -11,6 +11,7 @@ from typing import Optional, Protocol
 
 from .split import safe_status
 from .activity import summarize
+from .service.core_handle import CoreError
 
 
 class _LiveAudioStatus(Protocol):
@@ -132,11 +133,16 @@ def render_metrics(
         float(filtered),
     )
 
+    summary = None
     if activity_store is not None:
         since = clock - timedelta(hours=24).total_seconds()
         until_dt = datetime.fromtimestamp(clock)
         since_dt = datetime.fromtimestamp(since)
-        summary = summarize(activity_store.rows(since, clock), since_dt, until_dt)
+        try:
+            summary = summarize(activity_store.rows(since, clock), since_dt, until_dt)
+        except CoreError:
+            summary = None  # the core is away: leave the activity series out (zeros would look like a quiet repeater)
+    if summary is not None:
         for key, help_text in (
             ("rx_count", "Receive openings in the last 24 hours"),
             ("kerchunks", "Kerchunk-length RX openings in the last 24 hours"),

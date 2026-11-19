@@ -585,9 +585,15 @@ class AppRuntime:
         service = service or RepeaterService(state_store=state_store)
         if service.renderer is None:
             service.renderer = renderer
-        if service.activity is None:
-            service.activity = ActivityRecorder(activity_store or ActivityStore())
-        activity_store = service.activity.store
+        remote_activity = service.remote_activity_store()
+        if remote_activity is not None:
+            # The core records the activity (it sees every transmission) and keeps the history;
+            # this process reads it from the core.
+            activity_store = remote_activity
+        else:
+            if service.activity is None:
+                service.activity = ActivityRecorder(activity_store or ActivityStore())
+            activity_store = service.activity.store
         if getattr(service, "is_remote", False):
             service.attach_log_hub(log_hub)  # the Logs page shows the core's log lines too
             # The core owns these and runs in its own process; this process holds no device.
@@ -599,7 +605,9 @@ class AppRuntime:
             gpio = gpio or CoreHardware("gpio", service)
             tx_fan = tx_fan or CoreHardware("tx_fan", service)
             autopatch = autopatch or CoreHardware("autopatch", service)
-            sip_trunk = sip_trunk or Unavailable("sip_trunk")
+            # The SIP trunk is set up over AMI, a network call with no device and no host file, so the
+            # API owns it. It reads the same MOREOPENREPEATER_AMI_* settings the core does.
+            sip_trunk = sip_trunk or SipTrunk(patch_settings_from_env(os.environ))
             allstar_node = allstar_node or CoreHardware("allstar_node", service, asynchronous=True)
             dmr_audio = dmr_audio or Unavailable("dmr_audio")
             dmr = dmr or CoreHardware("dmr", service, asynchronous=True)
@@ -699,6 +707,8 @@ class AppRuntime:
         def aprs_window_start() -> float:
             return time.time() - service.config.aprs.aprs_map_hours * 3600
 
+        # The NWS alerts are the API's (it does the polling), so it words the weather and the core says it.
+        service.register_macro_handler("weather", service.weather.summary_text)
         service.register_macro_handler(
             "aprs", lambda: spoken_summary(aprs_stations.stations(aprs_window_start()), service.config, time.time())
         )
@@ -1168,7 +1178,14 @@ class AppRuntime:
                 tasks.append(asyncio.create_task(supervised(lambda: activity_flush_loop())))
                 core_runtime.start_long_id(tasks)
                 if link_settings is not None:
-                    tasks.append(asyncio.create_task(supervised(lambda: node_link_loop())))
+                    if getattr(service, "is_remote", False):
+                        # The link client feeds the controller, which is in the core, and there is no way yet
+                        # to hand it the events. The AMI settings are still used for the SIP trunk.
+                        _link_logger.info(
+                            "AllStar linking is not available when the core runs apart from the API yet"
+                        )
+                    else:
+                        tasks.append(asyncio.create_task(supervised(lambda: node_link_loop())))
                     tasks.append(asyncio.create_task(supervised(lambda: node_directory.run())))
                     tasks.append(asyncio.create_task(supervised(lambda: link_schedule_loop())))
                 await core_runtime.start_audio_and_links(loop, tasks)

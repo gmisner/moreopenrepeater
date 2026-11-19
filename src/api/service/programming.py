@@ -136,6 +136,8 @@ class Programming:
                 self.remote_base_hook(action.action, action.argument)
         elif action.action == "time":
             host.speak(TTS_PREFIX + talking_clock_text(host.wall_now()))
+        elif action.action == "weather" and self._via_api("weather", [], "Weather is not available."):
+            pass
         elif action.action == "weather":
             host.speak(TTS_PREFIX + host.weather_summary_text())
         elif action.action == "id":

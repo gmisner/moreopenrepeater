@@ -80,14 +80,14 @@ def test_an_action_goes_to_a_client_that_handles_it(core, sock_dir, spoken):
 
 def test_without_a_client_the_caller_hears_it_is_not_available(core, sock_dir, spoken):
     async def scenario(path, server):
-        for name in ("metar", "sensor", "homeassistant", "aprs"):
+        for name in ("metar", "sensor", "homeassistant", "aprs", "weather"):
             core.service.programming.run_action(action(name, "x"))
         core.service.programming.run_mailbox(MailboxCommand(action="play", box="1"))
 
     run(core, sock_dir, scenario)
     assert [c.removeprefix("tts:") for c in spoken] == [
         "Airport weather is not set up.", "Site sensors are not set up.", "Home Assistant is not set up.",
-        "The A P R S map is not set up.", "The mailbox is not available.",
+        "The A P R S map is not set up.", "Weather is not available.", "The mailbox is not available.",
     ]
 
 
@@ -218,6 +218,23 @@ def test_the_aprs_handler_returns_the_sentence_and_the_core_speaks_it(core, sock
         core.service.programming.run_action(action("aprs"))
         await until(lambda: sent)
         assert sent == ["tts:Three stations nearby"]
+
+    run_remote(core, sock_dir, scenario, register)
+
+
+def test_the_weather_handler_returns_the_sentence_and_the_core_speaks_it(core, sock_dir, spoken, monkeypatch):
+    """The alerts are the API's (it does the polling), so the API words the weather and the core says it."""
+
+    def register(remote):
+        remote.register_macro_handler("weather", lambda: "A flood warning is in effect")
+
+    async def scenario(remote, server):
+        sent = []
+        monkeypatch.setattr(remote, "speak", lambda clip, on_linked_radio=False: sent.append(clip))
+        core.service.programming.run_action(action("weather"))
+        await until(lambda: sent)
+        assert sent == ["tts:A flood warning is in effect"]
+        assert spoken == []  # and the core did not word it from its own, empty, weather state
 
     run_remote(core, sock_dir, scenario, register)
 

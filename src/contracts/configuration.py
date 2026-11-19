@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .common import MODULE_PATTERN, Message, StructuredError
 from .redaction import find_sensitive_keys
@@ -108,6 +108,28 @@ class LinkEvents(Message):
 
     kind: Literal["link.events"] = "link.events"
     events: list[dict[str, Any]] = Field(max_length=500)
+
+
+class ActivityEntry(BaseModel):
+    """One thing the core recorded: a reception, a transmission, an ID, an announcement, a
+    filtered kerchunk or a lockout."""
+
+    kind: str = Field(max_length=32)
+    #: Unix time, seconds.
+    started_at: float
+    duration: float = Field(ge=0)
+    timed_out: bool = False
+
+
+class ActivityRows(Message):
+    """What the core recorded about use of the repeater, from `GET /activity`. The core is the one
+    that sees every transmission, so it records them; the dashboard reads them here. Oldest first,
+    or newest first when the request asked for the most recent. `truncated` says the core had more
+    than it was willing to send for the window. For the API's trusted channel."""
+
+    kind: Literal["activity.rows"] = "activity.rows"
+    rows: list[ActivityEntry] = Field(max_length=20_000)
+    truncated: bool = False
 
 
 class CoreLogs(Message):

@@ -66,11 +66,11 @@ def core(tmp_path):
     return build_core({"MOREOPENREPEATER_DATA_DIR": str(tmp_path), "MOREOPENREPEATER_LOG_PATH": str(tmp_path / "c.log")})
 
 
-def split_client(path):
+def split_client(path, **overrides):
     tmp = Path(tempfile.mkdtemp())
     remote = RemoteCore(path)
     app = create_app(
-        service=remote, assets_store=AudioAssetStore(tmp / "audio"), log_path=tmp / "api.log",
+        service=remote, assets_store=AudioAssetStore(tmp / "audio"), log_path=tmp / "api.log", **overrides,
     )
     return TestClient(app), remote
 
@@ -104,7 +104,9 @@ def test_the_app_follows_a_real_core(core, sock_dir):
 
 @pytest.fixture
 def split(core, sock_dir):
-    with CoreThread(core, sock_dir / "core.sock", allow_simulate=False, log_hub=core.log_hub) as thread:
+    with CoreThread(
+        core, sock_dir / "core.sock", allow_simulate=False, log_hub=core.log_hub, activity_store=core.activity_store
+    ) as thread:
         client, remote = split_client(sock_dir / "core.sock")
         with client:
             wait_for(lambda: remote.connected and remote._config is not None and remote._macros is not None)
@@ -200,10 +202,108 @@ def test_with_the_core_away_a_hardware_command_says_nothing_was_done(split):
     assert response.status_code == 503 and response.json()["code"] == "core.unavailable"
 
 
-def test_the_trunk_page_is_still_the_cores_alone(split):
+def test_the_trunk_page_is_the_apis_own_and_works_with_no_asterisk_configured(split):
+    """The SIP trunk is set up over AMI, a network call, so the API owns it. With no AMI settings
+    the page loads and says so, rather than answering that it needs the core's hardware."""
     client, *_ = split
     response = client.get("/api/autopatch/trunk")
-    assert response.status_code == 503 and response.json()["code"] == "core.hardware"
+    assert response.status_code == 200, response.text
+    assert response.json()["configured"] is False and response.json()["error"] is None
+
+
+@pytest.fixture
+def split_with_asterisk(core, sock_dir):
+    from test_sip_trunk import SETTINGS, FakeAsterisk
+
+    from api.sip_trunk import SipTrunk
+
+    asterisk = FakeAsterisk()
+    with CoreThread(core, sock_dir / "core.sock", allow_simulate=False, log_hub=core.log_hub):
+        client, remote = split_client(sock_dir / "core.sock", sip_trunk=SipTrunk(SETTINGS, asterisk.client))
+        with client:
+            wait_for(lambda: remote.connected and remote._config is not None and remote._hardware_at is not None)
+            yield client, remote, core, asterisk
+
+
+def test_the_trunk_is_set_up_from_the_dashboard_and_the_core_takes_the_new_settings(split_with_asterisk):
+    from api.sip_trunk import DIAL_STRING
+
+    client, remote, core, asterisk = split_with_asterisk
+    body = {"server": "sip.telnyx.com", "username": "alice", "password": "s3cret;x", "ten_digit_prefix": "+1"}
+    assert client.get("/api/autopatch/trunk").json()["configured"] is True
+    assert client.post("/api/autopatch/trunk/modules").json()["missing_modules"] == []
+    response = client.put("/api/autopatch/trunk", json=body)
+    assert response.status_code == 200, response.text  # no call is running: it must not claim one is
+    assert response.json()["in_use"] is True and "s3cret" not in response.text
+    # The configuration belongs to the core, so that is where the change landed.
+    assert core.service.config.autopatch_dial_string == DIAL_STRING
+    assert core.service.config.autopatch_ten_digit_prefix == "+1"
+    assert client.delete("/api/autopatch/trunk").json()["trunk"] is None
+
+
+def test_a_call_in_progress_still_blocks_a_trunk_change(split_with_asterisk, monkeypatch):
+    client, remote, core, asterisk = split_with_asterisk
+    real = core.runtime.autopatch.status
+    monkeypatch.setattr(core.runtime.autopatch, "status", lambda: {**real(), "call": {"number": "5551234"}})
+    wait_for(lambda: (remote.hardware_status("autopatch") or {}).get("call"), timeout=8.0)
+    body = {"server": "sip.telnyx.com", "username": "alice", "password": "x", "ten_digit_prefix": "+1"}
+    response = client.put("/api/autopatch/trunk", json=body)
+    assert response.status_code == 409 and "Hang up" in response.json()["detail"]
+    assert client.delete("/api/autopatch/trunk").status_code == 409
+
+
+def test_the_activity_pages_show_what_the_core_recorded(split):
+    from api.activity import ActivityRow
+
+    client, remote, core, _ = split
+    now = time.time()
+    for row in (
+        ActivityRow("rx", now - 600, 12.0), ActivityRow("rx", now - 300, 4.0, timed_out=True),
+        ActivityRow("tx", now - 590, 3.0), ActivityRow("id", now - 100, 0.0),
+    ):
+        core.activity_store.add(row)
+    summary = client.get("/api/activity/summary").json()
+    assert summary["rx_count"] == 2 and summary["rx_seconds"] == 16.0 and summary["timeouts"] == 1 and summary["ids"] == 1
+    recent = client.get("/api/activity/transmissions").json()
+    assert [t["duration"] for t in recent] == [4.0, 12.0] and recent[0]["timed_out"] is True  # newest first
+    bins = client.get("/api/activity/history24h").json()["bins"]
+    assert round(sum(b["rx_seconds"] for b in bins), 3) == 16.0 and round(sum(b["tx_seconds"] for b in bins), 3) == 3.0
+    assert "moreopenrepeater_activity_rx_count 2.0" in client.get("/metrics").text
+
+
+def test_with_the_core_away_the_activity_pages_say_so_and_metrics_leave_it_out(split):
+    client, remote, core, thread = split
+    asyncio.run_coroutine_threadsafe(thread.server.stop(), thread.loop).result(5)
+    wait_for(lambda: not remote.connected)
+    for path in ("/api/activity/summary", "/api/activity/transmissions", "/api/activity/history24h"):
+        response = client.get(path)
+        assert response.status_code == 503 and response.json()["code"] == "core.unavailable", path  # not an empty history
+    metrics = client.get("/metrics")
+    assert metrics.status_code == 200 and "moreopenrepeater_activity_rx_count" not in metrics.text
+
+
+def test_the_weather_macro_is_worded_by_the_api_and_said_by_the_core(split, monkeypatch):
+    """The NWS alerts are the API's (it does the polling). A caller who dials the weather macro on the
+    radio used to hear the core's own, empty, weather state; the API words it now."""
+    from controller.events import RunAction
+
+    client, remote, core, thread = split
+    core.service.update_config(wx_lat=35.2, wx_lon=-101.8)
+    wait_for(lambda: remote.config.weather.wx_lat == 35.2)
+    said = []
+    monkeypatch.setattr(remote, "speak", lambda clip, on_linked_radio=False: said.append(clip))
+    wait_for(lambda: thread.server._macro_clients)  # the API has told the core it handles weather
+    macro = RunAction(action="weather", argument="", pattern="*5")
+    thread.loop.call_soon_threadsafe(lambda: core.service.programming.run_action(macro))
+    wait_for(lambda: said)
+    assert said == ["tts:There are no active weather alerts."]
+    # And it is the API's own state it spoke from: give the API an alert and ask again.
+    remote.weather.alerts = [type("A", (), {"event": "Flood Warning", "headline": "", "id": "x"})()]
+    monkeypatch.setattr("api.service.weather.speech_text", lambda alert: f"{alert.event} in effect.")
+    said.clear()
+    thread.loop.call_soon_threadsafe(lambda: core.service.programming.run_action(macro))
+    wait_for(lambda: said)
+    assert said == ["tts:There is one active weather alert. Flood Warning in effect."]
 
 
 def test_the_status_is_the_core_s_and_the_config_is_the_core_s(split):
@@ -281,6 +381,63 @@ def test_a_dashboard_can_watch_the_core_over_the_websocket(split):
     with client.websocket_connect("/ws/status") as ws:
         first = ws.receive_json()
         assert first["callsign"] == "W1AW" and first["state"] == "idle"
+
+
+def test_net_active_follows_the_core(split):
+    client, remote, core, thread = split
+    assert remote.net_active is False
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(True))
+    wait_for(lambda: remote.net_active)
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(False))
+    wait_for(lambda: not remote.net_active)
+
+
+def test_an_announcement_held_for_a_net_is_played_when_the_net_ends(split, monkeypatch):
+    """The scheduled weather announcement is held while a net is on, if the repeater says to. It crashed the
+    loop every hour (RemoteCore had no `net_active`), so it never played at all."""
+    client, remote, core, thread = split
+    said = []
+    monkeypatch.setattr(remote, "speak", lambda clip, on_linked_radio=False: said.append((clip, on_linked_radio)))
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(True))
+    wait_for(lambda: remote.net_active)
+    remote.defer_announcement("tts:Weather for the area", on_linked_radio=True)
+    remote.defer_announcement("tts:A second one")
+    time.sleep(0.5)
+    assert said == []  # held while the net runs
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(False))
+    wait_for(lambda: len(said) == 2)
+    assert said == [("tts:Weather for the area", True), ("tts:A second one", False)]  # in order, once each
+    time.sleep(0.5)
+    assert len(said) == 2
+
+
+def test_too_many_held_announcements_drop_the_oldest_not_the_process(split, monkeypatch):
+    client, remote, core, thread = split
+    said = []
+    monkeypatch.setattr(remote, "speak", lambda clip, on_linked_radio=False: said.append(clip))
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(True))
+    wait_for(lambda: remote.net_active)
+    for number in range(60):
+        remote.defer_announcement(f"tts:{number}")
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(False))
+    wait_for(lambda: said)
+    time.sleep(0.3)
+    assert 0 < len(said) <= 20 and said[-1] == "tts:59"
+
+
+def test_the_link_loop_is_not_started_against_a_remote_core_and_the_api_says_so(core, sock_dir, monkeypatch, caplog):
+    import asyncio
+    import logging
+
+    monkeypatch.setenv("MOREOPENREPEATER_AMI_HOST", "127.0.0.1")  # AMI is set on the API, as the SIP trunk needs
+    caplog.set_level(logging.INFO)
+    with CoreThread(core, sock_dir / "core.sock"):
+        client, remote = split_client(sock_dir / "core.sock")
+        with client:
+            wait_for(lambda: remote.connected)
+            names = client.portal.call(lambda: [getattr(t.get_coro(), "__qualname__", repr(t.get_coro())) for t in asyncio.all_tasks()])
+    assert not any("node_link_loop" in name for name in names)
+    assert "AllStar linking is not available" in caplog.text
 
 
 def test_the_environment_chooses_the_remote_core():

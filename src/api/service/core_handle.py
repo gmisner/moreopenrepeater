@@ -119,11 +119,16 @@ class ApiCoreHandle(Protocol):
         core's log over its socket. Call before the service starts."""
         ...
 
+    def remote_activity_store(self) -> Optional[object]:
+        """The activity history the core keeps, as a store the API reads (`rows`, `recent`), when
+        the core is a separate process. In process the API's own recorder holds it, so this is None."""
+        ...
+
     def register_macro_handler(self, family: str, handler: Callable) -> None:
         """Take a macro action the API's modules own: `net` (action, source), `homeassistant`
         (target, source, pattern), `metar` (airport), `sensor` (sensor_id), `mailbox`
-        (MailboxCommand), `aprs` (no arguments; returns the sentence to speak) or `audit` (actor, action,
-        detail: something a macro did that the audit trail records). In process this
+        (MailboxCommand), `aprs` or `weather` (no arguments; return the sentence to speak) or `audit`
+        (actor, action, detail: something a macro did that the audit trail records). In process this
         sets the hook the controller calls. Against a remote core the core sends the action over
         its event stream, and only if this client said it handles that family; otherwise the caller
         hears that it is not available."""

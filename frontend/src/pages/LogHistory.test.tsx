@@ -191,4 +191,27 @@ describe("LogHistory", () => {
       await screen.findByText("plain line");
     });
   });
+
+  it("says when the history is in memory and how many errors came back from the card", async () => {
+    routes({
+      "/api/log-history/status": { ...STATUS, stats: { ...STATUS.stats, volatile: true, critical_file: { restored: 3 } } },
+      "/api/log-history/events": { events: [event(1)], next_before: null },
+      "/api/log-history/gaps": { gaps: [] },
+    });
+    view();
+    expect(await screen.findByText("This history is kept in memory")).toBeTruthy();
+    expect(screen.getByText(/3 came back from before the last restart/)).toBeTruthy();
+    expect(screen.getByText(/Warnings and routine events from before are gone/)).toBeTruthy();
+  });
+
+  it("says nothing about memory when the history is kept on disk", async () => {
+    routes({
+      "/api/log-history/status": { ...STATUS, stats: { ...STATUS.stats, volatile: false, critical_file: null } },
+      "/api/log-history/events": { events: [event(1)], next_before: null },
+      "/api/log-history/gaps": { gaps: [] },
+    });
+    view();
+    await screen.findByText("line 1");
+    expect(screen.queryByText("This history is kept in memory")).toBeNull();
+  });
 });

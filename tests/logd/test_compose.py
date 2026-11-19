@@ -78,3 +78,38 @@ def test_every_file_a_dockerfile_copies_is_in_the_build_context():
             if match and not match.group(1).startswith("--from"):
                 source = match.group(1).rstrip("/")
                 assert any(source == a or source.startswith(a + "/") for a in allowed), f"{dockerfile.name} copies {source}, which .dockerignore excludes"
+
+
+# -- the override that keeps the history in memory ----------------------------------------------------------
+
+PROTECT = yaml.safe_load((DOCKER / "compose.protect-sd.yaml").read_text())
+
+
+def test_the_memory_override_replaces_the_data_volume_by_mounting_over_the_same_path():
+    """Compose merges `volumes` by target, so this is what makes the override replace logd-data."""
+    base_target = next(v.split(":")[1] for v in SERVICES["logd"]["volumes"] if v.startswith("logd-data:"))
+    tmpfs = next(v for v in PROTECT["services"]["logd"]["volumes"] if isinstance(v, dict) and v["type"] == "tmpfs")
+    assert tmpfs["target"] == base_target == "/var/lib/logd"
+    # The collector runs as user 999 and a tmpfs is root's, so it must be open to it. Written 1777 in YAML it is
+    # decimal and wrong (found by running it): the file has to say 01777, which is read as octal.
+    assert tmpfs["tmpfs"]["mode"] == 0o1777
+
+
+def test_the_memory_override_keeps_errors_on_a_volume_the_image_made_writable_for_the_collector():
+    logd = PROTECT["services"]["logd"]
+    folder = logd["environment"]["MOREOPENREPEATER_LOGD_CRITICAL_DIR"]
+    mounted = [v for v in logd["volumes"] if isinstance(v, str)]
+    assert f"logd-critical:{folder}" in mounted and "logd-critical" in PROTECT["volumes"]
+    dockerfile = (DOCKER / "Dockerfile.logd").read_text()
+    assert folder in dockerfile and f"chown 999:999 /var/lib/logd {folder}" in dockerfile  # a new volume copies its owner
+
+
+def test_the_memory_override_keeps_the_history_inside_the_memory_it_gives():
+    logd = PROTECT["services"]["logd"]
+    tmpfs = next(v for v in logd["volumes"] if isinstance(v, dict) and v["type"] == "tmpfs")
+    megabytes = int(str(tmpfs["tmpfs"]["size"]).rstrip("m"))
+    assert int(logd["environment"]["MOREOPENREPEATER_LOGD_MAX_MB"]) < megabytes
+
+
+def test_the_memory_override_changes_nothing_but_the_collector():
+    assert set(PROTECT["services"]) == {"logd"}

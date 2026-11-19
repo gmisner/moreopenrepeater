@@ -14,6 +14,7 @@ from typing import Mapping, Optional
 
 from observability import JsonLineHandler, ProcessIdentity
 
+from .critical import CriticalFile
 from .server import Collector, QueryServer
 from .store import DEFAULT_CRITICAL_DAYS, DEFAULT_MAX_BYTES, DEFAULT_ROUTINE_DAYS, EventStore
 
@@ -25,6 +26,7 @@ DATA_DIR = "MOREOPENREPEATER_LOGD_DIR"
 MAX_MB = "MOREOPENREPEATER_LOGD_MAX_MB"
 ROUTINE_DAYS = "MOREOPENREPEATER_LOGD_ROUTINE_DAYS"
 CRITICAL_DAYS = "MOREOPENREPEATER_LOGD_CRITICAL_DAYS"
+CRITICAL_DIR = "MOREOPENREPEATER_LOGD_CRITICAL_DIR"  # set when the history is in memory: errors are also kept here
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,7 @@ class Settings:
     max_bytes: int
     routine_days: float
     critical_days: float
+    critical_dir: Optional[Path] = None
 
 
 def _number(env: Mapping[str, str], name: str, default: float, low: float, high: float) -> float:
@@ -62,6 +65,7 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
         # Errors are never kept for less time than routine events.
         routine_days=routine,
         critical_days=max(routine, _number(env, CRITICAL_DAYS, DEFAULT_CRITICAL_DAYS, 0.01, 3650)),
+        critical_dir=Path(env[CRITICAL_DIR].strip()) if (env.get(CRITICAL_DIR) or "").strip() else None,
     )
 
 
@@ -82,10 +86,31 @@ def open_store(settings: Settings) -> EventStore:
         return EventStore(path, **kwargs)
 
 
+def restore_critical(store: EventStore, critical: CriticalFile) -> int:
+    """Put the kept errors back into an empty history, so a restart of the machine does not hide them. A history
+    that already has events (the collector alone restarted) is left as it is."""
+    if store.stats()["events"]:
+        return 0
+    try:
+        events = critical.load()
+        if events:
+            store.insert_many(events)
+    except Exception as error:  # noqa: BLE001 - a bad file must not stop the collector starting
+        _logger.warning("could not restore the critical events: %s", type(error).__name__)
+        return 0
+    critical.restored = len(events)
+    if events:
+        _logger.info("restored %d errors from %s", len(events), critical.path)
+    return len(events)
+
+
 async def serve(settings: Settings, stop: Optional[asyncio.Event] = None) -> None:
     stop = stop or asyncio.Event()
     store = open_store(settings)
-    collector = Collector(store, settings.events_socket)
+    critical = CriticalFile(settings.critical_dir) if settings.critical_dir else None
+    if critical is not None:
+        restore_critical(store, critical)
+    collector = Collector(store, settings.events_socket, critical=critical)
     queries = QueryServer(collector, settings.query_socket)
     await collector.start()
     await queries.start()

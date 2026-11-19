@@ -22,6 +22,7 @@ from typing import Any, Optional
 
 from contracts import LogEvent
 
+from .critical import CriticalFile
 from .store import MAX_PAGE, EventStore
 
 _logger = logging.getLogger("moreopenrepeater.logd")
@@ -54,8 +55,10 @@ class Collector:
         flush_seconds: float = FLUSH_SECONDS,
         prune_seconds: float = PRUNE_SECONDS,
         max_datagram: int = MAX_DATAGRAM,
+        critical: Optional[CriticalFile] = None,
     ) -> None:
         self.store = store
+        self.critical = critical  # errors are also kept here when the main history is in memory
         self.path = events_socket
         self.queue_size, self.batch_size = queue_size, batch_size
         self.flush_seconds, self.prune_seconds, self.max_datagram = flush_seconds, prune_seconds, max_datagram
@@ -153,6 +156,8 @@ class Collector:
         loop = asyncio.get_running_loop()
         while self._queue:
             batch = [self._queue.popleft() for _ in range(min(self.batch_size, len(self._queue)))]
+            if self.critical is not None:  # its own try: a failed store write must not lose the errors
+                await loop.run_in_executor(None, self.critical.append, batch)
             try:
                 await loop.run_in_executor(None, self.store.insert_many, batch)
                 self.written += len(batch)
@@ -337,7 +342,12 @@ class QueryServer:
             return 200, {"state": self.collector.health(), "queue": len(self.collector._queue)}
         if split.path == "/stats":
             stats = await self._store(loop, self.store.stats)
-            return 200, {**stats, "collector": self.collector.stats()}
+            critical = self.collector.critical
+            return 200, {
+                **stats, "collector": self.collector.stats(),
+                # True when the history is in memory and only errors survive a restart of the machine
+                "volatile": critical is not None, "critical_file": critical.stats() if critical else None,
+            }
         if split.path == "/gaps":
             limit = _integer(query, "limit", 1, MAX_PAGE) or 100
             return 200, {"gaps": await self._store(loop, lambda: self.store.gaps(limit))}

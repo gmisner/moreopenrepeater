@@ -30,6 +30,11 @@ class QueryError(Exception):
     pass
 
 
+def _clock(iso: str) -> str:
+    """`2026-11-18T12:00:00.123Z`: to the millisecond, with or without fractional seconds, always UTC."""
+    return iso.split("+")[0][:23] + "Z"
+
+
 def fetch(path: Path, target: str, timeout: float = TIMEOUT_SECONDS) -> Any:
     """GET `target` from the collector's query socket and return the decoded JSON."""
     try:
@@ -59,7 +64,7 @@ def fetch(path: Path, target: str, timeout: float = TIMEOUT_SECONDS) -> Any:
 def line(event: dict) -> str:
     context = " ".join(f"{k}={v}" for k, v in event["context"].items())
     text = event["message"] or ""
-    return f'{event["time"][:23]}Z {_NAMES.get(event["severity"], event["severity"]):5} {event["module"]:5} {event["event"]} {text} {context}'.rstrip()
+    return f'{_clock(event["time"])} {_NAMES.get(event["severity"], event["severity"]):5} {event["module"]:5} {event["event"]} {text} {context}'.rstrip()
 
 
 def build_target(args: argparse.Namespace) -> str:
@@ -97,7 +102,7 @@ def main(argv: Optional[Sequence[str]] = None, env: Optional[dict] = None) -> in
                 print(json.dumps(answer, indent=2))
             else:
                 for gap in answer["gaps"]:
-                    print(f'{gap["time"][:23]}Z {gap["kind"]:16} {gap["module"]:5} {gap["count"]} {gap["detail"] or ""}'.rstrip())
+                    print(f'{_clock(gap["time"])} {gap["kind"]:16} {gap["module"]:5} {gap["count"]} {gap["detail"] or ""}'.rstrip())
             return 0
         answer = fetch(path, build_target(args))
     except QueryError as error:

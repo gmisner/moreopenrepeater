@@ -30,6 +30,8 @@ type Status = {
     newest: string | null;
     modules: Record<string, unknown>;
     retention: { routine_days: number; critical_days: number };
+    volatile?: boolean;
+    critical_file?: { restored: number } | null;
   };
 };
 
@@ -203,6 +205,13 @@ export function LogHistory() {
 
   return (
     <Stack gap="md">
+      {stats?.volatile ? (
+        <Alert color="blue" variant="light" title="This history is kept in memory" role="note">
+          To spare the SD card it starts over whenever the repeater restarts. Errors are also saved on the card
+          {stats.critical_file?.restored ? `, and ${stats.critical_file.restored} came back from before the last restart` : ""}, so the
+          reason for a crash or a power cut is still here. Warnings and routine events from before are gone.
+        </Alert>
+      ) : null}
       {gaps.length ? (
         <Alert color="amber" variant="light" title="Some events are known to be missing" role="note">
           <Stack gap={2}>

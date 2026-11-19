@@ -1,0 +1,24 @@
+# Spare the SD card: the log collector's history lives in memory (#221, #229).
+#
+#   docker compose -f compose.yaml -f compose.protect-sd.yaml up -d
+#
+# The history then starts afresh at every reboot, which is the price of no constant small writes. Errors are the
+# exception: the collector also appends them to a small file (about 2 MB at most) on a volume, and puts them
+# back when it starts, so after a power cut the reason for it is still in the History tab. The tab says when the
+# history is in memory. Docker's own container logs (the `local` driver) still write to the card, at most
+# 30 MB per container; set a smaller `max-size` in compose.yaml if that matters to you.
+services:
+  logd:
+    environment:
+      MOREOPENREPEATER_LOGD_CRITICAL_DIR: /var/lib/logd-critical
+      MOREOPENREPEATER_LOGD_MAX_MB: "48"  # inside the 64 MB of memory below, with room for the search index
+    volumes:
+      - type: tmpfs
+        target: /var/lib/logd
+        tmpfs:
+          size: 64m
+          mode: 01777  # a tmpfs is root's by default, and the collector runs as user 999; only this container sees it
+      - logd-critical:/var/lib/logd-critical
+
+volumes:
+  logd-critical:

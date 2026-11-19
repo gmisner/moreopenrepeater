@@ -145,6 +145,22 @@ Three places, from the quickest to the most durable:
   `event-history.json`: the last 500 warnings and errors, the collector's counts, and its known gaps, or the
   reason there is none. The API serves `GET /api/log-history/status`, `/events` (same filters as `logd.query`)
   and `/gaps` to anyone signed in, as it does the live log.
+- **Sparing the SD card (`--protect-sd`).** The history is a SQLite file, which means writes. On a Pi where
+  the card's life matters, start the stack with the memory override and the history lives in RAM instead:
+
+  ```
+  docker compose -f compose.yaml -f compose.protect-sd.yaml up -d
+  ```
+
+  `/var/lib/logd` becomes a 64 MB tmpfs (the quota drops to 48 MB to fit), so the history starts afresh at
+  every reboot. Errors are the exception: every event at error severity or worse is also appended to
+  `critical-events.jsonl` on a small volume (`logd-critical`; the file is renamed to `.1` at 1 MB, so 2 MB is
+  the most it ever holds), and the collector puts those back into an empty history when it starts. So after
+  a power cut the History tab still shows what failed, and says that warnings and routine events from before
+  are gone. The collector counts a failed write to that file and never lets it hold up logging. Docker's own
+  container logs still go to the card, at most 30 MB per container (`max-size` in `compose.yaml`). This is
+  the container counterpart of `install-pi.sh --protect-sd` for a native install, which keeps the journal and
+  the controller's log in memory. It does not make the support bundle or the live log persist anything either.
 - **Files in the data folder:** `moreopenrepeater.log` (the core) and `moreopenrepeater-api.log` (the
   API), each rotated at 2 MB with three backups. Separate files on purpose: two writers must not share
   one.

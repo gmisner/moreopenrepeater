@@ -168,7 +168,8 @@ keeps its readable text line in the log file exactly as before:
 
 **One cycle, one id.** When the repeater leaves idle, the core starts an activity cycle with a fresh
 `correlation_id`, and every event any of its threads logs until the repeater is idle again carries it,
-including plain `legacy.*` lines. So one transmission reads as a story: `docker compose exec logd python -m
+including plain `legacy.*` lines, and for 2 seconds after (the transmitter is unkeyed just after the
+controller says idle, and that belongs to the cycle it ends; a new cycle cuts the 2 seconds short). So one transmission reads as a story: `docker compose exec logd python -m
 logd.query --correlation <id>` shows the state changes, the PTT commanded by the controller, the PTT
 actually applied by the audio thread (and how long after), any glitches, and the receiver opening. A `ptt.commanded`
 with no `ptt.applied` after it, or a `ptt.failed`, is the controller and the hardware disagreeing. The History tab does not filter by

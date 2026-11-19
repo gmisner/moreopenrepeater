@@ -15,7 +15,7 @@ import logging
 from typing import Callable, Optional
 
 from controller.config import RepeaterConfig
-from observability import begin_cycle, end_cycle, log_event
+from observability import CYCLE_GRACE_SECONDS, begin_cycle, end_cycle, log_event
 
 from .events import (
     AssertPTT,
@@ -418,7 +418,7 @@ class RepeaterController:
                 from_state=self.state, to_state=new_state, facts_in_text=False,
             )
             if new_state == IDLE:
-                end_cycle()
+                end_cycle(CYCLE_GRACE_SECONDS)  # the transmitter's release is still to be logged
         self.state = new_state
 
     def _id_due(self, now: float) -> bool:

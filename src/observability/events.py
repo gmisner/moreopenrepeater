@@ -14,6 +14,7 @@ import contextlib
 import logging
 import re
 import threading
+import time
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -32,6 +33,9 @@ _ID = re.compile(ID_PATTERN)
 _correlation: ContextVar[Optional[str]] = ContextVar("mor_correlation_id", default=None)
 _cycle_lock = threading.Lock()
 _cycle: Optional[str] = None  # the activity cycle in progress in this process, if any
+_lingering: Optional[tuple[str, float]] = None  # a cycle that just ended, and until when it still claims events
+_monotonic = time.monotonic
+CYCLE_GRACE_SECONDS = 2.0  # the transmitter is unkeyed a moment after the controller says idle
 
 
 @dataclass
@@ -80,7 +84,7 @@ def snapshot(record: logging.LogRecord) -> RecordSnapshot:
     return RecordSnapshot(
         created=record.created, levelno=record.levelno, name=record.name, message=message,
         structured=getattr(record, EXTRA_KEY, None), exception=exception,
-        correlation_id=_correlation.get() or _cycle,
+        correlation_id=_correlation.get() or _stamped_cycle(),
     )
 
 
@@ -180,18 +184,33 @@ def begin_cycle() -> str:
     from contracts import new_id
 
     with _cycle_lock:
-        _cycle = new_id()
+        _cycle = new_id()  # an open cycle takes precedence over one that is only lingering
         return _cycle
 
 
-def end_cycle() -> None:
-    global _cycle
+def end_cycle(grace_seconds: float = 0.0) -> None:
+    """The cycle is over. With a grace, events logged in the next `grace_seconds` still carry its id unless a
+    new cycle begins first: the controller goes idle just before the transmitter is actually unkeyed, and
+    that unkey belongs to the cycle it ends."""
+    global _cycle, _lingering
     with _cycle_lock:
+        _lingering = (_cycle, _monotonic() + grace_seconds) if _cycle and grace_seconds > 0 else None
         _cycle = None
 
 
 def current_cycle() -> Optional[str]:
+    """The cycle in progress, not one that is only lingering."""
     return _cycle
+
+
+def _stamped_cycle() -> Optional[str]:
+    cycle = _cycle
+    if cycle:
+        return cycle
+    lingering = _lingering
+    if lingering is not None and _monotonic() < lingering[1]:
+        return lingering[0]
+    return None
 
 
 @contextlib.contextmanager

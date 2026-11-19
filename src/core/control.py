@@ -83,6 +83,7 @@ from api.service.snapshot import config_from_snapshot
 from api.snapshot_import import snapshot_to_import
 from controller.announcements import Announcement
 from controller.macros import Macro
+from observability import log_event
 from api.core_runtime import AnnouncementQueueFull
 from api.gpio import GpioError
 from playout.renderer import TTS_PREFIX, UnknownClipError
@@ -622,18 +623,28 @@ class ControlServer:
         try:
             check_change(self._service.saved_config, request.values)
         except ConfigRejected as rejected:
-            _logger.warning("config.change refused (%s)", rejected.code)
+            log_event(
+                _logger, logging.WARNING, "config.refused", f"config.change refused ({rejected.code})",
+                error_code=rejected.code, facts_in_text=False,
+            )
             return self._config_result(request, ConfigResult.REJECTED, StructuredError(
                 code=rejected.code, message=rejected.message, retryable=False,
             ))
         try:
             self._service.update_config(**request.values)
         except Exception:  # noqa: BLE001 - nothing the client sent may reach the controller as a crash
-            _logger.exception("config.change could not be applied")
+            log_event(
+                _logger, logging.ERROR, "config.failed", "config.change could not be applied",
+                error_code="config.apply_failed", exc_info=True, facts_in_text=False,
+            )
             return self._config_result(request, ConfigResult.REJECTED, StructuredError(
                 code="config.apply_failed", message="the core could not apply the change", retryable=True,
             ))
-        _logger.info("config.change applied (%d settings: %s)", len(request.values), ", ".join(sorted(request.values)))
+        names = sorted(request.values)  # which settings, never what they were set to
+        log_event(
+            _logger, logging.INFO, "config.changed",
+            f"config.change applied ({len(names)} settings: {', '.join(names)})", settings=names, facts_in_text=False,
+        )
         return self._config_result(request, ConfigResult.APPLIED)
 
     def _api_action(self, family: str, args: list) -> bool:
@@ -791,7 +802,7 @@ class ControlServer:
             elif name is CommandName.DELETE_ANNOUNCEMENT:
                 service.delete_announcement(params["announcement_id"])
         except Exception:  # noqa: BLE001 - nothing a client sent may reach the controller as a crash
-            _logger.exception("core.command %s could not be applied", name.value)
+            self._command_failed(name.value)
             return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
         self._config_changed(None)  # macros and announcements count as a change: clients read them again
         return None
@@ -829,9 +840,9 @@ class ControlServer:
         except GpioError as error:
             return refused(str(error))
         except Exception:  # noqa: BLE001 - nothing a client sent may reach the radio side as a crash
-            _logger.exception("core.command %s could not be applied", name.value)
+            self._command_failed(name.value)
             return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
-        _logger.info("core.command %s applied", name.value)
+        self._command_applied(name.value)
         return self._command_result(request, CommandStatus.APPLIED)
 
     def _capture_finished(self, loop: asyncio.AbstractEventLoop, samples, started_at: float) -> None:
@@ -878,9 +889,9 @@ class ControlServer:
         try:
             self._service.import_snapshot(data)
         except Exception:  # noqa: BLE001
-            _logger.exception("core.command import_snapshot could not be applied")
+            self._command_failed("import_snapshot")
             return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
-        _logger.info("core.command import_snapshot applied")
+        self._command_applied("import_snapshot")
         return self._command_result(request, CommandStatus.APPLIED)
 
     async def _queue_clip(self, request: CoreCommand) -> dict:
@@ -903,9 +914,9 @@ class ControlServer:
                 request, "command.queue_full", "Too many announcements are already waiting to play.", True
             )
         except Exception:  # noqa: BLE001
-            _logger.exception("core.command queue_clip could not be applied")
+            self._command_failed("queue_clip")
             return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
-        _logger.info("core.command queue_clip applied")
+        self._command_applied("queue_clip")
         return self._command_result(request, CommandStatus.APPLIED)
 
     # -- commands (the trusted API channel) -----------------------------------------------------
@@ -917,8 +928,23 @@ class ControlServer:
         )
         return json.loads(message.model_dump_json())
 
+    @staticmethod
+    def _command_applied(command: str) -> None:
+        log_event(_logger, logging.INFO, "command.applied", f"core.command {command} applied", command=command, facts_in_text=False)
+
+    @staticmethod
+    def _command_failed(command: str) -> None:
+        """For use inside an `except`: the traceback goes to the text log, the exception's type to the event."""
+        log_event(
+            _logger, logging.ERROR, "command.failed", f"core.command {command} could not be applied",
+            error_code="command.apply_failed", command=command, exc_info=True, facts_in_text=False,
+        )
+
     def _command_refused(self, request: CoreCommand, code: str, message: str, retryable: bool = False) -> dict:
-        _logger.warning("core.command %s refused (%s)", request.command.value, code)
+        log_event(
+            _logger, logging.WARNING, "command.refused", f"core.command {request.command.value} refused ({code})",
+            error_code=code, command=request.command.value, facts_in_text=False,
+        )
         return self._command_result(
             request, CommandStatus.REJECTED, StructuredError(code=code, message=message, retryable=retryable)
         )
@@ -948,7 +974,7 @@ class ControlServer:
             refusal = self._apply_programming(request)
             if refusal is not None:
                 return refusal
-            _logger.info("core.command %s applied", name.value)
+            self._command_applied(name.value)
             return self._command_result(request, CommandStatus.APPLIED)
         if name is CommandName.CLEAR_LOCKOUT and not service.locked_out:
             return self._command_refused(request, "command.not_locked_out", "The repeater isn't locked out.")
@@ -966,9 +992,9 @@ class ControlServer:
             elif name is CommandName.SIMULATE_REMOTE_KEYED:
                 service.simulate_remote_keyed(params["node_id"], params["keyed"])
         except Exception:  # noqa: BLE001 - nothing a client sent may reach the controller as a crash
-            _logger.exception("core.command %s could not be applied", name.value)
+            self._command_failed(name.value)
             return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
-        _logger.info("core.command %s applied", name.value)  # names only, never parameters
+        self._command_applied(name.value)  # names only, never parameters
         return self._command_result(request, CommandStatus.APPLIED)
 
     # -- speak.request ----------------------------------------------------------------
@@ -1015,7 +1041,10 @@ class ControlServer:
             self._ledger.forget(request.idempotency_key)
             decision_status, error = outcome
             return self._decision(request, decision_status, error=error)
-        _logger.info("speak.request accepted (topic %s)", request.topic)
+        log_event(
+            _logger, logging.INFO, "speech.accepted", f"speak.request accepted (topic {request.topic})",
+            topic=request.topic, facts_in_text=False,
+        )
         return self._decision(request, SpeakStatus.ACCEPTED, transmission_id=new_id())
 
     async def _queue_speech(self, request: SpeakRequest) -> Optional[tuple[SpeakStatus, StructuredError]]:

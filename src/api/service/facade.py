@@ -416,7 +416,8 @@ class RepeaterService:
             elif isinstance(event, CTCSSChanged):
                 self.ctcss_hz = event.tone_hz
             elif isinstance(event, DTMFDigit):
-                _logger.info("DTMF digit %r received", event.digit)
+                # That a digit arrived, never which: DTMF can be a PIN or a code, and no log should hold it.
+                log_event(_logger, logging.INFO, "dtmf.digit_received", "DTMF digit received")
                 self._pass_digit_to_call(event.digit)
             commands += self.controller.handle_event(event, self._clock())
         self._apply_commands(commands)
@@ -435,7 +436,7 @@ class RepeaterService:
         self._apply_commands(self.controller.handle_event(CTCSSChanged(tone_hz=tone_hz), self._clock()))
 
     def simulate_dtmf(self, digit: str) -> None:
-        _logger.info("simulate_dtmf(digit=%r)", digit)
+        _logger.info("simulate_dtmf")  # not the digit: see dtmf.digit_received
         self._pass_digit_to_call(digit)
         self._apply_commands(self.controller.handle_event(DTMFDigit(digit=digit), self._clock()))
 

@@ -127,4 +127,68 @@ describe("LogHistory", () => {
     view();
     expect(await screen.findByText("No events match.")).toBeTruthy();
   });
+
+  describe("whole activity", () => {
+    const ID = "0123456789abcdef0123456789abcdef";
+    const cycleRoutes = () =>
+      routes({
+        "/api/log-history/status": STATUS,
+        "/api/log-history/events": (path: string) =>
+          path.includes("correlation_id=")
+            ? {
+                events: [
+                  event(3, { time: "2026-11-18T10:00:04Z", event: "receiver.opened", message: "receiver opened", correlation_id: ID }),
+                  event(2, { time: "2026-11-18T10:00:01Z", event: "controller.state_changed", message: "state IDLE -> RX", correlation_id: ID }),
+                ],
+                next_before: null,
+              }
+            : {
+                events: [
+                  event(3, { event: "receiver.opened", message: "receiver opened", correlation_id: ID }),
+                  event(1, { message: "plain line" }),
+                ],
+                next_before: null,
+              },
+        "/api/log-history/gaps": { gaps: [] },
+      });
+
+    it("offers it only on events that belong to an activity", async () => {
+      cycleRoutes();
+      view();
+      await screen.findByText("plain line");
+      expect(screen.getAllByRole("button", { name: "Whole activity" })).toHaveLength(1);
+    });
+
+    it("shows that activity in the order it happened, then goes back to the results", async () => {
+      cycleRoutes();
+      view();
+      await userEvent.click(await screen.findByRole("button", { name: "Whole activity" }));
+      await screen.findByText("Everything from one activity", { exact: false });
+      const asked = new URLSearchParams(requests("/api/log-history/events").at(-1)?.split("?")[1]);
+      expect(asked.get("correlation_id")).toBe(ID);
+      expect(asked.get("since")).toBeNull(); // an old activity is still found, whatever the search was
+      const rows = screen.getAllByRole("listitem");
+      expect(rows.map((row) => row.textContent)).toEqual([
+        expect.stringContaining("+0.0 s"),
+        expect.stringContaining("+3.0 s"),
+      ]);
+      expect(rows[0].textContent).toContain("state IDLE -> RX"); // the first thing that happened is on top
+      expect(rows[1].textContent).toContain("receiver opened");
+      expect(screen.getByText(/2 events, 3.0 s/)).toBeTruthy();
+      expect(screen.queryByText("plain line")).toBeNull();
+
+      await userEvent.click(screen.getByRole("button", { name: "Back to results" }));
+      await screen.findByText("plain line");
+      expect(screen.queryByText("Everything from one activity", { exact: false })).toBeNull();
+    });
+
+    it("leaves the activity when a new search is made", async () => {
+      cycleRoutes();
+      view();
+      await userEvent.click(await screen.findByRole("button", { name: "Whole activity" }));
+      await screen.findByText("Everything from one activity", { exact: false });
+      await userEvent.click(screen.getByRole("button", { name: "Search" }));
+      await screen.findByText("plain line");
+    });
+  });
 });

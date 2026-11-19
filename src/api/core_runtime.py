@@ -21,7 +21,7 @@ import logging
 from typing import Callable, Optional
 
 from playout.kokoro_service import KokoroService, KokoroServiceError
-from playout.piper_service import PiperService, PiperServiceError
+from playout.piper_service import PiperService, PiperServiceError, wait_until_ready
 from playout.renderer import ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
@@ -34,6 +34,7 @@ from .watchdog import Watchdog, ping_interval, sd_notify
 TICK_INTERVAL_SECONDS = 0.05
 ANNOUNCEMENT_POLL_SECONDS = 1.0
 LONG_ID_WARM_SECONDS = 20.0
+EXTERNAL_PIPER_WAIT_SECONDS = 60.0  # how long the core waits for Piper's container at start; then it starts anyway
 
 _tts_logger = logging.getLogger("moreopenrepeater.tts")
 _announce_logger = logging.getLogger("moreopenrepeater.announcements")
@@ -61,9 +62,9 @@ def piper_service_for(renderer: ClipRenderer, voice: str = "") -> Optional[Piper
     tts = getattr(renderer, "tts", None)
     if tts is None or getattr(tts, "name", None) != "piper":
         return None
-    from playout.tts import piper_service_url, sanitize_piper_voice
+    from playout.tts import piper_service_external, piper_service_url, sanitize_piper_voice
 
-    if not piper_service_url():
+    if not piper_service_url() or piper_service_external():  # an external one is not ours to start or stop
         return None
     return PiperService(voice=sanitize_piper_voice(voice))
 
@@ -167,6 +168,7 @@ class CoreRuntime:
             except KokoroServiceError:
                 _tts_logger.exception("Kokoro service failed to become ready; voice IDs fall back to CW until it works")
                 await loop.run_in_executor(None, kokoro_service.stop)
+        await self._wait_for_external_piper(loop)
         piper_service = piper_service_for(self.renderer, voice=self.service.config.tts_voice)
         if piper_service is not None:
             try:
@@ -175,6 +177,23 @@ class CoreRuntime:
             except PiperServiceError:
                 _tts_logger.exception("Piper service failed to become ready; voice IDs use CLI/espeak until it works")
                 await loop.run_in_executor(None, piper_service.stop)
+
+    async def _wait_for_external_piper(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Piper in its own container: give it a bounded time to be up before audio goes live, so the first long ID is not
+        spoken by the fallback voice. If it is not up in time the repeater starts anyway (voice IDs fall back until it is).
+        Nothing is started or stopped here: it is not this process's."""
+        from playout.tts import piper_service_external, piper_service_url
+
+        tts = getattr(self.renderer, "tts", None)
+        if tts is None or getattr(tts, "name", None) != "piper" or not piper_service_external():
+            return
+        seconds = EXTERNAL_PIPER_WAIT_SECONDS
+        if await loop.run_in_executor(None, wait_until_ready, piper_service_url(), seconds):
+            _tts_logger.info("the Piper service is ready")
+        else:
+            _tts_logger.warning(
+                "the Piper service did not answer in %gs; voice IDs use the fallback voice until it does", seconds
+            )
 
     def warm_renderer(self, loop: asyncio.AbstractEventLoop) -> None:
         loop.run_in_executor(None, self.renderer.warm, self.service.config)

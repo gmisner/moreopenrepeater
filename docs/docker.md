@@ -34,8 +34,8 @@ Files:
 - `docker/Dockerfile.api`: the same base image, the project's own dependency list (read from
   `pyproject.toml`), the app and the built web assets. No audio libraries.
 - `docker/Dockerfile.core`: `python:3.13-slim-trixie` (pinned by digest, so one
-  line builds for amd64 and arm64), the core's four Python packages, Piper and
-  its default voice, `espeak-ng` and `libportaudio2`.
+  line builds for amd64 and arm64), the core's four Python packages,
+  `espeak-ng` and `libportaudio2` (Piper is `docker/Dockerfile.piper`, its own container).
 - `docker/compose.yaml`: the services, their devices, volumes and the private network.
 - `docker/setup.sh`: the install (see **Install**).
 - `docker/core-requirements.txt`: what the core imports. No FastAPI, uvicorn or mcp.
@@ -488,11 +488,21 @@ or `docker stop`. The API container is not restarted this way: it holds no devic
 
 ## Voices
 
-The default Piper voice (`en_US-amy-low`) is baked into the image at `/opt/piper`
-so the first start works offline. For another voice, set `PIPER_DATA_DIR=/data/piper`
-and `PIPER_VOICE=<name>` in `core.env`; it downloads into the data folder when
-first needed. Build with `--build-arg WITH_PIPER=0` for a smaller image that
-uses `espeak-ng` only. Kokoro is not in the image.
+**Piper is its own container**, `piper`, on by default: the core asks it for speech over the private network (`PIPER_SERVICE_URL=http://piper:8766`,
+`PIPER_SERVICE_EXTERNAL=1`, set in `compose.yaml`) and holds no Piper of its own, so the core's image is 275 MB (no
+ONNX runtime or voices; it was 458 MB) and a crash or a slow voice load happens in another container. Nothing is published. The default voice
+(`en_US-amy-low`) is baked into the `piper` image so the first start works offline; any other voice the dashboard picks is
+downloaded by the Piper container into the `piper-voices` volume the first time (the core asks it to, so the core needs no
+internet access for it). **The core never waits long for it.** At start it waits up to 60 seconds for Piper to answer, so the first long ID
+is not spoken by the fallback voice, then starts anyway; and if Piper is down or cannot get a voice, the core speaks with `espeak-ng`
+(still in the core image) and keeps repeating. A voice ID rendered by the fallback is kept until the voice or the callsign changes, so if
+Piper was down when the core started, restart the core once it is back. If you want no Piper at all, stop the `piper` service and the core uses `espeak-ng`.
+
+Measured on a Pi 3B+, with the core image built without Piper: the `piper` container is healthy in 36 seconds, and uses about 110 MB of the
+905 (about the same as it did inside the core). A test sentence took 5.3 seconds the first time and 2.6 seconds warm. Asking for a second
+voice (`en_US-lessac-low`) made the Piper container download it (20 seconds, once), and it was listed afterwards. With Piper stopped, the core's voice
+fell back to `espeak-ng` in 1.3 seconds. In the old host layout (`compose.host-network.yaml`) there is no `piper` name to find, so that file puts
+Piper back inside the core (it rebuilds the core image with `WITH_PIPER=1`) and does not start the `piper` service. Kokoro is not in either image.
 
 ## Measured on a Pi
 

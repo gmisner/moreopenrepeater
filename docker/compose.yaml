@@ -26,9 +26,11 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.core
+      args:
+        WITH_PIPER: "0"  # Piper runs in its own container (the `piper` service); the core keeps only espeak-ng as the fallback
     image: moreopenrepeater-core:local
     restart: unless-stopped
-    init: true               # reaps the Piper server and any other child it starts
+    init: true               # reaps any child it starts
     stop_grace_period: 30s   # time to unkey and close the devices
     user: "999:999"
 
@@ -69,6 +71,12 @@ services:
       # Docker does not restart an unhealthy container, so a core whose audio stalls (the sound card dropped off USB
       # and came back, say) stops itself, with the transmitter off the air, and `restart` brings it back.
       MOREOPENREPEATER_EXIT_ON_STALL: "1"
+      # The voice is the `piper` service's: the core asks it over the private network and does not start or hold a Piper
+      # process. With it down the core carries on and speaks with espeak-ng until it is back. (The old layout in
+      # compose.host-network.yaml puts Piper back inside the core.)
+      PIPER_SERVICE_URL: http://piper:8766
+      PIPER_SERVICE_EXTERNAL: "1"
+      PIPER_DATA_DIR: ""
       <<: *link_addresses
       # The one PTT device the core is given, by the path it has inside the container. The default "auto"
       # would read the host's /dev/hidrawN numbers, which are not the container's.
@@ -196,6 +204,40 @@ services:
         max-size: 10m
         max-file: "3"
 
+  # The text-to-speech voice: Piper's HTTP server in its own container, on by default (the core speaks with it, and falls back to
+  # espeak-ng while it is not up, so nothing waits on it for long). It is not published: the core reaches it as `piper:8766`
+  # on the private network. The default voice is in the image; others are downloaded into the `piper-voices` volume when the
+  # dashboard picks one. Nothing here has a device or the host's network.
+  piper:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.piper
+    image: moreopenrepeater-piper:local
+    restart: unless-stopped
+    init: true
+    user: "999:999"
+    networks:
+      - services
+    volumes:
+      - piper-voices:/voices
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8766/info', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # a high-quality voice takes a while to load on a Pi
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
   # The AllStarLink node (Asterisk with app_rpt, and EchoLink with it: chan_echolink is a module of the same process),
   # in its own container and off by default: `docker compose --profile allstar up -d allstar`. It needs nothing from
   # the host: no host Asterisk, no host config, no devices, no kernel modules, no host network. Its AMI is reachable
@@ -286,6 +328,7 @@ networks:
 
 volumes:
   core-run:
+  piper-voices:
   logd-run:
   logd-data:
   allstar-config:

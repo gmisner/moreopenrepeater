@@ -24,8 +24,9 @@ in its own words (a 409). **The SIP trunk is the API's own**: it is set up over 
 network call, so it works from the API container. Give the API the same `MOREOPENREPEATER_AMI_*`
 settings the core has (see `docker/api.env.example`); without them the page says it is not
 configured. The rest does not yet: selecting a DMR talkgroup, the AllStar node and DMR setup (they
-edit the host's Asterisk and DMR files), and the audio tools answer 503 `core.hardware`. The core's weather macro cannot see the API's NWS alerts and says weather is
-not set up; the API's own weather page and alerts work.
+edit the host's Asterisk and DMR files), and the audio tools answer 503 `core.hardware`. The weather
+macro (a caller dialling for the weather) is worded by the API, which does the NWS polling, and said by
+the core; with the API away the caller hears that weather is not available.
 
 Files:
 

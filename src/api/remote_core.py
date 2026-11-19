@@ -145,8 +145,8 @@ class RemoteCore:
 
     def register_macro_handler(self, family: str, handler: Callable) -> None:
         """Take a macro action the API's modules own (`net`, `homeassistant`, `metar`, `sensor`,
-        `mailbox` or `aprs`). `handler` is called with the same arguments the in-process hook gets
-        (`aprs` returns the sentence to speak). The core delivers these actions only to a client that
+        `mailbox`, `aprs` or `weather`). `handler` is called with the same arguments the in-process hook
+        gets (`aprs` and `weather` return the sentence to speak). The core delivers these actions only to a client that
         said it handles them when it connected, so register before `start()`."""
         if self._task is not None:
             raise RuntimeError("register macro handlers before start(): the core is told what we handle when we connect")
@@ -514,7 +514,7 @@ class RemoteCore:
             if family == "mailbox" and args:
                 args = [MailboxCommand(**args[0])]
             result = handler(*args)
-            if family == "aprs" and isinstance(result, str):
+            if family in ("aprs", "weather") and isinstance(result, str):
                 self.speak(TTS_PREFIX + result)
             elif asyncio.iscoroutine(result):
                 task = asyncio.ensure_future(result)

@@ -2,7 +2,7 @@
 import json
 
 from api import core_runtime
-from api.watchdog import CONTAINER_CHECK_SECONDS, Watchdog, exit_for_restart
+from api.watchdog import Watchdog, exit_for_restart
 from core.build import build_core
 
 
@@ -27,7 +27,7 @@ def test_a_container_core_starts_checking_on_its_own_timer_when_it_is_ready(tmp_
     monkeypatch.setattr(core_runtime, "sd_notify", lambda *a, **k: False)
     monkeypatch.delenv("WATCHDOG_USEC", raising=False)
     build(tmp_path, MOREOPENREPEATER_EXIT_ON_STALL="1").runtime.notify_ready()
-    assert started == [CONTAINER_CHECK_SECONDS]
+    assert started == [2.0]
 
 
 def test_a_core_with_no_systemd_and_no_switch_starts_no_watchdog(tmp_path, monkeypatch):
@@ -47,3 +47,17 @@ def test_under_systemd_the_systemd_period_is_used_not_the_container_one(tmp_path
     monkeypatch.delenv("WATCHDOG_PID", raising=False)
     build(tmp_path, MOREOPENREPEATER_EXIT_ON_STALL="1").runtime.notify_ready()
     assert started == [15.0]
+
+
+def test_the_stall_limit_from_the_environment_reaches_the_watchdog(tmp_path):
+    assert build(tmp_path).runtime.watchdog.stall_seconds == 10.0
+    assert build(tmp_path, MOREOPENREPEATER_STALL_SECONDS="25").runtime.watchdog.stall_seconds == 25.0
+
+
+def test_a_short_limit_makes_the_container_check_more_often(tmp_path, monkeypatch):
+    started = []
+    monkeypatch.setattr(Watchdog, "start", lambda self, interval: started.append(interval))
+    monkeypatch.setattr(core_runtime, "sd_notify", lambda *a, **k: False)
+    monkeypatch.delenv("WATCHDOG_USEC", raising=False)
+    build(tmp_path, MOREOPENREPEATER_EXIT_ON_STALL="1", MOREOPENREPEATER_STALL_SECONDS="3").runtime.notify_ready()
+    assert started == [0.75]

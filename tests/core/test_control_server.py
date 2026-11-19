@@ -286,3 +286,32 @@ def test_the_unit_sets_the_socket_inside_the_runtime_directory():
     unit = (Path(__file__).resolve().parents[2] / "packaging" / "moreopenrepeater-core.service").read_text()
     assert "Environment=MOREOPENREPEATER_CORE_SOCKET=/run/moreopenrepeater/core.sock" in unit
     assert "RuntimeDirectory=moreopenrepeater" in unit and "RuntimeDirectoryMode=0750" in unit
+
+
+def test_health_uses_the_watchdogs_stall_limit_so_the_two_cannot_disagree(core, sock_dir):
+    """`MOREOPENREPEATER_STALL_SECONDS` sets how long without progress is a stall. The container's health and the
+    watchdog that restarts it have to agree, or one would say failed while the other waits."""
+    async def scenario():
+        clock = {"now": 1000.0}
+        server = make_server(core, sock_dir / "core.sock", clock=lambda: clock["now"])
+        await server.start()
+        try:
+            async def state_after(seconds_without_a_tick):
+                core.runtime.last_tick[0] = clock["now"] - seconds_without_a_tick
+                return HealthReport.model_validate((await get(sock_dir / "core.sock", "/health"))[1])
+
+            assert core.runtime.watchdog.stall_seconds == 10.0
+            assert (await state_after(8)).state is HealthState.OK
+            assert (await state_after(12)).state is HealthState.FAILED
+
+            core.runtime.watchdog._stall_seconds = 30.0  # the setting, as build_core would have read it
+            assert (await state_after(12)).state is HealthState.OK  # a longer limit is waited out
+            failed = await state_after(40)
+            assert failed.state is HealthState.FAILED and failed.checks[0].error.message == "no progress for over 30 s"
+
+            core.runtime.watchdog._stall_seconds = 3.0
+            assert (await state_after(5)).state is HealthState.FAILED  # a shorter one trips sooner
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())

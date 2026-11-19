@@ -294,7 +294,17 @@ has made no progress for 10 seconds it takes the transmitter off the air, record
 event (error, `part` says which), flushes the log and exits with status 75, and `restart:
 unless-stopped` starts it again. That is what happened on the Pi on 2026-11-19: the AIOC dropped off USB for
 two seconds, the audio engine stalled without any error, and the core sat unhealthy for 18 minutes with its
-station ID going nowhere. A restart can only help if the container can start again: a PTT device
+station ID going nowhere. **How long is a stall.** Ten seconds by default. `MOREOPENREPEATER_STALL_SECONDS` (in `core.env`, 2 to
+300) sets it, and the watchdog and the core's `/health` both read it, so they always agree. It is also how
+long a transmitter can stay keyed after the sound card vanishes under a running core: when the USB link dies
+mid-transmission the audio thread is stuck in the driver and cannot apply the unkey, so only the watchdog
+notices, at this limit (the restart then unkeys it, and the core logs a critical `ptt.release_unconfirmed`
+meanwhile). A shorter limit shortens that window and restarts sooner; a Pi 3B+ that is briefly starved of CPU
+(swapping, a long garbage collection) could be restarted for nothing, so go below about 5 only if you have
+watched it hold. The check runs every 2 seconds, or every quarter of the limit if that is shorter. A value
+outside 2 to 300, or not a number, is ignored and the log says so.
+
+A restart can only help if the container can start again: a PTT device
 path that no longer exists stops it starting, which is why the PTT device has a stable name (see above). `restart: unless-stopped` covers crashes and exits, but not a manual `docker kill`
 or `docker stop`. The API container is not restarted this way: it holds no device.
 

@@ -75,7 +75,7 @@ def test_every_file_a_dockerfile_copies_is_in_the_build_context():
     for dockerfile in (root / "docker").glob("Dockerfile.*"):
         for line in dockerfile.read_text().splitlines():
             match = re.match(r"\s*COPY\s+(?:--\S+\s+)*(\S+)\s+\S+", line)
-            if match and not match.group(1).startswith("--from"):
+            if match and "--from" not in line:  # a copy from another build stage is not from the context
                 source = match.group(1).rstrip("/")
                 assert any(source == a or source.startswith(a + "/") for a in allowed), f"{dockerfile.name} copies {source}, which .dockerignore excludes"
 

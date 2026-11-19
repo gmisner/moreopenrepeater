@@ -36,15 +36,41 @@ Files:
 - `docker/Dockerfile.core`: `python:3.13-slim-trixie` (pinned by digest, so one
   line builds for amd64 and arm64), the core's four Python packages, Piper and
   its default voice, `espeak-ng` and `libportaudio2`.
-- `docker/compose.yaml`: the service, its devices, its volumes.
+- `docker/compose.yaml`: the services, their devices, volumes and the private network.
+- `docker/setup.sh`: the install (see **Install**).
 - `docker/core-requirements.txt`: what the core imports. No FastAPI, uvicorn or mcp.
 
-## Run it
-
-Stop the normal service first. Both would claim the same sound card and PTT line.
+## Install
 
 ```
-sudo systemctl stop moreopenrepeater
+sudo systemctl disable --now moreopenrepeater   # only if the native install is on this machine
+cd docker
+./setup.sh --callsign W1AW                      # add --allstar to run the AllStar node too, --udev to name the PTT interface
+```
+
+`setup.sh` does what is missing and nothing else, so it is safe to run again (it never changes a value you have set):
+it writes `.env`, `api.env` and `core.env` from the `.example` files (readable by you only), seeds the saved
+configuration (the core will not run without a callsign; everything else is set in the dashboard), **turns sign-in on
+with an admin password it generates and shows once**, publishes the dashboard on every network interface, starts the
+containers and waits for them to be healthy. Then the dashboard answers on all three of:
+
+- `http://localhost:8000` on the machine itself,
+- `http://<the machine's LAN address>:8000` from the rest of your network, and
+- `http://<its Tailscale address>:8000` over Tailscale (the address `tailscale ip -4` shows). It is already carried over
+  WireGuard; for HTTPS on the tailnet, `tailscale serve --bg 8000` on the host adds that.
+
+**Why sign-in comes first.** Without an account the dashboard is open and can key the transmitter, so it must not
+answer on the network until sign-in is on. The script turns sign-in on (`MOREOPENREPEATER_AUTH_USER` and
+`MOREOPENREPEATER_AUTH_PASSWORD` in `api.env`; the app refuses to start with only one) and only then sets
+`MOR_API_HOST=0.0.0.0`. A login you already set is kept, an address you already chose in `.env` is kept, and
+`--localhost` keeps the dashboard on the loopback for a reverse proxy or `tailscale serve` on the same machine. With no
+script, `docker compose up` publishes the dashboard on the loopback only (see **The private network**), which is the safe
+default. Everything behind the dashboard stays private either way: the core, the AllStar node's management port, the radio
+audio and the log collector are only on the services network.
+
+By hand, without the script:
+
+```
 cd docker
 cp .env.example .env        # then edit: PTT device, gpio group, data folder
 docker compose up -d --build

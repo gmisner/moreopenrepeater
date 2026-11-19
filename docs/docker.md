@@ -147,7 +147,7 @@ was measured, not guessed. Counting receive overruns:
 | Core alone, plus two memory-heavy processes at 60% | 158 in 10 min |
 | Core alone, plus two CPU-only processes at 60% | 2 in 10 min |
 | With `dwc_otg.speed=1`: core alone, plus two memory-heavy processes at 60% | 0 in 10 min |
-| With `dwc_otg.speed=1`: core and API together, no extra load | 0 in 18 min |
+| With `dwc_otg.speed=1`: core and API together, no extra load | 0 in 19 min |
 
 Docker's default seccomp profile was part of it: with it the core alone glitched every one to four
 minutes, and `seccomp=unconfined` (kept in `compose.yaml`) cut that to one in about 30, which is the
@@ -173,8 +173,9 @@ mechanism, only that the glitches follow memory traffic and nothing else I tried
 **The fix on a 3B+ is `dwc_otg.speed=1`.** Add it to `/boot/firmware/cmdline.txt` (the file is one
 line; append it to the end) and reboot. It forces the USB controller to full speed, so the AIOC is
 no longer reached through split transactions. It was tried here and it worked: no overruns under the
-memory-heavy load that gave 158 without it, and none in 18 minutes of the core and API running
-together, where one every 3.5 minutes was normal. The setting cannot be changed without a reboot,
+memory-heavy load that gave 158 without it, and none in 19 minutes of the core and API running
+together (two station IDs went out in that time, so the audio engine was alive), where one every 3.5
+minutes was normal. The setting cannot be changed without a reboot,
 and the installer should do it. The cost is that every USB device on the Pi is held to 12 Mbit/s,
 including the wired Ethernet port, which is fine for a repeater on Wi-Fi and worth knowing about on a
 wired one. A Pi 4 or 5 has a different USB controller and should not need it; that has not been
@@ -191,7 +192,10 @@ Two smaller things follow from the same work:
   `couldn't open audio devices` and the API restarted every 20 seconds. Two engines cannot share one
   sound card. Run `systemctl disable --now moreopenrepeater` when the containers take over. The
   first zero-glitch result I got after the reboot was invalid for exactly this reason (the container
-  had no audio engine), so the numbers above are from a rerun that checked the engine was running.
+  had no audio engine), so the numbers above are from reruns that checked the engine was running. A
+  second window was cut short by a USB event on the Pi (a low-speed keyboard re-enumerating, which
+  re-enumerated the AIOC once and left the engine dead with nothing logged), so each run now also
+  checks that no USB events happened in it and that station IDs went out.
 - The reboot changed the AIOC's `hidraw` number again (`hidraw2` to `hidraw0`), which left the core
   unable to start until the path was corrected. A stable udev name for the PTT device is no longer a
   nice-to-have.

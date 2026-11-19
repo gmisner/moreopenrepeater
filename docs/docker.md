@@ -23,9 +23,9 @@ be set up as one, the transmitter must be on, the number must be allowed), and i
 in its own words (a 409). **The SIP trunk is the API's own**: it is set up over Asterisk's AMI, a
 network call, so it works from the API container. Give the API the same `MOREOPENREPEATER_AMI_*`
 settings the core has (see `docker/api.env.example`); without them the page says it is not
-configured. **AllStar linking works**: the API runs the link service (the AMI connection to app_rpt), which tells the core who is linked and keying and carries a macro's link commands back (see `core-only.md`). The rest does not yet: selecting a DMR talkgroup, the AllStar node and DMR setup (they
-edit the host's Asterisk and DMR files), and any audio tool that needs the sound card itself still answers 503
-`core.hardware`; listening and the record and score tool work (see Listening below). The weather
+configured. **AllStar linking works**: the API runs the link service (the AMI connection to app_rpt), which tells the core who is linked and keying and carries a macro's link commands back (see `core-only.md`). **The AllStar node and DMR setup pages work too** once the node's and the bridge's containers are running: the API edits their
+files in volumes it shares with them, and tells the core where they are (see the AllStar and DMR containers below). The rest does not yet:
+any audio tool that needs the sound card itself still answers 503 `core.hardware`; listening and the record and score tool work (see Listening below). The weather
 macro (a caller dialling for the weather) is worded by the API, which does the NWS polling, and said by
 the core; with the API away the caller hears that weather is not available.
 
@@ -45,7 +45,7 @@ Files:
 ```
 sudo systemctl disable --now moreopenrepeater   # only if the native install is on this machine
 cd docker
-./setup.sh --callsign W1AW                      # add --allstar to run the AllStar node too, --udev to name the PTT interface
+./setup.sh --callsign W1AW                      # add --allstar and --dmr to run those too, --udev to name the PTT interface
 ```
 
 `setup.sh` does what is missing and nothing else, so it is safe to run again (it never changes a value you have set):
@@ -348,8 +348,23 @@ one over and over, which was about 3,000 log lines in 30 seconds on a test conta
 SD card. The container is read-only, runs as user 999 with every capability dropped, and uses about 46 MB and 0.5%
 of a CPU when idle.
 
-**Not done yet.** Importing an existing node's configuration into the volume. DMR is its own container after that,
-and nets stay in the API. Asterisk's own log lines go to Docker's log (they are not structured events yet).
+**Setting the node up from the dashboard.** The AllStar page works in this install. The API container mounts the same
+`allstar-config` volume (as `/etc/asterisk`, with `MOREOPENREPEATER_ASTERISK_CONFIG_DIR` set in `compose.yaml`) and edits
+the node's files as it always has: it turns the node's radio over to the controller (`rxchannel = USRP/<the core>:34001:<node port>`),
+loads `chan_usrp`, sets the callsign and the AllStarLink portal's node number and password, and asks Asterisk to restart over
+AMI (so `MOREOPENREPEATER_AMI_*` must be set in `api.env`, which `./setup.sh --allstar` does). Then it tells the core where the
+node is, with a `usrp_configure` command, and the core points its AllStar audio at the node and keeps that in its own state
+file (`usrp-endpoints.json`, a host and a port), so after a restart of the core, with the API away, the audio is still there. If the
+core is away when you save, the API tells it when it connects. Both containers run as user 999, so one owner has the files. Until
+the node's container has started the folder is empty and the page says so (and works on its own once it has). The old way still
+works: `MOREOPENREPEATER_USRP_NODE` in `core.env` is a node you set up by hand, which the page then leaves alone (and the core
+refuses to be pointed elsewhere). Don't set both.
+
+**Not done yet.** Importing an existing node's configuration into the volume, and nets stay in the API. Asterisk's own log
+lines go to Docker's log (they are not structured events yet). Measured on a Pi 3B+, in a separate compose project: from
+the AllStar page, choosing node 1999 rewrote `rpt.conf` and `modules.conf` in the shared volume, restarted Asterisk over AMI
+(still healthy), loaded `chan_usrp`, and the core's audio was running to `allstar:32001` a few seconds later; with the API
+stopped and the core restarted, the audio came back by itself.
 
 ## The private network
 
@@ -369,12 +384,13 @@ loopback, and a service that relies on the host's loopback relies on the host. N
   the services network and published nowhere. Anything else on that network could connect to the AudioSocket port, which
   has no login, so the network holds only containers you run.
 - **The node is found by name for management**: `MOREOPENREPEATER_AMI_HOST=allstar` in `core.env` and `api.env`, with the
-  secret from `allstar.env`, and `MOREOPENREPEATER_USRP_NODE=172.28.0.20:32001` in `core.env` turns the radio's audio
-  to and from AllStar on. Compose sets none of these, so a bench with no node is unchanged.
+  secret from `allstar.env` (`./setup.sh --allstar` writes them). The dashboard's AllStar page turns the radio's audio to and
+  from AllStar on. (`MOREOPENREPEATER_USRP_NODE=172.28.0.20:32001` in `core.env` does it by hand instead, and the page then
+  leaves it alone.) A bench with no node is unchanged.
 - **The way back:** `docker compose -f compose.yaml -f compose.host-network.yaml up -d` puts the core and the API back
   on the host's network with the loopback addresses, for a site that still has an Asterisk or a DMR bridge on the host.
-  DMR is not a container yet, so with the private network its audio path (a USRP pair on the host's loopback) is not
-  reachable: use the override if you run DMR.
+  A host DMR bridge's audio path (a USRP pair on the host's loopback) is not reachable from the private network: use the
+  override if you still run DMR on the host.
 - **Measured on a Pi 3B+** (a separate compose project with a copy of the data, while the live stack was stopped): all
   three services healthy in 32 seconds with the dashboard on the host's loopback and refused on the LAN address; the
   API's link service logged in to a real app_rpt at `allstar:5038` and the core took its picture; a USRP voice packet from
@@ -393,11 +409,11 @@ The DMR bridge (DVSwitch's `Analog_Bridge` and `MMDVM_Bridge`, and `md380-emu`, 
 is no USB vocoder) runs in its own container, `dmr`, off by default like the AllStar node:
 
 ```
-docker compose --profile dmr up -d --build dmr
+docker compose --profile dmr up -d --build dmr        # or ./setup.sh --dmr, which does this with the rest
 docker compose exec dmr python3 /usr/local/bin/dmr-supervisor.py --check    # "waiting for the DMR settings..." until configured
-echo 'MOREOPENREPEATER_DMR_USRP_LISTEN=0.0.0.0:34011' >> core.env
-echo 'MOREOPENREPEATER_DMR_USRP_PEER=172.28.0.30:34012' >> core.env           # turns the DMR audio on; then: docker compose up -d core
 ```
+
+Then open the dashboard's DMR page, enter the callsign, DMR Id, network and password, and save: the DMR audio turns on with it.
 
 **It needs nothing from the host**: no systemd, no host config, no devices, no kernel modules, no sound card, and it publishes
 nothing (it reaches the DMR network, BrandMeister, TGIF or a HomeBrew master, by outbound connection). DVSwitch publishes its
@@ -425,15 +441,22 @@ docker compose exec -e DMR_PASSWORD='your-network-password' dmr \
   python3 /usr/local/bin/dmr-supervisor.py --configure --callsign W1AW --dmr-id 1234567 --network brandmeister
 ```
 
-(`--network` is `brandmeister`, `tgif` or `custom` with `--host`; `--talkgroup`, `--slot`, `--port` and `--color-code` are
-optional.) It writes the same keys the dashboard's DMR page writes, refuses anything that could break the `.ini` files, and asks
+(That is the way without the dashboard. `--network` is `brandmeister`, `tgif` or `custom` with `--host`; `--talkgroup`, `--slot`,
+`--port` and `--color-code` are optional. It does not turn the core's DMR audio on: set `MOREOPENREPEATER_DMR_USRP_PEER=172.28.0.30:34012`
+in `core.env` for that.) It writes the same keys the dashboard's DMR page writes, refuses anything that could break the `.ini` files, and asks
 the running bridge to restart. The files are in the `dmr-config` volume and are written once, the first time, with the core's
 address and no log file; after that they are yours and are never touched.
 
-**Not done yet.** The dashboard's DMR page cannot set this up for you in the container install: it edits files and asks for
-restarts from inside the core, which is in another container (see the note on the dashboard's pages under **What works in the
-dashboard**). Moving that file editing into the API, with the control and configuration volumes it needs, is the next piece. The
-DMR network's traffic is a separate thing from the radio: with no master reachable nothing is transmitted.
+**Setting it up from the dashboard.** The DMR page works in this install. The API mounts the bridge's `dmr-config` and
+`dmr-control` volumes (`MOREOPENREPEATER_DMR_DIR`, `_DMR_RESTART_REQUEST` and `_DMR_STATUS` in `compose.yaml`), writes the same
+`.ini` keys as ever, and asks the supervisor to restart by writing the request file. It never writes a first set of files: the
+bridge does that, with the core's address in them (a file seeded with a loopback address would send the audio nowhere), and
+the page says "start it with `docker compose --profile dmr up -d dmr`" until it has. Saving also tells the core where the bridge
+is (the API's `MOREOPENREPEATER_DMR_USRP_PEER`, `172.28.0.30:34012` by default), which turns the DMR audio on; turning DMR off turns it
+off. The page's three program lights come from the supervisor, which writes `programs.json` in the control volume whenever they change.
+The core keeps where the bridge is, as it does for the node, so it survives a restart. Measured on a Pi 3B+: after saving from the page
+the bridge restarted with the new settings, kept the core's address in `[USRP]`, and the core's DMR audio was running to the bridge.
+The DMR network's traffic is a separate thing from the radio: with no master reachable nothing is transmitted.
 
 ## Health and restarts
 

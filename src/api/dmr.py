@@ -7,6 +7,7 @@ USRP audio is api.dmr_audio; service restarts go through api.dmr_restart.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -213,7 +214,12 @@ class DmrBridge:
         audio: DmrAudio,
         restart: Optional[DmrRestartControl] = None,
         usrp: Optional[DmrUsrpSettings] = None,
+        bridge_seeds_config: bool = False,
     ) -> None:
+        """`bridge_seeds_config`: the bridge is in its own container, which writes the first configuration (with its
+        own addresses in it) when it first starts. This then never seeds one, or the bridge would find a file that sends
+        its audio to a loopback that is not the core, and the setup page waits for the bridge instead."""
+        self.bridge_seeds_config = bridge_seeds_config
         self.directory = directory
         self.audio = audio
         self.restart = restart
@@ -231,7 +237,7 @@ class DmrBridge:
 
     def ensure_templates(self) -> None:
         """Seed default ini files once (install-pi.sh also copies these)."""
-        if self.directory is None:
+        if self.directory is None or self.bridge_seeds_config:
             return
         listen = self.usrp.listen_port if self.usrp else DEFAULT_LISTEN_PORT
         peer = self.usrp.peer_port if self.usrp else DEFAULT_PEER_PORT
@@ -298,6 +304,24 @@ class DmrBridge:
             "use_emulator": general.get("useEmulator", "true").lower() in ("1", "true", "yes"),
         }
 
+    def _services(self) -> dict:
+        """Whether each of the bridge's three programs is running: systemd's answer on a host install; in a container,
+        what its supervisor last wrote in the shared control folder (unknown until it has)."""
+        if not self.bridge_seeds_config:
+            return {
+                "analog_bridge": _unit_active("analog_bridge"),
+                "mmdvm_bridge": _unit_active("mmdvm_bridge"),
+                "md380_emu": _unit_active("md380-emu"),
+            }
+        running: dict = {}
+        if self.restart is not None and self.restart.settings is not None:
+            try:
+                running = json.loads((self.restart.settings.status_dir / "programs.json").read_text()).get("running") or {}
+            except (OSError, ValueError, AttributeError):
+                running = {}
+        return {name: running.get(name) if isinstance(running.get(name), bool) else None
+                for name in ("analog_bridge", "mmdvm_bridge", "md380_emu")}
+
     async def status(self) -> dict:
         audio = self.audio.status()
         result: dict = {
@@ -306,11 +330,7 @@ class DmrBridge:
             "error": None,
             "settings": None,
             "audio": audio,
-            "services": {
-                "analog_bridge": _unit_active("analog_bridge"),
-                "mmdvm_bridge": _unit_active("mmdvm_bridge"),
-                "md380_emu": _unit_active("md380-emu"),
-            },
+            "services": self._services(),
             "restart": self.restart.status()
             if self.restart
             else {"available": False, "requested": False, "last_action": None, "state": None, "message": None},
@@ -323,6 +343,12 @@ class DmrBridge:
             return result
         if not self.directory.is_dir():
             result["error"] = f"DMR config directory {self.directory} is missing. Install DMR again from this page or run install-pi.sh --dmr."
+            return result
+        if self.bridge_seeds_config and not self._paths()[ANALOG].exists():
+            result["error"] = (
+                "The DMR bridge hasn't started yet, so it has not written its settings. "
+                "Start it with: docker compose --profile dmr up -d dmr"
+            )
             return result
         result["available"] = True
         try:
@@ -337,6 +363,7 @@ class DmrBridge:
         async with self._lock:
             if self.directory is None:
                 raise DmrSetupError("DMR isn't installed. On the Pi run: sudo bash scripts/install-pi.sh --dmr")
+            self._require_seeded()
             self.ensure_templates()
             paths = self._paths()
             current = self._settings_from_files() or {}
@@ -377,15 +404,10 @@ class DmrBridge:
                     "ambeMode": "DMR",
                 },
             )
-            analog = ini_file.set_values(
-                analog,
-                "USRP",
-                {
-                    "address": "127.0.0.1",
-                    "txPort": str(listen),
-                    "rxPort": str(peer),
-                },
-            )
+            usrp_values = {"txPort": str(listen), "rxPort": str(peer)}
+            if not ini_file.section_values(analog, "USRP").get("address"):
+                usrp_values["address"] = "127.0.0.1"  # a file that has one (a bridge in a container) keeps it: it is not this machine
+            analog = ini_file.set_values(analog, "USRP", usrp_values)
             _write(paths[ANALOG], analog)
 
             mmdvm = _read(paths[MMDVM])
@@ -434,6 +456,12 @@ class DmrBridge:
                 self.restart.request("restart")
         return await self.status()
 
+    def _require_seeded(self) -> None:
+        if self.bridge_seeds_config and not self._paths()[ANALOG].exists():
+            raise DmrSetupError(
+                "The DMR bridge hasn't started yet. Start it with: docker compose --profile dmr up -d dmr"
+            )
+
     async def disable(self) -> dict:
         async with self._lock:
             if self.directory is None:
@@ -448,6 +476,8 @@ class DmrBridge:
 
     async def request_install(self) -> dict:
         """Ask the root helper to install DVSwitch and seed the DMR config dir."""
+        if self.bridge_seeds_config:
+            raise DmrSetupError("The DMR bridge is its own container here. Start it with: docker compose --profile dmr up -d dmr")
         if self.directory is not None and self.directory.is_dir():
             raise DmrSetupError("DMR is already installed on this machine.")
         if self.restart is None or not self.restart.available:
@@ -467,6 +497,7 @@ class DmrBridge:
                 raise DmrSetupError("Enable DMR first, then pick a talkgroup.")
             if talkgroup < 1:
                 raise DmrSetupError("Talkgroup must be a positive integer.")
+            self._require_seeded()
             self.ensure_templates()
             paths = self._paths()
             current = self._settings_from_files() or {}

@@ -38,6 +38,7 @@ from .allstar_audio import AllStarAudio, usrp_listen_from_env, usrp_settings_fro
 from .allstar_node import AllStarNode
 from .dmr import DmrBridge, dmr_dir_from_env
 from .dmr_audio import DmrAudio, dmr_usrp_settings_from_env
+from .remote_usrp import RemoteUsrpAudio
 from .dmr_restart import DmrRestartControl, dmr_restart_settings_from_env
 from .aprs_map import AprsReceiver, StationStore, spoken_summary
 from .assets import AudioAssetStore
@@ -620,7 +621,34 @@ class AppRuntime:
             # The SIP trunk is set up over AMI, a network call with no device and no host file, so the
             # API owns it. It reads the same MOREOPENREPEATER_AMI_* settings the core does.
             sip_trunk = sip_trunk or SipTrunk(patch_settings_from_env(os.environ))
+            # The node and the bridge are in their own containers. Their files are volumes this process is given, and it
+            # edits them for the setup pages; the audio is the core's, which it is told where the node and bridge are.
+            # With no volume given they are only what the core reports.
+            node_files = (
+                asterisk_files_from_env(
+                    os.environ, backup_dir=DEFAULT_DATA_DIR / "asterisk-backups", node_in_container=True
+                )
+                if os.environ.get("MOREOPENREPEATER_ASTERISK_CONFIG_DIR") else None
+            )
+            if allstar_node is None and node_files is not None:
+                allstar_node = AllStarNode(
+                    node_files,
+                    patch_settings_from_env(os.environ),
+                    RemoteUsrpAudio(service, "allstar", "allstar_node"),
+                    listen=usrp_listen_from_env(os.environ),
+                    address=os.environ.get("MOREOPENREPEATER_USRP_ADDRESS"),
+                )
             allstar_node = allstar_node or CoreHardware("allstar_node", service, asynchronous=True)
+            dmr_folder = dmr_dir_from_env(os.environ)
+            if dmr is None and dmr_folder is not None:
+                dmr_audio = dmr_audio or RemoteUsrpAudio(service, "dmr", "dmr")
+                dmr = DmrBridge(
+                    dmr_folder,
+                    dmr_audio,
+                    DmrRestartControl(dmr_restart_settings_from_env(os.environ)),
+                    usrp=dmr_usrp_settings_from_env(os.environ),
+                    bridge_seeds_config=True,
+                )
             dmr_audio = dmr_audio or Unavailable("dmr_audio")
             dmr = dmr or CoreHardware("dmr", service, asynchronous=True)
         live_audio = live_audio or LiveAudio(

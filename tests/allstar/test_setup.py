@@ -199,6 +199,18 @@ def test_allstar_gets_a_generated_secret_shared_with_the_api_and_core_and_never_
     assert any(c == "docker compose --profile allstar up -d --build" for c in calls_made(site))
 
 
+def test_dmr_starts_the_bridge_and_needs_no_secret_from_the_script(site):
+    folder = site[0]
+    run(site, "--callsign", "W1AW", "--dmr")
+    assert not (folder / "allstar.env").exists()  # the network, DMR Id and password are set in the dashboard
+    assert any(c == "docker compose --profile dmr up -d --build" for c in calls_made(site))
+
+
+def test_both_profiles_together(site):
+    run(site, "--callsign", "W1AW", "--allstar", "--dmr")
+    assert any(c == "docker compose --profile allstar --profile dmr up -d --build" for c in calls_made(site))
+
+
 def test_without_allstar_there_is_no_node_and_no_node_settings(site):
     folder = site[0]
     run(site, "--callsign", "W1AW")

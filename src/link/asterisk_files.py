@@ -88,11 +88,14 @@ class AsteriskFiles:
         return result.stdout
 
 
-def asterisk_files_from_env(env: dict, backup_dir: Optional[Path]) -> Optional[AsteriskFiles]:
+def asterisk_files_from_env(env: dict, backup_dir: Optional[Path], *, node_in_container: bool = False) -> Optional[AsteriskFiles]:
+    """`node_in_container`: the node's configuration is a folder this process was given (a volume shared with the
+    node's container), which is empty until the node's container has started. It is the files either way, and the setup
+    page says the node isn't there yet, instead of the page not existing until this process is restarted."""
     directory = env.get("MOREOPENREPEATER_ASTERISK_CONFIG_DIR", "/etc/asterisk")
     shell = env.get("MOREOPENREPEATER_ASTERISK_SHELL")
     if shell:
         return AsteriskFiles(directory, shlex.split(shell), backup_dir)
-    if not Path(directory, "rpt.conf").exists():
+    if not Path(directory, "rpt.conf").exists() and not (node_in_container and Path(directory).is_dir()):
         return None
     return AsteriskFiles(directory, None, backup_dir)

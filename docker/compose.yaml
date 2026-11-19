@@ -19,6 +19,7 @@ x-link-addresses: &link_addresses
   MOREOPENREPEATER_USRP_ADDRESS: ${MOR_CORE_IP:-172.28.0.10}  # what Asterisk is told to send the radio's audio to
   MOREOPENREPEATER_AUDIOSOCKET_LISTEN: 0.0.0.0:9092  # autopatch calls, when the node's AMI is set
   MOREOPENREPEATER_AUDIOSOCKET_ADDRESS: ${MOR_CORE_IP:-172.28.0.10}:9092
+  MOREOPENREPEATER_DMR_USRP_LISTEN: 0.0.0.0:34011  # where the DMR bridge's audio is heard (the core), and the port the bridge is told to send to (the API)
 
 services:
   core:
@@ -124,12 +125,22 @@ services:
       - core-run:/run/moreopenrepeater
       # Where logd's socket is. No depends_on anywhere: the core and the API do not need logd to start or to run.
       - logd-run:/run/logd
+      # The AllStar node's and the DMR bridge's own files and the DMR restart request: what the dashboard's AllStar and DMR
+      # pages edit. The services keep running without the API; these folders are empty until their containers start.
+      - allstar-config:/etc/asterisk
+      - dmr-config:/etc/moreopenrepeater/dmr
+      - dmr-control:/dmr-control
     environment:
       # One JSON event per line on stdout, which Docker's log driver keeps and rotates. The text log in
       # the data folder is unchanged, and the dashboard's Logs page still reads it.
       MOREOPENREPEATER_LOG_FORMAT: json
       MOREOPENREPEATER_LOGD_SOCKET: /run/logd/events.sock
       MOREOPENREPEATER_LOGD_QUERY_SOCKET: /run/logd/query.sock  # the Logs page's history; without logd it says so
+      MOREOPENREPEATER_ASTERISK_CONFIG_DIR: /etc/asterisk  # the AllStar node's configuration, edited by the AllStar page
+      MOREOPENREPEATER_DMR_DIR: /etc/moreopenrepeater/dmr  # the DMR bridge's, edited by the DMR page
+      MOREOPENREPEATER_DMR_RESTART_REQUEST: /dmr-control/request  # how the DMR page asks the bridge to restart
+      MOREOPENREPEATER_DMR_STATUS: /dmr-control
+      MOREOPENREPEATER_DMR_USRP_PEER: ${MOR_DMR_IP:-172.28.0.30}:34012  # the bridge, for the core to send audio to once the DMR page turns it on
       # Inside the container it listens on every address of its own network; what the host can reach is the
       # published port above (loopback by default).
       MOREOPENREPEATER_HOST: 0.0.0.0

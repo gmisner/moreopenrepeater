@@ -64,6 +64,10 @@ def _host_port(value: str) -> tuple[str, int]:
     return host or "127.0.0.1", int(port)
 
 
+def dmr_listen_from_env(env: dict) -> tuple[str, int]:
+    return _host_port(env.get("MOREOPENREPEATER_DMR_USRP_LISTEN", DEFAULT_LISTEN))
+
+
 def dmr_usrp_settings_from_env(env: dict) -> Optional[DmrUsrpSettings]:
     peer = env.get("MOREOPENREPEATER_DMR_USRP_PEER")
     if not peer:
@@ -82,9 +86,13 @@ def _from_pcm(payload: bytes) -> np.ndarray:
 
 
 class DmrAudio(asyncio.DatagramProtocol):
-    def __init__(self, service: CoreHandle, settings: Optional[DmrUsrpSettings]) -> None:
+    def __init__(
+        self, service: CoreHandle, settings: Optional[DmrUsrpSettings], listen: Optional[tuple[str, int]] = None
+    ) -> None:
         self._service = service
         self.settings = settings
+        #: Where the bridge's audio is heard, for a bridge the dashboard points this at later.
+        self.listen = listen or ((settings.listen_host, settings.listen_port) if settings else _host_port(DEFAULT_LISTEN))
         self.error: Optional[str] = None
         self.keyed = False
         self.listen_port = settings.listen_port if settings else 0

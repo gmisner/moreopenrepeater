@@ -10,7 +10,7 @@ from .events import (
     PttCommanded, PttEvidence, PttFeedback, PttReason, TransmissionEnded, TransmissionStarted, TxEndReason,
     core_event_adapter,
 )
-from .commands import HARDWARE, LINK, LINK_EVENTS, PROGRAMMING, SIMULATED, CommandName, CommandResult, CommandStatus, CoreCommand
+from .commands import ENDPOINTS, HARDWARE, LINK, LINK_EVENTS, PROGRAMMING, SIMULATED, CommandName, CommandResult, CommandStatus, CoreCommand
 from .configuration import ActivityEntry, ActivityRows, ConfigApplied, ConfigChange, ConfigResult, ConfigSnapshot, ConfigState, CoreHardware, CoreLogs, LinkEvents, ProgrammingState
 from .health import HealthCheck, HealthReport, HealthState
 from .emit import DeliveryError, Emitter, ListSink, StdoutSink, UnixDatagramSink
@@ -26,6 +26,7 @@ from .versioning import CONTRACT_VERSION, is_compatible
 
 __all__ = [
     "CONTRACT_VERSION",
+    "ENDPOINTS",
     "HARDWARE",
     "LINK",
     "LINK_EVENTS",

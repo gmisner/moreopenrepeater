@@ -250,6 +250,7 @@ class Supervisor:
         self.stopped = False  # asked to stop: stay down until asked to restart
         self.stopping = False  # the container is shutting down
         self._last_health = 0.0
+        self._last_programs: Optional[dict] = None
         self._lock = threading.Lock()
 
     @property
@@ -413,6 +414,15 @@ class Supervisor:
             {"time": self._clock(), "stopped": self.stopped, "waiting": self.waiting, "running": self.running()},
             0o644,
         )
+        self.write_programs()
+
+    def write_programs(self) -> None:
+        """Which programs are running, for the dashboard (in the shared control folder, where it reads the status of its
+        requests). Written only when it changes, not every health beat: the folder is on the SD card."""
+        state = {"stopped": self.stopped, "waiting": list(self.waiting), "running": self.running()}
+        if state != self._last_programs:
+            self._last_programs = state
+            self._atomic(self.control_dir / "programs.json", state, 0o644)
 
     def _atomic(self, path: Path, data: dict, mode: int) -> None:
         try:
@@ -437,6 +447,7 @@ class Supervisor:
             time.sleep(POLL_SECONDS)
         self._log("supervisor", "shutting down")
         self.stop_all()
+        self.write_programs()  # nothing is running now, and the dashboard should not say it is
         return 0
 
 

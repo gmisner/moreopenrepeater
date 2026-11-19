@@ -42,6 +42,7 @@ class CommandName(str, Enum):
     ARM_CAPTURE = "arm_capture"
     LINK_EVENT = "link_event"
     LINK_SYNC = "link_sync"
+    USRP_CONFIGURE = "usrp_configure"
 
 
 #: The commands that make the controller act on an event that did not come from the radio.
@@ -70,8 +71,14 @@ LINK = frozenset({CommandName.LINK_EVENT, CommandName.LINK_SYNC})
 LINK_EVENTS = ("connected", "disconnected", "keyed", "unkeyed")
 MAX_LINK_NODES = 64
 
+#: Where the core's AllStar or DMR audio goes: the dashboard's setup pages say which node or bridge to talk to.
+#: The core keeps its own side (the address it listens on) and checks nothing the API could not: a host and a port.
+ENDPOINTS = frozenset({CommandName.USRP_CONFIGURE})
+USRP_SERVICES = ("allstar", "dmr")
+
 _DTMF = re.compile(r"^[0-9A-D*#]$")
 _NODE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+_HOST = re.compile(r"^[A-Za-z0-9_.:-]{1,253}$")
 #: The longest clip name the core takes: "tts:" and up to 2000 characters of text, with room.
 MAX_CLIP_CHARS = 2100
 _DIGITS = re.compile(r"^[0-9]{1,15}$")
@@ -115,6 +122,9 @@ _PARAMS: dict[CommandName, dict[str, str]] = {
     # it holds that is missing here is gone (and unkeyed), which also clears a node that was keyed when the
     # connection to app_rpt was lost.
     CommandName.LINK_SYNC: {"nodes": "link_nodes"},
+    # Point the AllStar or DMR audio at the node or bridge at this host and port, or at nothing (None) to stop it.
+    # The core keeps it, so a restart of the core (with the API away) still has audio to and from the node.
+    CommandName.USRP_CONFIGURE: {"service": "usrp_service", "peer": "usrp_peer"},
 }
 
 
@@ -152,6 +162,14 @@ def _valid(kind: str, value: Any) -> bool:
         return (
             isinstance(value, dict) and len(value) <= MAX_LINK_NODES
             and all(isinstance(k, str) and bool(_NODE.match(k)) and isinstance(v, bool) for k, v in value.items())
+        )
+    if kind == "usrp_service":
+        return value in USRP_SERVICES
+    if kind == "usrp_peer":  # None, or where to send: a host and a port, nothing else
+        return value is None or (
+            isinstance(value, dict) and set(value) == {"host", "port"}
+            and isinstance(value["host"], str) and bool(_HOST.match(value["host"]))
+            and isinstance(value["port"], int) and not isinstance(value["port"], bool) and 1 <= value["port"] <= 65535
         )
     if kind == "object":
         return isinstance(value, dict) and len(value) <= MAX_OBJECT_KEYS and all(isinstance(k, str) for k in value)

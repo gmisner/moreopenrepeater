@@ -395,6 +395,33 @@ def test_a_bridge_stopped_on_request_or_waiting_for_settings_is_not_a_fault(sup,
     assert dmr.check(tmp_path / "run") == (True, "stopped by request")
 
 
+def test_the_dashboard_is_told_which_programs_run_and_only_when_that_changes(sup, tmp_path):
+    s = sup()
+    s.start_all()
+    s.write_health()
+    path = tmp_path / "control" / "programs.json"
+    assert json.loads(path.read_text()) == {
+        "stopped": False, "waiting": [], "running": {"md380_emu": True, "analog_bridge": True, "mmdvm_bridge": True},
+    }
+    written = path.stat().st_mtime_ns
+    for _ in range(3):  # a heartbeat every two seconds must not write the SD card every two seconds
+        s.write_health()
+    assert path.stat().st_mtime_ns == written
+    s._children["md380_emu"].kill()
+    s._children["md380_emu"].wait()
+    s.write_health()
+    assert json.loads(path.read_text())["running"]["md380_emu"] is False
+
+
+def test_it_says_nothing_is_running_when_it_shuts_down(sup, tmp_path):
+    s = sup()
+    s.start_all()
+    s.write_health()
+    s.stop_all()
+    s.write_programs()
+    assert not any(json.loads((tmp_path / "control" / "programs.json").read_text())["running"].values())
+
+
 def test_the_heartbeat_is_written_by_the_tick(sup, tmp_path):
     s = sup()
     s.tick()

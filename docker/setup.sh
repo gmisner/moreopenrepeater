@@ -14,6 +14,7 @@
 #   --callsign CALL   the station's callsign (asked for if this is a first install and you are at a terminal)
 #   --localhost       publish the dashboard on the loopback only (a reverse proxy or `tailscale serve` on this host)
 #   --allstar         also set up and start the AllStarLink node container (its management secret is generated)
+#   --dmr             also start the DMR bridge container (the network, DMR Id and password are set in the dashboard)
 #   --udev            install the udev rule that gives the PTT interface a stable name (needs sudo)
 #   --no-start        write the settings, start nothing
 set -eu
@@ -24,6 +25,7 @@ cd "$HERE"
 CALLSIGN=""
 LOCALHOST=0
 ALLSTAR=0
+DMR=0
 UDEV=0
 START=1
 while [ $# -gt 0 ]; do
@@ -31,9 +33,10 @@ while [ $# -gt 0 ]; do
     --callsign) CALLSIGN="${2:-}"; shift ;;
     --localhost) LOCALHOST=1 ;;
     --allstar) ALLSTAR=1 ;;
+    --dmr) DMR=1 ;;
     --udev) UDEV=1 ;;
     --no-start) START=0 ;;
-    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "setup: unknown option $1 (see --help)" >&2; exit 2 ;;
   esac
   shift
@@ -161,6 +164,7 @@ fi
 if [ "$START" = 1 ]; then
   PROFILE=""
   [ "$ALLSTAR" = 0 ] || PROFILE="--profile allstar"
+  [ "$DMR" = 0 ] || PROFILE="$PROFILE --profile dmr"
   say "  starting the containers (the first build takes a few minutes)"
   # shellcheck disable=SC2086
   docker compose $PROFILE up -d --build

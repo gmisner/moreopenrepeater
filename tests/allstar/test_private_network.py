@@ -134,3 +134,13 @@ def test_the_default_layout_merges_to_a_published_loopback_dashboard_and_fixed_a
     api_port = services["api"]["ports"][0]
     assert (api_port["host_ip"], api_port["published"], api_port["target"]) == ("127.0.0.1", "8000", 8000)
     assert services["core"]["networks"]["services"]["ipv4_address"] == "172.28.0.10"
+
+
+def test_the_dashboard_edits_the_nodes_own_configuration_through_the_volume_the_node_mounts():
+    """The AllStar page writes rpt.conf and the rest; in a container install that is the node's folder, shared as a volume."""
+    api, node = SERVICES["api"], SERVICES["allstar"]
+    assert "allstar-config:/etc/asterisk" in api["volumes"] and "allstar-config:/etc/asterisk" in node["volumes"]
+    assert api["environment"]["MOREOPENREPEATER_ASTERISK_CONFIG_DIR"].split("#")[0].strip() == "/etc/asterisk"
+    assert api["user"] == node["user"] == "999:999"  # one owner for the files both write
+    dockerfile = (DOCKER / "Dockerfile.api").read_text()
+    assert "/etc/asterisk" in dockerfile and "chown 999:999" in dockerfile  # a volume the API creates first is still writable

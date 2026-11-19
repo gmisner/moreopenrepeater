@@ -189,6 +189,15 @@ keeps its readable text line in the log file exactly as before:
 | `config.refused` | warning | `error_code` says why (`config.unsafe`, `config.unknown_setting`, `config.wrong_type`, `config.conflict`) |
 | `config.failed` | error | `exception`; `error_code` `config.apply_failed` |
 | `speech.accepted` | info | `topic`: the core took a `speak.request` |
+| `autopatch.call_started`, `.call_connected`, `.call_ended` | info | `direction` (`outgoing`/`incoming`); `via` (`DTMF` or `dashboard`) when started; `result` and `talk_s` when ended |
+| `autopatch.call_refused` | info | `direction`, `via` or `reason`; the words say why (not allowed, busy, off, wrong access code) |
+| `autopatch.call_failed` | error | `direction`, `exception`; `error_code` `autopatch.call` |
+| `autopatch.originate_refused`, `.hangup_failed`, `.dtmf_failed`, `.lookup_failed` | error / warning | `error_code` `autopatch.asterisk` |
+| `autopatch.render_failed`, `.listening`, `.listen_failed`, `.connection_ended`, `.unknown_call` | | what they say; `call_id` for the last |
+
+The autopatch events never carry a phone number (called or calling), an access code, a DTMF digit sent into
+a call, a channel name (it contains the number) or speech text. The dashboard's audit trail records who
+called whom; the log does not.
 
 **One cycle, one id.** When the repeater leaves idle, the core starts an activity cycle with a fresh
 `correlation_id`, and every event any of its threads logs until the repeater is idle again carries it,

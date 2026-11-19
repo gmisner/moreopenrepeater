@@ -46,11 +46,19 @@ from controller.autopatch import format_number, number_allowed
 from controller.state_machine import RepeaterConfig
 from link.ami_client import AMIClient, AMIMessage
 from link.audiosocket import FrameType, encode_frame, read_frame_async
+from observability import log_event
 from playout.renderer import TTS_PREFIX
 
 from .service.core_handle import CoreHandle
 
 _logger = logging.getLogger("moreopenrepeater.autopatch")
+
+
+def _note(severity: int, event: str, message: str, *, error_code: Optional[str] = None, exc_info: bool = False, **facts) -> None:
+    """The one way this module logs. Never a phone number (called or calling), a DTMF digit sent into a call,
+    a channel name (it carries the number), or text that was to be spoken: the dashboard's audit trail is the
+    record of who called whom, and the log is not. `exc_info` records the exception's type, never its text."""
+    log_event(_logger, severity, event, message, error_code=error_code, exc_info=exc_info, facts_in_text=False, **facts)
 
 PHONE_RATE = 8000  # AudioSocket's signed-linear audio
 FRAME_SECONDS = 0.02
@@ -204,7 +212,7 @@ class PhoneLine:
         done, _ = await asyncio.wait(self._tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
             if not task.cancelled() and task.exception() is not None:
-                _logger.info("AudioSocket connection ended: %r", task.exception())
+                _note(logging.INFO, "autopatch.connection_ended", "AudioSocket connection ended", exception=type(task.exception()).__name__)
 
     @property
     def closed(self) -> bool:
@@ -337,9 +345,9 @@ class Autopatch:
             self._server = await asyncio.start_server(self._accept, host, port)
         except OSError as error:
             self.error = f"couldn't listen for AudioSocket on {host}:{port}: {error}"
-            _logger.error("%s", self.error)
+            _note(logging.ERROR, "autopatch.listen_failed", self.error, error_code="autopatch.listen", host=host, port=port)
             return
-        _logger.info("AudioSocket server listening on %s:%s", host, port)
+        _note(logging.INFO, "autopatch.listening", f"AudioSocket server listening on {host}:{port}", host=host, port=port)
 
     @property
     def listen_port(self) -> Optional[int]:
@@ -382,7 +390,10 @@ class Autopatch:
         else:
             error = None
         if error is not None:
-            _logger.info("autopatch call to %s refused: %s", number, error)
+            _note(
+                logging.INFO, "autopatch.call_refused", f"autopatch call refused: {error}",
+                direction="outgoing", via="DTMF" if actor == "DTMF" else "dashboard",
+            )
             self._audit(actor, "Autopatch refused", f"{number}: {error}")
             if actor == "DTMF":
                 self._service.speak(TTS_PREFIX + error)
@@ -424,7 +435,10 @@ class Autopatch:
         connection: Optional[tuple] = None
         line: Optional[PhoneLine] = None
         speech = "Autopatch ended."
-        _logger.info("autopatch dialing %s (%s)", call.number, call.actor)
+        _note(
+            logging.INFO, "autopatch.call_started", "autopatch dialing",
+            direction="outgoing", via="DTMF" if call.actor == "DTMF" else "dashboard",
+        )
         self._audit(call.actor, "Autopatch call", call.number)
         try:
             assert self.settings is not None
@@ -449,7 +463,7 @@ class Autopatch:
                 action["CallerID"] = config.autopatch_caller_id
             response = await asyncio.wait_for(ami.send_action(action), AMI_TIMEOUT)
             if response.get("Response") != "Success":
-                _logger.error("Asterisk refused the call: %s", response.get("Message"))
+                _note(logging.ERROR, "autopatch.originate_refused", "Asterisk refused the call", error_code="autopatch.asterisk")
                 raise CallFailed(*_UNCOMPLETED)
             result = await asyncio.wait_for(originated, config.autopatch_ring_seconds + AMI_TIMEOUT)
             if result.get("Response") != "Success":
@@ -466,7 +480,7 @@ class Autopatch:
             await asyncio.gather(dialing_audio, return_exceptions=True)
             call.state = "connected"
             call.connected_at = self._clock()
-            _logger.info("autopatch call to %s connected", call.number)
+            _note(logging.INFO, "autopatch.call_connected", "autopatch call connected", direction="outgoing")
             reader, writer, _done = connection
             line = PhoneLine(reader, writer, self.rate)
             line.start()
@@ -483,7 +497,10 @@ class Autopatch:
             if call.state == "dialing":
                 speech = "Autopatch cancelled."
         except (OSError, ConnectionError, ValueError, asyncio.TimeoutError, asyncio.IncompleteReadError) as error:
-            _logger.error("autopatch call to %s failed: %r", call.number, error)
+            _note(
+                logging.ERROR, "autopatch.call_failed", "autopatch call failed", error_code="autopatch.call",
+                direction="outgoing", exception=type(error).__name__,
+            )
             call.result, speech = _UNCOMPLETED
         finally:
             dialing_audio.cancel()
@@ -510,7 +527,10 @@ class Autopatch:
         self.call = None
         self.last_call = call
         talk_time = f", {round(call.ended_at - call.connected_at)}s" if call.connected_at else ""
-        _logger.info("autopatch %s ended: %s", call.who, call.result)
+        _note(
+            logging.INFO, "autopatch.call_ended", f"autopatch call ended: {call.result}",
+            direction=call.direction, result=call.result, talk_s=round(call.ended_at - call.connected_at) if call.connected_at else None,
+        )
         self._audit(call.actor, "Autopatch ended", f"{call.who}: {call.result}{talk_time}")
         self._service.end_patch()
         self._service.speak(TTS_PREFIX + speech)
@@ -538,7 +558,7 @@ class Autopatch:
         try:
             await asyncio.wait_for(ami.send_action({"Action": "Hangup", "Channel": channel}), AMI_TIMEOUT)
         except (OSError, ConnectionError, asyncio.TimeoutError):
-            _logger.warning("couldn't hang up %s", channel)
+            _note(logging.WARNING, "autopatch.hangup_failed", "couldn't hang up the call at Asterisk", error_code="autopatch.asterisk")
 
     def _start_digits(self, channel: str, ami: Optional[AMIClient]) -> asyncio.Task:
         self._digits = asyncio.Queue()
@@ -568,9 +588,12 @@ class Autopatch:
                     action = {"Action": "PlayDTMF", "Channel": channel, "Digit": digit, "Duration": str(DTMF_DURATION_MS)}
                     response = await asyncio.wait_for(ami.send_action(action), AMI_TIMEOUT)
                     if response.get("Response") != "Success":
-                        _logger.warning("Asterisk didn't send DTMF %r to %s: %s", digit, channel, response.get("Message"))
+                        _note(logging.WARNING, "autopatch.dtmf_failed", "Asterisk didn't send a DTMF digit into the call", error_code="autopatch.asterisk")
                 except (OSError, ConnectionError, asyncio.TimeoutError) as error:
-                    _logger.warning("couldn't send DTMF %r to %s: %r", digit, channel, error)
+                    _note(
+                        logging.WARNING, "autopatch.dtmf_failed", "couldn't send a DTMF digit into the call",
+                        error_code="autopatch.asterisk", exception=type(error).__name__,
+                    )
                     if own is not None:
                         await _close_quietly(own)
                         ami = own = None
@@ -616,7 +639,7 @@ class Autopatch:
         try:
             return await asyncio.get_running_loop().run_in_executor(None, renderer.render, TTS_PREFIX + text, config)
         except Exception:
-            _logger.warning("couldn't render %r", text, exc_info=True)
+            _note(logging.WARNING, "autopatch.render_failed", "couldn't render speech for the call", error_code="autopatch.render", exc_info=True)
             return None
 
     async def _announce(self, patch: PatchAudio, text: str, config: RepeaterConfig) -> None:
@@ -689,7 +712,10 @@ class Autopatch:
             await asyncio.wait_for(ami.connect(), AMI_TIMEOUT)
             channels = await ami_list(ami, {"Action": "CoreShowChannels"}) or []
         except (OSError, ConnectionError, asyncio.TimeoutError) as error:
-            _logger.warning("couldn't look up AudioSocket call %s: %r", call_id, error)
+            _note(
+                logging.WARNING, "autopatch.lookup_failed", "couldn't look up an AudioSocket call", error_code="autopatch.asterisk",
+                call_id=call_id, exception=type(error).__name__,
+            )
             return None
         finally:
             try:
@@ -718,7 +744,7 @@ class Autopatch:
     async def _screen(self, line: PhoneLine, caller: str) -> bool:
         """The access code, and whether the repeater can take the call; True to put it on the air."""
         who = f"call from {caller or 'an unknown number'}"
-        _logger.info("autopatch %s", who)
+        _note(logging.INFO, "autopatch.call_started", "autopatch call coming in", direction="incoming")
         refusal = self._incoming_refusal()
         if refusal is None:
             pin = self._service.config.autopatch_incoming_pin
@@ -741,7 +767,7 @@ class Autopatch:
                 refusal = self._incoming_refusal()  # things may have changed while they keyed it in
         if refusal is not None:
             reason, speech = refusal
-            _logger.info("autopatch %s refused: %s", who, reason)
+            _note(logging.INFO, "autopatch.call_refused", f"autopatch incoming call refused: {reason}", direction="incoming", reason=reason)
             self._audit("phone", "Autopatch refused", f"{who}: {reason}")
             await self._say(line, speech)
             return False
@@ -770,7 +796,10 @@ class Autopatch:
         except asyncio.CancelledError:
             call.result = self._hangup_reason or "hung up"
         except (OSError, ConnectionError) as error:
-            _logger.error("autopatch %s failed: %r", call.who, error)
+            _note(
+                logging.ERROR, "autopatch.call_failed", "autopatch call failed", error_code="autopatch.call",
+                direction="incoming", exception=type(error).__name__,
+            )
             call.result = "the connection failed"
         finally:
             await self._stop_digits(sender)
@@ -792,7 +821,7 @@ class Autopatch:
             return
         found = await self._find_incoming(call_id) if call_id else None
         if found is None:
-            _logger.warning("AudioSocket connection for unknown call %s; hanging up", call_id)
+            _note(logging.WARNING, "autopatch.unknown_call", "AudioSocket connection for an unknown call; hanging up", call_id=call_id)
             writer.write(encode_frame(FrameType.HANGUP))
             writer.close()
             return

@@ -54,10 +54,24 @@ def test_the_bridge_is_told_where_the_core_is_by_the_same_expression_the_core_is
 
 
 def test_compose_does_not_switch_dmr_audio_on_for_everyone():
-    """The core listens for the bridge's audio only when the owner sets the peer in core.env."""
-    for name in ("core", "api"):
-        environment = COMPOSE["services"][name]["environment"]
-        assert not [key for key in environment if "DMR" in key], name
+    """The core's DMR audio starts only when the DMR page saves (or the owner sets the peer in core.env): the core is never
+    given the bridge's address here, only the port it listens on. The API is, since the DMR page needs to say where the bridge is."""
+    core = COMPOSE["services"]["core"]["environment"]
+    assert [key for key in core if "DMR" in key] == ["MOREOPENREPEATER_DMR_USRP_LISTEN"]
+    api = COMPOSE["services"]["api"]["environment"]
+    peer = api["MOREOPENREPEATER_DMR_USRP_PEER"].split("#")[0].strip()
+    assert peer == "${MOR_DMR_IP:-172.28.0.30}:34012"
+    assert COMPOSE["services"]["dmr"]["networks"]["services"]["ipv4_address"].startswith("${MOR_DMR_IP")
+
+
+def test_the_dashboard_has_the_bridges_folders_to_edit_and_the_request_file_the_supervisor_reads():
+    api = COMPOSE["services"]["api"]
+    assert {"dmr-config:/etc/moreopenrepeater/dmr", "dmr-control:/dmr-control"} <= set(api["volumes"])
+    environment = api["environment"]
+    assert environment["MOREOPENREPEATER_DMR_DIR"].split("#")[0].strip() == "/etc/moreopenrepeater/dmr"
+    assert environment["MOREOPENREPEATER_DMR_RESTART_REQUEST"].split("#")[0].strip() == "/dmr-control/request"
+    assert environment["MOREOPENREPEATER_DMR_STATUS"] == "/dmr-control"
+    assert "dmr-config:/etc/moreopenrepeater/dmr" in SERVICE["volumes"]  # the same volumes the bridge mounts
 
 
 def test_it_is_locked_down_and_a_quarter_of_the_default_cpu():
@@ -123,6 +137,7 @@ def test_the_volume_paths_match_what_the_dashboard_and_the_supervisor_use():
     assert '"request"' in supervisor and '"status.json"' in supervisor
 
 
-def test_the_core_env_example_says_how_to_connect_the_bridges_audio():
+def test_the_core_env_example_says_how_to_connect_the_bridges_audio_by_hand():
     text = (DOCKER / "core.env.example").read_text()
-    assert "# MOREOPENREPEATER_DMR_USRP_LISTEN=0.0.0.0:34011" in text and "# MOREOPENREPEATER_DMR_USRP_PEER=172.28.0.30:34012" in text
+    assert "# MOREOPENREPEATER_DMR_USRP_PEER=172.28.0.30:34012" in text  # commented: the dashboard's DMR page does it
+    assert "DMR page" in text

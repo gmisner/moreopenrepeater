@@ -30,7 +30,7 @@ from api.autopatch import Autopatch, patch_settings_from_env
 from api.boards import run_amixer
 from api.core_runtime import CoreRuntime
 from api.dmr import DmrBridge, dmr_dir_from_env
-from api.dmr_audio import DmrAudio, dmr_usrp_settings_from_env
+from api.dmr_audio import DmrAudio, dmr_listen_from_env, dmr_usrp_settings_from_env
 from api.dmr_restart import DmrRestartControl, dmr_restart_settings_from_env
 from api.gpio import GpioControl
 from api.health import SystemProbe
@@ -43,6 +43,7 @@ from api.persistence import StateStore
 from api.recordings import RecordingStore
 from api.remote_base import RemoteBase
 from api.service import RepeaterService
+from api.usrp_endpoints import UsrpEndpoints
 from api.tx_fan import TxFan
 from api.watchdog import Watchdog, exit_for_restart, exit_on_stall_enabled, stall_seconds_from_env
 
@@ -128,7 +129,7 @@ def build_core(env: Optional[Mapping[str, str]] = None) -> CoreApp:
         address=env.get("MOREOPENREPEATER_USRP_ADDRESS"),
         manual=usrp_settings_from_env(env),
     )
-    dmr_audio = DmrAudio(service, dmr_usrp_settings_from_env(env))
+    dmr_audio = DmrAudio(service, dmr_usrp_settings_from_env(env), listen=dmr_listen_from_env(env))
     dmr = DmrBridge(
         dmr_dir_from_env(env),
         dmr_audio,
@@ -153,6 +154,7 @@ def build_core(env: Optional[Mapping[str, str]] = None) -> CoreApp:
         dmr=dmr,
         dmr_audio=dmr_audio,
         watchdog=watchdog,
+        usrp_endpoints=UsrpEndpoints(root / "usrp-endpoints.json"),
     )
     return CoreApp(runtime, service, activity_store, state_path, config_notes, assets_store, log_hub)
 

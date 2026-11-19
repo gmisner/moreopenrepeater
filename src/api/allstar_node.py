@@ -97,6 +97,16 @@ class AllStarNode:
         self.node: Optional[str] = None  # the node whose radio the controller is, per rpt.conf
 
     @property
+    def listen(self) -> tuple[str, int]:
+        """Where the controller listens for the node's audio."""
+        return self._listen
+
+    @property
+    def manual(self) -> bool:
+        """The node is set up by hand in the environment, which the dashboard leaves alone."""
+        return self._manual is not None
+
+    @property
     def _node_host(self) -> str:
         return self._ami.ami_host if self._ami else "127.0.0.1"
 

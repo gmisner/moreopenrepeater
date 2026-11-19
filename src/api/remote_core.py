@@ -140,6 +140,7 @@ class RemoteCore:
         #: The core has been, or is about to be, given everything in `_link_state`, and what follows goes after it in
         #: order. False at the start, after a failure and after a restart: the next thing sent is the whole picture.
         self._link_in_sync = False
+        self._connect_listeners: list[Callable[[], None]] = []
         self._link_outbox: collections.deque = collections.deque()
         self._link_wake: Optional[asyncio.Event] = None
         self._link_worker: Optional[asyncio.Task] = None
@@ -531,6 +532,11 @@ class RemoteCore:
                 queue.get_nowait()
             queue.put_nowait(snapshot)
 
+    def on_connect(self, listener: Callable[[], None]) -> None:
+        """Call `listener` each time the core connects (the first time and after every reconnect), in the event loop.
+        For what a restarted core forgets and this process knows."""
+        self._connect_listeners.append(listener)
+
     def _set_connected(self, connected: bool) -> None:
         if connected != self._connected:
             self._connected = connected
@@ -538,6 +544,11 @@ class RemoteCore:
             if connected:
                 self._send_net_hint()
                 self._send_link_state()
+                for listener in list(self._connect_listeners):
+                    try:
+                        listener()
+                    except Exception as error:  # noqa: BLE001 - one listener must not stop the others or the stream
+                        _logger.warning("a connect listener failed: %s", type(error).__name__)
             if not connected:
                 # Tell subscribers the last value is no longer being confirmed.
                 self._publish(self._placeholder())

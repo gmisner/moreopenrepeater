@@ -25,7 +25,10 @@ from playout.piper_service import PiperService, PiperServiceError
 from playout.renderer import ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
+from .allstar_audio import UsrpSettings
+from .dmr_audio import DmrUsrpSettings
 from .loops import run_announcement_loop, run_long_id_warm_loop, run_tick_loop
+from .usrp_endpoints import Peer, UsrpEndpoints
 from .watchdog import Watchdog, ping_interval, sd_notify
 
 TICK_INTERVAL_SECONDS = 0.05
@@ -38,6 +41,10 @@ _announce_logger = logging.getLogger("moreopenrepeater.announcements")
 
 class AnnouncementQueueFull(Exception):
     """Too many announcements are already waiting to play."""
+
+
+class EndpointRefused(Exception):
+    """The audio could not be pointed there; the message says why, for the dashboard to show."""
 
 
 def kokoro_service_for(renderer: ClipRenderer) -> Optional[KokoroService]:
@@ -79,6 +86,7 @@ class CoreRuntime:
         dmr_audio,
         watchdog: Watchdog,
         remember_stall: Callable[[str], None] = lambda stalled: None,
+        usrp_endpoints: Optional[UsrpEndpoints] = None,
     ) -> None:
         self.service = service
         self.renderer = renderer
@@ -93,6 +101,7 @@ class CoreRuntime:
         self.dmr = dmr
         self.dmr_audio = dmr_audio
         self.watchdog = watchdog
+        self.usrp_endpoints = usrp_endpoints
         self.kokoro_service: Optional[KokoroService] = None
         self.piper_service: Optional[PiperService] = None
         #: When the controller tick last ran; the watchdog watches it.
@@ -187,8 +196,40 @@ class CoreRuntime:
         tasks.append(asyncio.create_task(self.link_radio.run()))
         await self.autopatch.start()
         await self.allstar_node.start()
-        if (self.dmr.directory / "enabled").exists() if self.dmr.directory else False:
-            await self.dmr_audio.start()
+        saved = self.usrp_endpoints.load() if self.usrp_endpoints else {}
+        if not self.allstar_node.manual and "allstar" in saved and self.allstar_node.audio.settings is None:
+            await self._point_allstar(saved["allstar"])  # where the dashboard last set the node up
+        if self.dmr_audio.settings is None and "dmr" in saved:
+            await self._point_dmr(saved["dmr"])
+        elif self.dmr_audio.settings is not None and (
+            self.dmr.directory is None or (self.dmr.directory / "enabled").exists()
+        ):
+            await self.dmr_audio.start()  # a bridge in its own container has no directory here: its settings are enough
+
+    async def configure_usrp(self, service: str, peer: Optional[Peer]) -> None:
+        """The dashboard set the AllStar node or the DMR bridge up (or turned it off, `peer` None): point the audio at it.
+        Kept, so the next start of the core does the same without the API. Raises `EndpointRefused` with the reason."""
+        if service == "allstar":
+            if self.allstar_node.manual:
+                raise EndpointRefused("The AllStar node is set by MOREOPENREPEATER_USRP_NODE in the core's settings; change it there.")
+            await self._point_allstar(peer)
+        else:
+            await self._point_dmr(peer)
+        if self.usrp_endpoints is not None:
+            self.usrp_endpoints.save(service, peer)
+
+    async def _point_allstar(self, peer: Optional[Peer]) -> None:
+        audio = self.allstar_node.audio
+        listen = self.allstar_node.listen
+        await audio.configure(UsrpSettings(listen[0], listen[1], peer[0], peer[1]) if peer else None)
+        if peer and audio.error:
+            raise EndpointRefused(audio.error)
+
+    async def _point_dmr(self, peer: Optional[Peer]) -> None:
+        audio = self.dmr_audio
+        await audio.configure(DmrUsrpSettings(audio.listen[0], audio.listen[1], peer[0], peer[1]) if peer else None)
+        if peer and audio.error:
+            raise EndpointRefused(audio.error)
 
     def notify_ready(self) -> None:
         sd_notify("READY=1")

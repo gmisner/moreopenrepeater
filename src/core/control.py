@@ -41,6 +41,7 @@ from typing import Awaitable, Callable, Optional
 from pydantic import ValidationError
 
 from contracts import (
+    ENDPOINTS,
     HARDWARE,
     LINK,
     PROGRAMMING,
@@ -86,7 +87,7 @@ from controller.announcements import Announcement
 from controller.events import LinkStateChanged, RemoteKeyed
 from controller.macros import Macro
 from observability import log_event
-from api.core_runtime import AnnouncementQueueFull
+from api.core_runtime import AnnouncementQueueFull, EndpointRefused
 from api.gpio import GpioError
 from playout.renderer import TTS_PREFIX, UnknownClipError
 from playout.wav import encode_wav
@@ -878,6 +879,25 @@ class ControlServer:
         self._command_applied(name.value)
         return self._command_result(request, CommandStatus.APPLIED)
 
+    async def _endpoint_command(self, request: CoreCommand) -> dict:
+        """`usrp_configure`: the dashboard set the AllStar node or the DMR bridge up. The audio is pointed at it (or
+        stopped), and the core keeps that. A host and a port are all that is carried, so they are all that is logged,
+        and not even those: where a node is can say where someone lives (a host name), so only the service is."""
+        service, peer = request.params["service"], request.params["peer"]
+        try:
+            await self._runtime.configure_usrp(service, (peer["host"], peer["port"]) if peer else None)
+        except EndpointRefused as refused:
+            return self._command_refused(request, "command.hardware_refused", str(refused))
+        except Exception:  # noqa: BLE001 - nothing a client sent may reach the radio side as a crash
+            self._command_failed(request.command.value)
+            return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
+        log_event(
+            _logger, logging.INFO, "usrp.configured", f"{service} audio {'pointed at its service' if peer else 'stopped'}",
+            service=service, enabled=peer is not None, facts_in_text=False,
+        )
+        self._command_applied(request.command.value)
+        return self._command_result(request, CommandStatus.APPLIED)
+
     def _capture_finished(self, loop: asyncio.AbstractEventLoop, samples, started_at: float) -> None:
         """A transmission the engine was told to record has ended (a worker thread). The audio waits in a
         file for the API, which is named in a `capture` event; with no API to tell, it is not kept. What was
@@ -1003,6 +1023,8 @@ class ControlServer:
             return self._link_command(request)
         if name in HARDWARE:
             return self._hardware_command(request)
+        if name in ENDPOINTS:
+            return await self._endpoint_command(request)
         if name is CommandName.IMPORT_SNAPSHOT:
             return self._import_snapshot(request)
         if name in PROGRAMMING:

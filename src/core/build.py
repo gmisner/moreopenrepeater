@@ -82,7 +82,7 @@ def build_core(env: Optional[Mapping[str, str]] = None) -> CoreApp:
     config, config_notes = load_config(state_path)
 
     log_hub = LogHub()  # the API reads it over the control socket (GET /logs)
-    configure_logging(log_path, hub=log_hub)
+    configure_logging(log_path, hub=log_hub, module="core")
     set_cache_path(root / "audio-device-ids.json")
 
     assets_store = AudioAssetStore(root / "audio")

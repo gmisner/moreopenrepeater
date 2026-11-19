@@ -46,6 +46,8 @@ services:
       # The control socket. The API container will mount the same volume.
       - core-run:/run/moreopenrepeater
 
+    environment:
+      MOREOPENREPEATER_LOG_FORMAT: json  # see the api service
     env_file:
       - path: core.env
         required: false
@@ -90,6 +92,9 @@ services:
       - ${MOR_DATA_DIR:-./data}:/data
       - core-run:/run/moreopenrepeater
     environment:
+      # One JSON event per line on stdout, which Docker's log driver keeps and rotates. The text log in
+      # the data folder is unchanged, and the dashboard's Logs page still reads it.
+      MOREOPENREPEATER_LOG_FORMAT: json
       # Loopback by default. With no accounts set up the dashboard is open and can key the
       # transmitter, so it is not offered to the network until you choose to (MOR_API_HOST=0.0.0.0,
       # after creating an account or setting MOREOPENREPEATER_ADMIN_USER and _PASSWORD in api.env).

@@ -566,7 +566,11 @@ def main() -> None:
 
     host = os.environ.get("MOREOPENREPEATER_HOST", "0.0.0.0")
     port = int(os.environ.get("MOREOPENREPEATER_PORT", "8000"))
-    uvicorn.run("api.app:app", host=host, port=port)
+    # With JSON logging on, uvicorn must not install its own text logging: its lines go through the logger
+    # configure_logging set up, so everything on stdout is one structured event per line.
+    from .logging_config import json_logging_enabled
+
+    uvicorn.run("api.app:app", host=host, port=port, **({"log_config": None} if json_logging_enabled() else {}))
 
 
 if __name__ == "__main__":

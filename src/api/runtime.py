@@ -709,6 +709,8 @@ class AppRuntime:
         def aprs_window_start() -> float:
             return time.time() - service.config.aprs.aprs_map_hours * 3600
 
+        # The NWS alerts are the API's (it does the polling), so it words the weather and the core says it.
+        service.register_macro_handler("weather", service.weather.summary_text)
         service.register_macro_handler(
             "aprs", lambda: spoken_summary(aprs_stations.stations(aprs_window_start()), service.config, time.time())
         )
@@ -1178,7 +1180,14 @@ class AppRuntime:
                 tasks.append(asyncio.create_task(supervised(lambda: activity_flush_loop())))
                 core_runtime.start_long_id(tasks)
                 if link_settings is not None:
-                    tasks.append(asyncio.create_task(supervised(lambda: node_link_loop())))
+                    if getattr(service, "is_remote", False):
+                        # The link client feeds the controller, which is in the core, and there is no way yet
+                        # to hand it the events. The AMI settings are still used for the SIP trunk.
+                        _link_logger.info(
+                            "AllStar linking is not available when the core runs apart from the API yet"
+                        )
+                    else:
+                        tasks.append(asyncio.create_task(supervised(lambda: node_link_loop())))
                     tasks.append(asyncio.create_task(supervised(lambda: node_directory.run())))
                     tasks.append(asyncio.create_task(supervised(lambda: link_schedule_loop())))
                 await core_runtime.start_audio_and_links(loop, tasks)

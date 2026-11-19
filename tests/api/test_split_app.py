@@ -282,6 +282,30 @@ def test_with_the_core_away_the_activity_pages_say_so_and_metrics_leave_it_out(s
     assert metrics.status_code == 200 and "moreopenrepeater_activity_rx_count" not in metrics.text
 
 
+def test_the_weather_macro_is_worded_by_the_api_and_said_by_the_core(split, monkeypatch):
+    """The NWS alerts are the API's (it does the polling). A caller who dials the weather macro on the
+    radio used to hear the core's own, empty, weather state; the API words it now."""
+    from controller.events import RunAction
+
+    client, remote, core, thread = split
+    core.service.update_config(wx_lat=35.2, wx_lon=-101.8)
+    wait_for(lambda: remote.config.weather.wx_lat == 35.2)
+    said = []
+    monkeypatch.setattr(remote, "speak", lambda clip, on_linked_radio=False: said.append(clip))
+    wait_for(lambda: thread.server._macro_clients)  # the API has told the core it handles weather
+    macro = RunAction(action="weather", argument="", pattern="*5")
+    thread.loop.call_soon_threadsafe(lambda: core.service.programming.run_action(macro))
+    wait_for(lambda: said)
+    assert said == ["tts:There are no active weather alerts."]
+    # And it is the API's own state it spoke from: give the API an alert and ask again.
+    remote.weather.alerts = [type("A", (), {"event": "Flood Warning", "headline": "", "id": "x"})()]
+    monkeypatch.setattr("api.service.weather.speech_text", lambda alert: f"{alert.event} in effect.")
+    said.clear()
+    thread.loop.call_soon_threadsafe(lambda: core.service.programming.run_action(macro))
+    wait_for(lambda: said)
+    assert said == ["tts:There is one active weather alert. Flood Warning in effect."]
+
+
 def test_the_status_is_the_core_s_and_the_config_is_the_core_s(split):
     client, remote, core, _ = split
     status = client.get("/api/status").json()
@@ -462,6 +486,63 @@ def test_record_and_score_says_so_when_no_audio_arrives(split, monkeypatch):
     monkeypatch.setattr(split_module, "RECORD_GRACE_SECONDS", 0.5)
     response = client.post("/api/audio/record-score?seconds=1")  # the engine says it runs but sends nothing
     assert response.status_code == 409 and "audio" in response.json()["detail"].lower()
+
+
+def test_net_active_follows_the_core(split):
+    client, remote, core, thread = split
+    assert remote.net_active is False
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(True))
+    wait_for(lambda: remote.net_active)
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(False))
+    wait_for(lambda: not remote.net_active)
+
+
+def test_an_announcement_held_for_a_net_is_played_when_the_net_ends(split, monkeypatch):
+    """The scheduled weather announcement is held while a net is on, if the repeater says to. It crashed the
+    loop every hour (RemoteCore had no `net_active`), so it never played at all."""
+    client, remote, core, thread = split
+    said = []
+    monkeypatch.setattr(remote, "speak", lambda clip, on_linked_radio=False: said.append((clip, on_linked_radio)))
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(True))
+    wait_for(lambda: remote.net_active)
+    remote.defer_announcement("tts:Weather for the area", on_linked_radio=True)
+    remote.defer_announcement("tts:A second one")
+    time.sleep(0.5)
+    assert said == []  # held while the net runs
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(False))
+    wait_for(lambda: len(said) == 2)
+    assert said == [("tts:Weather for the area", True), ("tts:A second one", False)]  # in order, once each
+    time.sleep(0.5)
+    assert len(said) == 2
+
+
+def test_too_many_held_announcements_drop_the_oldest_not_the_process(split, monkeypatch):
+    client, remote, core, thread = split
+    said = []
+    monkeypatch.setattr(remote, "speak", lambda clip, on_linked_radio=False: said.append(clip))
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(True))
+    wait_for(lambda: remote.net_active)
+    for number in range(60):
+        remote.defer_announcement(f"tts:{number}")
+    thread.loop.call_soon_threadsafe(lambda: core.service.set_net_active(False))
+    wait_for(lambda: said)
+    time.sleep(0.3)
+    assert 0 < len(said) <= 20 and said[-1] == "tts:59"
+
+
+def test_the_link_loop_is_not_started_against_a_remote_core_and_the_api_says_so(core, sock_dir, monkeypatch, caplog):
+    import asyncio
+    import logging
+
+    monkeypatch.setenv("MOREOPENREPEATER_AMI_HOST", "127.0.0.1")  # AMI is set on the API, as the SIP trunk needs
+    caplog.set_level(logging.INFO)
+    with CoreThread(core, sock_dir / "core.sock"):
+        client, remote = split_client(sock_dir / "core.sock")
+        with client:
+            wait_for(lambda: remote.connected)
+            names = client.portal.call(lambda: [getattr(t.get_coro(), "__qualname__", repr(t.get_coro())) for t in asyncio.all_tasks()])
+    assert not any("node_link_loop" in name for name in names)
+    assert "AllStar linking is not available" in caplog.text
 
 
 def test_the_environment_chooses_the_remote_core():

@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1
+#
+# The AllStarLink node: Asterisk with app_rpt (ASL3) in its own container (docs/docker.md, The AllStar container).
+# It needs nothing from the host: no host Asterisk, no host config, no kernel modules, no sound card. Timing is the
+# kernel's timerfd (checked: `timing test` gets its 50 ticks a second), and the repeater's audio comes from the core
+# over USRP, so none of what AllStarLink's own Docker setup needs (DAHDI built for the host's kernel, OSS modules)
+# is wanted here.
+#
+# Debian 13 on arm64 and amd64: AllStarLink publishes both in its apt repository.
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# What gets installed is pinned: the repository's own package that adds its signing key and source (by hash), and
+# the version of the node software. An upgrade is a deliberate change here, not whatever the repository has today.
+ARG ASL_REPOS_URL=https://repo.allstarlink.org/public/asl-apt-repos.deb13_all.deb
+ARG ASL_REPOS_SHA256=22ae4334fc8780f105c33c0017ff4e2663198d3b52d977db48949a5a732889d5
+ARG ASL_VERSION=2:22.10.1+asl3-3.10.8-1.deb13
+
+# The package scripts call systemctl and may try to start the service. There is no systemd in a container, so for
+# the install only, give them a systemctl that does nothing and a policy that refuses to start anything.
+RUN printf '#!/bin/sh\nexit 0\n' > /usr/bin/systemctl && chmod +x /usr/bin/systemctl \
+    && printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d && chmod +x /usr/sbin/policy-rc.d \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && curl -fsSLo /tmp/asl-apt-repos.deb "$ASL_REPOS_URL" \
+    && echo "$ASL_REPOS_SHA256  /tmp/asl-apt-repos.deb" | sha256sum -c - \
+    && dpkg -i /tmp/asl-apt-repos.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends "asl3-asterisk=$ASL_VERSION" \
+    && apt-get purge -y --auto-remove curl \
+    && rm -f /usr/bin/systemctl /usr/sbin/policy-rc.d /tmp/asl-apt-repos.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+# uid 999 like the other containers, so the configuration volume can be shared with the API, which edits the
+# node's files. The directories are made here so a named volume mounted on them starts out owned by 999.
+RUN groupadd --system --gid 999 moreopenrepeater \
+    && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
+       --shell /usr/sbin/nologin moreopenrepeater \
+    && mkdir -p /run/asterisk /var/spool/asterisk /var/log/asterisk \
+    && chown -R 999:999 /etc/asterisk /var/lib/asterisk /run/asterisk /var/spool/asterisk /var/log/asterisk
+
+COPY docker/allstar-entrypoint.sh /usr/local/bin/allstar-entrypoint.sh
+RUN chmod 755 /usr/local/bin/allstar-entrypoint.sh
+
+USER 999:999
+WORKDIR /var/lib/asterisk
+# The node's configuration, and what Asterisk keeps (its database of nodes and settings).
+VOLUME ["/etc/asterisk", "/var/lib/asterisk"]
+# IAX2, how AllStarLink nodes talk to each other. AMI (5038) is for the other containers only and is never published.
+EXPOSE 4569/udp
+
+# Asterisk answering on its control socket means it started and is not wedged. Every 30 s is cheap enough for a Pi.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
+    CMD ["asterisk", "-rx", "core waitfullybooted"]
+
+ENTRYPOINT ["/usr/local/bin/allstar-entrypoint.sh"]

@@ -280,6 +280,52 @@ with `ATTRS{serial}`. The core is given the one path as `MOREOPENREPEATER_CM108_
 `auto` reads the host's hidraw numbers, which are not the container's, and no link radio interface is given
 to it (`MOREOPENREPEATER_LINK_CM108_HIDRAW: "off"`).
 
+## The AllStar container
+
+The AllStarLink node (Asterisk with app_rpt, from AllStarLink's own Debian 13 packages) runs in its own container,
+`allstar`, and **EchoLink comes with it**: `chan_echolink` is a module of the same Asterisk process, configured in
+`echolink.conf`, not a separate service. It is off by default, so an existing install is untouched:
+
+```
+cd docker
+cp allstar.env.example allstar.env        # set MOR_AMI_SECRET, for example: openssl rand -hex 16
+docker compose --profile allstar up -d --build allstar
+docker compose ps allstar                 # healthy within a minute
+docker compose exec allstar asterisk -rx "core show version"
+```
+
+**It needs nothing from the host.** No host Asterisk and no host `/etc/asterisk` (the configuration is the
+`allstar-config` volume, and what Asterisk keeps is `allstar-data`), no devices, no kernel modules, no host
+network. AllStarLink's own Docker setup needs DAHDI built for the host's kernel and OSS sound modules; this one
+does not, because Asterisk's timing is the kernel's `timerfd` (checked on a real container: `timing test` gets its
+50 ticks a second) and the repeater's audio reaches the node from the core over USRP, so there is no sound card.
+The image is built from a pinned base, a hash-checked repository package and a pinned node version
+(`ASL_VERSION` in `Dockerfile.allstar`), so an upgrade is a deliberate change.
+
+**What is reachable.** Only IAX2 (4569/udp, how AllStarLink nodes find each other; forward it on your router as you
+would for any node) is published, on `MOR_ALLSTAR_IAX_PORT`. If a host Asterisk is still running it already has that
+port: stop it, or publish the container's on another port. The management interface (AMI, 5038) is **never
+published**: it answers only the private `services` network (`MOR_SERVICES_SUBNET`, default `172.28.0.0/24`), with
+a secret you choose. The package ships a published default secret that is only safe on a host's loopback, so the
+container **refuses to start** without your own (at least 16 characters), or with that one. The API's link service
+uses the same secret (`MOREOPENREPEATER_AMI_SECRET` in `api.env`), with `allstar` as the host once the API is on that
+network.
+
+**What the entrypoint does.** It writes two files at every start and touches nothing else in `/etc/asterisk`
+(`rpt.conf`, `modules.conf`, `echolink.conf`, `extensions.conf` and `iax.conf` are yours, and the dashboard's AllStar
+setup edits them in the volume). `manager.conf` carries the secret, the bind address and the network rule.
+`logger.conf` sends everything to the console, so `docker logs allstar` has it and nothing is written to the disk,
+and leaves out the `dtmf` level the package's default logs to a file (the log is no place for what someone keyed). It
+also switches off `chan_simpleusb` and `chan_usbradio` if `modules.conf` loads them: with no sound card they search for
+one over and over, which was about 3,000 log lines in 30 seconds on a test container, and on a Pi that is wear on the
+SD card. The container is read-only, runs as user 999 with every capability dropped, and uses about 46 MB and 0.5%
+of a CPU when idle.
+
+**Not done yet.** The core and the API are still on the host's network, so they do not reach this container; moving
+them onto the `services` network (off `network_mode: host`) is the next step, and then importing an existing node's
+configuration into the volume. DMR is its own container after that, and nets stay in the API. Asterisk's own log
+lines go to Docker's log (they are not structured events yet).
+
 ## Health and restarts
 
 `python -m core.healthcheck` asks the core's own `/health` and exits 1 when it

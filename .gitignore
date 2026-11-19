@@ -9,3 +9,10 @@ __pycache__/
 /.venvs/
 /.venv-current
 /.venv-current.new
+
+# The container install's own settings and secrets, copied from the docker/*.example files.
+/docker/.env
+/docker/core.env
+/docker/api.env
+/docker/logd.env
+/docker/allstar.env

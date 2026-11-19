@@ -27,11 +27,13 @@ services:
     network_mode: host
 
     # Sound card and the CM108 PTT interface. A device must exist on the host or the
-    # container will not start. The hidraw number can change between boots; a stable
-    # udev name is planned (ADR 0005, host prerequisites).
+    # container will not start. The PTT device is found by a stable name that a udev rule makes
+    # (docker/udev/61-moreopenrepeater-ptt.rules, installed once on the host), because the hidraw number
+    # changes when the sound card drops off USB and comes back, and Docker looks the name up again
+    # each time the core starts. MOR_PTT_HIDRAW in .env overrides it (a /dev/hidrawN path).
     devices:
       - /dev/snd:/dev/snd
-      - ${MOR_PTT_HIDRAW:-/dev/hidraw0}:${MOR_PTT_HIDRAW:-/dev/hidraw0}
+      - ${MOR_PTT_HIDRAW:-/dev/moreopenrepeater-ptt}:${MOR_PTT_HIDRAW:-/dev/moreopenrepeater-ptt}
     # audio is 29 on Debian and Pi OS. The gpio group number differs by system
     # (`getent group gpio`), so it is a number. dialout is for serial PTT.
     group_add:
@@ -54,6 +56,11 @@ services:
       # Docker does not restart an unhealthy container, so a core whose audio stalls (the sound card dropped off USB
       # and came back, say) stops itself, with the transmitter off the air, and `restart` brings it back.
       MOREOPENREPEATER_EXIT_ON_STALL: "1"
+      # The one PTT device the core is given, by the path it has inside the container. The default "auto"
+      # would read the host's /dev/hidrawN numbers, which are not the container's.
+      MOREOPENREPEATER_CM108_HIDRAW: ${MOR_PTT_HIDRAW:-/dev/moreopenrepeater-ptt}
+      # No second interface is given to the container, so there is no link radio's to find.
+      MOREOPENREPEATER_LINK_CM108_HIDRAW: "off"
     env_file:
       - path: core.env
         required: false

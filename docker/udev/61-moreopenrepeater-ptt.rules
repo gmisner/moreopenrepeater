@@ -1,0 +1,24 @@
+# A stable name for the PTT device, for the container install (#221, #229).
+#
+# /dev/hidrawN depends on the order USB devices were found in, and it changes when the sound card drops off
+# the bus and comes back (a loose cable, a keyboard re-enumerating, EMI from the transmitter), or on a reboot.
+# `compose.yaml` hands the core the node by name, so Docker looks it up again every time the core starts, and
+# a core that stopped itself because its audio stalled (MOREOPENREPEATER_EXIT_ON_STALL) can start again.
+#
+# Install on the host (not in the container):
+#
+#   sudo cp docker/udev/61-moreopenrepeater-ptt.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger --subsystem-match=hidraw --action=add
+#   ls -l /dev/moreopenrepeater-ptt        # should point at a hidraw node
+#
+# One device may carry this name. With two interfaces plugged in (a repeater and a link radio), the second rule
+# below would claim the name twice: narrow it with ATTRS{serial}=="..." (see `udevadm info -a -n /dev/hidrawN`).
+#
+# The permission lines match the ones in packaging/99-cm108.rules, so this file stands alone on a host that
+# has not installed the native service's rules.
+
+# The All-In-One-Cable (AIOC)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="7388", GROUP="audio", MODE="0660", SYMLINK+="moreopenrepeater-ptt"
+# CM108 and CM119 interfaces (C-Media's vendor ID, whatever name is on the dongle)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0d8c", GROUP="audio", MODE="0660", SYMLINK+="moreopenrepeater-ptt"

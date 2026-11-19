@@ -172,8 +172,9 @@ including plain `legacy.*` lines, and for 2 seconds after (the transmitter is un
 controller says idle, and that belongs to the cycle it ends; a new cycle cuts the 2 seconds short). So one transmission reads as a story: `docker compose exec logd python -m
 logd.query --correlation <id>` shows the state changes, the PTT commanded by the controller, the PTT
 actually applied by the audio thread (and how long after), any glitches, and the receiver opening. A `ptt.commanded`
-with no `ptt.applied` after it, or a `ptt.failed`, is the controller and the hardware disagreeing. The History tab does not filter by
-correlation id yet; `logd.query --correlation` and `GET /api/log-history/events?correlation_id=` do. That the
+with no `ptt.applied` after it, or a `ptt.failed`, is the controller and the hardware disagreeing. In the History tab, **Whole
+activity** on any event that has an id shows that whole story in order, with time since the first event
+(**Back to results** returns to the search); `GET /api/log-history/events?correlation_id=` is the same thing for scripts. That the
 audio thread wrote the PTT line is not proof the transmitter keyed: an independent observation of the
 radio is still not built.
 

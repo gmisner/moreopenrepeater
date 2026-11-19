@@ -64,6 +64,44 @@ function facts(context: Record<string, unknown>): string {
     .join(" ");
 }
 
+function offsetFrom(start: string, iso: string): string {
+  const seconds = (new Date(iso).getTime() - new Date(start).getTime()) / 1000;
+  return Number.isFinite(seconds) ? `+${seconds.toFixed(1)} s` : "";
+}
+
+function EventRow({ event, first, offsetStart, onShowActivity }: { event: HistoryEvent; first: boolean; offsetStart?: string; onShowActivity?: (id: string) => void }) {
+  const detail = facts(event.context);
+  return (
+    <div role="listitem" style={{ padding: "6px 0", borderTop: first ? undefined : "1px solid var(--mantine-color-default-border)" }}>
+      <Group gap="xs" wrap="wrap" align="baseline">
+        <Text size="xs" c="dimmed" title={event.time}>
+          {offsetStart ? offsetFrom(offsetStart, event.time) : when(event.time)}
+        </Text>
+        <Badge size="sm" variant="light" color={SEVERITY_COLOR[event.severity] ?? "gray"}>
+          {SEVERITY_NAMES[event.severity] ?? event.severity}
+        </Badge>
+        <Text size="xs" c="dimmed">
+          {event.module}
+        </Text>
+        <Text size="xs" ff="monospace">
+          {event.event}
+        </Text>
+        {onShowActivity && event.correlation_id ? (
+          <Button size="compact-xs" variant="subtle" onClick={() => onShowActivity(event.correlation_id as string)}>
+            Whole activity
+          </Button>
+        ) : null}
+      </Group>
+      {event.message ? <Text size="sm">{event.message}</Text> : null}
+      {detail ? (
+        <Text size="xs" c="dimmed" ff="monospace" style={{ wordBreak: "break-word" }}>
+          {detail}
+        </Text>
+      ) : null}
+    </div>
+  );
+}
+
 /** Searchable event history from the log collector. Loads when asked, never on a timer. */
 export function LogHistory() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -76,6 +114,7 @@ export function LogHistory() {
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [busy, setBusy] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [activity, setActivity] = useState<HistoryEvent[] | null>(null);
 
   const search = useCallback(
     async (before?: number) => {
@@ -108,6 +147,19 @@ export function LogHistory() {
     }
   }, []);
 
+  const showActivity = useCallback(async (id: string) => {
+    setBusy(true);
+    try {
+      const page = await api<EventsPage>(`/api/log-history/events?${new URLSearchParams({ correlation_id: id, limit: "500" })}`);
+      // The collector answers newest first; an activity reads top to bottom, in the order it happened.
+      setActivity([...page.events].reverse());
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -132,6 +184,7 @@ export function LogHistory() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    setActivity(null);
     void search();
   };
 
@@ -212,47 +265,36 @@ export function LogHistory() {
             </Text>
             <InfoNote label="About this history">
               The log collector keeps events for a while after the live log scrolls past them, so you can look back at what
-              happened overnight. Passwords, PINs and message content are never recorded. Search matches whole words.
+              happened overnight. Passwords, PINs and message content are never recorded. Search matches whole words. "Whole activity" shows everything that happened during one transmission or call, in order.
             </InfoNote>
           </Group>
-          {events.length === 0 ? (
+          {activity ? (
+            <Stack gap="xs">
+              <Group justify="space-between" wrap="wrap">
+                <Text size="sm" fw={500}>
+                  Everything from one activity ({activity.length} {activity.length === 1 ? "event" : "events"}
+                  {activity.length > 1 ? `, ${offsetFrom(activity[0].time, activity[activity.length - 1].time).slice(1)}` : ""})
+                </Text>
+                <Button variant="default" size="xs" onClick={() => setActivity(null)}>
+                  Back to results
+                </Button>
+              </Group>
+              <Stack gap={0} role="list" aria-label="One activity, in order">
+                {activity.map((event, index) => (
+                  <EventRow key={`${event.time}-${index}`} event={event} first={index === 0} offsetStart={activity[0].time} />
+                ))}
+              </Stack>
+            </Stack>
+          ) : events.length === 0 ? (
             <EmptyState>{searched ? "No events match." : "Searching..."}</EmptyState>
           ) : (
             <Stack gap={0} role="list" aria-label="Events, newest first">
-              {events.map((event, index) => {
-                const detail = facts(event.context);
-                return (
-                  <div
-                    key={`${event.time}-${index}`}
-                    role="listitem"
-                    style={{ padding: "6px 0", borderTop: index ? "1px solid var(--mantine-color-default-border)" : undefined }}
-                  >
-                    <Group gap="xs" wrap="wrap" align="baseline">
-                      <Text size="xs" c="dimmed" title={event.time}>
-                        {when(event.time)}
-                      </Text>
-                      <Badge size="sm" variant="light" color={SEVERITY_COLOR[event.severity] ?? "gray"}>
-                        {SEVERITY_NAMES[event.severity] ?? event.severity}
-                      </Badge>
-                      <Text size="xs" c="dimmed">
-                        {event.module}
-                      </Text>
-                      <Text size="xs" ff="monospace">
-                        {event.event}
-                      </Text>
-                    </Group>
-                    {event.message ? <Text size="sm">{event.message}</Text> : null}
-                    {detail ? (
-                      <Text size="xs" c="dimmed" ff="monospace" style={{ wordBreak: "break-word" }}>
-                        {detail}
-                      </Text>
-                    ) : null}
-                  </div>
-                );
-              })}
+              {events.map((event, index) => (
+                <EventRow key={`${event.time}-${index}`} event={event} first={index === 0} onShowActivity={(id) => void showActivity(id)} />
+              ))}
             </Stack>
           )}
-          {next !== null ? (
+          {next !== null && !activity ? (
             <Button variant="default" loading={busy} onClick={() => void search(next)}>
               Show older
             </Button>

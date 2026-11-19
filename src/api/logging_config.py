@@ -26,6 +26,15 @@ LOGD_SOCKET_ENV = "MOREOPENREPEATER_LOGD_SOCKET"  # send each event to the logd 
 MODULE_VERSION = "0.1.0"
 
 
+def json_logging_enabled(env: Optional[Mapping[str, str]] = None) -> bool:
+    env = os.environ if env is None else env
+    return (env.get(LOG_FORMAT_ENV) or "").strip().lower() == "json"
+
+
+#: Libraries that log every request or call at INFO. As events that is noise; their warnings still come through.
+_CHATTY = ("httpx", "httpcore", "uvicorn.access")
+
+
 def configure_logging(
     log_path: Path,
     level: int = logging.INFO,
@@ -57,8 +66,22 @@ def configure_logging(
     env = os.environ if env is None else env
     identity = ProcessIdentity(module, MODULE_VERSION)  # one identity: the same boot id and counter for every way out
     # The console copy is text for a person at a terminal, or JSON events for a container's log driver.
-    if (env.get(LOG_FORMAT_ENV) or "").strip().lower() == "json":
+    if json_logging_enabled(env):
         stream_handler: logging.Handler = JsonLineHandler(identity)
+        # Other libraries (uvicorn, mcp) log through the root logger, which would put plain text between
+        # the JSON lines, so the same handler takes theirs. Ours has propagate off: nothing is written twice.
+        for existing in [h for h in logging.getLogger().handlers if getattr(h, "_moreopenrepeater_managed", False)]:
+            logging.getLogger().removeHandler(existing)
+            existing.close()
+        library_handler = JsonLineHandler(identity)
+        library_handler._moreopenrepeater_managed = True  # type: ignore[attr-defined]
+        library_handler.setLevel(logging.INFO)
+        root = logging.getLogger()
+        root.addHandler(library_handler)
+        if root.level == logging.NOTSET or root.level > logging.INFO:
+            root.setLevel(logging.INFO)
+        for name in _CHATTY:
+            logging.getLogger(name).setLevel(logging.WARNING)
     else:
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)

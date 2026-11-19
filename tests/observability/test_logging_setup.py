@@ -17,10 +17,13 @@ from observability.handlers import CollectorHandler, JsonLineHandler
 @pytest.fixture(autouse=True)
 def clean_logger():
     yield
-    logger = logging.getLogger(LOGGER_NAME)
-    for handler in list(logger.handlers):
-        logger.removeHandler(handler)
-        handler.close()
+    for logger in (logging.getLogger(LOGGER_NAME), logging.getLogger()):
+        for handler in list(logger.handlers):
+            if logger.name == LOGGER_NAME or getattr(handler, "_moreopenrepeater_managed", False):
+                logger.removeHandler(handler)
+                handler.close()
+    for name in ("httpx", "httpcore", "uvicorn.access"):
+        logging.getLogger(name).setLevel(logging.NOTSET)
 
 
 @pytest.fixture
@@ -112,3 +115,72 @@ def test_an_unreachable_collector_does_not_stop_the_process_logging(tmp_path, ca
     logger.error("still logged locally")
     assert "still logged locally" in (tmp_path / "x.log").read_text()
     assert "still logged locally" in capsys.readouterr().err
+
+
+# -- other libraries' logs, in JSON mode --------------------------------------------------------
+
+
+def root_managed():
+    return [h for h in logging.getLogger().handlers if getattr(h, "_moreopenrepeater_managed", False)]
+
+
+def test_in_json_mode_other_libraries_log_as_events_too_so_stdout_is_all_json(tmp_path, capsys):
+    configure_logging(tmp_path / "x.log", module="api", env={"MOREOPENREPEATER_LOG_FORMAT": "json"})
+    logging.getLogger("uvicorn.error").info("Started server process [8]")
+    logging.getLogger("mcp.server").warning("a library warning")
+    lines = [LogEvent.model_validate_json(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert [(e.event, e.message) for e in lines] == [
+        ("legacy.uvicorn_error", "Started server process [8]"), ("legacy.mcp_server", "a library warning"),
+    ]
+    assert all(e.module == "api" for e in lines)
+
+
+def test_the_chatty_libraries_are_kept_to_warnings(tmp_path, capsys):
+    configure_logging(tmp_path / "x.log", env={"MOREOPENREPEATER_LOG_FORMAT": "json"})
+    logging.getLogger("httpx").info('HTTP Request: GET http://core/hardware "HTTP/1.1 200 OK"')
+    logging.getLogger("uvicorn.access").info('127.0.0.1 - "GET /api/status HTTP/1.1" 200')
+    logging.getLogger("uvicorn.access").warning("a slow request")
+    out = capsys.readouterr().out
+    assert "HTTP Request" not in out and "GET /api/status" not in out and "a slow request" in out
+
+
+def test_our_own_lines_are_not_written_twice_by_the_root_handler(tmp_path, capsys):
+    configure_logging(tmp_path / "x.log", env={"MOREOPENREPEATER_LOG_FORMAT": "json"})
+    logging.getLogger("moreopenrepeater.audio").info("once")
+    assert len(capsys.readouterr().out.strip().splitlines()) == 1
+
+
+def test_text_mode_leaves_the_root_logger_alone(tmp_path):
+    configure_logging(tmp_path / "x.log", env={})
+    assert root_managed() == []
+    assert logging.getLogger("httpx").level == logging.NOTSET
+
+
+def test_reconfiguring_does_not_stack_root_handlers(tmp_path):
+    env = {"MOREOPENREPEATER_LOG_FORMAT": "json"}
+    configure_logging(tmp_path / "x.log", env=env)
+    configure_logging(tmp_path / "x.log", env=env)
+    assert len(root_managed()) == 1
+
+
+def test_the_log_format_helper_agrees_with_configure(tmp_path):
+    from api.logging_config import json_logging_enabled
+
+    assert json_logging_enabled({"MOREOPENREPEATER_LOG_FORMAT": " Json "}) is True
+    assert json_logging_enabled({"MOREOPENREPEATER_LOG_FORMAT": "text"}) is False
+    assert json_logging_enabled({}) is False
+
+
+def test_the_server_is_told_not_to_install_its_own_text_logging_only_in_json_mode(monkeypatch):
+    import importlib
+
+    import uvicorn
+
+    app_module = importlib.import_module("api.app")  # `from api import app` would give the FastAPI object
+    calls = []
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: calls.append(kwargs))
+    monkeypatch.delenv("MOREOPENREPEATER_LOG_FORMAT", raising=False)
+    app_module.main()
+    monkeypatch.setenv("MOREOPENREPEATER_LOG_FORMAT", "json")
+    app_module.main()
+    assert "log_config" not in calls[0] and calls[1]["log_config"] is None

@@ -226,6 +226,37 @@ def piper_service_url() -> str:
     return raw.rstrip("/")
 
 
+def piper_service_external() -> bool:
+    """The Piper server is not this process's to start: it runs in its own container (PIPER_SERVICE_EXTERNAL=1 and
+    PIPER_SERVICE_URL naming it). There is then no `piper` program here, and no voice files: the server has them."""
+    return os.environ.get("PIPER_SERVICE_EXTERNAL", "").strip().lower() in ("1", "true", "yes", "on") and bool(
+        piper_service_url()
+    )
+
+
+PIPER_DOWNLOAD_TIMEOUT_SECONDS = 180
+
+
+def ensure_piper_voice_remote(
+    voice: str, *, urlopen: Callable[..., object] = _urlopen, service_url: Optional[str] = None
+) -> None:
+    """Have the Piper server fetch `voice` if it does not have it (it keeps the files; this process has none)."""
+    base = (service_url if service_url is not None else piper_service_url()).rstrip("/")
+    try:
+        with urlopen(Request(f"{base}/voices", method="GET"), timeout=5) as response:
+            if voice in json.loads(response.read().decode("utf-8")):
+                return
+        _logger.info("asking the Piper service to download voice %s", voice)
+        request = Request(
+            f"{base}/download", data=json.dumps({"voice": voice}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with urlopen(request, timeout=PIPER_DOWNLOAD_TIMEOUT_SECONDS) as response:
+            response.read()
+    except (URLError, HTTPError, TimeoutError, OSError, ValueError) as error:
+        raise TTSError(f"the Piper service could not get voice {voice}: {error}") from error
+
+
 def synthesize_piper_http(
     text: str,
     voice: str,
@@ -281,7 +312,17 @@ class CommandTTS:
         if self.name == "piper":
             voice = sanitize_piper_voice(voice)
             with self._lock:
-                ensure_piper_voice(voice, run=self.run)
+                if piper_service_external():
+                    try:
+                        ensure_piper_voice_remote(voice, urlopen=self.urlopen)
+                    except TTSError as error:
+                        # The service is down or cannot get the voice: speak with the fallback, as for any other failure.
+                        if self.fallback is None:
+                            raise
+                        _logger.warning("%s failed (%s); falling back to %s", self.name, error, self.fallback.name)
+                        return self.fallback.synthesize(text, "", speed=speed)
+                else:
+                    ensure_piper_voice(voice, run=self.run)
                 return self._synthesize_neural(text, voice, speed)
         if self.name == "kokoro":
             voice = sanitize_kokoro_voice(voice)
@@ -299,7 +340,7 @@ class CommandTTS:
         except TTSError as error:
             # Prefer warm HTTP; if the service is down, one-shot CLI may still work
             # (slow on a Pi) before we hand off to espeak.
-            if self.name == "piper" and piper_service_url():
+            if self.name == "piper" and piper_service_url() and not piper_service_external():
                 _logger.warning("piper http failed (%s); trying CLI", error)
                 try:
                     return self._synthesize_once(text, voice, speed)
@@ -442,6 +483,8 @@ def detect_tts(which: Callable[[str], Optional[str]] = shutil.which) -> Optional
     engines: dict[str, CommandTTS] = {}
     for name, factory in _ENGINES:
         path = resolve_tts_binary(name, which=which)
+        if name == "piper" and not path and piper_service_external():
+            path = f"the Piper service at {piper_service_url()}"  # no program here: its own container has it
         if path:
             engines[name] = factory(path)
     if not engines:

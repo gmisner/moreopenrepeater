@@ -29,6 +29,31 @@ class PiperServiceError(RuntimeError):
     pass
 
 
+def wait_until_ready(
+    url: str,
+    timeout: float,
+    *,
+    urlopen: Callable[..., Any] = _urlopen,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> bool:
+    """Wait up to `timeout` seconds for a Piper server this process did not start (its own container) to answer
+    `/info`. True once it does, False if it never does. It never raises: Piper being away means the voice falls back,
+    and must not hold anything else up."""
+    deadline = clock() + timeout
+    while True:
+        try:
+            with urlopen(Request(f"{url.rstrip('/')}/info", method="GET"), timeout=2) as response:
+                raw = response.read()
+            if not raw or isinstance(json.loads(raw.decode("utf-8")), dict):
+                return True
+        except (URLError, HTTPError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
+            pass
+        if clock() >= deadline:
+            return False
+        sleep(1.0)
+
+
 class PiperService:
     """Owns one `python -m piper.http_server` child. Not thread-safe for concurrent start/stop."""
 

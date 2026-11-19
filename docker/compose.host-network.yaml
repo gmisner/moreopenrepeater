@@ -10,11 +10,22 @@ services:
   core:
     network_mode: host
     networks: !reset []
+    # The host's network has no `piper` name to find, so Piper is back inside the core, as it was.
+    build:
+      args:
+        WITH_PIPER: "1"
     environment:
+      PIPER_SERVICE_URL: http://127.0.0.1:8766
+      PIPER_SERVICE_EXTERNAL: "0"
+      PIPER_DATA_DIR: /opt/piper
       MOREOPENREPEATER_USRP_LISTEN: 127.0.0.1:34001
       MOREOPENREPEATER_USRP_ADDRESS: 127.0.0.1
       MOREOPENREPEATER_AUDIOSOCKET_LISTEN: 127.0.0.1:9092
       MOREOPENREPEATER_AUDIOSOCKET_ADDRESS: 127.0.0.1:9092
+
+  # Not used in this layout (the core has its own Piper again), so it is not started.
+  piper:
+    profiles: !override ["host-layout-unused"]
 
   api:
     network_mode: host

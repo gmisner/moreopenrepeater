@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+#
+# Piper's HTTP server: the text-to-speech voice, in its own container (docs/docker.md, Voices). The core asks it for speech over
+# the private network. It needs nothing from the host: no devices, no kernel modules. The default voice is baked in so the first
+# start works offline; other voices are downloaded into the /voices volume when the dashboard picks one.
+FROM python:3.13-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # Piper's ONNX runtime would start a thread per core; on a Pi that starves the audio engine in the other container.
+    OMP_NUM_THREADS=2
+
+ARG PIPER_VERSION=1.8.0
+ARG PIPER_VOICE=en_US-amy-low
+# uid 999 like the others. /voices is made here so a new named volume starts owned by 999 (and with the baked voice in it).
+RUN groupadd --system --gid 999 moreopenrepeater \
+    && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
+       --shell /usr/sbin/nologin moreopenrepeater \
+    && mkdir -p /voices && chown 999:999 /voices \
+    && pip install "piper-tts[http]==$PIPER_VERSION" \
+    && python -m piper.download_voices --data-dir /voices "$PIPER_VOICE" \
+    && chown -R 999:999 /voices
+
+USER 999:999
+WORKDIR /voices
+EXPOSE 8766
+# The server's voice is the baked-in default; the core names the voice it wants in each request, and the server loads it from
+# /voices the first time (the core has it downloaded first). 0.0.0.0 is the container's own network, which publishes nothing.
+CMD ["python", "-m", "piper.http_server", "--host", "0.0.0.0", "--port", "8766", "-m", "en_US-amy-low", "--data-dir", "/voices"]

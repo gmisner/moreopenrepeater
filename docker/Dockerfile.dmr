@@ -1,0 +1,66 @@
+# syntax=docker/dockerfile:1
+#
+# The DMR bridge: DVSwitch's Analog_Bridge and MMDVM_Bridge, and md380-emu, the software AMBE codec they use when there is no
+# USB vocoder, in one container with a small supervisor (docs/docker.md, The DMR container). It joins DMR networks
+# (BrandMeister, TGIF, a HomeBrew master) and carries their audio to and from the core over USRP.
+# It needs nothing from the host: no systemd, no host config, no devices, no kernel modules.
+#
+# DVSwitch publishes its packages for Debian 12; they install and run on Debian 13 (checked, arm64 and amd64).
+# md380-emu is a 32-bit ARM program that ships its own qemu-arm-static.
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# What is installed is pinned: the repository's signing keyring (by hash, and its key checked), and each package by
+# version. An upgrade is a deliberate change here. DVSwitch's own install script only adds this keyring and the one
+# apt line below, and is not run: its suite is `bookworm` on every Debian release.
+ARG DVSWITCH_KEYRING_SHA256=e87906811436a2aa356abd3100139f4a8ae3faeaef5d6f8a22652fb515ebbe78
+ARG DVSWITCH_SIGNER=72147EC1E788D4C3
+ARG ANALOG_BRIDGE_VERSION=1.6.4-20240701-60
+ARG MMDVM_BRIDGE_VERSION=1.6.8-20241231-96
+ARG MD380_EMU_VERSION=20240812-21
+
+COPY docker/dvswitch-keyring.gpg /usr/share/keyrings/dvswitch-keyring.gpg
+
+# The package scripts call systemctl and may try to start the services. There is no systemd in a container, so for the
+# install only, give them a systemctl that does nothing and a policy that refuses to start anything.
+RUN printf '#!/bin/sh\nexit 0\n' > /usr/bin/systemctl && chmod +x /usr/bin/systemctl \
+    && printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d && chmod +x /usr/sbin/policy-rc.d \
+    && echo "$DVSWITCH_KEYRING_SHA256  /usr/share/keyrings/dvswitch-keyring.gpg" | sha256sum -c - \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates gnupg \
+    && gpg --show-keys --with-colons /usr/share/keyrings/dvswitch-keyring.gpg | grep -q "$DVSWITCH_SIGNER" \
+    && echo "deb [signed-by=/usr/share/keyrings/dvswitch-keyring.gpg] http://dvswitch.org/DVSwitch_Repository bookworm hamradio" \
+       > /etc/apt/sources.list.d/dvswitch.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+       "analog-bridge=$ANALOG_BRIDGE_VERSION" "mmdvm-bridge=$MMDVM_BRIDGE_VERSION" "md380-emu=$MD380_EMU_VERSION" \
+    && apt-get purge -y --auto-remove gnupg \
+    && rm -f /usr/bin/systemctl /usr/sbin/policy-rc.d \
+    && rm -rf /var/lib/apt/lists/*
+
+# uid 999 like the other containers, so the configuration volume can be shared with the API, which edits the .ini files
+# and asks for a restart through the control volume. The directories are made here so a named volume starts owned by 999.
+RUN groupadd --system --gid 999 moreopenrepeater \
+    && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
+       --shell /usr/sbin/nologin moreopenrepeater \
+    && mkdir -p /etc/moreopenrepeater/dmr /dmr-control /run/dmr /tmp/dvswitch \
+    && chown 999:999 /etc/moreopenrepeater/dmr /dmr-control /run/dmr
+
+# The project's own .ini files, which the supervisor writes into the configuration volume the first time (with this
+# container's addresses in them) and never touches again.
+COPY packaging/dmr/Analog_Bridge.ini packaging/dmr/MMDVM_Bridge.ini packaging/dmr/DVSwitch.ini /opt/dmr-seed/
+COPY docker/dmr-supervisor.py /usr/local/bin/dmr-supervisor.py
+RUN chmod 755 /usr/local/bin/dmr-supervisor.py
+
+USER 999:999
+WORKDIR /opt/Analog_Bridge
+# The settings (.ini files, including the network password) and the dashboard's request and status files.
+VOLUME ["/etc/moreopenrepeater/dmr", "/dmr-control"]
+
+# The supervisor's heartbeat and every program running (or stopped on request). It starts a Python process, which is not
+# free on a Pi, so every minute.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
+    CMD ["python3", "/usr/local/bin/dmr-supervisor.py", "--check"]
+
+ENTRYPOINT ["python3", "/usr/local/bin/dmr-supervisor.py"]

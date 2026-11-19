@@ -361,6 +361,54 @@ loopback, and a service that relies on the host's loopback relies on the host. N
   (the hub's "EMI?" line, then the watchdog's restart), on this layout and on the host layout alike: it is the USB
   problem described under **Health and restarts**, not the network.
 
+## The DMR container
+
+The DMR bridge (DVSwitch's `Analog_Bridge` and `MMDVM_Bridge`, and `md380-emu`, the software AMBE codec they use when there
+is no USB vocoder) runs in its own container, `dmr`, off by default like the AllStar node:
+
+```
+docker compose --profile dmr up -d --build dmr
+docker compose exec dmr python3 /usr/local/bin/dmr-supervisor.py --check    # "waiting for the DMR settings..." until configured
+echo 'MOREOPENREPEATER_DMR_USRP_LISTEN=0.0.0.0:34011' >> core.env
+echo 'MOREOPENREPEATER_DMR_USRP_PEER=172.28.0.30:34012' >> core.env           # turns the DMR audio on; then: docker compose up -d core
+```
+
+**It needs nothing from the host**: no systemd, no host config, no devices, no kernel modules, no sound card, and it publishes
+nothing (it reaches the DMR network, BrandMeister, TGIF or a HomeBrew master, by outbound connection). DVSwitch publishes its
+packages for Debian 12; they install and run on Debian 13 (arm64 and amd64). The image pins the repository's keyring
+by hash, each package by version, and never runs DVSwitch's own install script. `md380-emu` is a 32-bit ARM program that
+ships its own `qemu-arm-static`. On a Raspberry Pi 3B+ the three programs together use about 14 MB and 1.4% of a CPU when idle, and
+about 27% of one core at its peak while voice goes through the codec (five seconds of USRP audio became a DMR
+transmission of 85 frames, with the system load unchanged and `throttled=0x0`). The container gets a quarter of the
+default CPU share so the audio engine's processes come first.
+
+**A small supervisor stands in for systemd and the root helper.** It starts the three programs, starts one again three seconds
+after it exits (as the units did, with a longer wait for one that keeps dying, up to a minute), and does not restart
+`Analog_Bridge` after a configuration error (exit 252 to 254), as its unit does not. It honors the request file and the status
+file the dashboard already uses (`MOREOPENREPEATER_DMR_RESTART_REQUEST`, and the status at `MOREOPENREPEATER_DMR_STATUS`): one
+word, `restart` or `stop`, in the control volume, answered in `status.json`. (`install` answers that DVSwitch is in the image.)
+What the three programs print goes to `docker logs dmr`, named, and nothing is written to the disk.
+
+**Until the settings are complete it starts nothing.** The bridge needs a callsign, a DMR Id, the network's address and the
+network password; without them the programs exit at once, and a restart loop every few seconds is log noise and wasted CPU. So
+the container reports healthy-but-waiting, says what is missing, and starts the programs by itself when the settings are
+complete. Enter them (the password in the environment, never on the command line):
+
+```
+docker compose exec -e DMR_PASSWORD='your-network-password' dmr \
+  python3 /usr/local/bin/dmr-supervisor.py --configure --callsign W1AW --dmr-id 1234567 --network brandmeister
+```
+
+(`--network` is `brandmeister`, `tgif` or `custom` with `--host`; `--talkgroup`, `--slot`, `--port` and `--color-code` are
+optional.) It writes the same keys the dashboard's DMR page writes, refuses anything that could break the `.ini` files, and asks
+the running bridge to restart. The files are in the `dmr-config` volume and are written once, the first time, with the core's
+address and no log file; after that they are yours and are never touched.
+
+**Not done yet.** The dashboard's DMR page cannot set this up for you in the container install: it edits files and asks for
+restarts from inside the core, which is in another container (see the note on the dashboard's pages under **What works in the
+dashboard**). Moving that file editing into the API, with the control and configuration volumes it needs, is the next piece. The
+DMR network's traffic is a separate thing from the radio: with no master reachable nothing is transmitted.
+
 ## Health and restarts
 
 `python -m core.healthcheck` asks the core's own `/health` and exits 1 when it

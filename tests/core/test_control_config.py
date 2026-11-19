@@ -213,8 +213,15 @@ def test_a_malformed_body_is_a_400_and_changes_nothing(core, sock_dir):
 def test_the_body_limit_for_config_is_larger_than_the_default_but_bounded(core, sock_dir):
     async def scenario(path):
         medium = make_change({"callsign": "W1AW", "x": "a" * 20_000})  # over 16 KiB, under 64 KiB
-        huge = b"{" + b" " * (control_module.MAX_CONFIG_BODY_BYTES + 10) + b"}"
-        return await post_config(path, medium), await post_config(path, huge)
+        # The server refuses on the declared length alone and closes without reading the body,
+        # so send only the headers. Writing the whole body into a connection the server has
+        # already closed raises BrokenPipe on macOS, whose socket buffers are small.
+        too_long = control_module.MAX_CONFIG_BODY_BYTES + 10
+        huge = (
+            b"POST /config HTTP/1.1\r\nHost: core\r\nContent-Type: application/json\r\nContent-Length: "
+            + str(too_long).encode() + b"\r\n\r\n"
+        )
+        return await post_config(path, medium), parse(await raw(path, huge))
 
     medium, huge = run(core, sock_dir, scenario)
     assert medium[0] == 200 and medium[1]["error"]["code"] == "config.unknown_setting"  # read, checked, refused

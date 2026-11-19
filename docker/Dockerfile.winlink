@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1
+#
+# The Winlink RMS gateway: LinBPQ (G8BPQ's packet switch), which is the gateway itself and connects to Winlink's CMS
+# (docs/winlink.md, docs/adr/0006-winlink-rms-gateway.md). It speaks KISS over TCP to a modem (the `direwolf` container,
+# or a hardware TNC), so it needs no device, no kernel module and nothing from the host. It is built here from a pinned
+# commit of upstream's source, not committed to this repository: the source files carry GPLv3 notices, but upstream has
+# no LICENSE file and says nothing about redistribution, so the owner builds it and nothing of it is shipped from here.
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+# upstream master on 2026-11-19, which reports version 6.0.26.1 (the tagged commit "26.1" still reports 6.0.25.41). The commit is the pin: a tag can be moved, a commit cannot.
+ARG LINBPQ_COMMIT=228047d76f410e13a564fb00787516f69b96ff44
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates build-essential libminiupnpc-dev libconfig-dev \
+       libpcap-dev zlib1g-dev libjansson-dev libbacktrace-dev \
+    && rm -rf /var/lib/apt/lists/*
+# `make nomqtt` (no MQTT reporting). Its link line leaves out libbacktrace, which the code uses, so it is given. The makefile's
+# last step is a `setcap` through sudo for raw sockets, which a container does not need and cannot do: it fails, and the
+# binary is already built, so that failure is ignored and the binary's existence is what is checked.
+RUN git init -q /src && cd /src \
+    && git fetch -q --depth 1 https://github.com/g8bpq/linbpq.git "$LINBPQ_COMMIT" \
+    && git checkout -q FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "$LINBPQ_COMMIT" \
+    && (make nomqtt LIBS="-lminiupnpc -lm -lz -lpthread -lconfig -lpcap -lbacktrace" || true) \
+    && test -x /src/linbpq && ./linbpq --help | head -1
+
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libminiupnpc18 libconfig11 libpcap0.8t64 zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/linbpq /usr/local/bin/linbpq
+
+# uid 999 like the other containers. Everything it writes (its configuration, which holds the passwords, and its logs) goes in
+# a tmpfs: the configuration is made from the environment at every start, and logs on the SD card are wear.
+RUN groupadd --system --gid 999 moreopenrepeater \
+    && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
+       --shell /usr/sbin/nologin moreopenrepeater \
+    && mkdir -p /run/bpq && chown 999:999 /run/bpq
+COPY docker/winlink-entrypoint.sh /usr/local/bin/winlink-entrypoint.sh
+RUN chmod 755 /usr/local/bin/winlink-entrypoint.sh
+USER 999:999
+WORKDIR /run/bpq
+ENTRYPOINT ["/usr/local/bin/winlink-entrypoint.sh"]

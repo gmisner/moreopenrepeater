@@ -17,9 +17,9 @@ service.
 
 The dashboard and API, sign-in, backups, updates, alerts, weather fetching,
 APRS, the hub, mailbox, transcripts, streaming, Home Assistant, and the
-AllStar AMI link-control loop (link audio still works; link state shown in the
-dashboard and macro-driven link commands over AMI do not). Scheduled weather
-announcements need the weather module and do not run.
+AllStar AMI link service (link audio still works, but with no link service the core
+sees no connected nodes and a macro's link command has nowhere to go, see "The AllStar link
+service" below). Scheduled weather announcements need the weather module and do not run.
 
 ## Control socket
 
@@ -103,6 +103,26 @@ waits: each client has a short queue and loses the newest if it cannot keep up. 
 client handles the action, the core says what it says today for a missing module ("Airport
 weather is not set up.", "The mailbox is not available."; net mode only logs). When the control
 server stops, macros fall back to that too.
+
+### The AllStar link service (`link_event`, `link_sync`, and `link` macro actions)
+
+The AMI connection to the app_rpt node is not the core's: it is the **link service**
+(`api.link_bridge.LinkBridge`, run by the API today), and its only way to the core is this socket.
+It tells the core what app_rpt says, with two `POST /command` commands that are applied on any core
+(they are real events, so a core that refuses the simulator still takes them): `link_event`
+(`node_id`, and `event`: `connected`, `disconnected`, `keyed` or `unkeyed`) and `link_sync`
+(`nodes`, the whole picture as `{node: keyed}`). A sync makes the core's picture match: a node it holds
+that is missing is gone, and one that was keyed is unkeyed first. The service sends one when it
+connects to app_rpt, **an empty one when it loses app_rpt** (so a node that was transmitting when the
+connection dropped cannot leave the repeater "receiving" for good, which a core with no link service
+could not tell), and again after a core restart, which has forgotten everything. A node that disconnects
+is also unkeyed by the core itself. Events go in order from an outbox that never blocks the link
+service and is cut to one whole picture if it overflows. In the other direction a macro's link command
+(connect a node, a function) is a `link` macro action, `args` `[node_id, command]`, sent to the client that
+handles `link` and dropped, with a `link.command_dropped` warning, if none is connected. The nodes that
+carry the node's own audio or another bridge (USRP, DMR, the linked radio) are not the link service's to
+speak for, and a sync leaves them alone. Because the link service needs nothing else from the core, it
+runs the same with the core in this process or its own, and can become a process of its own.
 
 ### `GET /hardware`
 

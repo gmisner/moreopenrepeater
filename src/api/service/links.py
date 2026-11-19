@@ -64,11 +64,32 @@ class LinkSupport:
             if event.linked:
                 self.nodes.add(event.node_id)
             else:
+                if event.node_id in host.controller.remote_keyed_nodes:
+                    # A node that is no longer linked cannot be transmitting to us, whether or not it said so.
+                    self.handle_event(RemoteKeyed(node_id=event.node_id, keyed=False))
                 self.nodes.discard(event.node_id)
             self._record("connected" if event.linked else "disconnected", event.node_id)
         elif isinstance(event, RemoteKeyed):
             self._record("keyed" if event.keyed else "unkeyed", event.node_id)
         host._apply_commands(host.controller.handle_event(event, host._clock()))
+
+    def sync(self, nodes: dict[str, bool]) -> None:
+        """Make the picture of the links match `nodes` ({node: keyed}), the whole current state as the link
+        service sees it. A node we hold that is missing is gone, and a node that was keyed is unkeyed first (a
+        disconnect does that): when the link service loses app_rpt it sends an empty picture, so a node that was
+        transmitting when the connection dropped cannot leave the repeater thinking it still is. The nodes that carry
+        the node's own audio or another bridge (USRP, DMR, the linked radio) are not the link service's to
+        speak for and are left alone."""
+        host = self._host
+        mine = {node for node in self.nodes if node not in _AUDIO_KEY_NODES}
+        ours_keyed = set(host.controller.remote_keyed_nodes)
+        for node in sorted(mine - nodes.keys()):
+            self.handle_event(LinkStateChanged(node_id=node, linked=False))  # which unkeys it first, if it was keyed
+        for node in sorted(nodes.keys() - mine):
+            self.handle_event(LinkStateChanged(node_id=node, linked=True))
+        for node, keyed in sorted(nodes.items()):
+            if keyed != (node in ours_keyed and node in mine):
+                self.handle_event(RemoteKeyed(node_id=node, keyed=keyed))
 
     def radio_keyed(self, keyed: bool) -> None:
         """The link radio started or stopped hearing the far end."""

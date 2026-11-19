@@ -52,7 +52,7 @@ from contracts import (
 )
 
 from controller.announcements import Announcement
-from controller.events import MailboxCommand
+from controller.events import ControllerEvent, LinkStateChanged, MailboxCommand, RemoteKeyed
 from controller.config import RepeaterConfig
 from controller.macros import Macro
 from controller.modes import held_reason as _held_reason
@@ -82,6 +82,7 @@ LOG_POLL_SECONDS = 1.0  # how often the core's log is read when nothing is waiti
 MAX_LINE_BYTES = 64 * 1024
 REQUEST_TIMEOUT_SECONDS = 5.0  # a write must not hang the dashboard
 MAX_DEFERRED = 20  # announcements held for a net; a long net does not grow this without bound
+MAX_LINK_OUTBOX = 200  # link events waiting to go to the core; past this a whole picture replaces them
 MAX_CONFIG_BYTES = 1024 * 1024  # what we will read back from the core
 MAX_CONFIG_READS = 5  # reads in a row while the core keeps announcing something newer
 
@@ -133,6 +134,15 @@ class RemoteCore:
         self._listeners: list[Callable[[RepeaterConfig], None]] = []
         self._deferred: collections.deque = collections.deque(maxlen=MAX_DEFERRED)  # (clip, on_linked_radio) held for a net
         self._net_hint: Optional[bool] = None  # what the API's saved net state says; resent on every connect
+        #: The AllStar link service's picture of the links, {node: keyed}, once it has given one. A restarted
+        #: core forgets it, so it is sent again after every connect.
+        self._link_state: Optional[dict[str, bool]] = None
+        #: The core has been, or is about to be, given everything in `_link_state`, and what follows goes after it in
+        #: order. False at the start, after a failure and after a restart: the next thing sent is the whole picture.
+        self._link_in_sync = False
+        self._link_outbox: collections.deque = collections.deque()
+        self._link_wake: Optional[asyncio.Event] = None
+        self._link_worker: Optional[asyncio.Task] = None
         self._busy_at: Optional[float] = None  # the last time the repeater was seen in use
         # Things the in-process service has and the API's composition sets. The core owns the real ones;
         # setting them here is accepted and does nothing, so one composition works in both modes.
@@ -181,7 +191,7 @@ class RemoteCore:
             pending.cancel()
         for monitor in self._audio_monitors.values():
             monitor.close()
-        for name in ("_task", "_fetching", "_log_task", "_hardware_task"):
+        for name in ("_task", "_fetching", "_log_task", "_hardware_task", "_link_worker"):
             task, current = getattr(self, name), None
             setattr(self, name, current)
             if task is not None:
@@ -388,6 +398,82 @@ class RemoteCore:
         except Exception as error:  # noqa: BLE001
             _logger.warning("could not tell the core about net mode: %s", type(error).__name__)
 
+    # -- the AllStar link service's view of the links, on its way to the core --------------------------
+
+    def link_event(self, event: ControllerEvent) -> None:
+        """One thing the link service saw. Never waits and never raises: the events go to the core in order
+        from a worker, and a core that is not there is brought up to date by `link_sync` when it is."""
+        if self._link_state is None:
+            self._link_state = {}
+        state = self._link_state
+        if isinstance(event, LinkStateChanged):
+            if event.linked:
+                state.setdefault(event.node_id, False)
+            else:
+                state.pop(event.node_id, None)
+            sent = {"node_id": event.node_id, "event": "connected" if event.linked else "disconnected"}
+        elif isinstance(event, RemoteKeyed):
+            if event.keyed or event.node_id in state:
+                state[event.node_id] = event.keyed
+            sent = {"node_id": event.node_id, "event": "keyed" if event.keyed else "unkeyed"}
+        else:
+            return
+        if not self._link_in_sync:
+            self._queue_link("link_sync", {"nodes": dict(state)})  # the core is behind: bring it all up, not one event
+        else:
+            self._queue_link("link_event", sent)
+
+    def link_sync(self, nodes: dict[str, bool]) -> None:
+        """The whole current picture. Sent only if it differs from what the core already has, so a link
+        service that cannot reach app_rpt and says so every few seconds does not repeat itself."""
+        picture = dict(nodes)
+        if self._link_in_sync and self._link_state == picture:
+            return
+        self._link_state = picture
+        self._queue_link("link_sync", {"nodes": dict(picture)})
+
+    def _queue_link(self, name: str, params: dict) -> None:
+        if not self._connected:
+            self._link_in_sync = False  # the picture is remembered, and sent when the core is back
+            return
+        if name == "link_sync":
+            self._link_outbox.clear()  # a whole picture replaces anything older
+        elif len(self._link_outbox) >= MAX_LINK_OUTBOX:
+            self._link_outbox.clear()
+            name, params = "link_sync", {"nodes": dict(self._link_state or {})}
+            self._link_in_sync = False
+        self._link_outbox.append((name, params))
+        if name == "link_sync":
+            self._link_in_sync = True  # the outbox is in order: whatever is queued after this follows it
+        try:
+            if self._link_wake is None:
+                self._link_wake = asyncio.Event()
+            if self._link_worker is None or self._link_worker.done():
+                self._link_worker = asyncio.get_running_loop().create_task(self._send_links())
+            self._link_wake.set()
+        except RuntimeError:
+            return  # no event loop: nothing to send with
+
+    async def _send_links(self) -> None:
+        assert self._link_wake is not None
+        while True:
+            await self._link_wake.wait()
+            self._link_wake.clear()
+            while self._link_outbox:
+                name, params = self._link_outbox.popleft()
+                try:
+                    await self.command(name, **params)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:  # noqa: BLE001 - the link service must never be stopped by the core
+                    self._link_in_sync = False  # the next event sends the whole picture instead
+                    _logger.warning("could not tell the core about the links: %s", type(error).__name__)
+
+    def _send_link_state(self) -> None:
+        if self._link_state is not None:
+            self._link_in_sync = False
+            self._queue_link("link_sync", {"nodes": dict(self._link_state)})
+
     def wall_now(self) -> datetime:
         return datetime.now(timezone.utc)
 
@@ -451,6 +537,7 @@ class RemoteCore:
             _logger.info("core %s", "connected" if connected else "not reachable")
             if connected:
                 self._send_net_hint()
+                self._send_link_state()
             if not connected:
                 # Tell subscribers the last value is no longer being confirmed.
                 self._publish(self._placeholder())

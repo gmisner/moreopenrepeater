@@ -42,6 +42,7 @@ from pydantic import ValidationError
 
 from contracts import (
     HARDWARE,
+    LINK,
     PROGRAMMING,
     SIMULATED,
     ActivityEntry,
@@ -82,6 +83,7 @@ from api.models.programming import AnnouncementFields, MacroCreateRequest
 from api.service.snapshot import config_from_snapshot
 from api.snapshot_import import snapshot_to_import
 from controller.announcements import Announcement
+from controller.events import LinkStateChanged, RemoteKeyed
 from controller.macros import Macro
 from observability import log_event
 from api.core_runtime import AnnouncementQueueFull
@@ -125,7 +127,7 @@ MAX_ACTIVITY_ROWS = 20_000  # the most rows one GET /activity returns; a reader 
 LOGS_RING_MAX = 5000  # more than any hub holds
 MAX_LOG_LINE_CHARS = 4000
 #: The macro actions the API's modules own. A client names the ones it handles when it connects.
-MACRO_FAMILIES = frozenset({"net", "homeassistant", "metar", "sensor", "mailbox", "aprs", "weather", "audit", "capture"})
+MACRO_FAMILIES = frozenset({"net", "homeassistant", "metar", "sensor", "mailbox", "aprs", "weather", "audit", "capture", "link"})
 MACRO_QUEUE_LIMIT = 32  # per client; a client that cannot keep up loses the newest
 RENDER_DEADLINE_SECONDS = 30.0  # to prepare speech before giving up on a request
 _REASONS = {200: "OK", 400: "Bad Request", 404: "Not Found", 405: "Method Not Allowed",
@@ -189,6 +191,7 @@ class ControlServer:
         #: One per open /events stream: the macro families it handles and a queue for its events.
         self._macro_clients: list[tuple[frozenset, asyncio.Queue]] = []
         service.programming.api_action = self._api_action
+        service.set_link_command_sink(self._link_command_out)  # a macro's link command goes to the AllStar link service
         if service.programming.audit_hook is None:
             service.programming.audit_hook = self._audit
         service.add_config_listener(self._config_changed)
@@ -228,6 +231,7 @@ class ControlServer:
     async def stop(self) -> None:
         if self._service.programming.api_action == self._api_action:
             self._service.programming.api_action = None  # macros fall back to "not available"
+        self._service.set_link_command_sink(lambda command: None)
         if self._service.programming.audit_hook == self._audit:
             self._service.programming.audit_hook = None
         server, self._server = self._server, None
@@ -657,6 +661,39 @@ class ControlServer:
                     _logger.warning("a client is not keeping up; dropped a %s macro action for it", family)
         return taken
 
+    def _link_command_out(self, command) -> None:
+        """A macro asked the network layer for something (connect a node, disconnect, a function): hand it to the
+        client that handles `link`, the AllStar link service. With none connected it is dropped and said so,
+        since there is nobody to do it, and the core never waits."""
+        if not self._api_action("link", [command.node_id, command.command]):
+            log_event(
+                _logger, logging.WARNING, "link.command_dropped", "a link command was dropped: no link service is connected",
+                error_code="link.no_service", facts_in_text=False,
+            )
+
+    def _link_command(self, request: CoreCommand) -> dict:
+        """`link_event` and `link_sync` from the AllStar link service: real events from a real node, applied
+        like the ones an in-process link client produces. Nothing here is logged per event (a node keying
+        is routine); a `link_sync` is, because it means the service connected to app_rpt or lost it."""
+        params, service = request.params, self._service
+        try:
+            if request.command is CommandName.LINK_EVENT:
+                node, what = params["node_id"], params["event"]
+                if what in ("connected", "disconnected"):
+                    service.link_event(LinkStateChanged(node_id=node, linked=what == "connected"))
+                else:
+                    service.link_event(RemoteKeyed(node_id=node, keyed=what == "keyed"))
+            else:
+                service.link_sync(params["nodes"])
+                log_event(
+                    _logger, logging.INFO, "link.synced", f"link picture set from the link service ({len(params['nodes'])} nodes)",
+                    nodes=len(params["nodes"]), keyed=sum(1 for keyed in params["nodes"].values() if keyed), facts_in_text=False,
+                )
+        except Exception:  # noqa: BLE001 - nothing the link service sent may reach the controller as a crash
+            self._command_failed(request.command.value)
+            return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
+        return self._command_result(request, CommandStatus.APPLIED)
+
     def _audit(self, actor: str, action: str, detail: str) -> None:
         """Something a macro did that the dashboard's audit trail records. The core logs who and
         what (the detail can be a command or a message, so it is left out of the log) and tells
@@ -962,6 +999,8 @@ class ControlServer:
             )
         if name is CommandName.QUEUE_CLIP:
             return await self._queue_clip(request)
+        if name in LINK:
+            return self._link_command(request)
         if name in HARDWARE:
             return self._hardware_command(request)
         if name is CommandName.IMPORT_SNAPSHOT:

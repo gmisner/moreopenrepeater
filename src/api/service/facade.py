@@ -449,6 +449,14 @@ class RepeaterService:
     def handle_link_event(self, event: ControllerEvent) -> None:
         self._links.handle_event(event)
 
+    def link_event(self, event: ControllerEvent) -> None:
+        """What the AllStar link service reports (the API's view of `handle_link_event`)."""
+        self._links.handle_event(event)
+
+    def link_sync(self, nodes: dict[str, bool]) -> None:
+        """The whole current link picture, {node: keyed}; see `LinkSupport.sync`."""
+        self._links.sync(nodes)
+
     def link_radio_keyed(self, keyed: bool) -> None:
         self._links.radio_keyed(keyed)
 

@@ -154,6 +154,17 @@ class ApiCoreHandle(Protocol):
     def announcement_clip(self, announcement: Announcement) -> str: ...
     def weather_alert_clip(self, alert: WeatherAlert) -> str: ...
 
+    def link_event(self, event: ControllerEvent) -> None:
+        """The AllStar link service saw a node connect, disconnect, key or unkey (a `LinkStateChanged` or
+        `RemoteKeyed`). In process it is applied at once; against a remote core it is sent, in order, and
+        never waits: a core that is not reached yet is brought up to date by the next `link_sync`."""
+        ...
+
+    def link_sync(self, nodes: dict[str, bool]) -> None:
+        """The whole current picture of the links, {node: keyed}, to make the core's match. Sent when the
+        link service connects to app_rpt, with {} when it loses it, and again after a remote core restarts."""
+        ...
+
     def sync_net_state(self, active: bool) -> None:
         """Tell the core a net is running, from the API's own saved state at start-up. In process
         it sets net mode. Against a remote core it is remembered and sent when the core is reached

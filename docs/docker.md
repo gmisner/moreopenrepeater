@@ -149,6 +149,34 @@ Three places, from the quickest to the most durable:
   API), each rotated at 2 MB with three backups. Separate files on purpose: two writers must not share
   one.
 
+### Events the core names
+
+Most of the code still logs as `legacy.<area>`. These are named, with facts you can search on, and each
+keeps its readable text line in the log file exactly as before:
+
+| Event | Severity | Facts |
+| --- | --- | --- |
+| `controller.state_changed` | info | `from_state`, `to_state` |
+| `ptt.commanded` | info | `active`, `state`: the controller asked for the transmitter |
+| `ptt.applied` | info | `active`: the audio thread wrote that to the hardware |
+| `ptt.failed` | error | `action` (`key` or `release`); `error_code` `ptt.hardware` |
+| `ptt.transmit_capped` | critical | `keyed_s`, `limit_s`; `error_code` `ptt.cap` |
+| `ptt.release_unconfirmed` | critical | `error_code` `ptt.hardware` |
+| `audio.glitch` | info | `counter`, `count`, `state`, `transmitting` |
+| `audio.engine_started`, `audio.engine_stopped`, `audio.stream_died` | info, info, error | rates for the first |
+| `receiver.opened` | info | `duration_s`, `open_dbfs`, `peak_dbfs`, `ctcss_hz`, `after_tx_s` (never DTMF digits) |
+
+**One cycle, one id.** When the repeater leaves idle, the core starts an activity cycle with a fresh
+`correlation_id`, and every event any of its threads logs until the repeater is idle again carries it,
+including plain `legacy.*` lines, and for 2 seconds after (the transmitter is unkeyed just after the
+controller says idle, and that belongs to the cycle it ends; a new cycle cuts the 2 seconds short). So one transmission reads as a story: `docker compose exec logd python -m
+logd.query --correlation <id>` shows the state changes, the PTT commanded by the controller, the PTT
+actually applied by the audio thread (and how long after), any glitches, and the receiver opening. A `ptt.commanded`
+with no `ptt.applied` after it, or a `ptt.failed`, is the controller and the hardware disagreeing. The History tab does not filter by
+correlation id yet; `logd.query --correlation` and `GET /api/log-history/events?correlation_id=` do. That the
+audio thread wrote the PTT line is not proof the transmitter keyed: an independent observation of the
+radio is still not built.
+
 ## Control socket
 
 The socket is `/run/moreopenrepeater/core.sock` in the `core-run` volume, mode

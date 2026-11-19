@@ -34,6 +34,7 @@ from controller.events import (
 from controller.macros import Macro
 from controller.modes import effective_config, held_reason
 from controller.config import RepeaterConfig
+from observability import log_event
 from controller.state_machine import IDLE, PATCH, PRIORITY_NORMAL, RECEIVING, RepeaterController
 from playout.renderer import ClipRenderer
 from wx.nws import WeatherAlert
@@ -315,6 +316,11 @@ class RepeaterService:
         actions: list[Union[RunAction, CodedCommand, DialPatch, HangupPatch, MailboxCommand]] = []
         for command in commands:
             if isinstance(command, AssertPTT):
+                if command.active != self.ptt_active:
+                    log_event(
+                        _logger, logging.INFO, "ptt.commanded", f"transmitter {'keyed' if command.active else 'unkeyed'} by the controller",
+                        active=command.active, state=self.controller.state, facts_in_text=False,
+                    )
                 if self.activity is not None and command.active != self.ptt_active:
                     self.activity.ptt_changed(command.active, now)
                 self.ptt_active = command.active

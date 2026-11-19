@@ -21,6 +21,7 @@ from typing import Callable, Optional
 import numpy as np
 
 from controller.events import ControllerEvent
+from observability import log_event
 
 from .audio_stream import AudioStream
 from .processor import AudioProcessor
@@ -171,9 +172,11 @@ class AudioEngine:
             self._threads.append(threading.Thread(target=self._poll_cos, name="audio-cos", daemon=True))
         for thread in self._threads:
             thread.start()
-        _logger.info(
-            "audio engine started (in=%s, out=%s, device %d Hz, processing %d Hz)",
-            self._input_device or "default", self._output_device or "default", self.device_sample_rate, rate,
+        log_event(
+            _logger, logging.INFO, "audio.engine_started",
+            "audio engine started (in=%s, out=%s, device %d Hz, processing %d Hz)"
+            % (self._input_device or "default", self._output_device or "default", self.device_sample_rate, rate),
+            device_rate_hz=self.device_sample_rate, processing_rate_hz=rate, facts_in_text=False,
         )
 
     def stop(self) -> None:
@@ -191,7 +194,7 @@ class AudioEngine:
             if thread is not current:
                 thread.join(timeout=1.0)
         self._threads = []
-        _logger.info("audio engine stopped")
+        log_event(_logger, logging.INFO, "audio.engine_stopped", "audio engine stopped")
 
     def process_one(self, block: np.ndarray) -> None:
         """One worker step for one device block -- separate from the thread
@@ -241,7 +244,7 @@ class AudioEngine:
         if self._stream_dead_reported:
             return True
         self._stream_dead_reported = True
-        _logger.error("audio stream died (USB unplug or device reset)")
+        log_event(_logger, logging.ERROR, "audio.stream_died", "audio stream died (USB unplug or device reset)")
         callback = self._on_stream_dead
         if callback is not None:
             try:
@@ -270,12 +273,19 @@ class AudioEngine:
             action = "key" if active else "release"
             message = f"Couldn't {action} hardware PTT: {error}"
             if message != self.ptt_error:
-                _logger.error("%s", message)
+                log_event(
+                    _logger, logging.ERROR, "ptt.failed", message, error_code="ptt.hardware", action=action, facts_in_text=False,
+                )
             self.ptt_error = message
             self._ptt_blocked |= active
             self._ptt_retry_at = time.monotonic() + self._ptt_retry_delay
             self._ptt_retry_delay = min(2 * self._ptt_retry_delay, PTT_RETRY_MAX_SECONDS)
             return False
+        if active != self.transmitting:
+            log_event(
+                _logger, logging.INFO, "ptt.applied", f"transmitter {'keyed' if active else 'unkeyed'} at the hardware",
+                active=active, facts_in_text=False,
+            )
         self.transmitting = active
         self.ptt_error = None
         self._ptt_retry_delay = PTT_RETRY_SECONDS
@@ -303,9 +313,11 @@ class AudioEngine:
         if limit is not None and not self.tx_capped and now - self._tx_since > limit:
             self.tx_capped = True
             self.tx_cap_trips += 1
-            _logger.critical(
-                "transmitter was keyed for %.0f s without a break, past the %.0f s limit; unkeying until the source stops",
-                now - self._tx_since, limit,
+            log_event(
+                _logger, logging.CRITICAL, "ptt.transmit_capped",
+                "transmitter was keyed for %.0f s without a break, past the %.0f s limit; unkeying until the source stops"
+                % (now - self._tx_since, limit),
+                error_code="ptt.cap", keyed_s=round(now - self._tx_since), limit_s=round(limit), facts_in_text=False,
             )
             callback = self._on_transmit_capped
             if callback is not None:
@@ -347,4 +359,7 @@ class AudioEngine:
                     time.sleep(delay)
                 if self._write_ptt(False):
                     return
-            _logger.critical("hardware PTT release could not be confirmed: %s", self.ptt_error)
+            log_event(
+                _logger, logging.CRITICAL, "ptt.release_unconfirmed",
+                f"hardware PTT release could not be confirmed: {self.ptt_error}", error_code="ptt.hardware", facts_in_text=False,
+            )

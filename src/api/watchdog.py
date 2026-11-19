@@ -30,13 +30,18 @@ from observability import log_event
 _logger = logging.getLogger("moreopenrepeater.watchdog")
 
 EXIT_ON_STALL = "MOREOPENREPEATER_EXIT_ON_STALL"
+STALL_ENV = "MOREOPENREPEATER_STALL_SECONDS"
 EXIT_STALLED = 75  # EX_TEMPFAIL: the exit status of a core that stopped itself because a part stalled
 CONTAINER_CHECK_SECONDS = 2.0  # how often a container checks, with no systemd to say how often
 FLUSH_SECONDS = 2.0  # the most the log gets to reach the collector before the process exits
 
 # Longer than any normal pause (the tick runs every 50 ms, audio blocks
-# every 20 ms), well inside WatchdogSec.
+# every 20 ms), well inside WatchdogSec. It is also how long a transmitter can be left keyed after
+# the sound card vanishes under a running core, so it is a setting (STALL_ENV) with these limits:
+# below the minimum a busy Pi would restart itself for nothing.
 STALL_SECONDS = 10.0
+MIN_STALL_SECONDS = 2.0
+MAX_STALL_SECONDS = 300.0
 
 
 def sd_notify(message: str, env: Optional[dict] = None) -> bool:
@@ -55,6 +60,25 @@ def sd_notify(message: str, env: Optional[dict] = None) -> bool:
         _logger.warning("couldn't notify systemd (%s): %s", message, error)
         return False
     return True
+
+
+def stall_seconds_from_env(env: Optional[Mapping[str, str]] = None) -> float:
+    """How long the controller or an audio engine may go without progress before it counts as stalled:
+    `MOREOPENREPEATER_STALL_SECONDS`, default 10, from 2 to 300. The watchdog and the core's `/health` both
+    use it, so they cannot disagree. Anything else is the default, and the log says so."""
+    raw = (os.environ if env is None else env).get(STALL_ENV, "").strip()
+    if not raw:
+        return STALL_SECONDS
+    try:
+        value = float(raw)
+        if MIN_STALL_SECONDS <= value <= MAX_STALL_SECONDS:  # also false for nan
+            return value
+    except ValueError:
+        pass
+    _logger.warning(
+        "%s=%r is not a number from %g to %g; using %g", STALL_ENV, raw, MIN_STALL_SECONDS, MAX_STALL_SECONDS, STALL_SECONDS
+    )
+    return STALL_SECONDS
 
 
 def exit_on_stall_enabled(env: Optional[Mapping[str, str]] = None) -> bool:
@@ -100,11 +124,11 @@ class Watchdog:
         self,
         notify: Callable[[str], bool] = sd_notify,
         clock: Callable[[], float] = time.monotonic,
-        stall_seconds: float = STALL_SECONDS,
+        stall_seconds: Optional[float] = None,
     ) -> None:
         self._notify = notify
         self._clock = clock
-        self._stall_seconds = stall_seconds
+        self._stall_seconds = stall_seconds_from_env() if stall_seconds is None else stall_seconds
         self._watched: list[tuple[str, Callable[[], Optional[float]]]] = []
         self.on_stall: Callable[[str], None] = lambda name: None
         #: Called after `on_stall` when something has stalled. In a container this ends the process (see
@@ -113,6 +137,15 @@ class Watchdog:
         self.stalled: Optional[str] = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+
+    @property
+    def stall_seconds(self) -> float:
+        return self._stall_seconds
+
+    def container_interval(self) -> float:
+        """How often to check with no systemd to say: every 2 s, and more often if the limit is short, so a
+        stall is noticed within a quarter of it."""
+        return min(CONTAINER_CHECK_SECONDS, self._stall_seconds / 4)
 
     def watch(self, name: str, last_progress: Callable[[], Optional[float]]) -> None:
         self._watched.append((name, last_progress))

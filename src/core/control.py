@@ -128,10 +128,6 @@ MAX_LOG_LINE_CHARS = 4000
 MACRO_FAMILIES = frozenset({"net", "homeassistant", "metar", "sensor", "mailbox", "aprs", "weather", "audit", "capture"})
 MACRO_QUEUE_LIMIT = 32  # per client; a client that cannot keep up loses the newest
 RENDER_DEADLINE_SECONDS = 30.0  # to prepare speech before giving up on a request
-#: Longer than any normal pause (the tick runs every 50 ms); the same figure the
-#: systemd watchdog uses.
-STALL_SECONDS = 10.0
-
 _REASONS = {200: "OK", 400: "Bad Request", 404: "Not Found", 405: "Method Not Allowed",
             408: "Request Timeout", 411: "Length Required", 413: "Payload Too Large",
             415: "Unsupported Media Type", 431: "Request Header Fields Too Large", 503: "Service Unavailable"}
@@ -1080,8 +1076,7 @@ class ControlServer:
             return rejected("speak.queue_full", "Too many announcements are already waiting to play.", True)
         return None
 
-    @staticmethod
-    def _progress_check(name: str, last: Optional[float], now: float, *, required: bool) -> HealthCheck:
+    def _progress_check(self, name: str, last: Optional[float], now: float, *, required: bool) -> HealthCheck:
         """Fresh progress is ok; stale is failed. No progress yet is ok for an
         optional part that is not running (audio off, no link radio)."""
         if last is None:
@@ -1091,10 +1086,11 @@ class ControlServer:
                     error=StructuredError(code="progress.none", message="has not run yet", retryable=True),
                 )
             return HealthCheck(name=name, state=HealthState.OK)
-        if now - last > STALL_SECONDS:
+        stall = self._runtime.watchdog.stall_seconds  # the watchdog's own limit, so the two cannot disagree
+        if now - last > stall:
             return HealthCheck(
                 name=name, state=HealthState.FAILED,
-                error=StructuredError(code="progress.stalled", message=f"no progress for over {STALL_SECONDS:.0f} s"),
+                error=StructuredError(code="progress.stalled", message=f"no progress for over {stall:g} s"),
             )
         return HealthCheck(name=name, state=HealthState.OK)
 

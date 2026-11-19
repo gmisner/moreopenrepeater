@@ -44,7 +44,7 @@ from api.recordings import RecordingStore
 from api.remote_base import RemoteBase
 from api.service import RepeaterService
 from api.tx_fan import TxFan
-from api.watchdog import Watchdog, exit_for_restart, exit_on_stall_enabled
+from api.watchdog import Watchdog, exit_for_restart, exit_on_stall_enabled, stall_seconds_from_env
 
 from .codes import CoreCodeChecker, paths as codes_paths
 from .config_boundary import load_config
@@ -136,7 +136,7 @@ def build_core(env: Optional[Mapping[str, str]] = None) -> CoreApp:
         usrp=dmr_usrp_settings_from_env(env),
     )
     tx_fan = TxFan(service, cm108, temperature=SystemProbe(root).temperature_c)
-    watchdog = Watchdog()
+    watchdog = Watchdog(stall_seconds=stall_seconds_from_env(env))
     if exit_on_stall_enabled(env):  # a container: nothing else restarts a core whose audio has stalled
         watchdog.restart = exit_for_restart
     runtime = CoreRuntime(

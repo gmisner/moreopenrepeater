@@ -24,7 +24,8 @@ in its own words (a 409). **The SIP trunk is the API's own**: it is set up over 
 network call, so it works from the API container. Give the API the same `MOREOPENREPEATER_AMI_*`
 settings the core has (see `docker/api.env.example`); without them the page says it is not
 configured. The rest does not yet: selecting a DMR talkgroup, the AllStar node and DMR setup (they
-edit the host's Asterisk and DMR files), and the audio tools answer 503 `core.hardware`. The weather
+edit the host's Asterisk and DMR files), and any audio tool that needs the sound card itself still answers 503
+`core.hardware`; listening and the record and score tool work (see Listening below). The weather
 macro (a caller dialling for the weather) is worded by the API, which does the NWS polling, and said by
 the core; with the API away the caller hears that weather is not available.
 
@@ -133,6 +134,20 @@ import socket;s=socket.socket(socket.AF_UNIX);s.connect("/run/moreopenrepeater/c
 s.sendall(b"GET /status HTTP/1.1\r\nHost: core\r\nConnection: close\r\n\r\n");print(s.recv(65536).decode())
 PY
 ```
+
+## Listening
+
+The dashboard's live listening (the Listen page, the public page, the monitor receiver, the
+stream) works with the API apart from the core. The core serves its audio on the control socket
+as `GET /audio?device=live|monitor&source=rx|tx`, and the API opens one such stream for as long as
+anyone is listening to that source, and none when nobody is. Every frame is a 4-byte big-endian
+length and that many bytes: the first is a JSON header with the sample rate, the rest are 16-bit
+little-endian mono PCM of about 100 ms each. A listener that falls behind loses audio and one that
+stops reading is dropped, so listening never slows the radio. The Audio page's record and score
+tool records from the same stream (the receiver's audio as it comes in, before the repeater's delay),
+so it works too. At most four listeners at a time
+(`MAX_AUDIO_STREAMS`). The "listeners" count the Audio page shows for the engine counts these
+streams, not browsers.
 
 ## Health and restarts
 

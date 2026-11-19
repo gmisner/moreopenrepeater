@@ -119,6 +119,12 @@ class ApiCoreHandle(Protocol):
         core's log over its socket. Call before the service starts."""
         ...
 
+    def remote_audio_monitor(self, device: str) -> Optional[object]:
+        """The core's live audio as a monitor the dashboard's listeners can subscribe to
+        (`subscribe(source)`, `unsubscribe(queue)`), when the core is a separate process. `device` is
+        `live` or `monitor`. In process the audio engine's own monitor serves them, so this is None."""
+        ...
+
     def remote_activity_store(self) -> Optional[object]:
         """The activity history the core keeps, as a store the API reads (`rows`, `recent`), when
         the core is a separate process. In process the API's own recorder holds it, so this is None."""

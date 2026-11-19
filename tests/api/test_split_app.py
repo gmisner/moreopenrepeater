@@ -383,6 +383,111 @@ def test_a_dashboard_can_watch_the_core_over_the_websocket(split):
         assert first["callsign"] == "W1AW" and first["state"] == "idle"
 
 
+def _feed_audio(core, rx, tx, device="live_audio"):
+    """The audio thread's side: hand the monitor the blocks that make one frame."""
+    import numpy as np
+
+    monitor = getattr(core.runtime, device).monitor
+    for _ in range(5):
+        monitor.feed(np.full(160, rx, dtype=np.float32), np.full(160, tx, dtype=np.float32))
+
+
+def test_a_dashboard_can_listen_to_the_core_s_audio(split):
+    import numpy as np
+
+    client, remote, core, _ = split
+    for source, device, expected in (("rx", "live_audio", 16383), ("tx", "live_audio", -16383), ("monitor", "monitor_receiver", 16383)):
+        with client.websocket_connect(f"/ws/audio?source={source}") as ws:
+            first = ws.receive_json()
+            assert first["sample_rate"] == core.runtime.renderer.sample_rate and first["source"] == source
+            wait_for(lambda: getattr(core.runtime, device).monitor.listener_count == 1)  # the API is listening to the core
+            _feed_audio(core, 0.5, -0.5, device)
+            pcm = np.frombuffer(ws.receive_bytes(), dtype="<i2")
+            assert set(pcm.tolist()) == {expected}, source
+        wait_for(lambda: getattr(core.runtime, device).monitor.listener_count == 0)  # and stops when the page closes
+
+
+def test_two_browsers_listening_cost_the_core_one_stream(split):
+    client, remote, core, thread = split
+    with client.websocket_connect("/ws/audio?source=rx") as one, client.websocket_connect("/ws/audio?source=rx") as two:
+        one.receive_json(), two.receive_json()
+        wait_for(lambda: core.runtime.live_audio.monitor.listener_count == 1)
+        assert thread.server._audio_streams == 1
+        _feed_audio(core, 0.5, 0.5)
+        assert len(one.receive_bytes()) == len(two.receive_bytes()) == 5 * 160 * 2
+
+
+class _Engine:
+    """Plays the audio engine's part: a block of audio every 20 ms, as the worker thread would."""
+
+    def __init__(self, core, level=0.5):
+        self.core, self.level, self.stop = core, level, threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        import numpy as np
+
+        monitor = self.core.runtime.live_audio.monitor
+        block = np.full(320, self.level, dtype=np.float32)  # 20 ms at 16 kHz
+        while not self.stop.is_set():
+            monitor.feed(block, block)
+            time.sleep(0.02)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop.set()
+        self.thread.join(2)
+
+
+def _engine_running(core, remote, monkeypatch, running=True):
+    from api.service.core_handle import CoreUnavailable
+
+    real = core.runtime.live_audio.status
+    monkeypatch.setattr(core.runtime.live_audio, "status", lambda: {**real(), "running": running})
+
+    def reported() -> bool:
+        try:
+            return bool(remote.hardware_status("live_audio").get("running")) is running
+        except CoreUnavailable:
+            return False  # the first report has not arrived yet
+
+    wait_for(reported, timeout=8.0)
+
+
+def test_record_and_score_listens_to_the_core_s_receiver(split, monkeypatch):
+    import math
+
+    client, remote, core, _ = split
+    _engine_running(core, remote, monkeypatch)
+    with _Engine(core, level=0.5):
+        response = client.post("/api/audio/record-score?seconds=1")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["sample_rate"] == core.runtime.renderer.sample_rate
+    assert abs(body["duration_seconds"] - 1.0) < 0.01
+    assert abs(body["peak_dbfs"] - 20 * math.log10(0.5)) < 0.2  # half scale, what the receiver heard
+
+
+def test_record_and_score_says_so_when_the_core_is_not_running_live_audio(split, monkeypatch):
+    client, remote, core, _ = split
+    _engine_running(core, remote, monkeypatch, running=False)
+    response = client.post("/api/audio/record-score?seconds=1")
+    assert response.status_code == 409 and "isn't running" in response.json()["detail"]
+
+
+def test_record_and_score_says_so_when_no_audio_arrives(split, monkeypatch):
+    from api import split as split_module
+
+    client, remote, core, _ = split
+    _engine_running(core, remote, monkeypatch)
+    monkeypatch.setattr(split_module, "RECORD_GRACE_SECONDS", 0.5)
+    response = client.post("/api/audio/record-score?seconds=1")  # the engine says it runs but sends nothing
+    assert response.status_code == 409 and "audio" in response.json()["detail"].lower()
+
+
 def test_net_active_follows_the_core(split):
     client, remote, core, thread = split
     assert remote.net_active is False

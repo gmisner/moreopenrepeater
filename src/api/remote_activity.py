@@ -79,7 +79,7 @@ class RemoteActivityStore:
     def _ask(self, params: dict) -> ActivityRows:
         try:
             with httpx.Client(
-                transport=httpx.HTTPTransport(uds=str(self._socket_path)), base_url="http://core",
+                transport=httpx.HTTPTransport(uds=str(self._socket_path), verify=False), base_url="http://core",
                 timeout=REQUEST_TIMEOUT_SECONDS,
             ) as client:
                 response = client.get("/activity", params=params)

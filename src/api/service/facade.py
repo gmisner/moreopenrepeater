@@ -454,6 +454,10 @@ class RepeaterService:
     def attach_log_hub(self, hub: object) -> None:
         """Nothing to do: in process, the core's lines are already logged into the API's hub."""
 
+    def remote_audio_monitor(self, device: str) -> None:
+        """In process the audio engine's own monitor serves the listeners; there is no remote one."""
+        return None
+
     def remote_activity_store(self) -> None:
         """In process the activity is recorded by the API's own recorder; there is no remote one."""
         return None

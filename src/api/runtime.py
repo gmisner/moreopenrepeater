@@ -598,8 +598,10 @@ class AppRuntime:
             service.attach_log_hub(log_hub)  # the Logs page shows the core's log lines too
             # The core owns these and runs in its own process; this process holds no device.
             # Their status is the core's, read over the socket (split.CoreHardware); acting on them is not yet.
-            live_audio = live_audio or CoreHardware("live_audio", service)
-            monitor_receiver = monitor_receiver or CoreHardware("monitor_receiver", service)
+            live_audio = live_audio or CoreHardware("live_audio", service, monitor=service.remote_audio_monitor("live"))
+            monitor_receiver = monitor_receiver or CoreHardware(
+                "monitor_receiver", service, monitor=service.remote_audio_monitor("monitor")
+            )
             link_radio = link_radio or CoreHardware("link_radio", service)
             remote_base = remote_base or CoreHardware("remote_base", service)
             gpio = gpio or CoreHardware("gpio", service)

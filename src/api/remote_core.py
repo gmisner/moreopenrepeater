@@ -58,6 +58,7 @@ from controller.modes import held_reason as _held_reason
 from controller.modes import effective_config
 
 from .core_runtime import AnnouncementQueueFull
+from .remote_audio import RemoteAudioMonitor
 from .remote_activity import RemoteActivityStore
 from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
 from playout.renderer import ASSET_PREFIX, TTS_PREFIX, UnknownClipError
@@ -122,6 +123,7 @@ class RemoteCore:
         self._next_runs: dict[str, Optional[datetime]] = {}
         self._speaking: set[asyncio.Task] = set()  # fire-and-forget speak() calls in flight
         self._macro_handlers: dict[str, Callable] = {}  # macro family -> what to call
+        self._audio_monitors: dict[str, RemoteAudioMonitor] = {}
         self._listeners: list[Callable[[RepeaterConfig], None]] = []
         self._deferred: collections.deque = collections.deque(maxlen=MAX_DEFERRED)  # (clip, on_linked_radio) held for a net
         self._net_hint: Optional[bool] = None  # what the API's saved net state says; resent on every connect
@@ -171,6 +173,8 @@ class RemoteCore:
         self._stopping = True
         for pending in list(self._speaking):
             pending.cancel()
+        for monitor in self._audio_monitors.values():
+            monitor.close()
         for name in ("_task", "_fetching", "_log_task", "_hardware_task"):
             task, current = getattr(self, name), None
             setattr(self, name, current)
@@ -628,6 +632,12 @@ class RemoteCore:
             except Exception as error:  # noqa: BLE001 - the pages say "not known" until the next read
                 _logger.debug("could not read the core's hardware state: %s", type(error).__name__)
             await asyncio.sleep(HARDWARE_POLL_SECONDS)
+
+    def remote_audio_monitor(self, device: str) -> RemoteAudioMonitor:
+        """The core's live audio (`live` or `monitor`), read over the socket for as long as someone listens."""
+        if device not in self._audio_monitors:
+            self._audio_monitors[device] = RemoteAudioMonitor(self.socket_path, device)
+        return self._audio_monitors[device]
 
     def remote_activity_store(self) -> RemoteActivityStore:
         """The activity history, which the core records and keeps; this reads it over the socket."""

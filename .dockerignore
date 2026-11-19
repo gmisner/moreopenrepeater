@@ -7,3 +7,8 @@
 **/__pycache__
 **/*.pyc
 !docker/allstar-entrypoint.sh
+!docker/dmr-supervisor.py
+!docker/dvswitch-keyring.gpg
+!packaging/dmr/Analog_Bridge.ini
+!packaging/dmr/MMDVM_Bridge.ini
+!packaging/dmr/DVSwitch.ini

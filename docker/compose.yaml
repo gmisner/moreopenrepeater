@@ -229,6 +229,42 @@ services:
         max-size: 10m
         max-file: "3"
 
+  # The DMR bridge (DVSwitch's Analog_Bridge and MMDVM_Bridge, and md380-emu for the vocoder), in its own container and off
+  # by default: `docker compose --profile dmr up -d dmr`. Its USRP audio goes to and from the core on the private network
+  # (set MOREOPENREPEATER_DMR_USRP_LISTEN and _PEER in core.env, docs/docker.md). It needs nothing from the host and
+  # publishes nothing: the DMR networks are reached by outbound connections.
+  dmr:
+    profiles: ["dmr"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dmr
+    image: moreopenrepeater-dmr:local
+    restart: unless-stopped
+    init: true
+    user: "999:999"
+    stop_grace_period: 20s
+    networks:
+      services:
+        ipv4_address: ${MOR_DMR_IP:-172.28.0.30}  # an address, not a name: the core only hears the bridge's audio from it
+    environment:
+      MOR_CORE_ADDRESS: ${MOR_CORE_IP:-172.28.0.10}  # where Analog_Bridge sends the audio, written into its .ini the first time
+    volumes:
+      - dmr-config:/etc/moreopenrepeater/dmr  # the .ini files, with the network password: the API edits them for the dashboard
+      - dmr-control:/dmr-control  # the dashboard's restart request and the status it reads back
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=01777  # the programs' scratch space (and no log files)
+      - /run/dmr:size=1m,mode=01777  # the supervisor's heartbeat
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    cpu_shares: 256  # a quarter of the default: the audio engine's processes come first
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
 networks:
   # Where the services talk to each other. Nothing is published from it except what a service names itself.
   services:
@@ -243,3 +279,5 @@ volumes:
   logd-data:
   allstar-config:
   allstar-data:
+  dmr-config:
+  dmr-control:

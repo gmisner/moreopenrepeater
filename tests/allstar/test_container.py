@@ -16,7 +16,9 @@ def test_it_is_off_unless_asked_for_so_an_existing_install_is_untouched():
     assert SERVICE["profiles"] == ["allstar"]
     for name, other in COMPOSE["services"].items():
         if name != "allstar":
-            assert "profiles" not in other and "allstar" not in str(other.get("depends_on", ""))  # nothing waits for it
+            assert "allstar" not in str(other.get("depends_on", ""))  # nothing waits for it
+    for name in ("core", "api", "logd"):
+        assert "profiles" not in COMPOSE["services"][name], name  # the radio's own services are always on
 
 
 def test_it_has_nothing_from_the_host():

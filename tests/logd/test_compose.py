@@ -113,3 +113,12 @@ def test_the_memory_override_keeps_the_history_inside_the_memory_it_gives():
 
 def test_the_memory_override_changes_nothing_but_the_collector():
     assert set(PROTECT["services"]) == {"logd"}
+
+
+# -- the core restarts itself when its audio stalls ---------------------------------------------------------
+
+
+def test_the_core_stops_itself_on_a_stall_and_is_restarted_because_docker_will_not_restart_an_unhealthy_container():
+    core = SERVICES["core"]
+    assert core["environment"]["MOREOPENREPEATER_EXIT_ON_STALL"] == "1"
+    assert core["restart"] == "unless-stopped"  # an exit is what brings it back

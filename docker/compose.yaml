@@ -51,6 +51,9 @@ services:
     environment:
       MOREOPENREPEATER_LOG_FORMAT: json  # see the api service
       MOREOPENREPEATER_LOGD_SOCKET: /run/logd/events.sock  # events also go to logd; if it is down they are dropped and counted
+      # Docker does not restart an unhealthy container, so a core whose audio stalls (the sound card dropped off USB
+      # and came back, say) stops itself, with the transmitter off the air, and `restart` brings it back.
+      MOREOPENREPEATER_EXIT_ON_STALL: "1"
     env_file:
       - path: core.env
         required: false

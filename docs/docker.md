@@ -189,6 +189,7 @@ keeps its readable text line in the log file exactly as before:
 | `config.refused` | warning | `error_code` says why (`config.unsafe`, `config.unknown_setting`, `config.wrong_type`, `config.conflict`) |
 | `config.failed` | error | `exception`; `error_code` `config.apply_failed` |
 | `speech.accepted` | info | `topic`: the core took a `speak.request` |
+| `watchdog.stalled` | error | `part` (`controller`, `audio engine`, `link radio audio engine`), `stall_s`; `error_code` `watchdog.stalled`. The core exits right after |
 | `weather.scheduled_due` | info | none: the routine weather announcement came due |
 | `weather.alert_announced` | info | `alert` (the kind, such as Flood Watch), `alert_id` |
 | `weather.announce_failed` | error | `kind` (`scheduled` or `alert`), `exception`; `error_code` `weather.announce`. Never the text of the alert |
@@ -261,9 +262,17 @@ reports `failed` (a stalled controller tick, say). Docker marks the container
 `unhealthy`, but **Docker does not restart an unhealthy container by itself**.
 (The check has to stay light: it once imported the core's own modules, which took
 over 5 s of CPU on a Pi, timed out and competed with the audio. A test guards that.)
-The systemd install does, through its watchdog (`WatchdogSec`). Until the host
-layer covers this, treat `unhealthy` as something to alert on. `restart:
-unless-stopped` covers crashes and exits, but not a manual `docker kill` or `docker stop`.
+The systemd install does, through its watchdog (`WatchdogSec`). The core
+container does the same job itself: `MOREOPENREPEATER_EXIT_ON_STALL=1` (set in
+`compose.yaml`) runs the watchdog's check every 2 seconds, and when the controller or an audio engine
+has made no progress for 10 seconds it takes the transmitter off the air, records a `watchdog.stalled`
+event (error, `part` says which), flushes the log and exits with status 75, and `restart:
+unless-stopped` starts it again. That is what happened on the Pi on 2026-11-19: the AIOC dropped off USB for
+two seconds, the audio engine stalled without any error, and the core sat unhealthy for 18 minutes with its
+station ID going nowhere. A restart can only help if the container can start again: a PTT device
+path that no longer exists (`MOR_PTT_HIDRAW`, see Host prerequisites) stops it starting, which is why a
+stable udev name matters. `restart: unless-stopped` covers crashes and exits, but not a manual `docker kill`
+or `docker stop`. The API container is not restarted this way: it holds no device.
 
 ## Voices
 

@@ -39,16 +39,32 @@ case "$*" in
   *"ps --format"*) printf 'moreopenrepeater-core-1 Up 5 seconds (healthy)\\nmoreopenrepeater-api-1 Up 5 seconds (healthy)\\n' ;;
 esac
 exit 0''')
-    shim("hostname", f'echo "{LAN} 172.17.0.1 fe80::1 {TAILSCALE} fd7a:115c::1"')
+    shim("hostname", f'echo "{LAN} 172.17.0.1 fe80::1 {TAILSCALE} fd7a:115c::1"')  # the old way: everything, Docker's bridges too
+    shim("ip", f'''cat <<LINES
+1: lo    inet 127.0.0.1/8 scope host lo
+2: wlan0    inet {LAN}/24 brd 192.168.1.255 scope global dynamic wlan0
+3: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+4: br-1a2b3c4d5e6f    inet 172.28.0.1/24 brd 172.28.0.255 scope global br-1a2b3c4d5e6f
+5: tailscale0    inet {TAILSCALE}/32 scope global tailscale0
+6: veth12ab    inet 10.99.0.1/24 scope global veth12ab
+LINES''')
     shim("tailscale", f'[ "$1 $2" = "ip -4" ] && echo {TAILSCALE}; exit 0')
     shim("systemctl", 'echo inactive; exit 3')
     shim("sudo", f'echo "sudo $*" >> {calls}; exit 0')
     return folder, bin_dir, calls
 
 
-def run(site, *args, tailscale=True, stdin="", **env):
+def run(site, *args, tailscale=True, stdin="", path_extra=True, **env):
     folder, bin_dir, calls = site
     path = f"{bin_dir}:/usr/bin:/bin"  # only the shims and the system's tools: a real docker or tailscale on this machine must not leak in
+    if not path_extra:  # no `ip` at all: a private bin with just what the script needs
+        lean = bin_dir.parent / "lean"
+        lean.mkdir(exist_ok=True)
+        for tool in ("sh", "sed", "grep", "tr", "head", "cp", "chmod", "mkdir", "stat", "id", "mv", "cat", "printf", "awk", "tail", "dirname", "sleep", "read", "date", "rm", "ls"):
+            found = shutil.which(tool, path="/usr/bin:/bin")
+            if found and not (lean / tool).exists():
+                (lean / tool).symlink_to(found)
+        path = f"{bin_dir}:{lean}"
     if not tailscale:
         (bin_dir / "tailscale").unlink(missing_ok=True)
     environment = {"PATH": path, "HOME": str(folder), "MOR_SETUP_CHOWN": "0", "MOR_SETUP_WAIT": "5", **env}
@@ -244,3 +260,19 @@ def test_a_settings_file_you_already_had_with_open_permissions_is_tightened(site
     run(site, "--callsign", "W1AW")
     for name in ("api.env", "core.env"):
         assert stat.S_IMODE((folder / name).stat().st_mode) == 0o600, name
+
+
+def test_docker_bridges_and_tailscale_are_not_listed_as_where_to_open_it_on_your_network(site):
+    """Found on a real Pi: `hostname -I` also lists docker0 and the compose network's bridge, which are no use to a person."""
+    out = run(site, "--callsign", "W1AW").stdout
+    lan_lines = [line for line in out.splitlines() if "on your network" in line]
+    assert lan_lines == [f"  on your network:   http://{LAN}:8000"]
+    assert "172.17.0.1" not in out and "172.28.0.1" not in out and "10.99.0.1" not in out
+    assert f"over Tailscale:    http://{TAILSCALE}:8000" in out  # still found, from Tailscale itself
+
+
+def test_without_the_ip_command_it_falls_back_to_the_address_list_and_still_leaves_out_ipv6_and_tailscale(site):
+    (site[1] / "ip").unlink()
+    result = run(site, "--callsign", "W1AW", path_extra=False)
+    assert f"on your network:   http://{LAN}:8000" in result.stdout
+    assert "fe80" not in result.stdout and f"on your network:   http://{TAILSCALE}" not in result.stdout

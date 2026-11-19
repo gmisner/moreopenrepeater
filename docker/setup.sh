@@ -184,7 +184,14 @@ say ""
 say "Dashboard:"
 say "  on this machine:   http://localhost:$PORT"
 if [ "$HOST" = "0.0.0.0" ]; then
-  for ip in $(hostname -I 2>/dev/null || true); do
+  # The machine's own addresses, by interface so Docker's bridges (docker0, br-...) and Tailscale's are left out: they are
+  # not where you would open this from. Without `ip`, every address that is not IPv6 or in Tailscale's range.
+  if command -v ip >/dev/null 2>&1; then
+    addresses="$(ip -4 -o addr show scope global 2>/dev/null | awk '$2 !~ /^(docker|br-|veth|virbr|cni|flannel|tailscale|lo$)/ {split($4, a, "/"); print a[1]}')"
+  else
+    addresses="$(hostname -I 2>/dev/null || true)"
+  fi
+  for ip in $addresses; do
     case "$ip" in
       *:*|100.6[4-9].*|100.[7-9]?.*|100.1[01]?.*|100.12[0-7].*) ;;  # not IPv6, not Tailscale's
       *) say "  on your network:   http://$ip:$PORT" ;;

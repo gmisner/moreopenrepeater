@@ -51,10 +51,11 @@ def configure_logging(
     # Idempotent: drop any handlers this function previously attached (e.g. a
     # prior create_app() call with a different log_path, as happens across
     # tests) instead of stacking duplicate handlers on the shared logger.
-    for handler in list(logger.handlers):
-        if getattr(handler, "_moreopenrepeater_managed", False):
-            logger.removeHandler(handler)
-            handler.close()  # a collector sender has a thread to stop
+    for owner in (logger, logging.getLogger()):
+        for handler in list(owner.handlers):
+            if getattr(handler, "_moreopenrepeater_managed", False):
+                owner.removeHandler(handler)
+                handler.close()  # a collector sender has a thread to stop (closing twice is harmless)
 
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -70,18 +71,10 @@ def configure_logging(
         stream_handler: logging.Handler = JsonLineHandler(identity)
         # Other libraries (uvicorn, mcp) log through the root logger, which would put plain text between
         # the JSON lines, so the same handler takes theirs. Ours has propagate off: nothing is written twice.
-        for existing in [h for h in logging.getLogger().handlers if getattr(h, "_moreopenrepeater_managed", False)]:
-            logging.getLogger().removeHandler(existing)
-            existing.close()
         library_handler = JsonLineHandler(identity)
         library_handler._moreopenrepeater_managed = True  # type: ignore[attr-defined]
         library_handler.setLevel(logging.INFO)
-        root = logging.getLogger()
-        root.addHandler(library_handler)
-        if root.level == logging.NOTSET or root.level > logging.INFO:
-            root.setLevel(logging.INFO)
-        for name in _CHATTY:
-            logging.getLogger(name).setLevel(logging.WARNING)
+        logging.getLogger().addHandler(library_handler)
     else:
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
@@ -93,6 +86,16 @@ def configure_logging(
         collector_handler = CollectorHandler(identity, Path(collector))
         collector_handler._moreopenrepeater_managed = True  # type: ignore[attr-defined]
         logger.addHandler(collector_handler)
+        # The same handler on the root logger: a library's line draws a sequence number like ours does, so a
+        # collector that never saw it would report a gap in the sequence for every one.
+        logging.getLogger().addHandler(collector_handler)
+
+    if json_logging_enabled(env) or collector:
+        root = logging.getLogger()
+        if root.level == logging.NOTSET or root.level > logging.INFO:
+            root.setLevel(logging.INFO)
+        for name in _CHATTY:
+            logging.getLogger(name).setLevel(logging.WARNING)
 
     if hub is not None:
         hub_handler = HubHandler(hub)

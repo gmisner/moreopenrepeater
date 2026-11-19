@@ -184,3 +184,29 @@ def test_the_server_is_told_not_to_install_its_own_text_logging_only_in_json_mod
     monkeypatch.setenv("MOREOPENREPEATER_LOG_FORMAT", "json")
     app_module.main()
     assert "log_config" not in calls[0] and calls[1]["log_config"] is None
+
+
+def test_the_collector_sees_every_record_so_its_sequence_has_no_false_gaps(tmp_path, sock_dir):
+    """Library logs go through the root logger and draw sequence numbers like ours do, so the collector must
+    receive them too, or it would report a gap for every line a library wrote."""
+    receiver = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    receiver.bind(str(sock_dir / "logd.sock"))
+    receiver.settimeout(5)
+    configure_logging(tmp_path / "x.log", env={
+        "MOREOPENREPEATER_LOG_FORMAT": "json", "MOREOPENREPEATER_LOGD_SOCKET": str(sock_dir / "logd.sock"),
+    })
+    logging.getLogger("moreopenrepeater.audio").info("ours")
+    logging.getLogger("uvicorn.error").info("a library's")
+    logging.getLogger("moreopenrepeater.core").info("ours again")
+    events = [LogEvent.model_validate_json(receiver.recv(70_000)) for _ in range(3)]
+    assert [e.event for e in events] == ["legacy.audio", "legacy.uvicorn_error", "legacy.core"]
+    assert [e.seq for e in events] == [0, 1, 2]  # no number skipped
+
+
+def test_the_collector_alone_also_covers_the_root_logger(tmp_path, sock_dir):
+    receiver = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    receiver.bind(str(sock_dir / "logd.sock"))
+    receiver.settimeout(5)
+    configure_logging(tmp_path / "x.log", env={"MOREOPENREPEATER_LOGD_SOCKET": str(sock_dir / "logd.sock")})
+    logging.getLogger("mcp.server").warning("a library warning")
+    assert LogEvent.model_validate_json(receiver.recv(70_000)).event == "legacy.mcp_server"

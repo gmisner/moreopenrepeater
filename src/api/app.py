@@ -24,6 +24,7 @@ from .backup import BackupError, BackupFolder, open_backup, restore_backup
 from .control_codes import ControlCodes
 from .health import RunMarker
 from .hub import HubSiteStore, hub_sites_state_store
+from .log_history import LogHistory
 from .log_hub import LogHub, LogShipper
 from .mailbox import MailboxStore
 from .models import AuditEntryResponse, ConfigResponse, SessionResponse, SnapshotImportRequest, StatusResponse
@@ -50,6 +51,7 @@ from .routes import metrics as metrics_routes
 from .routes import nets as nets_routes
 from .routes import programming as programming_routes
 from .routes import realtime as realtime_routes
+from .routes import log_history as log_history_routes
 from .routes import sensors as sensors_routes
 from .routes import session as session_routes
 from .routes import simulate as simulate_routes
@@ -367,8 +369,11 @@ def create_app(
         except (BackupError, UserError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
 
+    log_history = LogHistory.from_env()  # the logd collector's history, if this install has one
+
     admin_ops_routes.register(
         app,
+        log_history=log_history,
         service=runtime.service,
         backups=runtime.backups,
         backup_sources=runtime.backup_sources,
@@ -461,6 +466,8 @@ def create_app(
         auth_dependencies=runtime.auth_dependencies,
         admin_dependencies=runtime.admin_dependencies,
     )
+
+    log_history_routes.register(app, log_history=log_history, auth_dependencies=runtime.auth_dependencies)
 
     sensors_routes.register(
         app,

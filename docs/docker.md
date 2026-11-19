@@ -136,8 +136,15 @@ Three places, from the quickest to the most durable:
   `/health`, `/stats`, `/events`, `/gaps`). Settings go in `docker/logd.env` (copy `logd.env.example`):
   `MOREOPENREPEATER_LOGD_MAX_MB`, `..._ROUTINE_DAYS`, `..._CRITICAL_DAYS`. When the size limit is reached
   the oldest routine events go first, then the oldest of the rest, and the pruning is recorded as a gap.
-  A damaged database is set aside as `events.db.damaged-<time>` and a new one started. Logs for the
-  dashboard's Log Explorer, an incident timeline and the support bundle read from this in a later slice.
+  A damaged database is set aside as `events.db.damaged-<time>` and a new one started.
+  The dashboard reads this history: **Logs, then the History tab** searches it (words, level, which part, a
+  time span, paged back from the newest) and shows a notice when the collector knows events are missing.
+  The API finds it through `MOREOPENREPEATER_LOGD_QUERY_SOCKET` (set in `compose.yaml`); without it, or with
+  logd stopped, the tab says the history is not available and the live log and log file keep working. The
+  tab loads when opened and when you press Search, never on a timer. The support bundle gets
+  `event-history.json`: the last 500 warnings and errors, the collector's counts, and its known gaps, or the
+  reason there is none. The API serves `GET /api/log-history/status`, `/events` (same filters as `logd.query`)
+  and `/gaps` to anyone signed in, as it does the live log.
 - **Files in the data folder:** `moreopenrepeater.log` (the core) and `moreopenrepeater-api.log` (the
   API), each rotated at 2 MB with three backups. Separate files on purpose: two writers must not share
   one.

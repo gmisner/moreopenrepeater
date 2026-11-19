@@ -39,6 +39,11 @@ def test_the_core_and_the_api_send_to_the_socket_in_the_volume_they_share_with_i
     assert "logd-run" in COMPOSE["volumes"] and "logd-data" in COMPOSE["volumes"]
 
 
+def test_the_api_reads_the_history_from_the_collector_s_query_socket():
+    assert SERVICES["api"]["environment"]["MOREOPENREPEATER_LOGD_QUERY_SOCKET"] == "/run/logd/query.sock"
+    assert "MOREOPENREPEATER_LOGD_QUERY_SOCKET=/run/logd/query.sock" in (DOCKER / "Dockerfile.logd").read_text()
+
+
 def test_the_socket_the_senders_use_is_the_one_the_collector_listens_on():
     image = (DOCKER / "Dockerfile.logd").read_text()
     assert "MOREOPENREPEATER_LOGD_SOCKET=/run/logd/events.sock" in image

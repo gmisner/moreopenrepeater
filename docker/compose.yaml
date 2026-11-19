@@ -101,6 +101,7 @@ services:
       # the data folder is unchanged, and the dashboard's Logs page still reads it.
       MOREOPENREPEATER_LOG_FORMAT: json
       MOREOPENREPEATER_LOGD_SOCKET: /run/logd/events.sock
+      MOREOPENREPEATER_LOGD_QUERY_SOCKET: /run/logd/query.sock  # the Logs page's history; without logd it says so
       # Loopback by default. With no accounts set up the dashboard is open and can key the
       # transmitter, so it is not offered to the network until you choose to (MOR_API_HOST=0.0.0.0,
       # after creating an account or setting MOREOPENREPEATER_ADMIN_USER and _PASSWORD in api.env).

@@ -107,7 +107,7 @@ services:
     # The same private network as the core: AllStar link control goes to the node's manager port (AMI) as `allstar:5038`.
     # The dashboard is published on the host's loopback by default. With no accounts set up it is open and can key the
     # transmitter, so it is not offered to the network until you choose to (MOR_API_HOST=0.0.0.0, after creating an
-    # account or setting MOREOPENREPEATER_ADMIN_USER and _PASSWORD in api.env).
+    # account or setting MOREOPENREPEATER_AUTH_USER and MOREOPENREPEATER_AUTH_PASSWORD in api.env).
     networks:
       - services
     ports:

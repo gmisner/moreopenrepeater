@@ -6,8 +6,12 @@ import logging
 import os
 import signal
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Mapping, Optional
+
+from api.activity import FLUSH_SECONDS as ACTIVITY_FLUSH_SECONDS
+from api.activity import RETENTION_DAYS
 
 from .build import CoreApp, build_core
 from .config_boundary import CoreConfigError
@@ -49,12 +53,13 @@ async def serve(
     await core.start_audio_and_links(loop, tasks)
     core.notify_ready()
     core.start_io()
+    tasks.append(asyncio.create_task(_keep_activity(app.activity_store)))
     control: Optional[ControlServer] = None
     if control_socket is not None:
         # Last, after the radio is up: if it cannot start the core simply runs without it.
         control = ControlServer(
             control_socket, service=app.service, runtime=core, allow_simulate=allow_simulate,
-            assets_have=app.assets_store.has, log_hub=app.log_hub,
+            assets_have=app.assets_store.has, log_hub=app.log_hub, activity_store=app.activity_store,
         )
         await control.start()
     _logger.info("core running alone (no web app); state is %s", app.state_path)
@@ -69,6 +74,25 @@ async def serve(
         latency.stop()
     app.activity_store.flush()
     await core.stop_tts()
+
+
+async def _keep_activity(store) -> None:
+    """Write recorded activity to disk every so often (the store holds rows back to spare the SD
+    card) and drop what is older than the retention. The writes run off the event loop."""
+    loop = asyncio.get_running_loop()
+    since_prune = None
+    while True:
+        try:
+            await loop.run_in_executor(None, store.flush)
+            if since_prune is None or since_prune >= 24 * 3600:
+                await loop.run_in_executor(None, store.prune, (datetime.now() - timedelta(days=RETENTION_DAYS)).timestamp())
+                since_prune = 0.0
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - a full disk must not stop the radio
+            _logger.exception("could not write the activity history")
+        await asyncio.sleep(ACTIVITY_FLUSH_SECONDS)
+        since_prune = (since_prune or 0.0) + ACTIVITY_FLUSH_SECONDS
 
 
 def main(env: Optional[Mapping[str, str]] = None) -> int:

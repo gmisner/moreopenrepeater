@@ -44,7 +44,14 @@ def register(
     def add_checkin(body: NetCheckInRequest, request: Request) -> dict:
         request.state.audit_detail = body.callsign.upper()
         try:
-            nets.add_checkin(body.callsign, body.notes)
+            nets.add_checkin(
+                body.callsign,
+                body.notes,
+                name=body.name,
+                location=body.location,
+                license_class=body.license_class,
+                staying_for_comments=body.staying_for_comments,
+            )
         except NetError as error:
             raise HTTPException(status_code=409, detail=str(error)) from None
         return nets.status()
@@ -52,7 +59,15 @@ def register(
     @app.put("/api/net/checkins/{checkin_id}", response_model=NetStatusResponse, dependencies=auth_dependencies)
     def update_checkin(checkin_id: str, body: NetCheckInRequest) -> dict:
         try:
-            nets.update_checkin(checkin_id, body.callsign, body.notes)
+            nets.update_checkin(
+                checkin_id,
+                body.callsign,
+                body.notes,
+                name=body.name,
+                location=body.location,
+                license_class=body.license_class,
+                staying_for_comments=body.staying_for_comments,
+            )
         except NetError as error:
             raise HTTPException(status_code=409, detail=str(error)) from None
         except KeyError:

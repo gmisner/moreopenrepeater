@@ -27,7 +27,11 @@ class NetCheckIn(BaseModel):
     id: str
     callsign: str
     at: float  # unix time
-    notes: str
+    notes: str = ""
+    name: str = ""
+    location: str = ""
+    license_class: str = ""
+    staying_for_comments: bool = False
 
 
 class NetSummary(BaseModel):
@@ -64,6 +68,10 @@ class NetStartRequest(BaseModel):
 class NetCheckInRequest(BaseModel):
     callsign: str = Field(pattern=r"^[A-Za-z0-9/-]{1,15}$")
     notes: str = Field(default="", max_length=300)
+    name: str = Field(default="", max_length=80)
+    location: str = Field(default="", max_length=80)
+    license_class: str = Field(default="", max_length=40)
+    staying_for_comments: bool = False
 
 
 class ControlCodeStatus(BaseModel):

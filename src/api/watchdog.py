@@ -9,6 +9,12 @@ again. `Restart=on-failure` alone only helps when the process exits.
 The pings come from a thread of their own, so a hung event loop stops them
 too. Before giving up, the thread takes the transmitter off the air: a
 CM108 keeps its PTT output keyed after the process dies.
+
+A container has no systemd to do the restarting, and Docker does not restart
+an unhealthy container. With `MOREOPENREPEATER_EXIT_ON_STALL=1` the same check
+runs on its own timer, and on a stall the process records the event, flushes
+the log and exits, so the restart policy brings the core back. Without that
+the core would sit unhealthy with its transmitter command going nowhere.
 """
 from __future__ import annotations
 
@@ -17,9 +23,16 @@ import os
 import socket
 import threading
 import time
-from typing import Callable, Optional
+from typing import Callable, Mapping, Optional
+
+from observability import log_event
 
 _logger = logging.getLogger("moreopenrepeater.watchdog")
+
+EXIT_ON_STALL = "MOREOPENREPEATER_EXIT_ON_STALL"
+EXIT_STALLED = 75  # EX_TEMPFAIL: the exit status of a core that stopped itself because a part stalled
+CONTAINER_CHECK_SECONDS = 2.0  # how often a container checks, with no systemd to say how often
+FLUSH_SECONDS = 2.0  # the most the log gets to reach the collector before the process exits
 
 # Longer than any normal pause (the tick runs every 50 ms, audio blocks
 # every 20 ms), well inside WatchdogSec.
@@ -42,6 +55,27 @@ def sd_notify(message: str, env: Optional[dict] = None) -> bool:
         _logger.warning("couldn't notify systemd (%s): %s", message, error)
         return False
     return True
+
+
+def exit_on_stall_enabled(env: Optional[Mapping[str, str]] = None) -> bool:
+    return (os.environ if env is None else env).get(EXIT_ON_STALL, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def exit_for_restart(
+    stalled: str,
+    *,
+    code: int = EXIT_STALLED,
+    flush: Callable[[], None] = logging.shutdown,
+    flush_seconds: float = FLUSH_SECONDS,
+    leave: Callable[[int], None] = os._exit,
+) -> None:
+    """End the process so its supervisor starts it again. The log is flushed first, so the stall is in the
+    record, but never for longer than `flush_seconds`: a hung process must still go. Skips `atexit` and the
+    event loop on purpose, since either may be the thing that is stuck."""
+    worker = threading.Thread(target=flush, name="watchdog-flush", daemon=True)
+    worker.start()
+    worker.join(flush_seconds)
+    leave(code)
 
 
 def ping_interval(env: Optional[dict] = None, pid: Optional[int] = None) -> Optional[float]:
@@ -73,6 +107,9 @@ class Watchdog:
         self._stall_seconds = stall_seconds
         self._watched: list[tuple[str, Callable[[], Optional[float]]]] = []
         self.on_stall: Callable[[str], None] = lambda name: None
+        #: Called after `on_stall` when something has stalled. In a container this ends the process (see
+        #: `exit_for_restart`); under systemd it stays None and the stopped pings do the same job.
+        self.restart: Optional[Callable[[str], None]] = None
         self.stalled: Optional[str] = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -94,11 +131,17 @@ class Watchdog:
         if self.stalled is None:
             self.stalled = self._first_stalled()
             if self.stalled is not None:
-                _logger.error("the %s stopped making progress; letting systemd restart the service", self.stalled)
+                log_event(
+                    _logger, logging.ERROR, "watchdog.stalled",
+                    f"the {self.stalled} stopped making progress; restarting the service",
+                    error_code="watchdog.stalled", part=self.stalled, stall_s=self._stall_seconds, facts_in_text=False,
+                )
                 try:
                     self.on_stall(self.stalled)
                 except Exception:
                     _logger.exception("couldn't get ready for the restart")
+                if self.restart is not None:
+                    self.restart(self.stalled)
         if self.stalled is not None:
             return False
         self._notify("WATCHDOG=1")
@@ -112,7 +155,7 @@ class Watchdog:
         self._stop.clear()
         self._thread = threading.Thread(target=run, name="watchdog", daemon=True)
         self._thread.start()
-        _logger.info("systemd watchdog on: checking every %.0f s", interval)
+        _logger.info("watchdog on: checking every %.0f s", interval)
 
     def stop(self) -> None:
         self._stop.set()

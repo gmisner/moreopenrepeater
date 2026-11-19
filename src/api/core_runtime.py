@@ -26,7 +26,7 @@ from playout.renderer import ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
 from .loops import run_announcement_loop, run_long_id_warm_loop, run_tick_loop
-from .watchdog import Watchdog, ping_interval, sd_notify
+from .watchdog import CONTAINER_CHECK_SECONDS, Watchdog, ping_interval, sd_notify
 
 TICK_INTERVAL_SECONDS = 0.05
 ANNOUNCEMENT_POLL_SECONDS = 1.0
@@ -193,6 +193,8 @@ class CoreRuntime:
     def notify_ready(self) -> None:
         sd_notify("READY=1")
         interval = ping_interval()
+        if interval is None and self.watchdog.restart is not None:
+            interval = CONTAINER_CHECK_SECONDS  # no systemd to ping: check on our own timer
         if interval is not None:
             self.watchdog.start(interval)
 

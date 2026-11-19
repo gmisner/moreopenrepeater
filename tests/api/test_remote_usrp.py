@@ -2,13 +2,14 @@
 bridge's files and tells the core where they are."""
 import asyncio
 import json
+import shutil
 import tempfile
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from test_allstar_node import EXTENSIONS, MODULES, REG, RPT
-from test_split_app import CoreThread, sock_dir, wait_for  # noqa: F401 - the fixture
+from test_split_app import CoreThread, wait_for
 
 from api.allstar_audio import UsrpSettings
 from api.app import create_app
@@ -115,6 +116,14 @@ def test_the_status_is_the_cores_and_does_not_invent_one_when_it_is_away():
 
 
 @pytest.fixture
+def sock_dir():
+    """Short path: AF_UNIX paths are limited to about 104 characters."""
+    path = Path(tempfile.mkdtemp(prefix="mor-", dir="/tmp"))
+    yield path
+    shutil.rmtree(path, ignore_errors=True)
+
+
+@pytest.fixture
 def etc(tmp_path):
     folder = tmp_path / "asterisk"
     folder.mkdir()
@@ -125,7 +134,7 @@ def etc(tmp_path):
     return folder
 
 
-def two_processes(tmp_path, sock_dir, monkeypatch, **env):  # noqa: F811
+def two_processes(tmp_path, sock_dir, monkeypatch, **env):
     (tmp_path / "core").mkdir()
     (tmp_path / "core" / "state.json").write_text(json.dumps({"config": {"callsign": "W1AW", "audio_enabled": False}}))
     core = build_core({

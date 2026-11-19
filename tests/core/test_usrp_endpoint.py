@@ -8,7 +8,6 @@ from pydantic import ValidationError
 from test_control_command import make_command, post_command
 
 from api.usrp_endpoints import UsrpEndpoints
-from contracts import CoreCommand
 from core.build import build_core
 
 NODE = {"host": "127.0.0.1", "port": 32001}

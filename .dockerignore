@@ -1,5 +1,6 @@
 *
 !docker/core-requirements.txt
+!docker/logd-requirements.txt
 !pyproject.toml
 !src
 !web

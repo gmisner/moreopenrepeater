@@ -59,3 +59,17 @@ def test_the_collector_image_installs_only_what_it_imports():
     lines = (DOCKER / "logd-requirements.txt").read_text().splitlines()
     requirements = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
     assert requirements == ["pydantic>=2"]  # no numpy, audio or web framework
+
+
+def test_every_file_a_dockerfile_copies_is_in_the_build_context():
+    """.dockerignore is an allowlist ('*' then '!path'); a COPY of anything not allowed fails only at build time."""
+    import re
+
+    root = Path(__file__).parents[2]
+    allowed = [line[1:].strip().rstrip("/") for line in (root / ".dockerignore").read_text().splitlines() if line.startswith("!")]
+    for dockerfile in (root / "docker").glob("Dockerfile.*"):
+        for line in dockerfile.read_text().splitlines():
+            match = re.match(r"\s*COPY\s+(?:--\S+\s+)*(\S+)\s+\S+", line)
+            if match and not match.group(1).startswith("--from"):
+                source = match.group(1).rstrip("/")
+                assert any(source == a or source.startswith(a + "/") for a in allowed), f"{dockerfile.name} copies {source}, which .dockerignore excludes"

@@ -19,7 +19,7 @@ import { labeled, InfoNote } from "../components/FieldHint";
 import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
-import { LogHistory } from "./logs/LogHistory";
+import { LogHistory } from "./LogHistory";
 
 const LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
 const LEVEL_PATTERN = /\b(DEBUG|INFO|WARNING|ERROR|CRITICAL)\b/;

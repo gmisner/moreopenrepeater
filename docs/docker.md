@@ -109,14 +109,35 @@ Three places, from the quickest to the most durable:
   own log hub, with the time the core logged them. The core keeps its last 2000 lines in memory, so
   lines logged while the API was away are read when it is back, as far as that reaches; after the core
   restarts, its new log is read from the start. The core never waits on this.
-- **The `logd` collector** (the next slice) will keep events searchable for 14 days (30 for errors)
-  in a bounded SQLite file. A process that logs to it sets `MOREOPENREPEATER_LOGD_SOCKET` to its socket,
-  and each event is then also sent as a datagram. That path is built never to hold up the radio: the
-  code that logs only takes a small snapshot and puts it on a bounded queue (1000 events), and a
-  separate thread builds and sends each event without waiting. A collector that is absent, slow or full
-  means the event is dropped, never that anything waits. Every drop is counted, and the next time the
-  collector is reachable it is told how many it missed (a `logging.dropped` event), so a gap in the
-  record is reported, not hidden.
+- **The `logd` collector** keeps events searchable in a bounded SQLite file (with full-text search):
+  14 days of routine events, 30 days of warnings and above, and never more than 64 MB. It is its own
+  container (`docker compose up -d logd`) with no network at all, a read-only root, and no
+  capabilities. Core and API send to it by setting `MOREOPENREPEATER_LOGD_SOCKET`
+  (`/run/logd/events.sock`, a Unix datagram socket on the shared `logd-run` volume; `compose.yaml` sets it).
+  That path is built never to hold up the radio: the code that logs only takes a small snapshot and puts
+  it on a bounded queue (1000 events), and a separate thread builds and sends each event without waiting.
+  Nothing depends on `logd` and it can be stopped, restarted or removed while the radio keeps running;
+  `tests/logd/test_compose.py` fails if anyone wires it in as a dependency. A collector that is absent,
+  slow or full means the event is dropped, never that anything waits. Every drop is counted, and the next
+  time the collector is reachable it is told how many it missed (a `logging.dropped` event), so a gap in
+  the record is reported, not hidden. The collector also notices gaps itself (a sequence number that
+  skips, a process that restarted, a full queue or a failed write, events pruned for space) and keeps
+  them in a separate table. To search it from a terminal:
+
+  ```
+  docker compose exec logd python -m logd.query --min-severity warning --since 2026-11-18T00:00:00Z
+  docker compose exec logd python -m logd.query -q "audio glitch" --module core --limit 20
+  docker compose exec logd python -m logd.query --event "audio.*" --json
+  docker compose exec logd python -m logd.query --gaps    # what is known to be missing
+  docker compose exec logd python -m logd.query --stats   # what it holds and what it dropped
+  ```
+
+  Other code reads the same answers over `/run/logd/query.sock` (HTTP/1.1 over a Unix socket, GET only:
+  `/health`, `/stats`, `/events`, `/gaps`). Settings go in `docker/logd.env` (copy `logd.env.example`):
+  `MOREOPENREPEATER_LOGD_MAX_MB`, `..._ROUTINE_DAYS`, `..._CRITICAL_DAYS`. When the size limit is reached
+  the oldest routine events go first, then the oldest of the rest, and the pruning is recorded as a gap.
+  A damaged database is set aside as `events.db.damaged-<time>` and a new one started. Logs for the
+  dashboard's Log Explorer, an incident timeline and the support bundle read from this in a later slice.
 - **Files in the data folder:** `moreopenrepeater.log` (the core) and `moreopenrepeater-api.log` (the
   API), each rotated at 2 MB with three backups. Separate files on purpose: two writers must not share
   one.
@@ -276,4 +297,4 @@ own shutdown path releasing the audio device and PTT; nothing here observed the 
 
 Still to measure: the PTT line observed independently when the container stops (it needs a scope or a
 second receiver), and a Pi 4 or 5. A stable udev name for the PTT
-device, multi-arch publishing, and the API, `logd` and module containers are later slices.
+device, multi-arch publishing, and the module containers are later slices.

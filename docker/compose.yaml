@@ -45,9 +45,12 @@ services:
       - ${MOR_DATA_DIR:-./data}:/data
       # The control socket. The API container will mount the same volume.
       - core-run:/run/moreopenrepeater
+      # Where logd's socket is. No depends_on anywhere: the core and the API do not need logd to start or to run.
+      - logd-run:/run/logd
 
     environment:
       MOREOPENREPEATER_LOG_FORMAT: json  # see the api service
+      MOREOPENREPEATER_LOGD_SOCKET: /run/logd/events.sock  # events also go to logd; if it is down they are dropped and counted
     env_file:
       - path: core.env
         required: false
@@ -60,7 +63,7 @@ services:
       - no-new-privileges:true
       # Docker's default seccomp filter makes the audio worker miss deadlines on a Pi:
       # the idle "audio glitch" pairs came every one to four minutes with it and
-      # stopped without it (measured on a Pi 4, 12 minutes clean). A tight allowlist
+      # stopped without it (measured on a Pi 3B+, docs/docker.md, Measured on a Pi). A tight allowlist
       # profile for this container is the way to get the filter back without the cost.
       - seccomp=unconfined
 
@@ -91,10 +94,13 @@ services:
       # writes state.json (the core owns the saved configuration).
       - ${MOR_DATA_DIR:-./data}:/data
       - core-run:/run/moreopenrepeater
+      # Where logd's socket is. No depends_on anywhere: the core and the API do not need logd to start or to run.
+      - logd-run:/run/logd
     environment:
       # One JSON event per line on stdout, which Docker's log driver keeps and rotates. The text log in
       # the data folder is unchanged, and the dashboard's Logs page still reads it.
       MOREOPENREPEATER_LOG_FORMAT: json
+      MOREOPENREPEATER_LOGD_SOCKET: /run/logd/events.sock
       # Loopback by default. With no accounts set up the dashboard is open and can key the
       # transmitter, so it is not offered to the network until you choose to (MOR_API_HOST=0.0.0.0,
       # after creating an account or setting MOREOPENREPEATER_ADMIN_USER and _PASSWORD in api.env).
@@ -115,5 +121,42 @@ services:
         max-size: 10m
         max-file: "3"
 
+  # The log collector (docs/docker.md, Logs). The core and the API send it events as datagrams on a Unix
+  # socket in the logd-run volume; if it is down they drop them and count what they dropped, and nothing
+  # else notices. It has no network at all, and only the two volumes are writable.
+  logd:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.logd
+    image: moreopenrepeater-logd:local
+    restart: unless-stopped
+    init: true
+    user: "999:999"
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    cpu_shares: 128  # a share of an eighth of the default: the radio's processes come first
+    environment:
+      MOREOPENREPEATER_LOG_FORMAT: json
+      # How much it keeps: MOREOPENREPEATER_LOGD_MAX_MB (64), MOREOPENREPEATER_LOGD_ROUTINE_DAYS (14) and
+      # MOREOPENREPEATER_LOGD_CRITICAL_DAYS (30, for errors and worse).
+    env_file:
+      - path: logd.env
+        required: false
+    volumes:
+      - logd-data:/var/lib/logd
+      - logd-run:/run/logd
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
 volumes:
   core-run:
+  logd-run:
+  logd-data:

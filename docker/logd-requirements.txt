@@ -1,0 +1,3 @@
+# What the collector needs, and nothing else: no numpy, no audio, no web framework.
+# src/contracts uses pydantic. pyproject gets it today through FastAPI.
+pydantic>=2

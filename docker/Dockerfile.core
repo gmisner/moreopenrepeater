@@ -28,8 +28,8 @@ RUN groupadd --system --gid 999 moreopenrepeater \
     && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
        --shell /usr/sbin/nologin moreopenrepeater \
     && usermod -aG audio moreopenrepeater \
-    && mkdir -p /data /run/moreopenrepeater \
-    && chown 999:999 /data /run/moreopenrepeater \
+    && mkdir -p /data /run/moreopenrepeater /run/logd \
+    && chown 999:999 /data /run/moreopenrepeater /run/logd \
     && chmod 750 /run/moreopenrepeater
 
 COPY docker/core-requirements.txt /tmp/core-requirements.txt

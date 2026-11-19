@@ -441,9 +441,8 @@ class RemoteCore:
             attempt += 1
 
     async def _follow(self) -> None:
-        transport = httpx.AsyncHTTPTransport(uds=str(self.socket_path))
         timeout = httpx.Timeout(CONNECT_TIMEOUT_SECONDS, read=None)
-        async with httpx.AsyncClient(transport=transport, base_url="http://core", timeout=timeout) as client:
+        async with self._socket_client(timeout) as client:
             handles = ",".join(sorted(self._macro_handlers))
             async with client.stream("GET", "/events" + (f"?handles={handles}" if handles else "")) as response:
                 if response.status_code != 200:
@@ -526,8 +525,13 @@ class RemoteCore:
     # -- the configuration ---------------------------------------------------------------------
 
     def _client(self) -> httpx.AsyncClient:
-        transport = httpx.AsyncHTTPTransport(uds=str(self.socket_path))
-        timeout = httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS)
+        return self._socket_client(httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS))
+
+    def _socket_client(self, timeout: httpx.Timeout) -> httpx.AsyncClient:
+        """A client for the core's socket. It is plain HTTP over a Unix socket, so `verify=False`: httpx
+        otherwise builds a TLS context for every client, loading and parsing the whole certificate
+        bundle, which on a Pi was a sixth of the API's Python time (a client is made per request)."""
+        transport = httpx.AsyncHTTPTransport(uds=str(self.socket_path), verify=False)
         return httpx.AsyncClient(transport=transport, base_url="http://core", timeout=timeout)
 
     def _refresh_config(self) -> None:

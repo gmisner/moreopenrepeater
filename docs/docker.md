@@ -80,9 +80,8 @@ echo MOR_DATA_DIR=/srv/mor-data >> .env
   the `gpio` group number differs, so it is `MOR_GPIO_GID`. GPIO pins are not
   mapped yet: add `/dev/gpiochip0` under `devices:` if you use them.
 - Writes only to `/data` and the control socket volume.
-- Uses **host networking** for now. The link audio paths (AudioSocket on
-  `127.0.0.1:9092`, USRP) go over loopback to a host Asterisk. This goes away when
-  AllStar is its own container.
+- Lives on the private `services` network, not the host's (see **The private network**). Nothing is published
+  from the core. The old host-network layout is `compose.host-network.yaml`.
 
 ## Logs
 
@@ -323,10 +322,44 @@ one over and over, which was about 3,000 log lines in 30 seconds on a test conta
 SD card. The container is read-only, runs as user 999 with every capability dropped, and uses about 46 MB and 0.5%
 of a CPU when idle.
 
-**Not done yet.** The core and the API are still on the host's network, so they do not reach this container; moving
-them onto the `services` network (off `network_mode: host`) is the next step, and then importing an existing node's
-configuration into the volume. DMR is its own container after that, and nets stay in the API. Asterisk's own log
-lines go to Docker's log (they are not structured events yet).
+**Not done yet.** Importing an existing node's configuration into the volume. DMR is its own container after that,
+and nets stay in the API. Asterisk's own log lines go to Docker's log (they are not structured events yet).
+
+## The private network
+
+The core and the API are on the private `services` network (default `172.28.0.0/24`, `MOR_SERVICES_SUBNET`) with the
+AllStar node, not on the host's network. They used the host's network only so a host Asterisk could reach the core on the
+loopback, and a service that relies on the host's loopback relies on the host. Now:
+
+- **Nothing is published from the core.** The dashboard is published on the host's **loopback**
+  (`127.0.0.1:8000`, `MOR_API_HOST` and `MOR_API_PORT` in `.env`), as before: with no accounts set up it is open and can key
+  the transmitter, so it is not offered to the network until you choose to (`MOR_API_HOST=0.0.0.0`, after creating an
+  account). A Tailscale Serve or a reverse proxy on the host still points at `127.0.0.1:8000`. Inside its container the
+  API listens on `0.0.0.0:8000`; what the host can reach is only the published port.
+- **Fixed addresses, not names**, for the core (`MOR_CORE_IP`, `172.28.0.10`) and the node (`MOR_ALLSTAR_IP`, `172.28.0.20`),
+  because Asterisk's USRP channel and its AudioSocket dialplan take an IP and the core only accepts radio audio from the
+  node's address (anything that arrives on that port is transmitted). Keep them inside `MOR_SERVICES_SUBNET`. The core
+  listens for the node's audio on `0.0.0.0:34001` and for autopatch calls on `0.0.0.0:9092`, which are reachable only from
+  the services network and published nowhere. Anything else on that network could connect to the AudioSocket port, which
+  has no login, so the network holds only containers you run.
+- **The node is found by name for management**: `MOREOPENREPEATER_AMI_HOST=allstar` in `core.env` and `api.env`, with the
+  secret from `allstar.env`, and `MOREOPENREPEATER_USRP_NODE=172.28.0.20:32001` in `core.env` turns the radio's audio
+  to and from AllStar on. Compose sets none of these, so a bench with no node is unchanged.
+- **The way back:** `docker compose -f compose.yaml -f compose.host-network.yaml up -d` puts the core and the API back
+  on the host's network with the loopback addresses, for a site that still has an Asterisk or a DMR bridge on the host.
+  DMR is not a container yet, so with the private network its audio path (a USRP pair on the host's loopback) is not
+  reachable: use the override if you run DMR.
+- **Measured on a Pi 3B+** (a separate compose project with a copy of the data, while the live stack was stopped): all
+  three services healthy in 32 seconds with the dashboard on the host's loopback and refused on the LAN address; the
+  API's link service logged in to a real app_rpt at `allstar:5038` and the core took its picture; a USRP voice packet from
+  the node's address (`172.28.0.20`) keyed the repeater and the hardware PTT was applied and released, while the
+  identical packet from the API container (`172.28.0.2`) was ignored, as the source-address rule intends; the core
+  listens on `0.0.0.0:34001` and `0.0.0.0:9092` inside its own network and is published nowhere; autopatch's AudioSocket port
+  answered from the node's container; and after a restart the core found the PTT device again through its stable name and
+  the link service resent its picture. Bridge networking adds a NAT hop to 50 USRP packets a second and the
+  dashboard, which did not show up in the audio engine's health. **The AIOC dropped off USB right after each keying**
+  (the hub's "EMI?" line, then the watchdog's restart), on this layout and on the host layout alike: it is the USB
+  problem described under **Health and restarts**, not the network.
 
 ## Health and restarts
 

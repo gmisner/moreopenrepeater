@@ -36,7 +36,7 @@ def test_only_iax_is_published_and_the_management_interface_never_is():
 
 
 def test_it_lives_on_the_services_network_which_has_a_configurable_subnet():
-    assert SERVICE["networks"] == ["services"]
+    assert list(SERVICE["networks"]) == ["services"]
     subnet = COMPOSE["networks"]["services"]["ipam"]["config"][0]["subnet"]
     assert subnet == "${MOR_SERVICES_SUBNET:-172.28.0.0/24}"
     assert SERVICE["environment"]["MOR_AMI_PERMIT"] == subnet  # the management interface answers exactly that network
@@ -89,13 +89,6 @@ def test_the_entrypoint_is_copied_into_the_image_and_allowed_by_the_build_contex
     assert "COPY docker/allstar-entrypoint.sh" in DOCKERFILE
     allowed = {line[1:] for line in (DOCKER.parent / ".dockerignore").read_text().splitlines() if line.startswith("!")}
     assert "docker/allstar-entrypoint.sh" in allowed
-
-
-def test_the_other_services_are_not_changed_by_this():
-    """Moving the core and the API onto the services network is a separate step with its own risk (the audio paths)."""
-    for name in ("core", "api"):
-        assert COMPOSE["services"][name].get("network_mode") == "host"
-        assert "networks" not in COMPOSE["services"][name]
 
 
 def test_the_settings_files_that_hold_secrets_cannot_be_committed_by_accident():

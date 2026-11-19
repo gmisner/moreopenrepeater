@@ -1,0 +1,29 @@
+# The old layout: the core and the API on the host's network (docs/docker.md, The private network).
+#
+#   docker compose -f compose.yaml -f compose.host-network.yaml up -d
+#
+# For an install that still has an Asterisk or a DMR bridge on the host, which the core reaches on 127.0.0.1, until
+# those are containers. It is the layout before the private network, and the way back if the private one does not
+# suit a site. Set the loopback addresses in core.env as docs/allstar.md describes (MOREOPENREPEATER_USRP_NODE and so
+# on); the container-network addresses this replaces are only reachable from inside it.
+services:
+  core:
+    network_mode: host
+    networks: !reset []
+    environment:
+      MOREOPENREPEATER_USRP_LISTEN: 127.0.0.1:34001
+      MOREOPENREPEATER_USRP_ADDRESS: 127.0.0.1
+      MOREOPENREPEATER_AUDIOSOCKET_LISTEN: 127.0.0.1:9092
+      MOREOPENREPEATER_AUDIOSOCKET_ADDRESS: 127.0.0.1:9092
+
+  api:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    environment:
+      MOREOPENREPEATER_HOST: ${MOR_API_HOST:-127.0.0.1}
+      MOREOPENREPEATER_PORT: ${MOR_API_PORT:-8000}
+      MOREOPENREPEATER_USRP_LISTEN: 127.0.0.1:34001
+      MOREOPENREPEATER_USRP_ADDRESS: 127.0.0.1
+      MOREOPENREPEATER_AUDIOSOCKET_LISTEN: 127.0.0.1:9092
+      MOREOPENREPEATER_AUDIOSOCKET_ADDRESS: 127.0.0.1:9092

@@ -189,6 +189,14 @@ keeps its readable text line in the log file exactly as before:
 | `config.refused` | warning | `error_code` says why (`config.unsafe`, `config.unknown_setting`, `config.wrong_type`, `config.conflict`) |
 | `config.failed` | error | `exception`; `error_code` `config.apply_failed` |
 | `speech.accepted` | info | `topic`: the core took a `speak.request` |
+| `weather.scheduled_due` | info | none: the routine weather announcement came due |
+| `weather.alert_announced` | info | `alert` (the kind, such as Flood Watch), `alert_id` |
+| `weather.announce_failed` | error | `kind` (`scheduled` or `alert`), `exception`; `error_code` `weather.announce`. Never the text of the alert |
+| `weather.check_failed`, `weather.zone_failed` | warning | `exception` (and `zone`); `error_code` `weather.fetch` |
+| `aprs.beacon_sent`, `aprs.beacon_failed` | info, error | `server`, `port` (and `exception` when it failed) |
+| `link.connected`, `link.connection_lost`, `link.drop_failed` | info, error, warning | `host`, `port`, `node`; `retry_s` and `exception` when it was lost. Never the AMI password |
+| `autopatch.dial_requested` | info | none: a DTMF command asked for a call, not which number |
+| `<area>.loop_failed` | error | a background loop hit something unexpected and carried on. `area` is `weather`, `link`, `mailbox`, `transcripts`, `net`, `updates`, `alerts` or `sensors`; `exception` is the type; `error_code` is `<area>.unexpected` |
 | `autopatch.call_started`, `.call_connected`, `.call_ended` | info | `direction` (`outgoing`/`incoming`); `via` (`DTMF` or `dashboard`) when started; `result` and `talk_s` when ended |
 | `autopatch.call_refused` | info | `direction`, `via` or `reason`; the words say why (not allowed, busy, off, wrong access code) |
 | `autopatch.call_failed` | error | `direction`, `exception`; `error_code` `autopatch.call` |

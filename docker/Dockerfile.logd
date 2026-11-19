@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+#
+# logd, the log collector: events in as datagrams on a Unix socket, searches out on another (docs/docker.md,
+# Logs). No network, no devices, no audio. If it is down the radio carries on and its senders count what they drop.
+#
+# Same pinned base as the core and the API (ADR 0005).
+FROM python:3.13-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# uid 999 like the core and the API, so the sockets in the shared volume are readable by them. The directories
+# are created here so a named volume mounted on them starts out owned by 999.
+RUN groupadd --system --gid 999 moreopenrepeater \
+    && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
+       --shell /usr/sbin/nologin moreopenrepeater \
+    && mkdir -p /var/lib/logd /run/logd \
+    && chown 999:999 /var/lib/logd /run/logd \
+    && chmod 750 /run/logd
+
+COPY docker/logd-requirements.txt /tmp/logd-requirements.txt
+RUN pip install -r /tmp/logd-requirements.txt
+
+COPY pyproject.toml /app/pyproject.toml
+COPY src /app/src
+# --no-deps: the requirements above are all it needs.
+RUN pip install --no-deps /app && rm -rf /app
+
+ENV MOREOPENREPEATER_LOGD_SOCKET=/run/logd/events.sock \
+    MOREOPENREPEATER_LOGD_QUERY_SOCKET=/run/logd/query.sock \
+    MOREOPENREPEATER_LOGD_DIR=/var/lib/logd
+
+USER 999:999
+WORKDIR /var/lib/logd
+VOLUME ["/var/lib/logd", "/run/logd"]
+
+# Every minute is plenty: a check starts a Python process, which is not free on a Pi.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD ["python", "-m", "logd.healthcheck"]
+
+ENTRYPOINT ["moreopenrepeater-logd"]

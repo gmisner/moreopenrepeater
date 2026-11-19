@@ -223,3 +223,42 @@ def test_shutdown_unkeys_even_when_stopping_the_stream_fails():
     assert writes == [True, False, False]
     assert not engine.transmitting
     assert engine.ptt_error is None
+
+
+def test_the_hardware_keying_is_logged_as_applied_once_per_change_inside_the_cycle(structured_events):
+    from observability import begin_cycle
+
+    cycle = begin_cycle()
+    engine, _, ptt, _ = make_engine()
+    engine.processor.play(np.full(BLOCK, 0.1, dtype=np.float32))
+    engine.process_one(np.zeros(BLOCK, dtype=np.float32))
+    engine.process_one(np.zeros(BLOCK, dtype=np.float32))
+    applied = structured_events.named("ptt.applied")
+    assert ptt == [True, False] and [e.context["active"] for e in applied] == [True, False]
+    assert all(e.correlation_id == cycle for e in applied)
+    engine.confirm_ptt_idle()  # already idle: the output is rewritten, but nothing changed, so nothing is reported
+    assert len(structured_events.named("ptt.applied")) == 2
+
+
+def test_a_failed_key_is_logged_once_per_distinct_failure_with_a_code(structured_events):
+    def ptt(active):
+        if active:
+            raise OSError("key write failed")
+
+    engine, _, _, _ = make_engine(ptt_output=ptt)
+    for _ in range(3):
+        engine.processor.play(np.full(BLOCK, 0.1, dtype=np.float32))
+        engine.process_one(np.zeros(BLOCK, dtype=np.float32))
+    failed = structured_events.named("ptt.failed")
+    assert len(failed) == 1 and failed[0].error_code == "ptt.hardware" and failed[0].context == {"action": "key"}
+    assert "key write failed" in failed[0].message and failed[0].severity.name == "ERROR"
+    assert structured_events.named("ptt.applied") == []  # nothing was keyed, so nothing is reported as applied
+
+
+def test_starting_and_stopping_the_engine_are_named_events(structured_events):
+    engine, _, _, _ = make_engine(input_device="BlackHole 2ch", output_device="Speakers")
+    engine.start()
+    engine.stop()
+    started = structured_events.named("audio.engine_started")[0]
+    assert "BlackHole 2ch" in started.message and started.context["processing_rate_hz"] > 0
+    assert structured_events.named("audio.engine_stopped")

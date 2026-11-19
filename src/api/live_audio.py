@@ -40,6 +40,7 @@ from audio_io.processor import AudioProcessor, ProcessorSettings
 from audio_io.serial_lines import open_serial_line
 from controller.events import COSChanged, CTCSSChanged
 from controller.state_machine import RepeaterConfig
+from observability import log_event
 from playout.renderer import RECORDING_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
@@ -483,15 +484,20 @@ class LiveAudio:
         )
         what, why = GLITCH_LABELS[counter]
         described = f"{count} {what}{'s' if count > 1 else ''}{' ' + why if why else ''}"
-        _logger.info(
-            "audio glitch: %s, %s (state %s)",
-            described, "while transmitting" if transmitting else "not transmitting", state,
+        log_event(
+            _logger, logging.INFO, "audio.glitch",
+            f"audio glitch: {described}, {'while transmitting' if transmitting else 'not transmitting'} (state {state})",
+            counter=counter, count=count, state=state, transmitting=transmitting, facts_in_text=False,
         )
 
     def _record_opening(self, opening: ReceiverOpening) -> None:
         entry = {**dataclasses.asdict(opening), "started_at": self._clock() - opening.duration}
         self.openings.append(entry)
-        _receiver_logger.info("receiver opened: %s", describe_opening(opening))
+        log_event(
+            _receiver_logger, logging.INFO, "receiver.opened", f"receiver opened: {describe_opening(opening)}",
+            duration_s=round(opening.duration, 2), open_dbfs=round(opening.open_db, 1), peak_dbfs=round(opening.peak_db, 1),
+            ctcss_hz=opening.ctcss_hz, after_tx_s=opening.after_tx, facts_in_text=False,
+        )
 
     def _on_stream_dead(self, generation: int) -> None:
         """PortAudio stream went inactive (USB audio drop). Restart on the loop thread."""

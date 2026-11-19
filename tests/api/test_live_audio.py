@@ -565,6 +565,25 @@ def test_each_receiver_opening_is_logged_and_listed_newest_first(caplog):
     assert [round(o["strongest_hz"], -1) for o in listed] == [700, 1000]
 
 
+def test_a_glitch_and_an_opening_are_named_events_with_their_facts_and_no_dtmf(structured_events):
+    from observability import begin_cycle
+
+    cycle = begin_cycle()
+    live, service, clock, _engines = make_live()
+    live._clock = lambda: clock["now"]
+    live.engine._stream.starved_output_blocks = 2
+    live.engine.check_glitches()
+    glitch = structured_events.named("audio.glitch")[0]
+    assert glitch.context == {"counter": "starved_output_blocks", "count": 2, "state": "idle", "transmitting": False}
+    assert glitch.message.startswith("audio glitch: 2 transmit blocks") and glitch.correlation_id == cycle
+
+    feed(live.engine, tone(blocks=25, hz=1000.0))
+    feed(live.engine, tone(level=0.0, blocks=10))
+    opened = structured_events.named("receiver.opened")[0]
+    assert set(opened.context) == {"duration_s", "open_dbfs", "peak_dbfs", "ctcss_hz", "after_tx_s"}  # never the digits
+    assert opened.context["duration_s"] > 0 and "1000 Hz" in opened.message
+
+
 def test_audio_glitches_are_logged_with_what_the_repeater_was_doing(caplog):
     live, service, clock, _engines = make_live()
     live._clock = lambda: clock["now"]

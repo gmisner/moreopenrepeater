@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import re
+import threading
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -29,6 +30,8 @@ _NAME = re.compile(CODE_PATTERN)
 _ID = re.compile(ID_PATTERN)
 
 _correlation: ContextVar[Optional[str]] = ContextVar("mor_correlation_id", default=None)
+_cycle_lock = threading.Lock()
+_cycle: Optional[str] = None  # the activity cycle in progress in this process, if any
 
 
 @dataclass
@@ -76,7 +79,8 @@ def snapshot(record: logging.LogRecord) -> RecordSnapshot:
     exception = record.exc_info[0].__name__ if record.exc_info and record.exc_info[0] else None
     return RecordSnapshot(
         created=record.created, levelno=record.levelno, name=record.name, message=message,
-        structured=getattr(record, EXTRA_KEY, None), exception=exception, correlation_id=_correlation.get(),
+        structured=getattr(record, EXTRA_KEY, None), exception=exception,
+        correlation_id=_correlation.get() or _cycle,
     )
 
 
@@ -139,11 +143,14 @@ def log_event(
     *,
     error_code: Optional[str] = None,
     correlation_id: Optional[str] = None,
+    facts_in_text: bool = True,
     **context: Any,
 ) -> None:
     """Log a named event with facts. `event` is a stable dotted lowercase name (`audio.glitch`); put what
     varies in `context`, not in the name or the message, so events can be counted and filtered. Context is
-    redacted when the event is built, and the text line written to the log file shows only the redacted form."""
+    redacted when the event is built, and the text line written to the log file shows only the redacted form.
+    `facts_in_text=False` keeps the text line to the message alone, for a message that already says it all
+    in words (the event still carries the facts)."""
     level = int(severity)
     if not logger.isEnabledFor(level):
         return
@@ -154,7 +161,7 @@ def log_event(
         context, correlation_id = {**context, "correlation_id": str(correlation_id)[:64]}, None
     shown = redact(context)
     text = message or event
-    if shown:
+    if shown and facts_in_text:
         text += " " + " ".join(f"{key}={value}" for key, value in shown.items())
     logger.log(
         level, "%s", text[:MAX_MESSAGE * 2], stacklevel=2,
@@ -163,6 +170,28 @@ def log_event(
             "correlation_id": correlation_id, "context": context,
         }},
     )
+
+
+def begin_cycle() -> str:
+    """Start an activity cycle (the repeater leaving idle) and return its id. Until `end_cycle`, every event
+    logged by any thread of this process carries it, so one transmission can be followed from the controller
+    to the audio thread. A cycle that is still open is replaced: a missed `end_cycle` must not stick."""
+    global _cycle
+    from contracts import new_id
+
+    with _cycle_lock:
+        _cycle = new_id()
+        return _cycle
+
+
+def end_cycle() -> None:
+    global _cycle
+    with _cycle_lock:
+        _cycle = None
+
+
+def current_cycle() -> Optional[str]:
+    return _cycle
 
 
 @contextlib.contextmanager

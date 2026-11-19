@@ -1,7 +1,6 @@
 """The on-disk file of errors for installs that keep the history in memory (#221, #229)."""
 import asyncio
 import json
-import os
 import shutil
 import socket
 import tempfile

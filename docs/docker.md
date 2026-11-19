@@ -23,7 +23,7 @@ be set up as one, the transmitter must be on, the number must be allowed), and i
 in its own words (a 409). **The SIP trunk is the API's own**: it is set up over Asterisk's AMI, a
 network call, so it works from the API container. Give the API the same `MOREOPENREPEATER_AMI_*`
 settings the core has (see `docker/api.env.example`); without them the page says it is not
-configured. The rest does not yet: selecting a DMR talkgroup, the AllStar node and DMR setup (they
+configured. **AllStar linking works**: the API runs the link service (the AMI connection to app_rpt), which tells the core who is linked and keying and carries a macro's link commands back (see `core-only.md`). The rest does not yet: selecting a DMR talkgroup, the AllStar node and DMR setup (they
 edit the host's Asterisk and DMR files), and any audio tool that needs the sound card itself still answers 503
 `core.hardware`; listening and the record and score tool work (see Listening below). The weather
 macro (a caller dialling for the weather) is worded by the API, which does the NWS polling, and said by
@@ -196,6 +196,8 @@ keeps its readable text line in the log file exactly as before:
 | `weather.announce_failed` | error | `kind` (`scheduled` or `alert`), `exception`; `error_code` `weather.announce`. Never the text of the alert |
 | `weather.check_failed`, `weather.zone_failed` | warning | `exception` (and `zone`); `error_code` `weather.fetch` |
 | `aprs.beacon_sent`, `aprs.beacon_failed` | info, error | `server`, `port` (and `exception` when it failed) |
+| `link.synced` | info | `nodes`, `keyed`: the core's picture of the links was set from the link service (it connected to app_rpt, lost it, or the core restarted). Never node names |
+| `link.command_dropped` | warning | a macro's link command had no link service to go to; `error_code` `link.no_service` (core) or `link.not_connected` (no connection to app_rpt) |
 | `link.connected`, `link.connection_lost`, `link.drop_failed` | info, error, warning | `host`, `port`, `node`; `retry_s` and `exception` when it was lost. Never the AMI password |
 | `autopatch.dial_requested` | info | none: a DTMF command asked for a call, not which number |
 | `<area>.loop_failed` | error | a background loop hit something unexpected and carried on. `area` is `weather`, `link`, `mailbox`, `transcripts`, `net`, `updates`, `alerts` or `sensors`; `exception` is the type; `error_code` is `<area>.unexpected` |

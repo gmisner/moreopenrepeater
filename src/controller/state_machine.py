@@ -312,6 +312,11 @@ class RepeaterController:
             return self._on_cos_changed(True, now)
         return []
 
+    @property
+    def remote_keyed_nodes(self) -> frozenset:
+        """The linked nodes that are transmitting to us right now."""
+        return frozenset(self._remote_keyed)
+
     def quiet_for(self, now: float) -> float:
         return 0.0 if self._quiet_since is None else now - self._quiet_since
 

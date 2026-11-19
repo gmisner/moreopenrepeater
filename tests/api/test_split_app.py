@@ -530,19 +530,116 @@ def test_too_many_held_announcements_drop_the_oldest_not_the_process(split, monk
     assert 0 < len(said) <= 20 and said[-1] == "tts:59"
 
 
-def test_the_link_loop_is_not_started_against_a_remote_core_and_the_api_says_so(core, sock_dir, monkeypatch, caplog):
-    import asyncio
-    import logging
+class FakeAMI:
+    """app_rpt's side, scripted from the test: `say(...)` is what it reports next (the string "drop" breaks the
+    connection), `sent` is what it was asked to do, and `links_now` is what `rpt xnode` answers."""
 
+    def __init__(self):
+        import collections
+
+        self._pending = collections.deque()  # filled by the test's thread, read by the API's loop
+        self.sent = []
+        self.links_now = {}
+        self.connections = 0
+
+    def say(self, *items):
+        self._pending.extend(items)
+
+    def client_class(self):
+        outer = self
+
+        class Client:
+            def __init__(self, *args, **kwargs):
+                self.local_node_id = args[4] if len(args) > 4 else ""
+
+            async def connect(self):
+                outer.connections += 1
+
+            async def close(self):
+                pass
+
+            async def links(self):
+                return {node: ("transceive", keyed) for node, keyed in outer.links_now.items()}
+
+            def remember_links(self, links):
+                pass
+
+            async def send_macro_command(self, node_id, command):
+                outer.sent.append((node_id, command))
+
+            async def events(self):
+                while True:
+                    if outer._pending:
+                        item = outer._pending.popleft()
+                        if item == "drop":
+                            raise ConnectionError("app_rpt went away")
+                        yield item
+                    else:
+                        await asyncio.sleep(0.01)
+
+        return Client
+
+
+@pytest.fixture
+def ami(monkeypatch):
+    from api import link_bridge
+
+    fake = FakeAMI()
+    monkeypatch.setattr(link_bridge, "NodeLinkClient", fake.client_class())
+    monkeypatch.setattr(link_bridge, "RECONNECT_DELAY_SECONDS", 0.05)
     monkeypatch.setenv("MOREOPENREPEATER_AMI_HOST", "127.0.0.1")  # AMI is set on the API, as the SIP trunk needs
-    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("MOREOPENREPEATER_AMI_NODE", "41521")
+    return fake
+
+
+def test_an_allstar_node_keying_is_heard_by_a_core_in_another_process(core, sock_dir, ami):
+    """The link service runs in the API and the controller is in the core: a linked node connecting and keying
+    reaches the controller over the control socket, and its dropping the connection clears it again."""
+    from controller.events import LinkStateChanged, RemoteKeyed
+
+    ami.links_now = {"41520": False}  # linked when we connect
     with CoreThread(core, sock_dir / "core.sock"):
         client, remote = split_client(sock_dir / "core.sock")
         with client:
             wait_for(lambda: remote.connected)
-            names = client.portal.call(lambda: [getattr(t.get_coro(), "__qualname__", repr(t.get_coro())) for t in asyncio.all_tasks()])
-    assert not any("node_link_loop" in name for name in names)
-    assert "AllStar linking is not available" in caplog.text
+            wait_for(lambda: core.service.links.nodes == {"41520"})  # the picture at connect
+            ami.say(RemoteKeyed(node_id="41520", keyed=True))
+            wait_for(lambda: core.service.controller.remote_keyed_nodes == {"41520"})
+            assert core.service.controller.state == "receiving"
+            ami.say(LinkStateChanged(node_id="53127", linked=True))
+            wait_for(lambda: core.service.links.nodes == {"41520", "53127"})
+            ami.say("drop")  # app_rpt vanishes while 41520 is keyed
+            wait_for(lambda: not core.service.controller.remote_keyed_nodes)  # it cannot stay "receiving"
+            wait_for(lambda: core.service.links.nodes == set())
+            assert core.service.controller.state != "receiving"
+            wait_for(lambda: ami.connections >= 2)  # and the link service tries again
+
+
+def test_a_macros_link_command_reaches_app_rpt_from_the_core_in_another_process(core, sock_dir, ami):
+    from controller.events import SendLinkCommand
+
+    with CoreThread(core, sock_dir / "core.sock") as thread:
+        client, remote = split_client(sock_dir / "core.sock")
+        with client:
+            wait_for(lambda: remote.connected and ami.connections >= 1)
+            wait_for(lambda: thread.server._macro_clients and any("link" in h for h, _ in thread.server._macro_clients))
+            thread.loop.call_soon_threadsafe(
+                lambda: core.service._apply_commands([SendLinkCommand(node_id="41520", command="*3")])
+            )
+            wait_for(lambda: ami.sent == [("41520", "*3")])
+
+
+def test_a_link_command_with_no_link_service_connected_is_dropped_and_said_so(core, sock_dir, structured_events):
+    from controller.events import SendLinkCommand
+
+    with CoreThread(core, sock_dir / "core.sock") as thread:
+        thread.loop.call_soon_threadsafe(
+            lambda: core.service._apply_commands([SendLinkCommand(node_id="41520", command="*3")])
+        )
+        wait_for(lambda: structured_events.named("link.command_dropped"))
+    dropped = structured_events.named("link.command_dropped")[0]
+    assert dropped.severity == 30 and dropped.error_code == "link.no_service"
+    assert "41520" not in dropped.model_dump_json()  # which node is not in the log
 
 
 def test_a_caller_leaves_a_mailbox_message_through_the_core(core, sock_dir, tmp_path, monkeypatch):

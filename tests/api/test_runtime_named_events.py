@@ -6,6 +6,7 @@ import pytest
 from fastapi import FastAPI
 from test_weather_routes import LOCATED, FakeNWS, make_client
 
+from api import link_bridge as link_bridge_module
 from api import runtime as runtime_module
 from api.runtime import RuntimeBuilder, _loop_failed
 from controller.events import DialPatch
@@ -202,13 +203,19 @@ class FakeLinkClient:
         return
         yield  # an empty stream: the connection ends at once
 
+    async def links(self):
+        return {}
+
+    def remember_links(self, links):
+        pass
+
     async def close(self):
         pass
 
 
 def test_the_allstar_link_connecting_is_an_event_without_the_password(monkeypatch, structured_events):
-    monkeypatch.setattr(runtime_module, "NodeLinkClient", FakeLinkClient)
-    monkeypatch.setattr(runtime_module, "LINK_RECONNECT_DELAY_SECONDS", 0.05)
+    monkeypatch.setattr(link_bridge_module, "NodeLinkClient", FakeLinkClient)
+    monkeypatch.setattr(link_bridge_module, "RECONNECT_DELAY_SECONDS", 0.05)
     serve(make_runtime(link_settings=AMI))
     connected = structured_events.named("link.connected")[0]
     assert connected.context == {"host": "10.1.2.3", "port": 5038, "node": "41520"} and connected.severity == 20
@@ -219,8 +226,8 @@ def test_the_allstar_link_failing_is_an_error_and_says_when_it_will_try_again(mo
     class Failing(FakeLinkClient):
         fail = True
 
-    monkeypatch.setattr(runtime_module, "NodeLinkClient", Failing)
-    monkeypatch.setattr(runtime_module, "LINK_RECONNECT_DELAY_SECONDS", 0.05)
+    monkeypatch.setattr(link_bridge_module, "NodeLinkClient", Failing)
+    monkeypatch.setattr(link_bridge_module, "RECONNECT_DELAY_SECONDS", 0.05)
     serve(make_runtime(link_settings=AMI))
     lost = structured_events.named("link.connection_lost")[0]
     assert lost.severity == 40 and lost.error_code == "link.ami_connection"

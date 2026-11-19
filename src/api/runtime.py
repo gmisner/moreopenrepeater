@@ -21,11 +21,10 @@ from starlette.requests import HTTPConnection
 from starlette.routing import Route
 
 from audio_io.serial_lines import find_serial_ports
-from controller.events import LinkStateChanged, SendLinkCommand
+from controller.events import SendLinkCommand
 from controller.state_machine import RepeaterConfig
 from link.aprs_client import APRSClient, format_frequency_comment, format_position_report, format_status_report
 from link.asterisk_files import asterisk_files_from_env
-from link.node_link import NodeLinkClient
 from observability import log_event
 from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError, detect_tts
@@ -65,6 +64,7 @@ from .homeassistant import HomeAssistant
 from .hub import HubPoller, HubSiteStore
 from .link_radio import LinkRadio
 from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkScheduler
+from .link_bridge import LinkBridge
 from .links import LinkControl, LinkError
 from .audio_devices import list_audio_devices, set_cache_path
 from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env
@@ -901,44 +901,25 @@ class AppRuntime:
         account_dependencies = [*admin_dependencies, Depends(require_person)]
         transmit_dependencies = [Depends(require_auth), Depends(require_transmit_allowed)]
 
-        async def node_link_loop() -> None:
-            assert link_settings is not None
-            while True:
-                node_id = link_settings.local_node_id or allstar_node.node or ""
-                client = NodeLinkClient(
-                    link_settings.host,
-                    link_settings.port,
-                    link_settings.username,
-                    link_settings.secret,
-                    node_id,
-                )
-                try:
-                    await client.connect()
-                    log_event(
-                        _link_logger, logging.INFO, "link.connected",
-                        f"connected to app_rpt AMI at {link_settings.host}:{link_settings.port} (node {node_id or 'not chosen yet'})",
-                        host=link_settings.host, port=link_settings.port, node=node_id or None, facts_in_text=False,
-                    )
+        link_bridge: Optional[LinkBridge] = None
+        if link_settings is not None:
+            link_bridge = LinkBridge(
+                service,
+                link_settings,
+                node=lambda: allstar_node.node or "",
+                on_client=lambda client: setattr(links, "client", client),
+                on_linked=drop_links,
+            )
+            if getattr(service, "is_remote", False):
+                # The core is in its own process: it sends a macro's link command here, and only if we say we handle it.
+                service.register_macro_handler("link", link_bridge.command)
+            else:
+                def link_sink(command: SendLinkCommand) -> None:
+                    pending = link_bridge.command(command.node_id, command.command)
+                    if pending is not None:
+                        asyncio.create_task(pending)
 
-                    def sink(command: SendLinkCommand, _client: NodeLinkClient = client) -> None:
-                        asyncio.create_task(_client.send_macro_command(command.node_id, command.command))
-
-                    service.set_link_command_sink(sink)
-                    links.client = client
-                    async for event in client.events():
-                        service.handle_link_event(event)
-                        if isinstance(event, LinkStateChanged) and event.linked and service.held_reason("links"):
-                            asyncio.create_task(drop_links(event.node_id))  # a node linked to us from outside
-                except (OSError, ConnectionError):
-                    log_event(
-                        _link_logger, logging.ERROR, "link.connection_lost",
-                        f"app_rpt AMI connection lost; reconnecting in {LINK_RECONNECT_DELAY_SECONDS}s",
-                        error_code="link.ami_connection", retry_s=LINK_RECONNECT_DELAY_SECONDS, exc_info=True, facts_in_text=False,
-                    )
-                finally:
-                    links.client = None
-                    await client.close()
-                await asyncio.sleep(LINK_RECONNECT_DELAY_SECONDS)
+                service.set_link_command_sink(link_sink)
 
         async def link_schedule_loop() -> None:
             while True:
@@ -1213,14 +1194,8 @@ class AppRuntime:
                 tasks.append(asyncio.create_task(supervised(lambda: activity_flush_loop())))
                 core_runtime.start_long_id(tasks)
                 if link_settings is not None:
-                    if getattr(service, "is_remote", False):
-                        # The link client feeds the controller, which is in the core, and there is no way yet
-                        # to hand it the events. The AMI settings are still used for the SIP trunk.
-                        _link_logger.info(
-                            "AllStar linking is not available when the core runs apart from the API yet"
-                        )
-                    else:
-                        tasks.append(asyncio.create_task(supervised(lambda: node_link_loop())))
+                    assert link_bridge is not None
+                    tasks.append(asyncio.create_task(supervised(lambda: link_bridge.run())))
                     tasks.append(asyncio.create_task(supervised(lambda: node_directory.run())))
                     tasks.append(asyncio.create_task(supervised(lambda: link_schedule_loop())))
                 await core_runtime.start_audio_and_links(loop, tasks)

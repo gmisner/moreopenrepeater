@@ -98,3 +98,57 @@ def test_programming_commands_are_accepted(command, params):
 def test_malformed_programming_commands_are_refused(command, params):
     with pytest.raises(ValidationError):
         CoreCommand(header=header(), command=command, params=params)
+
+
+# -- the AllStar link service's commands -------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("event", ["connected", "disconnected", "keyed", "unkeyed"])
+def test_a_link_event_names_a_node_and_what_happened(event):
+    command = CoreCommand(header=header(), command="link_event", params={"node_id": "41520", "event": event})
+    assert command.command is CommandName.LINK_EVENT
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"node_id": "41520", "event": "exploded"},  # not one of the four
+        {"node_id": "41520"},  # what happened is required
+        {"event": "keyed"},
+        {"node_id": "../etc", "event": "keyed"},  # not a node name
+        {"node_id": "41520", "event": "keyed", "extra": 1},
+        {"node_id": 41520, "event": "keyed"},  # a number is not a node name
+        {"node_id": "41520", "event": None},
+    ],
+)
+def test_a_malformed_link_event_is_refused(params):
+    with pytest.raises(ValidationError):
+        CoreCommand(header=header(), command="link_event", params=params)
+
+
+def test_a_link_sync_carries_the_whole_picture():
+    assert CoreCommand(header=header(), command="link_sync", params={"nodes": {}}).params == {"nodes": {}}
+    command = CoreCommand(header=header(), command="link_sync", params={"nodes": {"41520": True, "53127": False}})
+    assert command.params["nodes"] == {"41520": True, "53127": False}
+
+
+@pytest.mark.parametrize(
+    "nodes",
+    [
+        {"41520": "yes"},  # keyed is a yes or no, not a word
+        {"41520": 1},
+        {"../etc": True},
+        {"": False},
+        {str(n): False for n in range(65)},  # more than a repeater can have linked
+        ["41520"],
+        None,
+        "41520",
+    ],
+)
+def test_a_malformed_link_sync_is_refused(nodes):
+    with pytest.raises(ValidationError):
+        CoreCommand(header=header(), command="link_sync", params={"nodes": nodes})
+
+
+def test_sixty_four_nodes_is_the_most_a_sync_takes():
+    CoreCommand(header=header(), command="link_sync", params={"nodes": {str(n): False for n in range(64)}})

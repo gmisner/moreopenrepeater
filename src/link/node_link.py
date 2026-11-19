@@ -87,6 +87,10 @@ class NodeLinkClient:
     def local_node_id(self, node_id: str) -> None:
         self._local_node_id = node_id
 
+    def remember_links(self, links: dict[str, bool]) -> None:
+        """The links as they are now, so the events that follow report only what changes from here."""
+        self._last_links = dict(links)
+
     async def send_macro_command(self, node_id: str, command: str) -> None:
         target = node_id or self._local_node_id
         await self._ami.send_action({"Action": "Command", "Command": f"rpt fun {target} {command}"})

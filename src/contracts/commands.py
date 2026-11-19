@@ -40,6 +40,8 @@ class CommandName(str, Enum):
     AUTOPATCH_DIAL = "autopatch_dial"
     AUTOPATCH_HANGUP = "autopatch_hangup"
     ARM_CAPTURE = "arm_capture"
+    LINK_EVENT = "link_event"
+    LINK_SYNC = "link_sync"
 
 
 #: The commands that make the controller act on an event that did not come from the radio.
@@ -60,6 +62,13 @@ HARDWARE = frozenset(
         CommandName.AUTOPATCH_HANGUP, CommandName.ARM_CAPTURE,
     }
 )
+
+#: What the AllStar link service tells the core about the network links: one thing that changed, or the whole
+#: current picture. They carry what app_rpt reported, never anything the core cannot check, and are applied
+#: even on a core that refuses the simulator (they are real events from a real node, not simulated ones).
+LINK = frozenset({CommandName.LINK_EVENT, CommandName.LINK_SYNC})
+LINK_EVENTS = ("connected", "disconnected", "keyed", "unkeyed")
+MAX_LINK_NODES = 64
 
 _DTMF = re.compile(r"^[0-9A-D*#]$")
 _NODE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
@@ -100,6 +109,12 @@ _PARAMS: dict[CommandName, dict[str, str]] = {
     # Record the next transmission instead of repeating it, for at most this many seconds. The core
     # hands the audio to the client that asked, as a file it names in a `capture` event.
     CommandName.ARM_CAPTURE: {"max_seconds": "seconds"},
+    # One link changed: a node connected or disconnected, or started or stopped transmitting to us.
+    CommandName.LINK_EVENT: {"node_id": "node", "event": "link_event"},
+    # Everything the link service knows right now, {node: keyed}. The core makes its picture match: a node
+    # it holds that is missing here is gone (and unkeyed), which also clears a node that was keyed when the
+    # connection to app_rpt was lost.
+    CommandName.LINK_SYNC: {"nodes": "link_nodes"},
 }
 
 
@@ -131,6 +146,13 @@ def _valid(kind: str, value: Any) -> bool:
         return isinstance(value, str) and bool(_PATTERN.match(value))
     if kind == "identifier":
         return isinstance(value, str) and bool(_IDENTIFIER.match(value))
+    if kind == "link_event":
+        return value in LINK_EVENTS
+    if kind == "link_nodes":
+        return (
+            isinstance(value, dict) and len(value) <= MAX_LINK_NODES
+            and all(isinstance(k, str) and bool(_NODE.match(k)) and isinstance(v, bool) for k, v in value.items())
+        )
     if kind == "object":
         return isinstance(value, dict) and len(value) <= MAX_OBJECT_KEYS and all(isinstance(k, str) for k in value)
     return False

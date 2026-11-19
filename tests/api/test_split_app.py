@@ -335,7 +335,7 @@ def test_the_link_loop_is_not_started_against_a_remote_core_and_the_api_says_so(
         client, remote = split_client(sock_dir / "core.sock")
         with client:
             wait_for(lambda: remote.connected)
-            names = client.portal.call(lambda: [t.get_coro().__qualname__ for t in asyncio.all_tasks()])
+            names = client.portal.call(lambda: [getattr(t.get_coro(), "__qualname__", repr(t.get_coro())) for t in asyncio.all_tasks()])
     assert not any("node_link_loop" in name for name in names)
     assert "AllStar linking is not available" in caplog.text
 

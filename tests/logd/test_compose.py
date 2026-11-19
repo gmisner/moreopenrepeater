@@ -122,3 +122,52 @@ def test_the_core_stops_itself_on_a_stall_and_is_restarted_because_docker_will_n
     core = SERVICES["core"]
     assert core["environment"]["MOREOPENREPEATER_EXIT_ON_STALL"] == "1"
     assert core["restart"] == "unless-stopped"  # an exit is what brings it back
+
+
+# -- the PTT device has a stable name ------------------------------------------------------------------------
+
+import re  # noqa: E402
+
+RULES = (DOCKER / "udev" / "61-moreopenrepeater-ptt.rules").read_text()
+RULE_LINES = [line for line in RULES.splitlines() if line.startswith("SUBSYSTEM==")]
+PTT_DEFAULT = "${MOR_PTT_HIDRAW:-/dev/moreopenrepeater-ptt}"
+
+
+def test_the_core_is_given_the_ptt_device_by_a_name_that_survives_a_renumbering():
+    """Found on the Pi on 2026-11-19: the AIOC re-enumerated as hidraw0, the container had been given hidraw1, and a
+    restart could not have helped because Docker will not start a container whose device path is missing."""
+    core = SERVICES["core"]
+    assert f"{PTT_DEFAULT}:{PTT_DEFAULT}" in core["devices"]
+    assert not [d for d in core["devices"] if re.search(r"/dev/hidraw\d", d)]  # no numbered node is the default
+    assert core["environment"]["MOREOPENREPEATER_CM108_HIDRAW"] == PTT_DEFAULT  # the same path the core opens
+
+
+def test_the_default_name_is_the_one_the_udev_rule_makes():
+    name = PTT_DEFAULT.split(":-")[1].rstrip("}")
+    assert name == "/dev/moreopenrepeater-ptt"
+    assert RULE_LINES and all(f'SYMLINK+="{name.removeprefix("/dev/")}"' in line for line in RULE_LINES)
+
+
+def test_the_udev_rule_covers_the_aioc_and_cm108_and_keeps_the_audio_group_permissions():
+    aioc = [line for line in RULE_LINES if 'idVendor}=="1209"' in line]
+    cm108 = [line for line in RULE_LINES if 'idVendor}=="0d8c"' in line]
+    assert len(aioc) == 1 and 'idProduct}=="7388"' in aioc[0]  # the AIOC is matched by product too: 1209 is a shared vendor id
+    assert len(cm108) == 1
+    for line in RULE_LINES:
+        assert line.startswith('SUBSYSTEM=="hidraw"') and 'GROUP="audio"' in line and 'MODE="0660"' in line
+
+
+def test_the_udev_rule_agrees_with_the_native_installs_permissions():
+    native = (DOCKER.parent / "packaging" / "99-cm108.rules").read_text()
+    for needle in ('idVendor}=="0d8c"', 'idVendor}=="1209"', 'idProduct}=="7388"', 'GROUP="audio"', 'MODE="0660"'):
+        assert needle in native and needle in RULES
+
+
+def test_no_link_radio_device_is_looked_for_because_none_is_given_to_the_container():
+    assert SERVICES["core"]["environment"]["MOREOPENREPEATER_LINK_CM108_HIDRAW"] == "off"
+
+
+def test_the_env_example_points_at_the_rule_not_at_a_numbered_node():
+    text = (DOCKER / ".env.example").read_text()
+    assert "61-moreopenrepeater-ptt.rules" in text
+    assert "# MOR_PTT_HIDRAW=/dev/hidraw0" in text  # an override, commented out: it is not the default

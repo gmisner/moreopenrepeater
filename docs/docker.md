@@ -74,7 +74,8 @@ echo MOR_DATA_DIR=/srv/mor-data >> .env
 - Runs as uid 999 (the uid of `install-pi.sh`'s `moreopenrepeater` user on a Pi), with a
   read-only root, no capabilities and `no-new-privileges`. Docker's default seccomp
   filter is off (see Measured on a Pi).
-- Gets `/dev/snd` and one `hidraw` node (`MOR_PTT_HIDRAW`, default `/dev/hidraw0`).
+- Gets `/dev/snd` and one `hidraw` node, by the name `/dev/moreopenrepeater-ptt` (see **A stable name for
+  the PTT device**; `MOR_PTT_HIDRAW` overrides it with a `/dev/hidrawN` path).
   The group numbers for `audio` and `dialout` are the same on Debian and Pi OS;
   the `gpio` group number differs, so it is `MOR_GPIO_GID`. GPIO pins are not
   mapped yet: add `/dev/gpiochip0` under `devices:` if you use them.
@@ -255,6 +256,30 @@ The API only opens files in a `captures` folder that are named `capture-` and si
 no API is there to take a recording the core deletes it, and the core clears any it finds left from
 before a restart. A caller is told straight away if the core is not running live audio.
 
+## A stable name for the PTT device
+
+`/dev/hidrawN` is numbered in the order USB devices are found, so it changes when the sound card drops off the
+bus and comes back (a loose cable, a keyboard re-enumerating, EMI from the transmitter) and sometimes at a
+reboot. Docker will not start a container whose `devices:` path is missing, so a core that is told
+`/dev/hidraw1` cannot start once the interface is `hidraw0`, and a core that stopped itself because its audio
+stalled (see Health and restarts) could not come back. So `compose.yaml` asks for `/dev/moreopenrepeater-ptt`,
+a symlink a udev rule keeps pointing at whichever `hidrawN` the AIOC (`1209:7388`) or a CM108/CM119 (`0d8c`)
+is on. Docker follows the symlink each time the core starts. Install the rule once, on the host:
+
+```
+sudo cp docker/udev/61-moreopenrepeater-ptt.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=hidraw --action=add
+ls -l /dev/moreopenrepeater-ptt        # points at a hidraw node
+```
+
+Without the rule the core does not start, and `docker compose up` says the device does not exist. If you
+had `MOR_PTT_HIDRAW=/dev/hidraw0` in `.env`, it still works (and does not follow a renumbering): remove it
+once the rule is in. Only one device can carry the name; with two interfaces on the host, narrow the rule
+with `ATTRS{serial}`. The core is given the one path as `MOREOPENREPEATER_CM108_HIDRAW`, since the default
+`auto` reads the host's hidraw numbers, which are not the container's, and no link radio interface is given
+to it (`MOREOPENREPEATER_LINK_CM108_HIDRAW: "off"`).
+
 ## Health and restarts
 
 `python -m core.healthcheck` asks the core's own `/health` and exits 1 when it
@@ -270,8 +295,7 @@ event (error, `part` says which), flushes the log and exits with status 75, and 
 unless-stopped` starts it again. That is what happened on the Pi on 2026-11-19: the AIOC dropped off USB for
 two seconds, the audio engine stalled without any error, and the core sat unhealthy for 18 minutes with its
 station ID going nowhere. A restart can only help if the container can start again: a PTT device
-path that no longer exists (`MOR_PTT_HIDRAW`, see Host prerequisites) stops it starting, which is why a
-stable udev name matters. `restart: unless-stopped` covers crashes and exits, but not a manual `docker kill`
+path that no longer exists stops it starting, which is why the PTT device has a stable name (see above). `restart: unless-stopped` covers crashes and exits, but not a manual `docker kill`
 or `docker stop`. The API container is not restarted this way: it holds no device.
 
 ## Voices
@@ -356,8 +380,7 @@ Two smaller things follow from the same work:
   re-enumerated the AIOC once and left the engine dead with nothing logged), so each run now also
   checks that no USB events happened in it and that station IDs went out.
 - The reboot changed the AIOC's `hidraw` number again (`hidraw2` to `hidraw0`), which left the core
-  unable to start until the path was corrected. A stable udev name for the PTT device is no longer a
-  nice-to-have.
+  unable to start until the path was corrected. That is what the stable name (see above) is for.
 
 To see whether a glitch is the process holding the audio thread up, set
 `MOREOPENREPEATER_DIAG_LATENCY=1` in `core.env`. The core then logs, next to the glitch lines, a
@@ -369,8 +392,8 @@ is off by default and only logs when a threshold is crossed.
 - **Device loss.** With the AIOC unplugged and plugged back in, the core's own health reported
   `audio.engine` failed within 10 seconds, but Docker kept showing the container healthy for a minute or
   more, nothing restarted it, and the AIOC came back as `hidraw2` instead of `hidraw0`, so the core's
-  PTT path no longer existed and nothing said so. It needs a stable udev name for the PTT device and the
-  core exiting when audio stays failed, so that Docker restarts it.
+  PTT path no longer existed and nothing said so. That is what the stable name for the PTT device and the
+  core exiting when audio stalls (see Health and restarts) are for.
 - Raspberry Pi OS boots with `cgroup_disable=memory`, so memory limits and `docker stats` memory do not
   work until `cgroup_enable=memory cgroup_memory=1` is added to `/boot/firmware/cmdline.txt` and the Pi
   reboots. ADR 0005's per-module resource budgets need that.
@@ -382,5 +405,4 @@ logged `audio engine stopped` within 0.2 s, and the container exited 0 in 0.95 s
 own shutdown path releasing the audio device and PTT; nothing here observed the radio itself unkeying.
 
 Still to measure: the PTT line observed independently when the container stops (it needs a scope or a
-second receiver), and a Pi 4 or 5. A stable udev name for the PTT
-device, multi-arch publishing, and the module containers are later slices.
+second receiver), and a Pi 4 or 5. Multi-arch publishing and the module containers are later slices.

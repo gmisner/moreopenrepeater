@@ -43,6 +43,7 @@ class CommandName(str, Enum):
     LINK_EVENT = "link_event"
     LINK_SYNC = "link_sync"
     USRP_CONFIGURE = "usrp_configure"
+    MIXER_RUN = "mixer_run"
 
 
 #: The commands that make the controller act on an event that did not come from the radio.
@@ -75,6 +76,14 @@ MAX_LINK_NODES = 64
 #: The core keeps its own side (the address it listens on) and checks nothing the API could not: a host and a port.
 ENDPOINTS = frozenset({CommandName.USRP_CONFIGURE})
 USRP_SERVICES = ("allstar", "dmr")
+
+#: Run `amixer` on the core's sound card for the API, which has neither the program nor the card. Only the two forms the
+#: dashboard uses are accepted (read a card's controls, set one control), each checked here and again by the core; the answer
+#: is the program's own output.
+MIXER = frozenset({CommandName.MIXER_RUN})
+MAX_MIXER_ARGS = 12
+_MIXER_CARD = re.compile(r"^[0-9]{1,3}$")
+_MIXER_VALUE = re.compile(r"^[A-Za-z0-9%+.,-]{1,16}$")
 
 _DTMF = re.compile(r"^[0-9A-D*#]$")
 _NODE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
@@ -125,6 +134,8 @@ _PARAMS: dict[CommandName, dict[str, str]] = {
     # Point the AllStar or DMR audio at the node or bridge at this host and port, or at nothing (None) to stop it.
     # The core keeps it, so a restart of the core (with the API away) still has audio to and from the node.
     CommandName.USRP_CONFIGURE: {"service": "usrp_service", "peer": "usrp_peer"},
+    # What follows the program name in `amixer -c N scontents` or `amixer -q -c N sset CONTROL VALUE...`.
+    CommandName.MIXER_RUN: {"args": "mixer_args"},
 }
 
 
@@ -171,8 +182,26 @@ def _valid(kind: str, value: Any) -> bool:
             and isinstance(value["host"], str) and bool(_HOST.match(value["host"]))
             and isinstance(value["port"], int) and not isinstance(value["port"], bool) and 1 <= value["port"] <= 65535
         )
+    if kind == "mixer_args":
+        return _mixer_args_valid(value)
     if kind == "object":
         return isinstance(value, dict) and len(value) <= MAX_OBJECT_KEYS and all(isinstance(k, str) for k in value)
+    return False
+
+
+def _mixer_args_valid(args: Any) -> bool:
+    """`["-c", "2", "scontents"]`, or `["-q", "-c", "2", "sset", "Mic Capture Volume", "80%"]` with up to four values.
+    A control's name is free text (cards name them differently) but never starts with `-`, so it cannot be an option."""
+    if not isinstance(args, list) or not 3 <= len(args) <= MAX_MIXER_ARGS or not all(isinstance(a, str) for a in args):
+        return False
+    if args[0] == "-c":
+        return len(args) == 3 and bool(_MIXER_CARD.match(args[1])) and args[2] == "scontents"
+    if args[:1] == ["-q"] and len(args) >= 6 and args[1] == "-c" and args[3] == "sset":
+        control, values = args[4], args[5:]
+        return (
+            bool(_MIXER_CARD.match(args[2])) and 0 < len(control) <= 64 and control.isprintable() and not control.startswith("-")
+            and 1 <= len(values) <= 4 and all(_MIXER_VALUE.match(v) for v in values)
+        )
     return False
 
 
@@ -203,6 +232,9 @@ class CommandResult(Message):
     kind: Literal["core.command.result"] = "core.command.result"
     status: CommandStatus
     error: Optional[StructuredError] = None
+    #: What a command that has something to say back says (`mixer_run`: the program's return code and output). Most
+    #: commands have nothing.
+    output: Optional[dict[str, Any]] = None
 
     @model_validator(mode="after")
     def _fields_match_status(self) -> "CommandResult":

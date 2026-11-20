@@ -78,6 +78,7 @@ from .net import NetMode
 from .node_directory import NodeDirectory
 from .notify import Notifier
 from .service.core_handle import CoreUnavailable
+from .remote_mixer import RemoteMixer
 from .split import CoreHardware, Unavailable
 from .core_runtime import ANNOUNCEMENT_POLL_SECONDS, AnnouncementQueueFull, CoreRuntime, SplitCoreRuntime
 from .persistence import StateStore
@@ -611,6 +612,8 @@ class AppRuntime:
             # Their status is the core's, read over the socket (split.CoreHardware); acting on them is not yet.
             if audio_devices is list_audio_devices:  # not set by the caller: this process has no audio libraries, the core does
                 audio_devices = audio_devices_from_core(service)
+            if run_mixer is run_amixer:  # likewise: the core has the sound card and amixer, this process has neither
+                run_mixer = RemoteMixer(service)
             live_audio = live_audio or CoreHardware("live_audio", service, monitor=service.remote_audio_monitor("live"))
             monitor_receiver = monitor_receiver or CoreHardware(
                 "monitor_receiver", service, monitor=service.remote_audio_monitor("monitor")

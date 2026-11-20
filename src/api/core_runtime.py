@@ -27,6 +27,7 @@ from playout.tts import TTSError
 
 from .allstar_audio import UsrpSettings
 from .audio_devices import AudioDeviceList
+from .boards import run_amixer
 from .dmr_audio import DmrUsrpSettings
 from .loops import run_announcement_loop, run_long_id_warm_loop, run_tick_loop
 from .usrp_endpoints import Peer, UsrpEndpoints
@@ -89,6 +90,7 @@ class CoreRuntime:
         watchdog: Watchdog,
         remember_stall: Callable[[str], None] = lambda stalled: None,
         usrp_endpoints: Optional[UsrpEndpoints] = None,
+        run_mixer: Callable = run_amixer,
     ) -> None:
         self.service = service
         self.renderer = renderer
@@ -99,6 +101,7 @@ class CoreRuntime:
         self.gpio = gpio
         self.tx_fan = tx_fan
         self.autopatch = autopatch
+        self.run_mixer = run_mixer  # runs amixer for the API (the `mixer_run` command): the core has the sound card
         self.audio_device_list = AudioDeviceList()  # the sound cards, reported to the API (it has no audio libraries)
         self.allstar_node = allstar_node
         self.dmr = dmr

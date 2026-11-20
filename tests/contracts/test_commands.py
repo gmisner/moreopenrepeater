@@ -152,3 +152,71 @@ def test_a_malformed_link_sync_is_refused(nodes):
 
 def test_sixty_four_nodes_is_the_most_a_sync_takes():
     CoreCommand(header=header(), command="link_sync", params={"nodes": {str(n): False for n in range(64)}})
+
+
+# --- mixer_run: amixer for the API, which has neither the program nor the sound card ---------------------------------
+
+def mixer(args):
+    return CoreCommand(header=header(), command="mixer_run", params={"args": args})
+
+
+@pytest.mark.parametrize("args", [
+    ["-c", "2", "scontents"],
+    ["-c", "0", "scontents"],
+    ["-q", "-c", "2", "sset", "Speaker", "75%"],
+    ["-q", "-c", "12", "sset", "Mic Capture Volume", "capture", "80%"],
+    ["-q", "-c", "2", "sset", "Mic", "18dB"],
+    ["-q", "-c", "2", "sset", "Mic", "playback", "-3.5dB"],
+    ["-q", "-c", "2", "sset", "Auto Gain Control", "off"],
+    ["-q", "-c", "2", "sset", "PCM,0 (left)", "on"],
+])
+def test_the_two_amixer_forms_the_dashboard_uses_are_accepted(args):
+    assert mixer(args).params["args"] == args
+
+
+@pytest.mark.parametrize("args", [
+    [],
+    "scontents",
+    ["-c", "2"],  # no verb
+    ["-c", "2", "scontents", "--help"],  # nothing may ride along
+    ["-c", "2", "controls"],  # another verb
+    ["-c", "two", "scontents"],  # a card is a number
+    ["-c", "2000", "scontents"],
+    ["-c", "-1", "scontents"],
+    ["--version"],
+    ["-q", "-c", "2", "sset", "-h", "75%"],  # a control cannot be an option
+    ["-q", "-c", "2", "sset", "--help", "75%"],
+    ["-q", "-c", "2", "sset", "Speaker"],  # nothing to set it to
+    ["-q", "-c", "2", "sset", "Speaker", "75%", "a", "b", "c", "d"],  # more than four values
+    ["-q", "-c", "2", "sset", "Speaker", "75%;reboot"],
+    ["-q", "-c", "2", "sset", "Speaker", "$(id)"],
+    ["-q", "-c", "2", "sset", "Speaker", "75 %"],
+    ["-q", "-c", "2", "sset", "Speaker", "x" * 17],
+    ["-q", "-c", "2", "sset", "", "75%"],
+    ["-q", "-c", "2", "sset", "x" * 65, "75%"],
+    ["-q", "-c", "2", "sset", "Spea\nker", "75%"],
+    ["-q", "-c", "2", "sset", "Spea\x00ker", "75%"],
+    ["-q", "-c", "2", "set", "Speaker", "75%"],
+    ["-c", "2", "-q", "sset", "Speaker", "75%"],  # the order is fixed
+    ["-q", "-c", "2", "sset", 5, "75%"],
+    ["-c", "2", "scontents"] + ["x"] * 12,  # too many
+])
+def test_anything_else_is_refused_before_it_gets_near_a_program(args):
+    with pytest.raises(ValidationError):
+        mixer(args)
+
+
+def test_a_mixer_command_takes_the_args_and_nothing_else():
+    with pytest.raises(ValidationError):
+        CoreCommand(header=header(), command="mixer_run", params={"args": ["-c", "2", "scontents"], "program": "sh"})
+    with pytest.raises(ValidationError):
+        CoreCommand(header=header(), command="mixer_run", params={})
+
+
+def test_a_command_result_can_carry_output_and_most_do_not():
+    plain = CommandResult(header=header(request_id=new_id()), status=CommandStatus.APPLIED)
+    assert plain.output is None
+    with_output = CommandResult(
+        header=header(request_id=new_id()), status=CommandStatus.APPLIED, output={"returncode": 0, "stdout": "x", "stderr": ""}
+    )
+    assert CommandResult.model_validate_json(with_output.model_dump_json()).output["stdout"] == "x"

@@ -17,6 +17,7 @@ It imports no web framework.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import collections
 import dataclasses
 import types
@@ -115,6 +116,7 @@ class RemoteCore:
         self._subscribers: set[asyncio.Queue] = set()
         self._task: Optional[asyncio.Task] = None
         self._stopping = False
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.reconnects = 0
         self._config: Optional[RepeaterConfig] = None  # the core's saved configuration
         self._config_version: Optional[int] = None  # the version `_config` is at
@@ -176,6 +178,8 @@ class RemoteCore:
 
     def start(self) -> None:
         """Start following the core. Never raises, and does not wait: the core may not be up yet."""
+        with contextlib.suppress(RuntimeError):
+            self.loop = asyncio.get_running_loop()  # for code on other threads that has to ask the core something
         if self._task is None:
             self._stopping = False
             self._task = asyncio.ensure_future(self._run())
@@ -910,6 +914,20 @@ class RemoteCore:
         """Send the core a one-shot command and wait for its answer. Raises `CommandRefused`
         if the core refused it (nothing was done) and `CoreUnavailable` if it could not be
         reached or did not answer cleanly."""
+        await self._run_command(name, **params)
+
+    async def mixer(self, args: list[str]) -> dict:
+        """Run `amixer` on the core's sound card (this process has neither): `args` follow the program's name. Returns
+        `{"returncode", "stdout", "stderr"}`. Raises as `command` does."""
+        result = await self._run_command("mixer_run", args=list(args))
+        output = result.output or {}
+        return {
+            "returncode": int(output.get("returncode", 1)),
+            "stdout": str(output.get("stdout", "")),
+            "stderr": str(output.get("stderr", "")),
+        }
+
+    async def _run_command(self, name: str, **params: object) -> CommandResult:
         try:
             request = CoreCommand(header=self._header(), command=name, params=dict(params))
         except ValueError:
@@ -939,6 +957,7 @@ class RemoteCore:
             except Exception:  # noqa: BLE001 - it IS applied; the cache catches up on the next event
                 _logger.warning("the change was applied but the lists could not be read back")
                 self._refresh_config()
+        return result
 
     async def change_config(self, **overrides: object) -> RepeaterConfig:
         """Ask the core to change settings and wait for its answer.

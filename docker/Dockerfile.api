@@ -39,6 +39,20 @@ ENV PYTHONPATH=/app/src \
     MOREOPENREPEATER_HOST=0.0.0.0 \
     MOREOPENREPEATER_PORT=8000
 
+# Which commit this is, for the dashboard's Updates page. There is no git in this image and no host folder mounted into
+# it: docker/update.sh and setup.sh write MOR_COMMIT and the rest into .env, and compose passes them in as build
+# arguments (compose.yaml). They sit this late so a new commit rebuilds only this line, not the pip layer. Empty means
+# unknown, and the page says so. MOREOPENREPEATER_INSTALL=container is what makes the page a container page.
+ARG MOR_COMMIT=""
+ARG MOR_COMMIT_DATE=""
+ARG MOR_BRANCH=""
+ARG MOR_REPO=""
+ENV MOREOPENREPEATER_INSTALL=container \
+    MOREOPENREPEATER_COMMIT=$MOR_COMMIT \
+    MOREOPENREPEATER_COMMIT_DATE=$MOR_COMMIT_DATE \
+    MOREOPENREPEATER_BRANCH=$MOR_BRANCH \
+    MOREOPENREPEATER_REPO=$MOR_REPO
+
 USER 999:999
 WORKDIR /app
 VOLUME ["/data"]

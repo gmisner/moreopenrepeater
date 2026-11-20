@@ -707,8 +707,13 @@ def test_the_logs_page_shows_the_core_s_lines_with_the_api_s(split):
 
 
 def test_starting_before_the_core_is_up_logs_no_errors_and_the_loops_carry_on(sock_dir, caplog):
+    import gc
     import logging
 
+    # An earlier test's core thread can leave tasks that asyncio reports as "destroyed but pending" (an ERROR) whenever
+    # the garbage collector gets to them, which can be in the middle of this test. They are not this test's to answer for.
+    gc.collect()
+    caplog.clear()
     caplog.set_level(logging.WARNING)
     client, remote = split_client(sock_dir / "nothing.sock")
     with client:

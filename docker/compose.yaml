@@ -71,6 +71,7 @@ services:
       - logd-run:/run/logd
 
     environment:
+      TZ: ${MOR_TZ:-UTC}  # the zone the core's clock starts on; the dashboard's Date and time setting overrides it (setup.sh sets MOR_TZ from the host)
       MOREOPENREPEATER_LOG_FORMAT: json  # see the api service
       MOREOPENREPEATER_LOGD_SOCKET: /run/logd/events.sock  # events also go to logd; if it is down they are dropped and counted
       # Docker does not restart an unhealthy container, so a core whose audio stalls (the sound card dropped off USB
@@ -159,6 +160,7 @@ services:
       # root-owned folder on the host. `./setup.sh --import-allstar /etc/asterisk` sets MOR_ALLSTAR_IMPORT_DIR in .env.
       - ${MOR_ALLSTAR_IMPORT_DIR:-./empty}:/import/asterisk:ro
     environment:
+      TZ: ${MOR_TZ:-UTC}  # as the core's
       # One JSON event per line on stdout, which Docker's log driver keeps and rotates. The text log in
       # the data folder is unchanged, and the dashboard's Logs page still reads it.
       MOREOPENREPEATER_LOG_FORMAT: json
@@ -287,6 +289,7 @@ services:
     ports:
       - "${MOR_ALLSTAR_IAX_PORT:-4569}:4569/udp"
     environment:
+      TZ: ${MOR_TZ:-UTC}  # the node's own clock (its logs, and the time it can say); the dashboard's Date and time setting does not reach it
       MOR_AMI_PERMIT: ${MOR_SERVICES_SUBNET:-172.28.0.0/24}  # AMI answers only this network
     env_file:
       - path: allstar.env  # MOR_AMI_SECRET (required), MOR_AMI_USER

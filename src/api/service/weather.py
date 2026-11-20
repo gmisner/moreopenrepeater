@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Callable, Optional
 
+from controller import station_clock
 from observability import log_event
 from playout.renderer import TTS_PREFIX
 from wx.nws import AlertTracker, WeatherAlert, meets_severity, parse_alerts, speech_text
@@ -33,6 +34,20 @@ class WeatherSupport:
         self.metar_text: Optional[Callable[[], str]] = None
         self._next_schedule: Optional[datetime] = None
         self._schedule_fingerprint: Optional[tuple] = None
+        self._zone_seen = station_clock.generation()
+
+    def _follow_zone(self) -> None:
+        """After a time zone change the clock these times were written on has moved: carry the
+        remembered ones across, and start the routine schedule again from now."""
+        seen = self._zone_seen
+        if seen == station_clock.generation():
+            return
+        self._zone_seen = station_clock.generation()
+        delta = station_clock.shift_since(seen)
+        self.tracker.shift(delta)
+        if self.last_checked is not None:
+            self.last_checked += delta
+        self._schedule_fingerprint = None
 
     def summary_text(self) -> str:
         wx = self._host.controller.config.weather
@@ -48,6 +63,7 @@ class WeatherSupport:
         """Record a successful NWS poll; return the clips to announce.
         With `announce=False` (a manual check while alerts are switched
         off) it only refreshes what the dashboard shows."""
+        self._follow_zone()
         wx = self._host.controller.config.weather
         alerts = parse_alerts(geojson)
         self.alerts = [a for a in alerts if meets_severity(a, wx.wx_min_severity)]
@@ -82,6 +98,7 @@ class WeatherSupport:
 
     def sync_schedule(self) -> None:
         """Keep the next-run clock in step with config (reset when settings change)."""
+        self._follow_zone()
         key = self._schedule_key()
         if key == self._schedule_fingerprint:
             return

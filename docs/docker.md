@@ -76,6 +76,16 @@ script, `docker compose up` publishes the dashboard on the loopback only (see **
 default. Everything behind the dashboard stays private either way: the core, the AllStar node's management port, the radio
 audio and the log collector are only on the services network.
 
+**Time zone.** The containers run on UTC unless they are told a zone, and a repeater on UTC says the wrong hour in its
+announcements and runs scheduled things (announcements, nets, link and weather schedules) at the wrong time of day. The
+script writes the machine's own zone to `.env` as `MOR_TZ` (from `timedatectl`, else `/etc/timezone`, else the
+`/etc/localtime` link; nothing is written if it can't tell, and a `MOR_TZ` you set is kept), and compose passes it to the
+core, the dashboard and the AllStar node as `TZ`. The dashboard's **Date and time** page sets the station's zone for the
+core and the dashboard from then on, whatever the host says, and shows the time in that zone as you pick it. An empty
+choice there means the `MOR_TZ` default. The AllStar node keeps the `MOR_TZ` default (its own clock is not reached by the
+dashboard). Times on other dashboard pages are shown in your browser's own zone. The images carry their own zone data
+(the Debian base image's `tzdata`), so no zone needs installing on the host.
+
 By hand, without the script:
 
 ```

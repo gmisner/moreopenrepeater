@@ -15,6 +15,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Callable, Optional
 
+from controller import station_clock
+
 from .links import LinkControl, LinkError
 from .weekly import last_start, next_start, window_end
 
@@ -32,12 +34,25 @@ class LinkScheduler:
         self._failed: set[tuple[str, datetime]] = set()
         self._ours: dict[str, datetime] = {}  # node -> when the schedule drops it
         self._started = False
+        self._zone_seen = station_clock.generation()
+
+    def _follow_zone(self) -> None:
+        """A time zone change moves the clock the windows are written in. Links this made keep
+        their end at the same moment. (Windows already handled are not forgotten: a node dropped by hand
+        stays down for the rest of its window.)"""
+        seen = self._zone_seen
+        if seen == station_clock.generation():
+            return
+        self._zone_seen = station_clock.generation()
+        delta = station_clock.shift_since(seen)
+        self._ours = {node: end + delta for node, end in self._ours.items()}
 
     def until(self, node: str) -> Optional[datetime]:
         return self._ours.get(node)
 
     def status(self, now: datetime) -> list[dict]:
         """For each schedule, in order: its next start and, while its link is up, when it ends."""
+        self._follow_zone()
         rows = []
         for schedule in self._schedules():
             until = self._ours.get(schedule["node"])
@@ -47,6 +62,7 @@ class LinkScheduler:
         return rows
 
     async def tick(self, now: datetime) -> None:
+        self._follow_zone()
         for node, end in list(self._ours.items()):
             if now >= end:
                 del self._ours[node]

@@ -55,6 +55,7 @@ const PublicListening = lazyPage(() => import("./pages/PublicListening"), "Publi
 const Simulator = lazyPage(() => import("./pages/Simulator"), "Simulator");
 const Logs = lazyPage(() => import("./pages/Logs"), "Logs");
 const Backup = lazyPage(() => import("./pages/Backup"), "Backup");
+const DateTime = lazyPage(() => import("./pages/DateTime"), "DateTime");
 const Users = lazyPage(() => import("./pages/Users"), "Users");
 const Sites = lazyPage(() => import("./pages/Sites"), "Sites");
 const Audit = lazyPage(() => import("./pages/Audit"), "Audit");
@@ -109,6 +110,7 @@ function AuthedApp() {
               <Route path="simulator" element={<Simulator />} />
               <Route path="logs" element={<Logs />} />
               <Route path="backup" element={<Backup />} />
+              <Route path="datetime" element={<DateTime />} />
               <Route path="users" element={<Users />} />
               <Route path="sites" element={<Sites />} />
               <Route path="audit" element={<Audit />} />

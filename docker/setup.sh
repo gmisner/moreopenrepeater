@@ -172,6 +172,43 @@ if [ -e "$KMSG" ] && [ ! -d "$KMSG" ]; then
   fi
 fi
 
+# --- the station's time zone ------------------------------------------------------------------------------------
+
+# The containers run on UTC unless they are told a zone, so the repeater would say the wrong hour. The host's own zone is the
+# natural default: compose passes MOR_TZ to the core and the dashboard as TZ (compose.yaml). The dashboard's Date and time page
+# overrides it. Tried in order: timedatectl, /etc/timezone, the /etc/localtime link. A value you set yourself is kept
+# (set_value), and if the host's zone cannot be told nothing is written (the containers stay on UTC; set it on the dashboard).
+# MOR_TIMEZONE_FILE and MOR_LOCALTIME_FILE are only hooks for the tests.
+
+# usable_zone NAME: NAME if it could be a zone name, else nothing. A name is letters, digits and / _ + - (America/Port-au-Prince,
+# Etc/GMT+7); anything else would not survive an .env file, and "n/a" is what timedatectl says when it does not know.
+usable_zone() {
+  case "$1" in ""|n/a|*[!A-Za-z0-9/_+-]*) ;; *) printf '%s' "$1" ;; esac
+}
+host_timezone() {
+  zone=""
+  if command -v timedatectl >/dev/null 2>&1; then
+    zone="$(usable_zone "$(timedatectl show -p Timezone --value 2>/dev/null || true)")"
+  fi
+  if [ -z "$zone" ] && [ -r "${MOR_TIMEZONE_FILE:-/etc/timezone}" ]; then
+    zone="$(usable_zone "$(head -n 1 "${MOR_TIMEZONE_FILE:-/etc/timezone}" | tr -d '[:space:]')")"
+  fi
+  if [ -z "$zone" ] && [ -L "${MOR_LOCALTIME_FILE:-/etc/localtime}" ]; then
+    link="$(readlink "${MOR_LOCALTIME_FILE:-/etc/localtime}" 2>/dev/null || true)"
+    case "$link" in */zoneinfo/*) zone="$(usable_zone "${link#*/zoneinfo/}")" ;; esac
+  fi
+  printf '%s' "$zone"
+}
+if [ -z "$(value .env MOR_TZ)" ]; then
+  ZONE="$(host_timezone)"
+  if [ -n "$ZONE" ]; then
+    set_value .env MOR_TZ "$ZONE"
+    say "  time zone: $ZONE (this machine's; the dashboard's Date and time page can change it)"
+  else
+    say "  NOTE: couldn't tell this machine's time zone, so the containers use UTC. Set it on the dashboard's Date and time page."
+  fi
+fi
+
 # --- the AllStar node ---------------------------------------------------------------------------------------------
 
 if [ "$ALLSTAR" = 1 ]; then

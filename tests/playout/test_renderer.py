@@ -1,6 +1,6 @@
 import dataclasses
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -227,3 +227,60 @@ def test_courtesy_tones_per_source_default_to_the_local_one():
     assert not np.array_equal(renderer.render("courtesy_tone_link", own), renderer.render("courtesy_tone", own))
     assert np.allclose(renderer.render("courtesy_tone_patch", own), 0.2, atol=1e-3)
     assert renderer.cached_duration("courtesy_tone_patch", own) == 400 / RATE
+
+
+# -- the spoken time follows the station's time zone ---------------------------------------------------------------------
+
+def test_the_long_id_says_the_hour_of_the_station_s_zone_and_a_change_is_not_served_the_old_hour():
+    from controller import station_clock
+
+    instant = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc).timestamp()
+    tts = FakeTTS()
+    # The renderer's own default clock is datetime.now, which follows TZ; this one is the same call for a fixed instant.
+    renderer, _ = make_renderer(tts=tts, wall_clock=lambda: datetime.fromtimestamp(instant))
+    long_id = config(long_id_mode="voice", long_id_text="The time is {time}.")
+
+    station_clock.apply_timezone("America/Phoenix")
+    renderer.render("id_long", long_id)
+    assert tts.calls[-1][0] == "The time is 5 o'clock A M."
+
+    station_clock.apply_timezone("Asia/Kolkata")  # same instant, same config: only the zone changed
+    renderer.render("id_long", long_id)
+    assert tts.calls[-1][0] == "The time is 5 30 P M."
+    assert len(tts.calls) == 2  # it was rendered again, not answered from the Phoenix clip
+
+    station_clock.apply_timezone("America/Phoenix")
+    renderer.render("id_long", long_id)
+    assert len(tts.calls) == 2  # and the Phoenix clip is still the right answer for Phoenix
+
+
+def test_the_pre_rendered_long_id_for_the_next_minute_is_in_the_new_zone_after_a_change():
+    from controller import station_clock
+
+    tts = FakeTTS()
+    renderer, _ = make_renderer(tts=tts)  # the real wall clock
+    long_id = config(long_id_mode="voice", long_id_text="It is {time}.")
+    station_clock.apply_timezone("Pacific/Kiritimati")  # UTC+14
+    renderer.warm_long_id(long_id)
+    first = {text for text, _ in tts.calls}
+    station_clock.apply_timezone("Pacific/Pago_Pago")  # UTC-11: a day and 25 hours away
+    renderer.warm_long_id(long_id)
+    second = {text for text, _ in tts.calls} - first
+    assert second, "a zone change must render the long ID again"
+    cached = [key for key in renderer._cache if key[0] == "id_long"]
+    assert all(any(text in key for text in second) for key in cached)  # nothing from the old zone is kept
+
+
+def test_the_renderer_s_own_clock_reads_the_station_zone_without_any_help(monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    from controller import station_clock
+    from playout.tts import spoken_time
+
+    tts = FakeTTS()
+    renderer = ClipRenderer(lambda asset_id: Path(tempfile.mkdtemp()) / asset_id, tts=tts, sample_rate=RATE)  # no wall_clock: its default
+    station_clock.apply_timezone("Asia/Kolkata")
+    before = spoken_time(datetime.now(ZoneInfo("Asia/Kolkata")))
+    renderer.render("id_long", config(long_id_mode="voice", long_id_text="{time}"))
+    after = spoken_time(datetime.now(ZoneInfo("Asia/Kolkata")))
+    assert tts.calls[-1][0] in (before, after)

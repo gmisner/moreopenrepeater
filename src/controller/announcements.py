@@ -6,7 +6,10 @@ and hands the resulting clips to the controller's announcement queue, which
 decides when the channel is actually clear to transmit.
 
 Times are local wall-clock (naive) because "the net reminder at 19:30"
-means 19:30 on the station's clock, including across DST changes.
+means 19:30 on the station's clock, including across DST changes. The station's
+clock is its time zone setting (`station_clock`): when that changes, every next
+run is worked out again from the new local time, since the old ones were
+written in the old zone's hours.
 """
 from __future__ import annotations
 
@@ -14,6 +17,8 @@ import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from typing import Literal, Optional
+
+from . import station_clock
 
 ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]  # Monday = 0, matching datetime.weekday()
 
@@ -62,6 +67,7 @@ class AnnouncementScheduler:
     def __init__(self, announcements: list[Announcement], now: datetime) -> None:
         self._announcements: dict[str, Announcement] = {}
         self._next_run: dict[str, Optional[datetime]] = {}
+        self._zone_seen = station_clock.generation()
         self.set_announcements(announcements, now)
 
     def list(self) -> list[Announcement]:
@@ -73,11 +79,14 @@ class AnnouncementScheduler:
     def set_announcements(self, announcements: list[Announcement], now: datetime) -> None:
         """Replace the whole set. Unchanged announcements keep their next run
         time (so editing one doesn't restart every interval timer); new or
-        edited ones are scheduled from `now`."""
+        edited ones are scheduled from `now`. After a time zone change nothing
+        is kept: the old times were in the old zone's hours."""
         previous = self._announcements
+        zone_moved = self._zone_seen != station_clock.generation()
+        self._zone_seen = station_clock.generation()
         self._announcements = {a.id: a for a in announcements}
         self._next_run = {
-            a.id: self._next_run[a.id] if previous.get(a.id) == a else next_occurrence(a, now)
+            a.id: self._next_run[a.id] if previous.get(a.id) == a and not zone_moved else next_occurrence(a, now)
             for a in announcements
         }
 
@@ -92,6 +101,9 @@ class AnnouncementScheduler:
         """Announcements whose time has come, each rescheduled from `now` --
         so if several runs were missed (the machine slept), it plays once
         rather than once per missed run."""
+        if self._zone_seen != station_clock.generation():
+            self.set_announcements(self.list(), now)  # the zone changed: nothing is due by the old zone's clock
+            return []
         fired = []
         for announcement_id, run_at in self._next_run.items():
             if run_at is not None and now >= run_at:

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional
 
+from controller import station_clock
 from link.asterisk_files import asterisk_files_from_env
 from playout.renderer import ClipRenderer
 from playout.tts import detect_tts
@@ -101,6 +102,9 @@ def build_core(env: Optional[Mapping[str, str]] = None) -> CoreApp:
     if service.saved_config != config:
         service.update_config(**{k: getattr(config, k) for k in _checked_names(config_notes)})
     service.renderer = renderer
+    # The station's time zone, for everything in this process that says or schedules a time of day. First among the
+    # config listeners, so the ones below (the renderer warming the long ID) already see the new zone.
+    station_clock.follow(service.add_config_listener, service.saved_config)
     # The core sees every transmission, so it records them, in the file the dashboard's history has
     # always been in. The API reads them over the control socket.
     activity_store = ActivityStore(data_root(env) / "activity.db")

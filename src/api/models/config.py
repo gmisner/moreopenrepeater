@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from controller.config import CourtesyStyle as CourtesyToneStyle
 from controller.config import CourtesyVariant as CourtesyToneVariant
 from controller.remote_base import CTCSS_TONES, parse_ranges
+from controller.station_clock import check_timezone
 from playout.tones import parse_custom_tone
 
 from ..config_schema import ConfigResponse as _GeneratedConfigResponse
@@ -233,6 +234,7 @@ class ConfigUpdateRequest(BaseModel):
     voice_id_text: Optional[str] = None
     id_phonetic: Optional[bool] = None
     tts_voice: Optional[str] = None
+    timezone: Optional[str] = Field(default=None, max_length=64)  # "" = the container's own
     tts_speed: Optional[float] = Field(default=None, ge=0.5, le=2.0)
     # --- facet: aprs ---
     aprs_enabled: Optional[bool] = None
@@ -444,6 +446,11 @@ class ConfigUpdateRequest(BaseModel):
         if self.net_links == "connect" and self.net_link_node == "":
             raise ValueError("choose the node to link for nets")
         return self
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, name: Optional[str]) -> Optional[str]:
+        return None if name is None else check_timezone(name)
 
     @field_validator("courtesy_tone_custom")
     @classmethod

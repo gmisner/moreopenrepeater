@@ -19,6 +19,15 @@ def _no_cycle_left_open():
     end_cycle()
 
 
+@pytest.fixture(autouse=True)
+def _station_zone_restored():
+    """The station's time zone is the process's (TZ plus tzset); a test that sets it must not leave it for the next."""
+    from controller import station_clock
+
+    yield
+    station_clock.reset()
+
+
 class CapturedEvents(list):
     """The structured events logged while a test ran, in order."""
 

@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Callable, Optional
 
 from audio_io.cm108 import CM108Interface
+from controller import station_clock
 from controller.state_machine import RepeaterConfig
 from playout.renderer import TTS_PREFIX
 
@@ -306,12 +307,25 @@ class GpioScheduler:
         self._handled: set[tuple[int, datetime]] = set()
         self._failed: set[tuple[int, datetime]] = set()
         self._ours: dict[int, datetime] = {}  # pin -> when the schedule switches it off
+        self._zone_seen = station_clock.generation()
+
+    def _follow_zone(self) -> None:
+        """A time zone change moves the clock the windows are written in. An output this switched on keeps its end at the
+        same moment, so it is not switched off early or left on for hours. (Windows already handled are not forgotten: an
+        output turned off by hand stays off for the rest of its window.)"""
+        seen = self._zone_seen
+        if seen == station_clock.generation():
+            return
+        self._zone_seen = station_clock.generation()
+        delta = station_clock.shift_since(seen)
+        self._ours = {pin: end + delta for pin, end in self._ours.items()}
 
     def until(self, pin: int) -> Optional[datetime]:
         return self._ours.get(pin)
 
     def status(self, now: datetime) -> list[dict]:
         """For each schedule, in order: its next start and, while it has the output on, when it ends."""
+        self._follow_zone()
         rows = []
         for schedule in self._schedules():
             until = self._ours.get(schedule["pin"])
@@ -321,6 +335,7 @@ class GpioScheduler:
         return rows
 
     def tick(self, now: datetime) -> None:
+        self._follow_zone()
         for pin, end in list(self._ours.items()):
             if now >= end:
                 del self._ours[pin]

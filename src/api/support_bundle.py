@@ -13,6 +13,9 @@ import zipfile
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from audio_io.cm108 import find_interfaces
+
+from .audio_devices import alsa_card_stable_id
 from .boards import alsa_card
 from .log_history import LogHistory, LogHistoryRefused, LogHistoryUnavailable
 from .mixer import parse_volumes
@@ -77,7 +80,22 @@ def _run_text(run: Callable[..., subprocess.CompletedProcess], argv: list[str], 
 
 
 def _journal(run: Callable[..., subprocess.CompletedProcess], lines: int) -> str:
-    return _run_text(run, ["journalctl", "-u", "moreopenrepeater", "-n", str(lines), "--no-pager"])
+    text = _run_text(run, ["journalctl", "-u", "moreopenrepeater", "-n", str(lines), "--no-pager"])
+    if _unavailable(text):
+        return text.rstrip("\n") + "\n(there is no systemd journal for the service here: its log is in moreopenrepeater.log, and in core.log for the core)\n"
+    return text
+
+
+def runner_with_mixer(run_mixer: Callable[[list[str]], subprocess.CompletedProcess]) -> Callable[..., subprocess.CompletedProcess]:
+    """The bundle's `run`, with `amixer` going through the dashboard's own mixer runner (in the container install that asks the
+    core, which has the sound card) and everything else run here."""
+
+    def run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
+        if argv and argv[0] == "amixer":
+            return run_mixer(argv)
+        return subprocess.run(argv, **kwargs)
+
+    return run
 
 
 def _read_text(path: Path) -> str:
@@ -87,10 +105,54 @@ def _read_text(path: Path) -> str:
         return f"({path} unavailable: {error})\n"
 
 
-def _hidraw_devices(run: Callable[..., subprocess.CompletedProcess]) -> str:
-    paths = sorted(Path("/dev").glob("hidraw*"))
+def _unavailable(text: str) -> bool:
+    """`_run_text` and `_read_text` say what they could not do in parentheses."""
+    return text.startswith("(")
+
+
+def _sys_text(path: Path) -> Optional[str]:
+    try:
+        return path.read_text(errors="replace").strip() or None
+    except OSError:
+        return None
+
+
+def _sysfs_usb_devices(root: Path = Path("/")) -> str:
+    """The USB devices as the kernel lists them in /sys, for where there is no `lsusb` (a container image has none; `/sys` is
+    there). One line per device: its place on the bus, vendor:product, what it calls itself, and its speed."""
+    lines = []
+    for device in sorted((root / "sys/bus/usb/devices").glob("*")):
+        vendor, product = _sys_text(device / "idVendor"), _sys_text(device / "idProduct")
+        if not vendor or not product:  # an interface of a device, not a device
+            continue
+        name = " ".join(filter(None, (_sys_text(device / "manufacturer"), _sys_text(device / "product"))))
+        speed = _sys_text(device / "speed")
+        lines.append(f"{device.name}: {vendor}:{product} {name}".rstrip() + (f" ({speed} Mbit/s)" if speed else ""))
+    return "\n".join(lines) if lines else "(no USB devices in /sys/bus/usb/devices)"
+
+
+def _sysfs_sound_cards(root: Path = Path("/")) -> str:
+    """The sound cards from /sys/class/sound, for where /proc/asound is hidden (Docker masks it)."""
+    lines = []
+    for card in sorted((root / "sys/class/sound").glob("card[0-9]*"), key=lambda path: int(path.name[4:] or 0)):
+        number = int(card.name[4:])
+        lines.append(f"card {number}: id={_sys_text(card / 'id') or '?'} usb={alsa_card_stable_id(number, sys_root=root) or 'not usb'}")
+    return "\n".join(lines) if lines else "(no sound cards in /sys/class/sound)"
+
+
+def _sysfs_hidraw(sysfs: Path = Path("/sys/class/hidraw")) -> str:
+    entries = find_interfaces(sysfs)
+    if not entries:
+        return "(no CM108-family hidraw devices in /sys/class/hidraw)"
+    return "\n".join(f"{entry['path']}: {entry['vendor']:04x}:{entry['product']:04x} {entry['name']} ({entry['stable_id']})" for entry in entries)
+
+
+def _hidraw_devices(
+    run: Callable[..., subprocess.CompletedProcess], dev: Path = Path("/dev"), sysfs: Path = Path("/sys/class/hidraw")
+) -> str:
+    paths = sorted(dev.glob("hidraw*"))
     if not paths:
-        return "(no /dev/hidraw* devices)\n"
+        return "(no /dev/hidraw* devices here; the ones /sys lists:)\n" + _sysfs_hidraw(sysfs) + "\n"
     chunks: list[str] = []
     for path in paths:
         chunks.append(f"## {path}")
@@ -107,17 +169,26 @@ def _hidraw_devices(run: Callable[..., subprocess.CompletedProcess]) -> str:
     return "\n".join(chunks) + ("\n" if not chunks[-1:] == [""] else "")
 
 
-def _usb_snapshot(run: Callable[..., subprocess.CompletedProcess]) -> str:
-    """lsusb, ALSA cards, hidraw udev props, and recent USB-related kernel log."""
+def _usb_snapshot(run: Callable[..., subprocess.CompletedProcess], root: Path = Path("/")) -> str:
+    """lsusb, ALSA cards, hidraw udev props, and recent USB-related kernel log. Where a command or a /proc file is not there
+    (a container), the same facts come from /sys, and the section says so."""
+    lsusb = _run_text(run, ["lsusb"]).rstrip("\n")
+    if _unavailable(lsusb):
+        lsusb = "(lsusb is not available here; from /sys/bus/usb/devices:)\n" + _sysfs_usb_devices(root)
+    cards = _read_text(root / "proc/asound/cards").rstrip("\n")
+    pcm = _read_text(root / "proc/asound/pcm").rstrip("\n")
+    if _unavailable(cards):
+        cards = "(/proc/asound is not visible here; from /sys/class/sound:)\n" + _sysfs_sound_cards(root)
+        pcm = "(not visible here)"
     parts = [
         "=== lsusb ===",
-        _run_text(run, ["lsusb"]).rstrip("\n"),
+        lsusb,
         "",
-        "=== /proc/asound/cards ===",
-        _read_text(Path("/proc/asound/cards")).rstrip("\n"),
+        "=== ALSA cards ===",
+        cards,
         "",
         "=== /proc/asound/pcm ===",
-        _read_text(Path("/proc/asound/pcm")).rstrip("\n"),
+        pcm,
         "",
         "=== hidraw ===",
         _hidraw_devices(run).rstrip("\n"),
@@ -125,8 +196,11 @@ def _usb_snapshot(run: Callable[..., subprocess.CompletedProcess]) -> str:
         "=== kernel (usb/hid, recent) ===",
     ]
     kernel = _run_text(run, ["journalctl", "-k", "-n", str(KERNEL_LINES), "--no-pager"])
-    matched = [line for line in kernel.splitlines() if _USB_KERNEL.search(line)]
-    parts.append("\n".join(matched) if matched else "(no usb/hid lines in recent kernel log)")
+    if _unavailable(kernel):
+        parts.append(kernel.rstrip("\n") + "\n(the host's kernel log is not visible from here; on the host: dmesg -T | grep -i usb)")
+    else:
+        matched = [line for line in kernel.splitlines() if _USB_KERNEL.search(line)]
+        parts.append("\n".join(matched) if matched else "(no usb/hid lines in recent kernel log)")
     parts.append("")
     return "\n".join(parts) + "\n"
 
@@ -215,9 +289,11 @@ def write_support_bundle(
     cm108_interfaces: Optional[list] = None,
     cm108_path: Optional[str] = None,
     log_history: Optional[LogHistory] = None,
+    core_log_lines: Optional[list[str]] = None,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> None:
-    """Writes a support-bundle archive to `path`."""
+    """Writes a support-bundle archive to `path`. `core_log_lines`: the core's recent log lines, when the core is a separate
+    process (its log is not in this process's file)."""
     callsign = service.config.callsign or "repeater"
     version = installed_version(repo_dir)
     settings = service.export_snapshot()
@@ -252,6 +328,7 @@ def write_support_bundle(
         "  health.json         Pi readings + last unexpected stop\n"
         "  usb.txt             lsusb, ALSA cards, hidraw, USB kernel lines\n"
         "  moreopenrepeater.log / journal.txt / update.log\n"
+        "  core.log            the core's own lines, when it runs apart from the dashboard (the container install)\n"
         "  event-history.json  warnings and worse from the log collector, with what it knows is missing\n"
         "\n"
         "It does not include passwords, the env file, users, tokens or recordings.\n"
@@ -285,6 +362,8 @@ def write_support_bundle(
         )
         archive.writestr("usb.txt", _usb_snapshot(run))
         archive.writestr("moreopenrepeater.log", "\n".join(_tail_lines(log_path, LOG_LINES)) + "\n")
+        if core_log_lines is not None:
+            archive.writestr("core.log", "\n".join(core_log_lines[-LOG_LINES:]) + "\n")
         archive.writestr("journal.txt", _journal(run, JOURNAL_LINES))
         archive.writestr("event-history.json", json.dumps(_event_history(log_history), indent=2, default=str) + "\n")
         archive.writestr("update.log", "\n".join(update_lines) + ("\n" if update_lines else ""))

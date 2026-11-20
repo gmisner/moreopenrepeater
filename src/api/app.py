@@ -394,6 +394,9 @@ def create_app(
         admin_dependencies=runtime.admin_dependencies,
         tailscale=runtime.tailscale,
         restarter=runtime.restarter,
+        audio_devices=runtime.audio_devices,
+        run_mixer=runtime.run_mixer,
+        log_hub=runtime.log_hub,
     )
 
     audio_tools_routes.register(

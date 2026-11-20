@@ -537,6 +537,19 @@ meanwhile). A shorter limit shortens that window and restarts sooner; a Pi 3B+ t
 watched it hold. The check runs every 2 seconds, or every quarter of the limit if that is shorter. A value
 outside 2 to 300, or not a number, is ignored and the log says so.
 
+### The support bundle in the container install
+
+The dashboard's support bundle (the zip on the Remote page) asks the host for things a container does not have, so it fills
+them in another way and says so in the file:
+
+- **USB devices, sound cards and hidraw devices** come from `/sys` when `lsusb`, `/proc/asound` (Docker hides it) and `/dev/hidraw*`
+  are not there. The list has the same facts: bus position, vendor and product id, name and speed.
+- **The sound card list and the mixer dump** are the core's, read over the socket like the Audio page's.
+- **`core.log`** has the core's own log lines, since the core is another process and its lines are not in the dashboard's file.
+- **`journal.txt`** says there is no systemd journal for the service here and points to the two log files.
+- **The host's kernel log is not in it.** The USB drops that matter show there (`disabled by hub (EMI?)`), so when you are asked
+  about one, run `dmesg -T | grep -i usb` on the host and add the output.
+
 ### When the sound card drops off USB
 
 A USB sound card can drop off the bus for a couple of seconds and come back (RF from the transmitter getting into

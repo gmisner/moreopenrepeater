@@ -812,3 +812,40 @@ def test_a_card_that_does_not_exist_says_what_amixer_said(split_with_a_sound_car
     client, card = split_with_a_sound_card
     card.card = 9  # the configured card (2) is no longer there
     wait_for(lambda: any("Invalid card number" in note for note in client.get("/api/audio/levels").json()["notes"]))
+
+
+@pytest.fixture
+def split_for_a_bundle(tmp_path, sock_dir):
+    """A real core with a sound card behind it (and a card list), and an API with no amixer and no audio libraries."""
+    from api.audio_devices import AudioDeviceList
+    from test_sound_levels import CM108, FakeCard
+
+    (tmp_path / "state.json").write_text(json.dumps({"config": {
+        "callsign": "W1AW", "audio_enabled": False, "audio_input_device": CM108, "audio_output_device": CM108,
+    }}))
+    core = build_core({"MOREOPENREPEATER_DATA_DIR": str(tmp_path), "MOREOPENREPEATER_LOG_PATH": str(tmp_path / "c.log")})
+    core.runtime.run_mixer = FakeCard(2)
+    core.runtime.audio_device_list = AudioDeviceList(lambda: CARDS)
+    core.log_hub.publish("2026-01-01 00:00:00 INFO moreopenrepeater.controller: a line only the core wrote", "INFO")
+    with CoreThread(core, sock_dir / "core.sock", allow_simulate=False, log_hub=core.log_hub, activity_store=core.activity_store):
+        client, remote = split_client(sock_dir / "core.sock")
+        with client:
+            wait_for(lambda: remote.connected and remote._config is not None and remote._macros is not None)
+            wait_for(lambda: client.get("/api/audio/devices").status_code == 200)
+            yield client
+
+
+def test_the_support_bundle_has_the_cores_lines_cards_and_mixer(split_for_a_bundle):
+    import io
+    import zipfile
+
+    client = split_for_a_bundle
+    wait_for(lambda: "a line only the core wrote" in "\n".join(line["line"] for line in client.get("/api/logs/since?after=0").json()["lines"]))
+    response = client.get("/api/support-bundle")
+    assert response.status_code == 200
+    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    assert "a line only the core wrote" in archive.read("core.log").decode()
+    devices = json.loads(archive.read("devices.json"))
+    assert [card["name"] for card in devices["audio_devices"]] == [card["name"] for card in CARDS]  # the core's, not the API's empty list
+    mixer = devices["mixer"]["2"]
+    assert "error" not in mixer and {volume["control"] for volume in mixer["volumes"]} >= {"Speaker", "Mic"}  # read through the core

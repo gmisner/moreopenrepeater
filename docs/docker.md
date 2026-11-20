@@ -42,6 +42,7 @@ Files:
 - `docker/Dockerfile.core`: `python:3.13-slim-trixie` (pinned by digest, so one
   line builds for amd64 and arm64), the core's four Python packages,
   `espeak-ng` and `libportaudio2` (Piper is `docker/Dockerfile.piper`, its own container).
+- `docker/Dockerfile.chrony` and `docker/chrony-supervisor.py`: the optional time container (see **The time container**).
 - `docker/compose.yaml`: the services, their devices, volumes and the private network.
 - `docker/setup.sh`: the install (see **Install**).
 - `docker/update.sh`: the update (see **Updating**).
@@ -52,7 +53,8 @@ Files:
 ```
 sudo systemctl disable --now moreopenrepeater   # only if the native install is on this machine
 cd docker
-./setup.sh --callsign W1AW                      # add --allstar and --dmr to run those too, --udev to name the PTT interface,
+./setup.sh --callsign W1AW                      # add --allstar and --dmr to run those too, --time for the clock (see The time container),
+                                                # --udev to name the PTT interface,
                                                 # --import-allstar /etc/asterisk to bring an existing ASL3 node over (docs/allstar.md)
 ```
 
@@ -128,7 +130,7 @@ the air for a minute or two while the core restarts). It stops with a plain mess
 - `origin` can't be reached, or has moved one way while this checkout moved another, so it can't simply fast-forward.
   It only ever runs `git pull --ff-only`: it never merges or rewrites anything.
 
-It also rebuilds the optional containers you have (AllStar, DMR, Winlink), which a plain `docker compose up` would leave
+It also rebuilds the optional containers you have (AllStar, DMR, Winlink, the time container), which a plain `docker compose up` would leave
 on their old image.
 
 **Channels.** The container install follows the branch its checkout is on: `main` is the dev channel, `beta` is beta,
@@ -172,6 +174,8 @@ and says to run `./update.sh`.
   or by adding `MOR_KMSG_DEVICE=/dev/kmsg` to `.env` yourself.
 - The API also sees the host's Tailscale socket folder, read-only (see **Tailscale**). It holds no Tailscale command and
   cannot change Tailscale.
+- The optional time container is the one exception to "no capabilities": it is given `CAP_SYS_TIME` (and nothing else), which lets it set
+  the host's clock (see **The time container**, The privilege it needs). It is off unless you start it.
 - Lives on the private `services` network, not the host's (see **The private network**). Nothing is published
   from the core. The old host-network layout is `compose.host-network.yaml`.
 
@@ -332,7 +336,10 @@ keeps its readable text line in the log file exactly as before:
 | `link.command_dropped` | warning | a macro's link command had no link service to go to; `error_code` `link.no_service` (core) or `link.not_connected` (no connection to app_rpt) |
 | `link.connected`, `link.connection_lost`, `link.drop_failed` | info, error, warning | `host`, `port`, `node`; `retry_s` and `exception` when it was lost. Never the AMI password |
 | `autopatch.dial_requested` | info | none: a DTMF command asked for a call, not which number |
-| `<area>.loop_failed` | error | a background loop hit something unexpected and carried on. `area` is `weather`, `link`, `mailbox`, `transcripts`, `net`, `updates`, `alerts` or `sensors`; `exception` is the type; `error_code` is `<area>.unexpected` |
+| `time.clock_off`, `time.clock_ok` | warning, info | `offset_ms` (and `limit_ms` for the first): the Pi's clock against the NTP server went past 2 seconds, or came back. Never the server's name |
+| `time.check_failed` | warning | `reason`: `resolve`, `timeout`, `network`, `kiss`, `unsynchronized` or `bad_reply`. Logged when it changes, not on every check |
+| `time.server_changed` | info | `default`: whether it went back to the default. Never the server's name |
+| `<area>.loop_failed` | error | a background loop hit something unexpected and carried on. `area` is `weather`, `link`, `mailbox`, `transcripts`, `net`, `updates`, `alerts`, `sensors` or `time`; `exception` is the type; `error_code` is `<area>.unexpected` |
 | `autopatch.call_started`, `.call_connected`, `.call_ended` | info | `direction` (`outgoing`/`incoming`); `via` (`DTMF` or `dashboard`) when started; `result` and `talk_s` when ended |
 | `autopatch.call_refused` | info | `direction`, `via` or `reason`; the words say why (not allowed, busy, off, wrong access code) |
 | `autopatch.call_failed` | error | `direction`, `exception`; `error_code` `autopatch.call` |
@@ -633,6 +640,116 @@ off. The page's three program lights come from the supervisor, which writes `pro
 The core keeps where the bridge is, as it does for the node, so it survives a restart. Measured on a Pi 3B+: after saving from the page
 the bridge restarted with the new settings, kept the core's address in `[USRP]`, and the core's DMR audio was running to the bridge.
 The DMR network's traffic is a separate thing from the radio: with no master reachable nothing is transmitted.
+
+## The time container
+
+A Pi has no battery clock. One that boots with no network can be hours or days off, and the repeater leans on the clock: the
+station ID goes out by it, so do the spoken time, scheduled announcements and nets, and every time stamp in the logs and the
+activity history. So there are two parts, and the second is optional:
+
+1. **The check (always on).** The dashboard compares the Pi's clock with an NTP server and says so when it is off. It changes nothing.
+2. **The time container (off by default).** chrony, in its own container, sets the clock from the server you picked.
+
+### What the check does
+
+The API sends one SNTP packet (RFC 4330: a single UDP datagram to port 123, a 2 second wait) to the server you picked, or to
+`pool.ntp.org` if you have not, and works out how far the Pi's clock is from it and how long the round trip took. It only believes
+a reply that comes from the address it asked, that answers the question it sent (the reply has to echo back the timestamp the
+request carried, which is random in its low bits), that comes from a server saying its own clock is set, and whose timestamps
+are possible. A kiss-o'-death reply (the server telling a client to go away) is shown as that, never as a time. So a made-up
+reply cannot make a wrong clock look right.
+
+It never blocks anything. It runs in a worker thread, one check at a time, with an overall deadline (a name lookup that hangs is
+abandoned), and the answer is reused for about a minute, so a page that polls cannot hammer the server. The log gets one named
+event when the picture changes (`time.clock_off`, `time.clock_ok`, `time.check_failed`) with numbers only, never the server's name.
+It also runs gently in the background, once every ten minutes, and raises an alert (ntfy, Telegram, email or webhook, whichever
+you have set up) when the clock is **off by 2 seconds or more twice in a row**. The alert says in plain words what a wrong clock
+breaks. It says so again only after six hours if it is still wrong, and sends an all-clear once the clock is within a second.
+A server that cannot be reached says nothing about the clock, so it never raises or clears the alert. The first background check is
+two minutes after start, so a container that is about to fix the clock gets the chance first.
+
+### The server setting
+
+The server is a host name or an IP address, kept in a small file of its own, `ntp.json`, in the `time-config` volume: not in the
+repeater's configuration. Empty means `pool.ntp.org`. It is validated very strictly, because the time container writes it into
+chrony's configuration: letters, digits, dots and hyphens in each part of a name (a part never starts or ends with a hyphen), or an
+IP address. No spaces, quotes, `#`, `;`, `/` or `%`, nothing that is not plain ASCII (give an international name in its `xn--` form),
+at most 253 characters, and never a leading dash (it would be read as an option). An address that cannot be a time server (this
+machine, the unspecified address, multicast or reserved) is refused too. The file is written to a temporary file, flushed and
+renamed over the old one, so a power cut leaves the old setting or the new one, never half of one, and it is readable by everyone
+(it holds nothing secret) because the time container is another user.
+
+| Route | Who | What |
+| --- | --- | --- |
+| `GET /api/time` | any signed-in account | The server being checked, whether it answered, `offset_ms` (the server's time minus the Pi's clock, so positive means the Pi is behind), `round_trip_ms`, `stratum`, a plain `state` (`ok`, `off` when it is off by `limit_ms`, 2000 by default, or more, `unreachable`, `not_checked`), why there was no reading (`error` and `error_text`) and `container`: whether the time container is running and what it sees |
+| `PUT /api/time/ntp` | admin only | Body `{"server": "time.example.org"}`; `""` goes back to the default. Saves it, drops the cached check and checks against the new server before answering. A value that fails the rules above is a 400 with a sentence and nothing changes. The audit log records that it was changed, not to what |
+
+### The optional time container
+
+```
+./setup.sh --time                                  # in the docker folder, with the rest of the install
+docker compose --profile time up -d --build chrony   # or by hand, on an install that is already running
+```
+
+It is a Debian image with Debian's own `chrony` package (the base is pinned by digest like the other images). A small supervisor
+(`docker/chrony-supervisor.py`, like the DMR container's) is its entrypoint. It reads `ntp.json` at start and again whenever that file
+changes, **checks the value again** (it does not trust the file, whoever wrote it, because the value goes into a configuration file),
+renders `chrony.conf`, and restarts chronyd. A value that fails the check is not used: it keeps what it had (the default at start)
+and says why in its status. chronyd is a client only: `port 0` and `cmdport 0` mean it listens on no network port, and nothing is
+published. `makestep 1.0 3` lets it step the clock in its first three updates after every start, so a Pi that boots with a wrong
+clock is corrected at once instead of being nudged for hours. It reads no hardware clock. Its configuration, socket and drift file
+are in a tmpfs, so it writes nothing to the SD card.
+
+**Each side writes only its own file.** The dashboard writes the setting into the `time-config` volume, which the time container
+mounts read-only. The time container writes `status.json` into the `time-status` volume (every 30 seconds: when, whether chronyd is up,
+and what `chronyc tracking` says), which the API mounts read-only. The dashboard calls the container running when that file is fresh
+and says chronyd is up. A server it cannot reach is not "not running": the container is doing its job, and the page shows what it sees.
+
+#### The privilege it needs, in plain words
+
+**This container is given `CAP_SYS_TIME`, which lets it set the host's clock.** That is a real privilege, and it is why the container
+is off unless you ask for it. The clock belongs to the kernel, not to the container: when this container sets the time, every other
+container and the host itself see the change. A bug in chrony, or in the supervisor, or a wrong NTP server, could therefore move the
+host's clock. Everything else about the container is as small as it could be made:
+
+- `cap_drop: [ALL]`, then **only** `SYS_TIME` added back. No other capability.
+- It runs as root inside the container, with that one capability. That sounds worse than it is: root with one capability can set the
+  clock and nothing else. It cannot change file owners, read other users' files, signal other users' processes, bind a low port,
+  open raw sockets or load anything. The other way would need more capabilities, not fewer. chrony's own way to run without root
+  (`-U`) is documented as assuming the process already has the capabilities, and a container gives an added capability to root, not to
+  another user, so chronyd would start and then be unable to set the clock. Its usual privilege drop (`-u`) needs `CAP_SETUID` and
+  `CAP_SETGID`, and a supervisor needs `CAP_KILL` to restart it afterwards. The configuration says `user root` so that chronyd does
+  not try to drop. (This was worked out from chrony's documentation and source and Docker's seccomp profile. The container has not been
+  run yet, not on a Pi and not on Docker, so the first run is the real test.)
+- A read-only root filesystem, `no-new-privileges`, no device, no published port, no host network, no host folder mounted, and Docker's
+  default seccomp filter stays on (it allows `settimeofday` and `clock_settime` only when `CAP_SYS_TIME` is present).
+- No network service: `port 0` and `cmdport 0`. Its one control path is a Unix socket inside its own tmpfs.
+
+#### If the host already syncs its own clock
+
+Two programs setting one clock fight each other: each steps or slews what the other just fixed. If the host runs its own time sync
+(systemd-timesyncd, which Raspberry Pi OS has on by default, or chrony or ntpd), pick one. `./setup.sh --time` looks, names what it
+finds, and **changes nothing**; it starts the container anyway because you asked for it. To let the container do the job, turn the
+host's off:
+
+```
+sudo timedatectl set-ntp false            # systemd-timesyncd. Undo with: sudo timedatectl set-ntp true
+sudo systemctl disable --now chrony       # or chronyd, ntp, ntpd (and enable --now to undo)
+```
+
+Or the other way round: leave the host's sync on and do not run the container. The check and its alert still work without it.
+
+#### Removing it
+
+```
+docker compose --profile time rm -sf chrony     # stops and removes just this container
+docker volume rm moreopenrepeater_time-status   # optional: its status file. Keep time-config: it is the setting.
+```
+
+Do not use `docker compose down -v` on the project to do this: it removes every volume, including the ones that hold the repeater's
+settings. The clock stays where chrony left it. Without the container the dashboard still checks the clock and still alerts; its
+server setting is kept for when you start the container again. `./update.sh` rebuilds the container with the rest if it exists, and
+leaves it alone if it does not.
 
 ## Health and restarts
 

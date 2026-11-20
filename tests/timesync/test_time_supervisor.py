@@ -425,6 +425,18 @@ def test_it_writes_only_its_own_two_places(rig):
     assert sorted(set(os.listdir(rig.root)) - {"time-config", "time-status", "run-chrony", "fake", "bin", "test.log"}) == []
 
 
+def test_files_are_written_whole_or_not_at_all(tmp_path, monkeypatch):
+    target = tmp_path / "status.json"
+    sup.write_atomic(target, "old\n")
+    monkeypatch.setattr(os, "replace", lambda a, b: (_ for _ in ()).throw(OSError("gone")))
+    with pytest.raises(OSError):
+        sup.write_atomic(target, "new\n")
+    assert target.read_text() == "old\n" and sorted(os.listdir(tmp_path)) == ["status.json"]  # the old one, and no temporary file left
+    monkeypatch.undo()
+    sup.write_atomic(target, "new\n")
+    assert target.read_text() == "new\n" and stat.S_IMODE(target.stat().st_mode) == 0o644
+
+
 # -- parsing chronyc -----------------------------------------------------------------------------------------------------------------
 
 

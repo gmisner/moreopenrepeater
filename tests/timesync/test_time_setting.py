@@ -148,3 +148,13 @@ def test_with_no_folder_the_setting_is_kept_in_memory():
     setting = ts.NtpSetting(None)
     setting.set("memory.example")
     assert setting.get() == "memory.example"
+
+
+def test_the_new_file_is_flushed_to_disk_before_it_is_renamed_over_the_old(tmp_path, monkeypatch):
+    """A power cut after the rename must not leave an empty file: the data is synced first, then the swap."""
+    order = []
+    real_fsync, real_replace = os.fsync, os.replace
+    monkeypatch.setattr(os, "fsync", lambda fd: (order.append("fsync"), real_fsync(fd))[1])
+    monkeypatch.setattr(os, "replace", lambda a, b: (order.append("replace"), real_replace(a, b))[1])
+    ts.NtpSetting(tmp_path / "cfg").set("time.example.org")
+    assert order[:2] == ["fsync", "replace"]

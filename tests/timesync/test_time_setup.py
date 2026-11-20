@@ -135,11 +135,25 @@ def test_with_nothing_else_running_there_is_no_warning(site):
     assert "WARNING" not in out and "fight" not in out
 
 
+def could_change_the_host(call: str) -> bool:
+    """A call the script made that could change the host's time setup. `timedatectl show` only reads (the time zone default
+    asks it for the zone); `set-ntp` and the rest would change something, and anything under sudo might."""
+    return call.startswith("sudo") or (call.startswith("timedatectl") and not call.startswith("timedatectl show "))
+
+
+def test_what_counts_as_changing_the_host():
+    assert not could_change_the_host("timedatectl show -p Timezone --value")
+    assert could_change_the_host("timedatectl set-ntp false")
+    assert could_change_the_host("timedatectl")
+    assert could_change_the_host("sudo systemctl stop systemd-timesyncd")
+    assert not could_change_the_host("systemctl is-active systemd-timesyncd")
+
+
 def test_the_script_never_changes_the_hosts_time_sync_itself(site):
     host_runs(site, "systemd-timesyncd", "chrony", "ntpd")
     run(site, "--time")
     made = calls_made(site)
-    assert not [c for c in made if c.startswith(("sudo", "timedatectl"))]
+    assert not [c for c in made if could_change_the_host(c)]
     assert not [c for c in made if c.startswith("systemctl") and not c.startswith("systemctl is-active")]  # only asks; never stop, disable or enable
 
 
@@ -195,3 +209,4 @@ def test_a_value_the_owner_set_is_kept(site):
 def test_the_script_is_still_valid_shell():
     assert subprocess.run(["sh", "-n", str(DOCKER / "setup.sh")]).returncode == 0
     assert subprocess.run(["sh", "-n", str(DOCKER / "update.sh")]).returncode == 0
+

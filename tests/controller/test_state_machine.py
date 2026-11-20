@@ -292,6 +292,34 @@ def test_id_timer_preempts_from_idle_and_resumes_idle():
     assert AssertPTT(active=False) in commands
 
 
+def test_an_id_that_was_not_heard_is_owed_again_right_away_and_the_interval_then_runs_as_usual():
+    # No idle IDs: with none owed, the repeater never IDs by itself (the next test), so this is the hook's doing.
+    controller = RepeaterController(make_config(id_interval=100.0, id_audio_duration=0.5), now=0.0)
+    assert controller.tick(now=500.0) == []
+
+    controller.id_not_heard()
+    assert PlayAudio(clip="id") in controller.tick(now=501.0)
+    assert controller.state == TRANSMITTING_ID
+    controller.tick(now=501.6)
+    assert controller.state == IDLE
+
+    # Heard this time: nothing owed any more, so no further ID until the repeater is used again.
+    for now in (503.0, 700.0, 5_000.0):
+        assert controller.tick(now) == []
+
+
+def test_an_id_that_was_not_heard_waits_for_the_repeater_to_stop_being_busy():
+    controller = RepeaterController(make_config(id_interval=100.0, id_audio_duration=0.5), now=0.0)
+    controller.handle_event(COSChanged(active=True), now=10.0)
+    controller.id_not_heard()
+    assert PlayAudio(clip="id") not in controller.tick(now=11.0)  # someone is talking: not over them
+    controller.handle_event(COSChanged(active=False), now=12.0)
+    commands = []
+    for now in (12.3, 13.5, 14.6, 15.0):
+        commands += controller.tick(now)
+    assert PlayAudio(clip="id") in commands
+
+
 def test_no_id_while_the_repeater_is_idle():
     controller = RepeaterController(make_config(), now=0.0)
     for now in (100.0, 500.0, 5_000.0):

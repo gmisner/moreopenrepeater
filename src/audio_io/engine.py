@@ -37,6 +37,11 @@ def _monotonic() -> float:
     return time.monotonic()
 
 
+# A sound card that drops off USB under a running stream does not always make PortAudio report the stream as
+# inactive: the callbacks just stop. The callback only skips a block when the queue is full, so a queue that stays
+# empty this long means the card has stopped delivering (blocks come every 20 ms). Well past a busy Pi's worst pause,
+# since an empty queue (not a slow worker) is the evidence.
+INPUT_SILENCE_SECONDS = 1.5
 PTT_RETRY_SECONDS = 0.05
 PTT_RETRY_MAX_SECONDS = 1.0
 PTT_RELEASE_DELAYS = (0, 0.05, 0.1, 0.2)
@@ -228,6 +233,8 @@ class AudioEngine:
             try:
                 block = self._input.get(timeout=0.2)
             except queue.Empty:
+                if self._input_went_silent():
+                    return
                 self._retry_ptt()
                 continue
             try:
@@ -241,10 +248,24 @@ class AudioEngine:
         stream = self._stream
         if stream is None or getattr(stream, "active", True):
             return False
+        return self._report_stream_dead("inactive", "audio stream died (USB unplug or device reset)")
+
+    def _input_went_silent(self) -> bool:
+        """The worker's input queue was empty for its whole wait and nothing has arrived for
+        `INPUT_SILENCE_SECONDS`: the sound card stopped delivering while the stream still looks active."""
+        last = self.last_block_at
+        if self._stream is None or last is None or time.monotonic() - last <= INPUT_SILENCE_SECONDS:
+            return False
+        return self._report_stream_dead(
+            "no_audio",
+            "no audio from the sound card for %.1f s (USB unplug or device reset)" % INPUT_SILENCE_SECONDS,
+        )
+
+    def _report_stream_dead(self, reason: str, message: str) -> bool:
         if self._stream_dead_reported:
             return True
         self._stream_dead_reported = True
-        log_event(_logger, logging.ERROR, "audio.stream_died", "audio stream died (USB unplug or device reset)")
+        log_event(_logger, logging.ERROR, "audio.stream_died", message, reason=reason, facts_in_text=False)
         callback = self._on_stream_dead
         if callback is not None:
             try:

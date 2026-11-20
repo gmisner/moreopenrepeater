@@ -39,7 +39,7 @@ from audio_io.pi_gpio import GpioLine, open_header_pin
 from audio_io.processor import AudioProcessor, ProcessorSettings
 from audio_io.serial_lines import open_serial_line
 from controller.events import COSChanged, CTCSSChanged
-from controller.state_machine import RepeaterConfig
+from controller.state_machine import TRANSMITTING_ID, RepeaterConfig
 from observability import log_event
 from playout.renderer import RECORDING_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
@@ -71,6 +71,14 @@ MAX_PARROT_SECONDS = 30.0
 PARROT_ARMED_SECONDS = 60.0  # give up waiting for the parrot transmission after this
 STREAM_RECOVER_COOLDOWN = 5.0
 STREAM_RECOVER_MAX_DELAY = 60.0
+# A card that dropped off USB is usually back within a few seconds, so look for it every second for a while before
+# falling back to the slower, doubling retries (STREAM_RECOVER_COOLDOWN) that suit a card that is really gone.
+STREAM_REOPEN_POLL_SECONDS = 1.0
+STREAM_REOPEN_QUICK_SECONDS = 20.0
+# An ID cut off by the card dropping is sent again once audio is back, but at most this often. Sending it again keys
+# the transmitter, and a card that drops on every keying would otherwise key it over and over for as long as it kept
+# dropping.
+ID_REPLAY_MIN_SECONDS = 300.0
 _RESTART_FIELDS = (
     "audio_enabled",
     "audio_input_device",
@@ -218,6 +226,10 @@ class LiveAudio:
         self._retry_delay = STREAM_RECOVER_COOLDOWN
         self._retry_at: Optional[float] = None
         self._retry_handle: Optional[asyncio.TimerHandle] = None
+        self._retry_started_at: Optional[float] = None  # when this run of reopen attempts began
+        self._lost_at: Optional[float] = None  # when a running engine's sound card was lost; None once audio is back
+        self._id_interrupted = False  # a station ID was on the air when the card was lost
+        self._last_id_replay = float("-inf")
         self._generation = 0
         self._closed = False
 
@@ -247,6 +259,12 @@ class LiveAudio:
         """When the engine last handled a block (time.monotonic()), or None while it isn't running."""
         engine = self.engine
         return engine.last_block_at if engine is not None and engine.running else None
+
+    def lost_since(self) -> Optional[float]:
+        """When the sound card was lost under a running engine (time.monotonic()) and has not come back, else
+        None. A container restarts the core if this goes on too long, because a restart gives it fresh device
+        nodes when the card came back under a different number."""
+        return self._lost_at
 
     def release_ptt(self) -> None:
         """Unkey the transmitter directly, from any thread, without the
@@ -509,15 +527,22 @@ class LiveAudio:
             self._retry_handle.cancel()
         self._retry_handle = None
         self._retry_at = None
+        self._retry_started_at = None
+        self._lost_at = None
+        self._id_interrupted = False
         self._last_stream_recover = float("-inf")
         self._retry_delay = STREAM_RECOVER_COOLDOWN
 
     def _recover_engine(self, generation: Optional[int] = None) -> None:
         if self._closed or self.engine is None or (generation is not None and generation != self._generation):
             return
+        now = self._monotonic()
+        self._lost_at = now  # cleared when audio is back, so a drop always starts a new one
+        self._retry_started_at = now
+        if self._service.controller.state == TRANSMITTING_ID:
+            self._id_interrupted = True  # it did not get out; owed again once audio is back
         self._stop_engine()
         self.error = "audio stream died (USB unplug or device reset)"
-        now = self._monotonic()
         elapsed = now - self._last_stream_recover
         if elapsed >= STREAM_RECOVER_MAX_DELAY:
             self._retry_delay = STREAM_RECOVER_COOLDOWN
@@ -526,12 +551,22 @@ class LiveAudio:
         else:
             self._retry_engine(self._generation)
 
-    def _schedule_recovery(self, delay: float) -> None:
+    def _schedule_recovery(self, delay: float, *, back_off: bool = True) -> None:
         if self._loop is None:
             return
         self._retry_at = self._monotonic() + delay
         self._retry_handle = self._loop.call_later(delay, self._retry_engine, self._generation)
-        self._retry_delay = min(self._retry_delay * 2, STREAM_RECOVER_MAX_DELAY)
+        if back_off:
+            self._retry_delay = min(self._retry_delay * 2, STREAM_RECOVER_MAX_DELAY)
+
+    def _schedule_reopen(self) -> None:
+        """The card is not there yet: look again in a second for the first stretch, then back off."""
+        started = self._retry_started_at
+        quick = started is not None and self._monotonic() - started < STREAM_REOPEN_QUICK_SECONDS
+        if quick:
+            self._schedule_recovery(STREAM_REOPEN_POLL_SECONDS, back_off=False)
+        else:
+            self._schedule_recovery(self._retry_delay)
 
     def _retry_engine(self, generation: int) -> None:
         config = self._applied
@@ -543,7 +578,7 @@ class LiveAudio:
         _logger.info("restarting live audio after the stream died")
         self._start_engine(config, recovering=True)
         if self.engine is None:
-            self._schedule_recovery(self._retry_delay)
+            self._schedule_reopen()
 
     def _start_engine(self, config: RepeaterConfig, *, recovering: bool = False) -> None:
         try:
@@ -552,6 +587,11 @@ class LiveAudio:
             self.error = f"couldn't open audio devices: {error}"
             _logger.error("%s", self.error)
             self._release_pins()
+            if not recovering and self._retry_handle is None:
+                # The card may simply not be there yet (a core restarted a moment after a USB drop): keep looking
+                # instead of leaving audio dead until someone restarts the service.
+                self._retry_started_at = self._monotonic()
+                self._schedule_reopen()
 
     def _open_engine(self, config: RepeaterConfig, *, recovering: bool) -> None:
         cos_source = config.cos_source
@@ -640,6 +680,17 @@ class LiveAudio:
             raise
         self.engine = engine
         self.error = None
+        self._lost_at = None
+        self._retry_started_at = None
+        if self._id_interrupted:
+            self._id_interrupted = False
+            now = self._monotonic()
+            if now - self._last_id_replay >= ID_REPLAY_MIN_SECONDS:
+                self._last_id_replay = now
+                self._service.controller.id_not_heard()
+                _logger.info("audio is back; the station ID that was cut off will go out again")
+            else:
+                _logger.warning("audio is back; the station ID was cut off again, so it is not repeated until its next turn")
 
     def _claim_pin(self, pin: int, role: str, *, output: bool, active_low: bool) -> GpioLine:
         try:

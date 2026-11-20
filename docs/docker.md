@@ -205,7 +205,7 @@ keeps its readable text line in the log file exactly as before:
 | `ptt.transmit_capped` | critical | `keyed_s`, `limit_s`; `error_code` `ptt.cap` |
 | `ptt.release_unconfirmed` | critical | `error_code` `ptt.hardware` |
 | `audio.glitch` | info | `counter`, `count`, `state`, `transmitting` |
-| `audio.engine_started`, `audio.engine_stopped`, `audio.stream_died` | info, info, error | rates for the first |
+| `audio.engine_started`, `audio.engine_stopped`, `audio.stream_died` | info, info, error | rates for the first; `reason` for the last: `inactive` (PortAudio said the stream stopped) or `no_audio` (it still looked active but delivered nothing for 1.5 s, which is what a USB drop usually looks like) |
 | `receiver.opened` | info | `duration_s`, `open_dbfs`, `peak_dbfs`, `ctcss_hz`, `after_tx_s` (never DTMF digits) |
 | `dtmf.digit_received` | info | none: that a digit arrived, never which one (it could be part of a PIN or a code) |
 | `command.applied` | info | `command`: the name of a `core.command` the API sent, never its parameters |
@@ -215,7 +215,7 @@ keeps its readable text line in the log file exactly as before:
 | `config.refused` | warning | `error_code` says why (`config.unsafe`, `config.unknown_setting`, `config.wrong_type`, `config.conflict`) |
 | `config.failed` | error | `exception`; `error_code` `config.apply_failed` |
 | `speech.accepted` | info | `topic`: the core took a `speak.request` |
-| `watchdog.stalled` | error | `part` (`controller`, `audio engine`, `link radio audio engine`), `stall_s`; `error_code` `watchdog.stalled`. The core exits right after |
+| `watchdog.stalled` | error | `part` (`controller`, `audio engine`, `link radio audio engine`, `sound card`), `stall_s`; `error_code` `watchdog.stalled`. The core exits right after |
 | `weather.scheduled_due` | info | none: the routine weather announcement came due |
 | `weather.alert_announced` | info | `alert` (the kind, such as Flood Watch), `alert_id` |
 | `weather.announce_failed` | error | `kind` (`scheduled` or `alert`), `exception`; `error_code` `weather.announce`. Never the text of the alert |
@@ -481,6 +481,35 @@ meanwhile). A shorter limit shortens that window and restarts sooner; a Pi 3B+ t
 (swapping, a long garbage collection) could be restarted for nothing, so go below about 5 only if you have
 watched it hold. The check runs every 2 seconds, or every quarter of the limit if that is shorter. A value
 outside 2 to 300, or not a number, is ignored and the log says so.
+
+### When the sound card drops off USB
+
+A USB sound card can drop off the bus for a couple of seconds and come back (RF from the transmitter getting into
+the cable, a loose connector, a current dip when the radio keys). The hub logs `disabled by hub (EMI?)`, and what the
+core does about it is:
+
+1. **It notices within 2 seconds.** PortAudio does not always say the stream stopped; the callbacks just stop. The
+   engine's input queue then stays empty, and after 1.5 seconds with no audio it logs `audio.stream_died` with
+   `reason` `no_audio` (`inactive` is the case PortAudio does report) and lets go of the card.
+2. **It looks for the card every second and opens it again in the same process,** for the first 20 seconds, then
+   less often (5 seconds, doubling to a minute). A card that is not there when the core starts is looked for the same way,
+   so a core that restarts a moment after a drop does not give up on audio.
+3. **If a container core has not got it back after 6 seconds, it restarts itself** (the `sound card` part of the
+   watchdog). A restart gives the container fresh device nodes, which matters when the card came back under a different
+   number. A native install does not do this: a card that is unplugged for good should not put the service in a restart loop.
+4. **A station ID that was on the air is sent again once audio is back,** but at most once every 5 minutes. Sending it
+   keys the transmitter, so a card that drops on every keying would otherwise key up, drop and send the ID again for as long
+   as it kept dropping.
+
+Measured on the Pi 3B+ bench with the AIOC keyed from a bare script (5 drops in a row): audio back 3.6 to 4.3 seconds
+after each drop, the core never restarted, and the card came back as the same `hw:2,0` and `/dev/moreopenrepeater-ptt` every time
+(most likely because the core lets go of the old card within 1.5 seconds, before the kernel registers the new one). Before this, the same
+drop took about 19 seconds: 10 seconds for the stall limit to pass, then a container restart.
+
+This recovers from the drop. It does not stop the drops. If the hub logs `EMI?` in the same second the core logs
+`ptt.applied` with `active` true, the transmitter itself is upsetting the USB link, and that is a hardware problem (an
+antenna close to the cable, the radio's charger or supply, the cable). A dummy load in place of the antenna, or the radio
+on its battery, tells you which.
 
 A restart can only help if the container can start again: a PTT device
 path that no longer exists stops it starting, which is why the PTT device has a stable name (see above). `restart: unless-stopped` covers crashes and exits, but not a manual `docker kill`

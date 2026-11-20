@@ -4,4 +4,4 @@ numpy>=1.26
 sounddevice>=0.4
 httpx>=0.27
 # src/contracts uses pydantic. pyproject gets it today through FastAPI.
-pydantic>=2
+pydantic>=2.14.3

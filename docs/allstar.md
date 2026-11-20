@@ -153,6 +153,76 @@ For development with Asterisk in a VM, `MOREOPENREPEATER_ASTERISK_SHELL` is
 a command prefix that reaches its files, for example
 `limactl shell asl3 -- sudo`.
 
+## Importing a node from an existing ASL3 install
+
+This is for someone who already runs ASL3 on the repeater's computer and is moving to the container install
+(`docs/docker.md`). Instead of typing the node number, callsign and password again, the dashboard can read the old node's
+`/etc/asterisk` and bring the node over. It reads that folder and never writes to it.
+
+```sh
+cd docker
+./setup.sh --callsign W1AW --import-allstar /etc/asterisk    # implies --allstar
+```
+
+`setup.sh` records the folder as `MOR_ALLSTAR_IMPORT_DIR` in `docker/.env` (and keeps a value you already set). Compose
+mounts it read-only into the API container only, as `/import/asterisk`. Without it, compose mounts the empty `docker/empty`
+folder, so an install that isn't importing has nothing new on its AllStar page.
+
+Then open the **AllStarLink** page, **Node and EchoLink** tab. As an admin you see **Found an existing node
+configuration**: the node number, callsign, how many allowed links it has, its startup macro, and whether it has a
+registration (yes or no; the password is never shown, and no API response or log line carries it). If the file has more than
+one node, pick the one that is the repeater. Nothing is written until you click **Import node**.
+
+What it takes:
+
+- **Node number.** The container node's stock placeholder (1999) is renamed to it, the same way **Set node number** does.
+- **Callsign**, from `idrecording = |iW1AW` (or `idtalkover`), also when it comes from a template such as `[node-main]`.
+  If the old ID is a recording and not a callsign, the page asks for one.
+- **Registration password**, from `rpt_http_registrations.conf`, then `iax.conf`, then `savenode.conf`, written to the
+  container's own registration files. It is read again from the old files at the moment you click Import, held in memory for
+  that one step and not kept. A password the dashboard can't write safely (it takes 6 or more letters, digits, `_` or `-`)
+  is left out and the page says so; add it under **Edit node**.
+- **Startup macro** (`startup_macro`), if it is a plain DTMF string.
+- **Allowed links**: the entries in the node's `nodes` list (the stanza its `nodes =` setting names, `[nodes]` if none).
+  Entries the container already has are kept, and entries that point at the old machine's loopback are left out, since there
+  that address would be the container itself.
+
+What it deliberately leaves: the radio. In the container the radio is the controller's core over USRP, so
+`rxchannel`, `txchannel`, `duplex` and the other channel driver settings, the sound card, and the PTT and COS settings
+(`simpleusb.conf`, `usbradio.conf`, `voter.conf`) are neither copied nor read. `manager.conf` isn't read either (the container
+writes its own management login), and IAX users and peers, EchoLink and the rest of the old files stay where they are. Importing
+then makes the container node's radio the controller, exactly as **Use this node** does, and restarts Asterisk.
+
+The files are read the way Asterisk reads them where it matters: comments and `;-- --;` blocks, `#include` and `#tryinclude`
+(only files inside the folder; `/etc/asterisk/...` paths mean the same place in it), and templates such as
+`[1999](node-main)`. `#exec` is never run. A file that is missing or can't be read is named on the page with the reason.
+The most likely one is permissions: the API container runs as user 999, and a host node's files are usually readable only by
+root and the `asterisk` group. If the page says so, make a private copy and point the import at it, then delete the copy
+(it holds the node's password):
+
+```sh
+sudo cp -a /etc/asterisk /var/tmp/asterisk-import
+sudo chown -R 999:999 /var/tmp/asterisk-import && sudo chmod -R go-rwx /var/tmp/asterisk-import
+# in docker/.env: MOR_ALLSTAR_IMPORT_DIR=/var/tmp/asterisk-import   then:  docker compose up -d api
+```
+
+If the container node already has a different node set up (a number that isn't a stock placeholder, or one that registers),
+the import refuses until you tick **Replace node N**; that renames it and changes its callsign and registration. Importing the
+same node again changes nothing: a second click, or a second run, leaves the files as they are.
+
+**Undoing it.** Every write is backed up as for any other change, and the import also keeps one restore point first: a folder
+`import-<date>-<time>` in the data folder's `asterisk-backups` with every file it might touch, as it was. The first one is
+never removed. To go back, copy the files out of it:
+
+```sh
+docker compose exec api sh -c 'cp /data/asterisk-backups/import-20261120-101010/* /etc/asterisk/'
+docker compose restart allstar
+```
+
+Copy back only the files you want. The old node on the host isn't touched, so it can simply be started again.
+
+Not done: nothing here was tried against a real ASL3 node or on a Pi; it is covered by tests on realistic sample files.
+
 ## EchoLink
 
 ASL3 includes an EchoLink channel driver, `chan_echolink`. With it on,

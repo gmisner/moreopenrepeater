@@ -29,6 +29,7 @@ import { notifyError, notifySuccess, useConfig } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
 import { ConnectBar } from "./allstar/ConnectBar";
+import { ImportCard } from "./allstar/ImportCard";
 import { LinkMap } from "./allstar/LinkMap";
 import { ScheduleWeek } from "./allstar/ScheduleWeek";
 import { SetupChecklist } from "./allstar/SetupChecklist";
@@ -1034,6 +1035,14 @@ export function AllStar() {
             <Text size="sm" c="amber" mb="sm">
               EchoLink status may be out of date. Retrying…
             </Text>
+          ) : null}
+          {isAdmin ? (
+            <ImportCard
+              onApplied={() => {
+                void refresh().catch(() => {});
+                void refreshEcho().catch(() => {});
+              }}
+            />
           ) : null}
           <Grid>
             <Grid.Col span={{ base: 12, md: 6 }}>

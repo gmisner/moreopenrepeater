@@ -81,7 +81,11 @@ def test_a_rule_is_not_made_for_text_that_could_break_out_of_the_rule(tmp_path):
     for bad in ('AB"CD', "a b", "x,SYMLINK+=evil", "port:1-1.4;", "port:", "port:abc"):
         result = interfaces("rule", bad, sys_root=tmp_path)
         assert result.returncode == 2 and result.stdout == "", bad
-    assert interfaces("rule", sys_root=tmp_path).returncode == 2
+    empty = interfaces("rule", sys_root=tmp_path)
+    assert empty.returncode == 2 and "rule needs the interface's serial number" in empty.stderr
+    bad = interfaces("rule", 'AB"CD', sys_root=tmp_path)
+    assert "does not look like a serial number" in bad.stderr
+    assert "is not a USB port like 1-1.3" in interfaces("rule", "port:abc", sys_root=tmp_path).stderr
     assert interfaces("nonsense", sys_root=tmp_path).returncode == 2
 
 

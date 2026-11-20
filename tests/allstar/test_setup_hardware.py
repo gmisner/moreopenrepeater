@@ -35,7 +35,7 @@ def hw(site, tmp_path):  # noqa: F811
 
     shim("sudo", f'echo "sudo $*" >> {calls}; exec "$@"')  # logs, then does it, into the fake rules folder
     shim("udevadm", f'echo "udevadm $*" >> {calls}; exit 0')
-    shim("getent", 'echo "gpio:x:997:pi"')
+    shim("getent", '[ "$*" = "group gpio" ] && echo "gpio:x:997:pi" || exit 2')  # only the gpio group exists
     shim("gpiodetect", 'echo "gpiochip0 [pinctrl-bcm2835] (54 lines)"')
     return {"site": site, "dev": dev, "rules": rules, "bin": bin_dir, "shim": shim, "folder": folder, "calls": calls}
 
@@ -114,6 +114,7 @@ def test_gpio_that_cannot_tell_the_chips_apart_refuses_and_changes_nothing(hw):
     before = settled(hw)
     result = go(hw, "--gpio")
     assert result.returncode == 2 and "can't tell which" in result.stderr and "MOR_GPIOCHIP" in result.stderr
+    assert "does not exist" not in result.stderr  # it stopped there, and did not go on with a guess
     assert env_file(hw) == before and not started(hw)
 
 

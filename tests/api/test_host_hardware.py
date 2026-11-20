@@ -149,6 +149,18 @@ def test_the_link_radio_setup_problem_is_still_the_old_words_on_a_native_install
     assert setup_problem(dataclasses.replace(LINK_CONFIG, link_radio_ptt="cm108"), None) == NO_SECOND_INTERFACE
 
 
+def test_the_link_radios_serial_failure_names_the_command(container):
+    serial = FakeSerial()
+    serial.open = MissingChip()
+    config = dataclasses.replace(
+        LINK_CONFIG, link_radio_ptt="serial", link_radio_ptt_serial_device="/dev/ttyUSB1", link_radio_ptt_serial_line="rts"
+    )
+    _live, link, _service, _serial, _engines = make_serial(config, serial)
+    error = link.status()["error"]
+    assert error.startswith("couldn't open /dev/ttyUSB1 (RTS) for the linked radio's PTT: ")
+    assert "./setup.sh --serial /dev/serial/by-id/NAME" in error
+
+
 def test_the_link_radios_header_pin_failure_names_the_command(container):
     header = FakeHeader()
     header.open = MissingChip()

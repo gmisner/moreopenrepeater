@@ -433,6 +433,10 @@ device is not there, the script says so and starts nothing.
 
 Nothing else is widened: no privileged mode, no added capability, not the whole of `/dev`.
 
+If you start Compose with your own `-f` options (for example `-f compose.yaml -f compose.host-network.yaml`), those
+replace `COMPOSE_FILE`, so name the hardware files too: `-f compose.gpio.yaml`, `-f compose.serial.yaml` and
+`-f compose.link-radio.yaml`, whichever you use.
+
 The **GPIO** card on the Audio page (the spare outputs and inputs) is the CM108's own pins, so it works with the PTT
 interface alone and needs none of this. Only header pins do.
 

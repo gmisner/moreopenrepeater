@@ -97,7 +97,17 @@ from .transcripts import VOSK_MODEL_ENV, Transcriber, VoskEngine
 from .tx_fan import TxFan
 from .tailscale import TailscaleControl, tailscale_settings_from_env
 from .restart import RestartControl, restart_settings_from_env
-from .updates import UpdateChecker, Updater, channel_from_env, installed_version, repo_from_checkout, updater_settings_from_env
+from .updates import (
+    ContainerInstall,
+    UpdateChecker,
+    Updater,
+    channel_from_env,
+    container_install_from_env,
+    installed_version,
+    repo_from_checkout,
+    repo_from_env,
+    updater_settings_from_env,
+)
 from .users import Role, UserStore
 from .watchdog import Watchdog
 
@@ -319,6 +329,7 @@ class AdminOpsBundle:
     updater: Optional[Updater] = None
     update_checker: Optional[UpdateChecker] = None
     update_channel: Optional[str] = None
+    container_install: Optional[ContainerInstall] = None
     auto_update_store: Optional[StateStore] = None
     tailscale: Optional[TailscaleControl] = None
     restarter: Optional[RestartControl] = None
@@ -371,6 +382,7 @@ class RuntimeBuilder:
     updater: Optional[Updater] = None
     update_checker: Optional[UpdateChecker] = None
     update_channel: Optional[str] = None
+    container_install: Optional[ContainerInstall] = None
     tailscale: Optional[TailscaleControl] = None
     restarter: Optional[RestartControl] = None
     notifier: Optional[Notifier] = None
@@ -464,6 +476,7 @@ class RuntimeBuilder:
                 updater=self.updater,
                 update_checker=self.update_checker,
                 update_channel=self.update_channel,
+                container_install=self.container_install,
                 auto_update_store=self.auto_update_store,
                 tailscale=self.tailscale,
                 restarter=self.restarter,
@@ -567,6 +580,7 @@ class AppRuntime:
         updater = admin.updater
         update_checker = admin.update_checker
         update_channel = admin.update_channel
+        container_install = admin.container_install
         auto_update_store = admin.auto_update_store
         tailscale = admin.tailscale
         restarter = admin.restarter
@@ -762,7 +776,8 @@ class AppRuntime:
         )
         backups = backups or BackupFolder(None)
         updater = updater or Updater(updater_settings_from_env(os.environ))
-        update_checker = update_checker or UpdateChecker(repo_from_checkout(REPO_DIR))
+        container_install = container_install or container_install_from_env(os.environ)
+        update_checker = update_checker or UpdateChecker(repo_from_checkout(REPO_DIR) or repo_from_env(os.environ))
         update_channel = update_channel or channel_from_env(os.environ)
         tailscale = tailscale or TailscaleControl(tailscale_settings_from_env(os.environ))
         restarter = restarter or RestartControl(restart_settings_from_env(os.environ))
@@ -1294,6 +1309,7 @@ class AppRuntime:
         self.updater = updater
         self.update_checker = update_checker
         self.update_channel = update_channel
+        self.container_install = container_install
         self.tailscale = tailscale
         self.restarter = restarter
         self.auto_updater = auto_updater

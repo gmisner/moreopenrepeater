@@ -833,6 +833,9 @@ curl http://127.0.0.1:8000/api/logs?lines=50   # the app's own rotating log, sam
 
 ## 6. Updates
 
+This section is for the native install. The container install updates with `docker/update.sh`
+(see **Updating** in `docs/docker.md`); its Updates page shows the running version and the command to run.
+
 Releases come in three channels, so a change can be tried before it
 reaches repeaters on the air:
 

@@ -21,6 +21,8 @@
 #   --usb-speed       Raspberry Pi 3 Model B+ only: hold USB to full speed (dwc_otg.speed=1 in cmdline.txt, backed up first),
 #                     which stops the AIOC's audio glitches under load. Needs sudo and a reboot, which it does not do.
 #   --no-start        write the settings, start nothing
+#
+# Later updates are ./update.sh (pull, rebuild, restart).
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -252,6 +254,12 @@ case "$MODEL" in
     [ "$USB_SPEED" = 0 ] || die "--usb-speed is only for a Raspberry Pi 3 Model B+ (this is: ${MODEL:-not a Raspberry Pi})."
     ;;
 esac
+
+# --- which version this is ---------------------------------------------------------------------------------------
+
+# The API image has no git, so the commit goes in as a build argument from .env (docker/update.sh does the same on every
+# update). The dashboard's Updates page shows it. Not a git checkout (a downloaded copy): it says "unknown" there.
+sh ./update.sh --record-only 2>/dev/null || say "  (couldn't note which version this is; the Updates page will say unknown until ./update.sh runs in a git checkout)"
 
 # --- start -------------------------------------------------------------------------------------------------------
 

@@ -44,6 +44,7 @@ Files:
   `espeak-ng` and `libportaudio2` (Piper is `docker/Dockerfile.piper`, its own container).
 - `docker/compose.yaml`: the services, their devices, volumes and the private network.
 - `docker/setup.sh`: the install (see **Install**).
+- `docker/update.sh`: the update (see **Updating**).
 - `docker/core-requirements.txt`: what the core imports. No FastAPI, uvicorn or mcp.
 
 ## Install
@@ -101,6 +102,41 @@ sudo mkdir -p /srv/mor-data && sudo cp /opt/moreopenrepeater/data/state.json /sr
 sudo chown -R 999:999 /srv/mor-data
 echo MOR_DATA_DIR=/srv/mor-data >> .env
 ```
+
+## Updating
+
+```
+cd docker
+./update.sh
+```
+
+`update.sh` pulls the new code, notes which commit it is, then rebuilds and restarts the containers (the repeater is off
+the air for a minute or two while the core restarts). It stops with a plain message, and changes nothing, if
+
+- the checkout has changes of its own (commit or stash them first),
+- the checkout is not on a branch that follows `origin` (a detached checkout), or
+- `origin` can't be reached, or has moved one way while this checkout moved another, so it can't simply fast-forward.
+  It only ever runs `git pull --ff-only`: it never merges or rewrites anything.
+
+It also rebuilds the optional containers you have (AllStar, DMR, Winlink), which a plain `docker compose up` would leave
+on their old image.
+
+**Channels.** The container install follows the branch its checkout is on: `main` is the dev channel, `beta` is beta,
+`stable` is stable (the same three as the native install, see `docs/raspberry-pi.md`). To change channel, switch the
+branch and update: `git checkout stable && ./update.sh`.
+
+**The Updates page.** The dashboard can show what is running and whether GitHub has newer commits on the branch you
+follow, but it cannot update anything: it is a separate container with no access to Docker or the host, on purpose, and
+there is no git in its image. So the Updates page in a container install has no Update button. It shows the running
+commit, any newer commits, and the commands above to copy.
+
+**Where the running version comes from.** The API image is built with the commit as a build argument. `update.sh`
+and `setup.sh` write `MOR_COMMIT`, `MOR_COMMIT_DATE`, `MOR_BRANCH` and `MOR_REPO` (the owner and name of the GitHub
+remote, never its URL) into `docker/.env`, and `compose.yaml` passes them to `Dockerfile.api`, which sets them as
+environment variables for the app. Nothing is mounted from the host. The recorded commit is the checkout's `HEAD` at the
+time the script ran, so if you update with plain `git pull` and `docker compose up -d --build`, the page keeps showing
+the older commit until you run `./update.sh` once. An image built with nothing recorded shows the version as unknown
+and says to run `./update.sh`.
 
 ## What the container is allowed to do
 

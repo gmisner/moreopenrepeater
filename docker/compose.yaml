@@ -109,6 +109,13 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
+      # The commit this checkout is at, written to .env by update.sh and setup.sh. The image has no git; the Updates page
+      # shows this. Empty (never recorded) shows as "unknown".
+      args:
+        MOR_COMMIT: ${MOR_COMMIT:-}
+        MOR_COMMIT_DATE: ${MOR_COMMIT_DATE:-}
+        MOR_BRANCH: ${MOR_BRANCH:-}
+        MOR_REPO: ${MOR_REPO:-}
     image: moreopenrepeater-api:local
     restart: unless-stopped
     init: true

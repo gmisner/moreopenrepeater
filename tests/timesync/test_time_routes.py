@@ -181,6 +181,15 @@ def test_changing_the_server_throws_the_cache_away_and_checks_the_new_one(tmp_pa
     assert len(query.calls) == 2  # and that answer is cached in turn
 
 
+def test_a_setting_changed_behind_the_apis_back_is_checked_afresh_not_answered_from_the_cache(tmp_path):
+    """Someone edits ntp.json by hand: the cached reading was about another server."""
+    client, sync, query, *_ = make(tmp_path)
+    client.get("/api/time", headers=basic())
+    sync.setting.set("time.example.org")
+    client.get("/api/time", headers=basic())
+    assert query.calls == ["pool.ntp.org", "time.example.org"]
+
+
 def test_an_answer_about_the_old_server_is_not_used_for_the_new_one(tmp_path):
     release = threading.Event()
     asked = []
@@ -371,6 +380,12 @@ def test_a_garbled_status_file_is_a_container_that_is_not_running_never_an_error
     (status / "status.json").write_text(content)
     response = client.get("/api/time", headers=basic())
     assert response.status_code == 200 and response.json()["container"]["running"] is False
+
+
+def test_a_status_file_too_big_to_be_right_is_ignored_even_if_it_is_valid_json(tmp_path):
+    client, _sync, _q, _c, status = make(tmp_path)
+    write_status(status, pad="x" * 5000)
+    assert client.get("/api/time", headers=basic()).json()["container"]["running"] is False
 
 
 def test_odd_values_in_a_good_status_file_are_dropped_not_passed_on(tmp_path):

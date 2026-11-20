@@ -71,7 +71,7 @@ def check_server(value: object) -> str:
         return ""
     if len(value) > MAX_SERVER_LENGTH:
         raise ConfigError("the NTP server name is too long")
-    if not value.isascii() or not _NAME_CHARS.fullmatch(value):
+    if not _NAME_CHARS.fullmatch(value):
         raise ConfigError("the NTP server has characters a host name or IP address cannot have")
     if ":" in value:
         try:

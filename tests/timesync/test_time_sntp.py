@@ -284,3 +284,17 @@ def test_timestamps_round_trip_and_survive_the_ntp_era_change_in_2036():
     assert after[0] < 100
     assert ts._from_ntp(after[0], after[1], now) == pytest.approx(now + 20.25, abs=1e-6)
     assert ts._from_ntp(*ts._to_ntp(1_700_000_000.75), 1_700_000_000.0) == pytest.approx(1_700_000_000.75, abs=1e-6)
+
+
+def test_a_zero_receive_timestamp_is_not_believed_even_when_the_other_times_look_possible():
+    """Zero means "the server does not know". Read as a time it is a date in 2036, and a transmit stamp just after it would pass the other checks."""
+    wrapped = (0, 100)
+    with sending(lambda d: packet(stratum=2, originate=request_transmit(d), receive=(0, 0), transmit=wrapped)) as server:
+        assert ask(server).error == "bad_reply"
+
+
+def test_the_low_bits_of_the_transmit_timestamp_come_from_a_random_source(monkeypatch):
+    monkeypatch.setattr(ts.secrets, "randbits", lambda bits: 0xABCD)
+    with FakeNtp() as server:
+        ask(server)
+    assert request_transmit(server.requests[0])[1] & 0xFFFF == 0xABCD

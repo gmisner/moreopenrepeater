@@ -106,7 +106,7 @@ def check_server(value: object) -> str:
         return ""
     if len(value) > MAX_SERVER_LENGTH:
         raise TimeServerError(f"The NTP server name is too long (at most {MAX_SERVER_LENGTH} characters).")
-    if not value.isascii() or not _NAME_CHARS.fullmatch(value):
+    if not _NAME_CHARS.fullmatch(value):  # ASCII letters, digits, dot, colon and hyphen: the class has nothing else in it
         raise TimeServerError(
             "Use a host name or an IP address: letters, digits, dots and hyphens only, no spaces or other symbols."
         )
@@ -378,10 +378,6 @@ class ClockCheck:
     def enabled(self) -> bool:
         return self._query is not None
 
-    def forget(self) -> None:
-        """Drop what was learned: the setting changed, so it is about another server."""
-        self._cached = None
-
     async def current(self) -> Optional[ClockReading]:
         if self._query is None:
             return None
@@ -554,7 +550,6 @@ class TimeSync:
     async def set_server(self, server: str) -> dict:
         """Change the server (TimeServerError if it is not acceptable) and check against the new one."""
         self.setting.set(server)
-        self._check.forget()
         log_event(
             _logger, logging.INFO, "time.server_changed", "The NTP server was changed",
             default=not self.setting.get(), facts_in_text=False,

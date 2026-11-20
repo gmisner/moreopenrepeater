@@ -447,6 +447,18 @@ def test_parse_tracking_reads_a_real_line():
     assert sup.parse_tracking(UNSYNCED) == {"synced": False, "stratum": None, "offset_ms": None}
 
 
+def test_a_leap_status_of_not_synchronised_is_not_synced_whatever_else_the_line_says():
+    odd = SYNCED.replace("Normal", "Not synchronised")
+    assert sup.parse_tracking(odd)["synced"] is False
+
+
+def test_a_setting_file_too_big_to_be_right_is_refused(tmp_path):
+    path = tmp_path / "ntp.json"
+    path.write_text(json.dumps({"server": "time.example.org", "pad": "x" * 5000}))
+    with pytest.raises(sup.ConfigError, match="too big"):
+        sup.read_setting(path)
+
+
 @pytest.mark.parametrize("junk", ["", "506 Cannot talk to daemon", "a,b", "x,y,z,w,v", "A29FC801,x,three,1,2,3,4,5,6,7,8,9,10,Normal", "\x00"])
 def test_parse_tracking_gives_nothing_for_what_it_cannot_read(junk):
     assert sup.parse_tracking(junk) == {}

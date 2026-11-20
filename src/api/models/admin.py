@@ -77,16 +77,24 @@ class AutoUpdateStatus(AutoUpdateSettings):
     next_window: Optional[datetime] = None
 
 
+class ContainerUpdateInfo(BaseModel):
+    branch: Optional[str]  # the host checkout's branch (what an update follows); None: not recorded
+    channel: Optional[UpdateChannel]  # None when the branch isn't main, beta or stable
+    repo: Optional[str]
+
+
 class UpdatesResponse(BaseModel):
     available: bool  # installed with install-pi.sh, so the updater units exist
-    channel: UpdateChannel
+    channel: Optional[UpdateChannel]  # None only in a container install whose branch isn't a channel
     version: Optional[CommitSummary]
     status: Optional[UpdateRunStatus]
     auto: AutoUpdateStatus
+    install: Literal["native", "container"] = "native"
+    container: Optional[ContainerUpdateInfo] = None  # set for a container install, which can't update itself
 
 
 class UpdateCheckResponse(BaseModel):
-    channel: UpdateChannel
+    channel: Optional[UpdateChannel]
     branch: str
     latest: Optional[CommitSummary]
     relation: Optional[Literal["identical", "ahead", "behind", "diverged"]]

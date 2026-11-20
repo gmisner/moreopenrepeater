@@ -383,6 +383,7 @@ def create_app(
         updater=runtime.updater,
         update_checker=runtime.update_checker,
         update_channel=runtime.update_channel,
+        container_install=runtime.container_install,
         auto_updater=runtime.auto_updater,
         notifier=runtime.notifier,
         health=runtime.health,

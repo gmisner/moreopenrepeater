@@ -54,7 +54,7 @@ from ..auto_update import AutoUpdater
 from ..log_history import LogHistory
 from ..support_bundle import runner_with_mixer, support_bundle_name, write_support_bundle
 from ..tailscale import TailscaleControl, read_log as read_tailscale_log
-from ..updates import UpdateChecker, Updater, installed_version, read_log
+from ..updates import ContainerInstall, UpdateChecker, Updater, check_container, installed_version, read_log
 
 
 def _audio_devices_for_bundle(list_devices: Callable[[], list]) -> list:
@@ -99,6 +99,7 @@ def register(
     audio_devices: Optional[Callable[[], list]] = None,
     run_mixer: Optional[Callable] = None,
     log_hub: Optional[LogHub] = None,
+    container_install: Optional[ContainerInstall] = None,
 ) -> None:
     @app.get("/api/backup", dependencies=admin_dependencies)
     def download_backup(request: Request, recordings: bool = False) -> FileResponse:
@@ -224,6 +225,16 @@ def register(
 
     @app.get("/api/updates", response_model=UpdatesResponse, dependencies=admin_dependencies)
     def get_updates() -> dict:
+        if container_install is not None:
+            return {
+                "available": False,  # nothing in the API can rebuild or restart a container
+                "channel": container_install.channel,
+                "version": container_install.version,
+                "status": None,
+                "auto": auto_updater.status(),
+                "install": "container",
+                "container": {"branch": container_install.branch, "channel": container_install.channel, "repo": container_install.repo},
+            }
         return {
             "available": updater.available,
             "channel": update_channel,
@@ -234,12 +245,18 @@ def register(
 
     @app.put("/api/updates/auto", response_model=UpdatesResponse, dependencies=admin_dependencies)
     def set_auto_update(body: AutoUpdateSettings, request: Request) -> dict:
+        if container_install is not None:
+            raise HTTPException(status_code=409, detail="Automatic updates aren't available in the container install. Run ./update.sh on the host.")
         request.state.audit_detail = f"{body.start}-{body.end}" if body.enabled else "off"
         auto_updater.update_settings(**body.model_dump())
         return get_updates()
 
     @app.get("/api/updates/check", response_model=UpdateCheckResponse, dependencies=admin_dependencies)
-    def check_for_update(channel: UpdateChannel, refresh: bool = False) -> dict:
+    def check_for_update(channel: Optional[UpdateChannel] = None, refresh: bool = False) -> dict:
+        if container_install is not None:  # it follows its checkout's branch, whatever channel was asked for
+            return check_container(update_checker, container_install, refresh=refresh)
+        if channel is None:
+            raise HTTPException(status_code=422, detail="channel is required")
         version = installed_version(repo_dir)
         return update_checker.check(channel, version["sha"] if version else "", refresh=refresh)
 
@@ -250,6 +267,8 @@ def register(
     @app.post("/api/updates", response_model=UpdatesResponse, dependencies=admin_dependencies)
     def start_update(body: UpdateRequest, request: Request) -> dict:
         request.state.audit_detail = body.channel
+        if container_install is not None:
+            raise HTTPException(status_code=409, detail="This install can't update itself. On the host, run ./update.sh in the docker folder.")
         if not updater.available:
             raise HTTPException(status_code=409, detail="Updates are only available on installs made with install-pi.sh")
         if updater.busy():

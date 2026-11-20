@@ -9,6 +9,12 @@ channel into a request file, and a root-run systemd unit
 (moreopenrepeater-update.path / .service, scripts/update.sh) runs the
 installer for that channel, rolling back if the new version doesn't come
 up. That unit reports progress in a status file and log the service can read.
+
+The container install is different: the API has no git, no systemd and no Docker
+access (it holds no host access, on purpose), so it can't update anything. It
+knows its commit from build arguments that docker/update.sh records in .env, it
+checks GitHub for newer commits on the checkout's branch, and the dashboard shows
+the update commands to run on the host.
 """
 from __future__ import annotations
 
@@ -90,6 +96,55 @@ def repo_from_checkout(repo: Path) -> Optional[str]:
     return github_repo(url) if url else None
 
 
+@dataclass(frozen=True)
+class ContainerInstall:
+    """What the API image was built with (Dockerfile.api, compose.yaml). Each
+    field is None when it was never recorded or doesn't look right: the page
+    then says "unknown" instead of guessing."""
+
+    commit: Optional[str]
+    date: Optional[str]
+    branch: Optional[str]  # of the checkout on the host, which is what an update follows
+    repo: Optional[str]  # owner/name on GitHub
+
+    @property
+    def version(self) -> Optional[dict]:
+        if self.commit is None:
+            return None
+        return {"sha": self.commit, "date": self.date or "", "subject": ""}  # the image carries no commit subject
+
+    @property
+    def channel(self) -> Optional[str]:
+        """The release channel the branch is, or None for any other branch."""
+        for name, branch in CHANNEL_BRANCHES.items():
+            if branch == self.branch:
+                return name
+        return None
+
+
+def container_install_from_env(env: dict) -> Optional[ContainerInstall]:
+    """None on a native install. Dockerfile.api always sets MOREOPENREPEATER_INSTALL, so a
+    container whose commit was never recorded is still a container, with an unknown commit."""
+    if env.get("MOREOPENREPEATER_INSTALL") != "container":
+        return None
+
+    def pick(name: str, pattern: str) -> Optional[str]:
+        value = env.get(name, "").strip()
+        return value if re.fullmatch(pattern, value) else None
+
+    return ContainerInstall(
+        commit=pick("MOREOPENREPEATER_COMMIT", r"[0-9a-f]{40}"),
+        date=pick("MOREOPENREPEATER_COMMIT_DATE", r"\d{4}-\d\d-\d\dT[\w:.+-]+"),
+        branch=pick("MOREOPENREPEATER_BRANCH", r"(?!HEAD$)[\w./-]{1,100}"),
+        repo=pick("MOREOPENREPEATER_REPO", r"[\w.-]+/[\w.-]+"),
+    )
+
+
+def repo_from_env(env: dict) -> Optional[str]:
+    install = container_install_from_env(env)
+    return install.repo if install else None
+
+
 def _fetch_json(url: str) -> dict:
     request = urllib.request.Request(url, headers={"User-Agent": "moreopenrepeater", "Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(request, timeout=15) as response:
@@ -117,17 +172,24 @@ class UpdateChecker:
         self._cache: dict[tuple[str, str], tuple[float, dict]] = {}
 
     def check(self, channel: str, current_sha: str, *, refresh: bool = False) -> dict:
-        key = (channel, current_sha)
+        return self._cached((channel, current_sha), refresh, lambda: self._check(channel, CHANNEL_BRANCHES[channel], current_sha))
+
+    def check_branch(self, branch: str, current_sha: str, *, refresh: bool = False) -> dict:
+        """The same check for a branch that need not be a channel (the container install follows its checkout's
+        branch). With no known installed commit it only reports the branch's newest commit."""
+        key = (f"branch:{branch}", current_sha)
+        return self._cached(key, refresh, lambda: self._check(None, branch, current_sha, compare=bool(current_sha)))
+
+    def _cached(self, key: tuple[str, str], refresh: bool, run: Callable[[], dict]) -> dict:
         cached = self._cache.get(key)
         if cached and not refresh and self._clock() - cached[0] < CHECK_CACHE_SECONDS:
             return cached[1]
-        result = self._check(channel, current_sha)
+        result = run()
         if result.get("error") is None:
             self._cache[key] = (self._clock(), result)
         return result
 
-    def _check(self, channel: str, current_sha: str) -> dict:
-        branch = CHANNEL_BRANCHES[channel]
+    def _check(self, channel: Optional[str], branch: str, current_sha: str, compare: bool = True) -> dict:
         result: dict = {"channel": channel, "branch": branch, "latest": None, "relation": None, "new_commits": [], "error": None}
         if self.repo is None:
             result["error"] = "This copy wasn't installed from GitHub, so there's nothing to check against."
@@ -137,6 +199,8 @@ class UpdateChecker:
             result["latest"] = _commit_summary(self._fetch(f"{base}/commits/{branch}"))
             if result["latest"]["sha"] == current_sha:
                 result["relation"] = "identical"
+                return result
+            if not compare:
                 return result
             comparison = self._fetch(f"{base}/compare/{current_sha}...{result['latest']['sha']}")
         except urllib.error.HTTPError as error:
@@ -155,6 +219,16 @@ class UpdateChecker:
         result["new_commits"] = list(reversed(commits))[:MAX_LISTED_COMMITS]
         result["new_commit_count"] = comparison.get("ahead_by", len(commits))
         return result
+
+
+def check_container(checker: UpdateChecker, install: ContainerInstall, *, refresh: bool = False) -> dict:
+    """Does the branch the host's checkout follows have commits this image lacks?"""
+    if install.branch is None:
+        return {
+            "channel": None, "branch": "", "latest": None, "relation": None, "new_commits": [],
+            "error": "The checkout isn't on a branch, so there's nothing to follow. Run git checkout main (or beta, or stable) on the host, then ./update.sh.",
+        }
+    return checker.check_branch(install.branch, install.commit or "", refresh=refresh)
 
 
 def read_status(settings: UpdaterSettings) -> Optional[dict]:

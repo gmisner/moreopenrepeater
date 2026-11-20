@@ -21,6 +21,7 @@ from starlette.requests import HTTPConnection
 from starlette.routing import Route
 
 from audio_io.serial_lines import find_serial_ports
+from controller import station_clock
 from controller.events import SendLinkCommand
 from controller.state_machine import RepeaterConfig
 from link.aprs_client import APRSClient, format_frequency_comment, format_position_report, format_status_report
@@ -611,6 +612,14 @@ class AppRuntime:
         service = service or RepeaterService(state_store=state_store)
         if service.renderer is None:
             service.renderer = renderer
+        # The station's time zone, for what this process says or shows as a time of day (the core does the same for
+        # its own). Registered before the other config listeners so they already see the new zone. Apart from the
+        # core, nothing is known until the core has been read: the container's own zone holds until then.
+        try:
+            saved_now = service.saved_config
+        except CoreUnavailable:
+            saved_now = None
+        station_clock.follow(service.add_config_listener, saved_now)
         remote_activity = service.remote_activity_store()
         if remote_activity is not None:
             # The core records the activity (it sees every transmission) and keeps the history;

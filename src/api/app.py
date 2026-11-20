@@ -57,6 +57,7 @@ from .routes import sensors as sensors_routes
 from .routes import session as session_routes
 from .routes import simulate as simulate_routes
 from .routes import site as site_routes
+from .routes import timezone as timezone_routes
 from .routes import winlink as winlink_routes
 from .runtime import (
     DEFAULT_ACTIVITY_PATH,
@@ -305,6 +306,8 @@ def create_app(
         transmit_dependencies=runtime.transmit_dependencies,
         repo_dir=REPO_DIR,
     )
+
+    timezone_routes.register(app, service=runtime.service, auth_dependencies=runtime.auth_dependencies)
 
     metrics_routes.register(
         app,

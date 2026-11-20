@@ -103,6 +103,10 @@ class AlertTracker:
     def __init__(self) -> None:
         self._last_announced: dict[str, datetime] = {}
 
+    def shift(self, delta: timedelta) -> None:
+        """Move every remembered time by `delta` (the local clock was changed by that much)."""
+        self._last_announced = {key: when + delta for key, when in self._last_announced.items()}
+
     def was_announced(self, alert_id: str) -> bool:
         return alert_id in self._last_announced
 

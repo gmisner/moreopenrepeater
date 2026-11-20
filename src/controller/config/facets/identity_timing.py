@@ -74,6 +74,8 @@ class IdentityTimingConfig:
     tts_voice: str = ''
     # Kokoro speech rate (0.5–2.0). Ignored by engines that have no speed control.
     tts_speed: float = 1.0
+    # IANA zone name (America/Phoenix) the station's local time follows; empty = the container's own.
+    timezone: str = ''
 
 # Optional fields the dashboard may null out via clear_<name> on ConfigUpdateRequest.
 CLEAR_FIELDS = ('long_id_asset_id', 'require_ctcss_hz', 'courtesy_tone_asset_id', 'id_asset_id', 'timeout_tone_asset_id', 'courtesy_tone_link_asset_id', 'courtesy_tone_patch_asset_id')

@@ -15,6 +15,9 @@ what is safe:
   it with its default, log a warning, and keep going. A repeater that is up with
   a default time-out is safer than one that is down, and a zero or negative
   time-out would key the transmitter and drop it at once.
+- A time zone this system does not know (a hand-edited file, an image without zone
+  data): replace it with "" (the container's own zone), log a warning, and keep going.
+  The announcements would say the wrong hour, which beats a repeater that is down.
 """
 from __future__ import annotations
 
@@ -27,6 +30,7 @@ import dataclasses
 
 from api.service.snapshot import config_from_snapshot
 from controller.config import CONFIG_FIELDS, RepeaterConfig
+from controller.station_clock import check_timezone
 
 _logger = logging.getLogger("moreopenrepeater.core")
 
@@ -92,6 +96,11 @@ def check_config(config: RepeaterConfig, *, log: bool = True) -> tuple[RepeaterC
         if not _sane(value, allow_zero=allow_zero):
             fixes[name] = getattr(defaults, name)
             notes.append(f"{name} was {value!r}, not a usable number; using the default {fixes[name]!r}")
+    try:
+        check_timezone(config.timezone)
+    except ValueError:
+        fixes["timezone"] = ""
+        notes.append(f"timezone was {config.timezone!r}, not a time zone this system knows; using the container's own")
     if fixes:
         config = config.replace_flat(**fixes)
     for note in notes if log else ():
@@ -145,6 +154,13 @@ def check_change(current: RepeaterConfig, values: dict) -> RepeaterConfig:
     )
     if wrong:
         raise ConfigRejected("config.wrong_type", f"wrong kind of value for: {', '.join(wrong)}")
+    if "timezone" in values:
+        try:
+            check_timezone(values["timezone"])
+        except ValueError:
+            raise ConfigRejected(
+                "config.invalid_timezone", "timezone is not a zone name this system knows (use one like America/Phoenix)"
+            ) from None
     try:
         candidate = current.replace_flat(**values)
         checked, notes = check_config(candidate, log=False)

@@ -68,6 +68,7 @@ class SystemProbe:
         self._root = sys_root
         self._run = run
         self._env = os.environ if env is None else env
+        self._under_voltage_seen = False  # only the hwmon alarm needs this: it has no "since boot" bit of its own
 
     def temperature_c(self) -> Optional[float]:
         text = _read(self._root / "sys/class/thermal/thermal_zone0/temp")
@@ -82,14 +83,30 @@ class SystemProbe:
             try:
                 result = self._run(["vcgencmd", "get_throttled"], capture_output=True, text=True, timeout=5)
             except (OSError, subprocess.SubprocessError):
-                return None
+                return self._hwmon_under_voltage()
             if result.returncode != 0:
-                return None
+                return self._hwmon_under_voltage()
             text = result.stdout.strip()
         try:
             return int(text.rpartition("=")[2], 16)  # "throttled=0x50000", or bare hex from sysfs
         except ValueError:
             return None
+
+    def _hwmon_under_voltage(self) -> Optional[int]:
+        """The Pi's own undervoltage alarm, for where there is no `vcgencmd` and no firmware file (a container, or a
+        kernel that does not export it). The `rpi_volt` hwmon device reports only whether the supply is low right
+        now, and it is not latched, so the "has happened since boot" bit is what this process has seen itself. A dip
+        between two readings is missed. Nothing else (throttling, a capped clock) is reported this way."""
+        for node in sorted((self._root / "sys/class/hwmon").glob("hwmon*")):
+            if _read(node / "name") != "rpi_volt":
+                continue
+            alarm = _read(node / "in0_lcrit_alarm")
+            if alarm not in ("0", "1"):
+                return None
+            if alarm == "1":
+                self._under_voltage_seen = True
+            return (UNDER_VOLTAGE_NOW if alarm == "1" else 0) | (UNDER_VOLTAGE_OCCURRED if self._under_voltage_seen else 0)
+        return None
 
     def boot_time(self) -> Optional[float]:
         for line in (_read(self._root / "proc/stat") or "").splitlines():

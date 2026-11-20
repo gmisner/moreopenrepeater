@@ -40,7 +40,7 @@ def test_the_asl3_default_gives_the_node_its_callsign_from_the_template(tmp_path
     n = node(result, "99001")
     assert n.callsign == "N0CALL"  # idrecording is in [node-main], not in the node's own stanza
     assert n.startup_macro == "*81"
-    assert n.radio == "SimpleUSB/99001"
+    assert n.radio == "SimpleUSB/usb_fixture"
 
 
 def test_the_links_are_the_nodes_list_without_itself_or_the_loopback(tmp_path):

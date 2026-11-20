@@ -179,7 +179,7 @@ def test_the_preview_says_what_it_found_and_what_it_will_and_will_not_take(site,
     node = by_number["99001"]
     assert node["callsign"] == "N0CALL"  # from the template
     assert node["allowed_links"] == 2 and node["startup_macro"] == "*81" and node["has_registration"] is True
-    assert node["radio"] == "SimpleUSB/99001" and node["suggested"] is True and by_number["99006"]["suggested"] is False
+    assert node["radio"] == "SimpleUSB/usb_fixture" and node["suggested"] is True and by_number["99006"]["suggested"] is False
     assert any("Callsign" in line for line in body["will_take"]) and any("Registration password" in line for line in body["will_take"])
     assert any("rxchannel" in line and "USRP" in line for line in body["will_not_take"])
     assert any("simpleusb.conf" in line for line in body["will_not_take"])
@@ -285,6 +285,8 @@ def test_applying_writes_the_node_into_the_container_files_and_not_the_radio(sit
     active = [line.split(";")[0].split("=", 1)[1].strip() for line in rpt.splitlines() if line.startswith(("rxchannel", "txchannel"))]
     assert active == ["Local/pseudo", "USRP/127.0.0.1:0:32001"]  # the template's and the controller's, nothing from the host node
     assert "txchannel" not in rpt and "idtime" not in rpt and "statpost" not in rpt  # and none of its other settings
+    assert "usb_fixture" not in rpt  # not even as a comment
+    assert not any("usb_fixture" in text for text in snapshot_of(etc).values())  # nor in any other file
     # the allowed links: new entries added, the container's own value for one kept, the loopback ones left out
     assert "99003 = radio@203.0.113.8/99003,NONE  ; imported by moreopenrepeater" in rpt
     assert "99002 = radio@198.51.100.9/99002,NONE     ; the container's own value for this one" in rpt

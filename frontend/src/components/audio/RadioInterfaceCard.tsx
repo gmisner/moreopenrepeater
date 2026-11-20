@@ -21,14 +21,13 @@ import { ConfigEditDrawer } from "../ConfigEditDrawer";
 import { ConfigSummaryCard } from "../ConfigSummaryCard";
 import { labeled, InfoNote } from "../FieldHint";
 import {
-  serialPortOptions,
-  serialSelectValue,
   soundDeviceOptions,
   type DeviceAssignment,
 } from "../../deviceUsage";
 import { BOARD_NAMES, COS_METHOD_LABELS, METER_FLOOR_DB, PTT_METHOD_LABELS } from "./constants";
 import { CtcssToneSelect } from "./CtcssToneSelect";
 import { LevelMeter, shortLabel } from "./helpers";
+import { SerialPortSelect } from "./SerialPortSelect";
 import type { AudioDevice, AudioScore, ConfigSlice, EngineStatus, EngineValues, SerialPort } from "./types";
 
 const HALF_DUPLEX_BOARDS = new Set(["digirig-lite", "aioc"]);
@@ -410,17 +409,15 @@ export function RadioInterfaceCard({
                     ) : null}
                     {engine.values.cos_source === "serial" ? (
                       <>
-                        <Select
+                        <SerialPortSelect
                           label={labeled(
                             "COS serial port",
                             "A /dev/serial/by-id name stays the same when adapters are plugged in a different order. Labels show if another role already uses the port.",
                           )}
-                          data={serialPortOptions(serialPorts, engine.values.cos_serial_device, serialUsage)}
-                          value={serialSelectValue(serialPorts, engine.values.cos_serial_device)}
-                          onChange={(value) => engine.setField("cos_serial_device", value || "")}
-                          searchable
-                          clearable
-                          placeholder="/dev/serial/by-id/…"
+                          ports={serialPorts}
+                          saved={engine.values.cos_serial_device}
+                          usage={serialUsage}
+                          onChange={(device) => engine.setField("cos_serial_device", device)}
                         />
                         <Select
                           label="COS line"
@@ -518,17 +515,15 @@ export function RadioInterfaceCard({
                     ) : null}
                     {engine.values.ptt_output === "serial" ? (
                       <>
-                        <Select
+                        <SerialPortSelect
                           label={labeled(
                             "PTT serial port",
                             "Labels show if another role already uses the port. PTT and COS can share one adapter on different lines.",
                           )}
-                          data={serialPortOptions(serialPorts, engine.values.ptt_serial_device, serialUsage)}
-                          value={serialSelectValue(serialPorts, engine.values.ptt_serial_device)}
-                          onChange={(value) => engine.setField("ptt_serial_device", value || "")}
-                          searchable
-                          clearable
-                          placeholder="/dev/serial/by-id/…"
+                          ports={serialPorts}
+                          saved={engine.values.ptt_serial_device}
+                          usage={serialUsage}
+                          onChange={(device) => engine.setField("ptt_serial_device", device)}
                         />
                         <Select
                           label="PTT line"

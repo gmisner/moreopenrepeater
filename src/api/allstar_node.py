@@ -185,8 +185,15 @@ class AllStarNode:
         number: str,
         callsign: str,
         password: Optional[str] = None,
+        *,
+        extra_rpt: Optional[Callable[[str], str]] = None,
+        require_password: bool = True,
     ) -> dict:
-        """Rename `from_node` to the portal number, set callsign/password, and bind the radio."""
+        """Rename `from_node` to the portal number, set callsign/password, and bind the radio.
+
+        `extra_rpt` edits rpt.conf once the node has its new number and before it is written (the importer's startup
+        macro and link list), so one write, one backup and one restart cover all of it. `require_password=False` lets a
+        public node be set up without a registration password: it just doesn't register until one is entered."""
         async with self._lock:
             self._require_files()
             if not re.fullmatch(r"[0-9]{1,10}", number):
@@ -232,6 +239,8 @@ class AllStarNode:
                     pass
 
             rpt = set_idrecording(rpt, number, callsign)
+            if extra_rpt is not None:
+                rpt = extra_rpt(rpt)
             await self._write("rpt.conf", rpt)
 
             try:
@@ -242,7 +251,7 @@ class AllStarNode:
                 )
             current_password = registration_password(reg, from_node) or registration_password(reg, number)
             secret = password if password is not None else current_password
-            if int(number) >= 2000 and not secret:
+            if int(number) >= 2000 and not secret and require_password:
                 raise AllStarSetupError("Enter the node password from the AllStarLink portal.")
             if secret:
                 await self._write(
@@ -326,6 +335,15 @@ class AllStarNode:
     async def write_file(self, name: str, text: str) -> None:
         self._require_files()
         await self._write(name, text)
+
+    async def snapshot(self, label: str):
+        """A restore point: every config file this edits, copied into one folder of the backups."""
+        self._require_files()
+        assert self._files is not None
+        try:
+            return await asyncio.get_running_loop().run_in_executor(None, self._files.snapshot, ASTERISK_CONF_FILES, label)
+        except OSError as error:
+            raise AllStarSetupError(f"Couldn't keep a copy of the files first: {error.strerror or error}")
 
     async def restart_asterisk(self) -> None:
         await self._restart()

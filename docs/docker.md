@@ -28,7 +28,10 @@ files in volumes it shares with them, and tells the core where they are (see the
 any audio tool that needs the sound card itself still answers 503 `core.hardware`; listening and the record and score tool work (see Listening below). **The sound card list is the core's.** The API image has no audio libraries, and a card that a running stream already holds cannot be
 looked at again by a second process (a one-off check inside the core's container finds fewer cards than the core
 does), so the Audio page's picker shows the list the core made when it started, read over the socket like the other hardware
-parts. With the core away the picker says so (503) instead of showing an empty list. A card plugged in later shows once the core restarts. The weather
+parts. With the core away the picker says so (503) instead of showing an empty list. A card plugged in later shows once the core restarts. **The levels are the core's too.** The Audio page's sliders and the board presets run `amixer`, which the API image does not have and
+could not use (it holds no sound card). The API asks the core to run it (`mixer_run` over the socket) and shows what `amixer`
+printed. The core accepts only the two forms the dashboard uses, reading a card's controls and setting one control, so the
+command cannot be made to run anything else. Saved levels are still applied by the core when its audio starts. The weather
 macro (a caller dialling for the weather) is worded by the API, which does the NWS polling, and said by
 the core; with the API away the caller hears that weather is not available.
 

@@ -18,7 +18,11 @@
         "remote_base_retune",
         "autopatch_dial",
         "autopatch_hangup",
-        "arm_capture"
+        "arm_capture",
+        "link_event",
+        "link_sync",
+        "usrp_configure",
+        "mixer_run"
       ],
       "title": "CommandName",
       "type": "string"

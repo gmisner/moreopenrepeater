@@ -33,6 +33,7 @@ import os
 import secrets
 import stat
 import struct
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +43,7 @@ from pydantic import ValidationError
 
 from contracts import (
     ENDPOINTS,
+    MIXER,
     HARDWARE,
     LINK,
     PROGRAMMING,
@@ -124,6 +126,7 @@ HARDWARE_PARTS = (
     "live_audio", "gpio", "tx_fan", "link_radio", "remote_base", "monitor_receiver", "autopatch", "allstar_node", "dmr",
     "audio_device_list",
 )
+MAX_MIXER_OUTPUT_CHARS = 64 * 1024  # a card with many controls prints a few KB; this is far past any real one
 LOGS_PER_REQUEST = 500  # the most log lines one GET /logs returns
 MAX_ACTIVITY_ROWS = 20_000  # the most rows one GET /activity returns; a reader asks again for the rest
 LOGS_RING_MAX = 5000  # more than any hub holds
@@ -880,6 +883,28 @@ class ControlServer:
         self._command_applied(name.value)
         return self._command_result(request, CommandStatus.APPLIED)
 
+    async def _mixer_command(self, request: CoreCommand) -> dict:
+        """`mixer_run`: run `amixer` for the API, which has neither the program nor the sound card. The contract has already
+        limited the arguments to reading a card's controls or setting one, so this only runs it, with a time limit, and
+        hands back what it printed. Nothing is logged but the command's name."""
+        args = ["amixer", *request.params["args"]]
+        try:
+            done = await asyncio.get_running_loop().run_in_executor(None, self._runtime.run_mixer, args)
+        except FileNotFoundError:
+            return self._command_refused(request, "command.hardware_refused", "amixer isn't installed in the core's container")
+        except subprocess.TimeoutExpired:
+            return self._command_refused(request, "command.hardware_refused", "amixer didn't respond", retryable=True)
+        except Exception:  # noqa: BLE001 - nothing a client sent may reach the radio side as a crash
+            self._command_failed(request.command.value)
+            return self._command_refused(request, "command.apply_failed", "the core could not do that", retryable=True)
+        self._command_applied(request.command.value)
+        output = {
+            "returncode": int(done.returncode),
+            "stdout": str(done.stdout or "")[:MAX_MIXER_OUTPUT_CHARS],
+            "stderr": str(done.stderr or "")[:MAX_MIXER_OUTPUT_CHARS],
+        }
+        return self._command_result(request, CommandStatus.APPLIED, output=output)
+
     async def _endpoint_command(self, request: CoreCommand) -> dict:
         """`usrp_configure`: the dashboard set the AllStar node or the DMR bridge up. The audio is pointed at it (or
         stopped), and the core keeps that. A host and a port are all that is carried, so they are all that is logged,
@@ -975,10 +1000,13 @@ class ControlServer:
 
     # -- commands (the trusted API channel) -----------------------------------------------------
 
-    def _command_result(self, request: CoreCommand, status: CommandStatus, error: Optional[StructuredError] = None) -> dict:
+    def _command_result(
+        self, request: CoreCommand, status: CommandStatus, error: Optional[StructuredError] = None,
+        output: Optional[dict] = None,
+    ) -> dict:
         message = CommandResult(
             header=self._header(request_id=request.header.message_id, correlation_id=request.header.correlation_id),
-            status=status, error=error,
+            status=status, error=error, output=output,
         )
         return json.loads(message.model_dump_json())
 
@@ -1026,6 +1054,8 @@ class ControlServer:
             return self._hardware_command(request)
         if name in ENDPOINTS:
             return await self._endpoint_command(request)
+        if name in MIXER:
+            return await self._mixer_command(request)
         if name is CommandName.IMPORT_SNAPSHOT:
             return self._import_snapshot(request)
         if name in PROGRAMMING:

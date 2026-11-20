@@ -770,3 +770,45 @@ def test_with_the_core_away_the_sound_card_list_is_unavailable_not_empty(split_w
     wait_for(lambda: not remote.connected)
     wait_for(lambda: client.get("/api/audio/devices").status_code == 503, timeout=20)
     assert "not being heard from" in client.get("/api/audio/devices").json()["detail"]
+
+
+@pytest.fixture
+def split_with_a_sound_card(tmp_path, sock_dir):
+    """A real core with a (fake) sound card behind it, and an API that has no amixer and no card."""
+    from test_sound_levels import CM108, FakeCard
+
+    (tmp_path / "state.json").write_text(json.dumps({"config": {
+        "callsign": "W1AW", "audio_enabled": False, "audio_input_device": CM108, "audio_output_device": CM108,
+    }}))
+    core = build_core({"MOREOPENREPEATER_DATA_DIR": str(tmp_path), "MOREOPENREPEATER_LOG_PATH": str(tmp_path / "c.log")})
+    card = FakeCard(2)
+    core.runtime.run_mixer = card
+    with CoreThread(core, sock_dir / "core.sock", allow_simulate=False, log_hub=core.log_hub, activity_store=core.activity_store):
+        client, remote = split_client(sock_dir / "core.sock")
+        with client:
+            wait_for(lambda: remote.connected and remote._config is not None and remote._macros is not None)
+            yield client, card
+
+
+def test_the_audio_pages_levels_are_read_from_the_cores_sound_card(split_with_a_sound_card):
+    client, card = split_with_a_sound_card
+    wait_for(lambda: client.get("/api/audio/levels").json()["levels"])
+    levels = client.get("/api/audio/levels").json()
+    assert {(level["control"], level["side"]) for level in levels["levels"]} >= {("Mic", "input"), ("Speaker", "output")}
+    assert levels["notes"] == []  # not "amixer isn't installed"
+
+
+def test_a_slider_moved_in_the_dashboard_moves_the_cores_sound_card(split_with_a_sound_card):
+    client, card = split_with_a_sound_card
+    wait_for(lambda: client.get("/api/audio/levels").json()["levels"])
+    top = card.volumes["Speaker"]["playback"][1]
+    response = client.put("/api/audio/levels", json={"side": "output", "control": "Speaker", "value": top})
+    assert response.status_code == 200, response.text
+    assert card.value("Speaker", "playback") == top
+    assert card.sets and all(call[:4] == ["amixer", "-q", "-c", "2"] and "Speaker" in call for call in card.sets)
+
+
+def test_a_card_that_does_not_exist_says_what_amixer_said(split_with_a_sound_card):
+    client, card = split_with_a_sound_card
+    card.card = 9  # the configured card (2) is no longer there
+    wait_for(lambda: any("Invalid card number" in note for note in client.get("/api/audio/levels").json()["notes"]))

@@ -169,6 +169,19 @@
       "title": "Kind",
       "type": "string"
     },
+    "output": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Output"
+    },
     "status": {
       "$ref": "#/$defs/CommandStatus"
     }

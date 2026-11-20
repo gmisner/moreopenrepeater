@@ -149,6 +149,17 @@ and says to run `./update.sh`.
   the `gpio` group number differs, so it is `MOR_GPIO_GID`. GPIO pins are not
   mapped yet: add `/dev/gpiochip0` under `devices:` if you use them.
 - Writes only to `/data` and the control socket volume.
+- **Reads the host's kernel log, read-only.** The core is given `/dev/kmsg` (`MOR_KMSG_DEVICE` in `.env`, which `setup.sh` sets to
+  `/dev/kmsg` when the host has it and you can read it). That is what lets the support bundle show a USB drop, which only the kernel
+  log records (`disabled by hub (EMI?)`). What this widens: the core, and anything that gets code running inside it, can read
+  everything the host's kernel has logged since boot, which is mostly hardware and driver messages: device names and serial
+  numbers, network interface names and MAC addresses, and mounts. It cannot write to it, and it gets
+  nothing else of the host. The device is mapped read-only (`:r`), and the core runs as uid 999 with no capabilities, so it
+  could not read the log if the host had `kernel.dmesg_restrict=1`; it then says so in the bundle. The core reads it only
+  when the dashboard asks for a support bundle, never on a timer, and does not keep it. To turn it off, set
+  `MOR_KMSG_DEVICE=/dev/null` in `.env` and run `docker compose up -d` (the core is recreated); the core sees the null
+  device and reports "not enabled". An install that was set up before this was added gets it by running `./setup.sh` again,
+  or by adding `MOR_KMSG_DEVICE=/dev/kmsg` to `.env` yourself.
 - The API also sees the host's Tailscale socket folder, read-only (see **Tailscale**). It holds no Tailscale command and
   cannot change Tailscale.
 - Lives on the private `services` network, not the host's (see **The private network**). Nothing is published
@@ -583,8 +594,11 @@ them in another way and says so in the file:
 - **The sound card list and the mixer dump** are the core's, read over the socket like the Audio page's.
 - **`core.log`** has the core's own log lines, since the core is another process and its lines are not in the dashboard's file.
 - **`journal.txt`** says there is no systemd journal for the service here and points to the two log files.
-- **The host's kernel log is not in it.** The USB drops that matter show there (`disabled by hub (EMI?)`), so when you are asked
-  about one, run `dmesg -T | grep -i usb` on the host and add the output.
+- **The host's kernel log is in it when the core was given it** (see **What the container is allowed to do**): the core reads
+  `/dev/kmsg` and the bundle's `usb.txt` shows the USB and HID lines of the last 400 messages, with the time
+  each happened, as `dmesg -T | grep -i usb` would. The USB drops that matter show there (`disabled by hub (EMI?)`). When the
+  core has none (`MOR_KMSG_DEVICE=/dev/null`, a host without `/dev/kmsg`, a host that restricts it, or the core cannot be
+  reached) the section says why, and you can run `dmesg -T | grep -i usb` on the host and add the output.
 
 ### When the sound card drops off USB
 

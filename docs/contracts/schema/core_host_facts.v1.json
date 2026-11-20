@@ -1,0 +1,144 @@
+{
+  "$defs": {
+    "Header": {
+      "additionalProperties": false,
+      "description": "Common header on commands, events, health, status and config messages.",
+      "properties": {
+        "boot_id": {
+          "pattern": "^[A-Za-z0-9_-]{8,64}$",
+          "title": "Boot Id",
+          "type": "string"
+        },
+        "correlation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_-]{8,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Correlation Id"
+        },
+        "emitted_at": {
+          "format": "date-time",
+          "title": "Emitted At",
+          "type": "string"
+        },
+        "message_id": {
+          "pattern": "^[A-Za-z0-9_-]{8,64}$",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_-]{8,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "seq": {
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        }
+      },
+      "required": [
+        "schema_version",
+        "message_id",
+        "emitted_at",
+        "boot_id",
+        "seq",
+        "source"
+      ],
+      "title": "Header",
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "properties": {
+        "module": {
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+          "title": "Module",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "module",
+        "version"
+      ],
+      "title": "Source",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What the core can see of the host it runs on (`GET /host-facts`), read when asked and never on a timer. For now that\nis the kernel's log, which the support bundle needs for USB drops and which a container only has when the core was\ngiven the host's `/dev/kmsg` read-only. `kernel_log` is the newest lines, oldest first, each `[ssss.ssssss] message`\n(with the wall-clock time in front when the core could work it out). Without it, `kernel_error` says plainly why:\nnot enabled, permission denied, not there, unreadable. A log with no lines in it is an empty list, not a missing one.",
+  "properties": {
+    "header": {
+      "$ref": "#/$defs/Header"
+    },
+    "kernel_error": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Kernel Error"
+    },
+    "kernel_log": {
+      "anyOf": [
+        {
+          "items": {
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "maxItems": 1000,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Kernel Log"
+    },
+    "kind": {
+      "const": "core.host_facts",
+      "default": "core.host_facts",
+      "title": "Kind",
+      "type": "string"
+    }
+  },
+  "required": [
+    "header"
+  ],
+  "title": "CoreHostFacts",
+  "type": "object"
+}

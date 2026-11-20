@@ -4,6 +4,7 @@ The owner's requirement: after install the dashboard answers on localhost, on th
 dashboard is open until an account exists and an open one can key the transmitter, so the script turns sign-in on with a
 generated password and only then publishes it on every interface. These run the real script with `docker`, `hostname` and
 `tailscale` stood in by small shims, in a copy of the folder."""
+import os
 import re
 import shutil
 import stat
@@ -67,7 +68,7 @@ def run(site, *args, tailscale=True, stdin="", path_extra=True, **env):
         path = f"{bin_dir}:{lean}"
     if not tailscale:
         (bin_dir / "tailscale").unlink(missing_ok=True)
-    environment = {"PATH": path, "HOME": str(folder), "MOR_SETUP_CHOWN": "0", "MOR_SETUP_WAIT": "5", **env}
+    environment = {"PATH": path, "HOME": str(folder), "MOR_SETUP_CHOWN": "0", "MOR_SETUP_WAIT": "5", "MOR_KMSG_FILE": str(bin_dir.parent / "no-kmsg"), **env}
     return subprocess.run(
         ["sh", str(folder / "setup.sh"), *args], cwd=folder, env=environment, capture_output=True, text=True, timeout=60, input=stdin
     )
@@ -399,3 +400,84 @@ def test_an_earlier_backup_is_never_overwritten(pi):
     assert setup_on(pi, "--usb-speed").returncode == 0
     assert backup.read_text() == "the first original\n"
     assert cmdline.read_text() == CMDLINE + " dwc_otg.speed=1\n"
+
+
+# -- the host's kernel log for the core (read-only; docs/docker.md, What the container is allowed to do) -------------------
+
+
+def fake_kmsg(site, content="6,1,1000,-;usb 1-1: hi\n"):
+    path = site[0].parent / "kmsg"
+    path.write_text(content)
+    return path
+
+
+def test_a_readable_kernel_log_is_given_to_the_core(site):
+    kmsg = fake_kmsg(site)
+    result = run(site, "--callsign", "W1AW", MOR_KMSG_FILE=str(kmsg))
+    assert result.returncode == 0, result.stderr
+    assert value(site[0], ".env", "MOR_KMSG_DEVICE") == str(kmsg)
+    assert "read-only" in result.stdout and "MOR_KMSG_DEVICE=/dev/null" in result.stdout  # and how to turn it off
+
+
+def test_the_real_default_is_dev_kmsg():
+    assert 'KMSG="${MOR_KMSG_FILE:-/dev/kmsg}"' in (DOCKER / "setup.sh").read_text()
+
+
+def test_a_host_without_a_kernel_log_device_is_left_on_the_default(site):
+    result = run(site, "--callsign", "W1AW", MOR_KMSG_FILE=str(site[0].parent / "absent"))
+    assert result.returncode == 0, result.stderr
+    assert value(site[0], ".env", "MOR_KMSG_DEVICE") is None and "kernel log" not in result.stdout
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can read anything")
+def test_a_kernel_log_the_user_cannot_read_is_not_given_and_the_script_says_so(site):
+    kmsg = fake_kmsg(site)
+    kmsg.chmod(0)
+    result = run(site, "--callsign", "W1AW", MOR_KMSG_FILE=str(kmsg))
+    assert result.returncode == 0, result.stderr
+    assert value(site[0], ".env", "MOR_KMSG_DEVICE") is None
+    assert "is not readable" in result.stdout and "not given the host's kernel log" in result.stdout
+
+
+def test_a_directory_is_not_a_kernel_log(site):
+    folder = site[0].parent / "kmsg-dir"
+    folder.mkdir()
+    run(site, "--callsign", "W1AW", MOR_KMSG_FILE=str(folder))
+    assert value(site[0], ".env", "MOR_KMSG_DEVICE") is None
+
+
+@pytest.mark.parametrize("chosen", ["/dev/null", "/dev/other"])
+def test_a_choice_the_owner_made_is_never_overwritten(site, chosen):
+    kmsg = fake_kmsg(site)
+    with (site[0] / ".env").open("a") as env:
+        env.write(f"MOR_KMSG_DEVICE={chosen}\n")
+    result = run(site, "--callsign", "W1AW", MOR_KMSG_FILE=str(kmsg))
+    assert result.returncode == 0, result.stderr
+    assert (site[0] / ".env").read_text().count("MOR_KMSG_DEVICE") == 1
+    assert value(site[0], ".env", "MOR_KMSG_DEVICE") == chosen and "kernel log" not in result.stdout
+
+
+def test_a_commented_example_line_does_not_count_as_a_choice(site):
+    kmsg = fake_kmsg(site)
+    with (site[0] / ".env").open("a") as env:
+        env.write("# MOR_KMSG_DEVICE=/dev/kmsg\n")
+    run(site, "--callsign", "W1AW", MOR_KMSG_FILE=str(kmsg))
+    assert value(site[0], ".env", "MOR_KMSG_DEVICE") == str(kmsg)
+
+
+def test_running_it_twice_sets_it_once_and_says_nothing_the_second_time(site):
+    kmsg = fake_kmsg(site)
+    first = run(site, "--callsign", "W1AW", MOR_KMSG_FILE=str(kmsg))
+    second = run(site, MOR_KMSG_FILE=str(kmsg))
+    assert (site[0] / ".env").read_text().count("MOR_KMSG_DEVICE") == 1
+    assert "kernel log" in first.stdout and "kernel log" not in second.stdout
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can read anything")
+def test_an_owner_who_chose_is_not_nagged_about_a_log_they_did_not_want_anyway(site):
+    kmsg = fake_kmsg(site)
+    kmsg.chmod(0)
+    with (site[0] / ".env").open("a") as env:
+        env.write("MOR_KMSG_DEVICE=/dev/null\n")
+    result = run(site, "--callsign", "W1AW", MOR_KMSG_FILE=str(kmsg))
+    assert "kernel log" not in result.stdout and value(site[0], ".env", "MOR_KMSG_DEVICE") == "/dev/null"

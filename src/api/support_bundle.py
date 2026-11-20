@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from audio_io.cm108 import find_interfaces
+from contracts import CoreHostFacts
 
 from .audio_devices import alsa_card_stable_id
 from .boards import alsa_card
@@ -169,9 +170,34 @@ def _hidraw_devices(
     return "\n".join(chunks) + ("\n" if not chunks[-1:] == [""] else "")
 
 
-def _usb_snapshot(run: Callable[..., subprocess.CompletedProcess], root: Path = Path("/")) -> str:
+_NO_KERNEL_LOG = "(the host's kernel log is not visible from here; on the host: dmesg -T | grep -i usb)"
+
+
+def _kernel_from_core(core_host_facts: Callable[[], CoreHostFacts]) -> tuple[Optional[list[str]], str]:
+    """The kernel log lines the core could read (the container install), or None and why not. Never raises: the bundle is for
+    when things are broken."""
+    try:
+        facts = core_host_facts()
+    except Exception as error:  # noqa: BLE001 - whatever went wrong is the reason
+        return None, f"could not ask the core for it: {error}"
+    if facts.kernel_log is None:
+        return None, f"asked the core, which has none: {facts.kernel_error}"
+    return facts.kernel_log, ""
+
+
+def _usb_lines(lines: list[str]) -> str:
+    matched = [line for line in lines if _USB_KERNEL.search(line)]
+    return "\n".join(matched) if matched else "(no usb/hid lines in recent kernel log)"
+
+
+def _usb_snapshot(
+    run: Callable[..., subprocess.CompletedProcess],
+    root: Path = Path("/"),
+    core_host_facts: Optional[Callable[[], CoreHostFacts]] = None,
+) -> str:
     """lsusb, ALSA cards, hidraw udev props, and recent USB-related kernel log. Where a command or a /proc file is not there
-    (a container), the same facts come from /sys, and the section says so."""
+    (a container), the same facts come from /sys, and the section says so. `core_host_facts` asks the core for the kernel
+    log, which in the container install is the only one that can have it (it was given the host's /dev/kmsg, read-only)."""
     lsusb = _run_text(run, ["lsusb"]).rstrip("\n")
     if _unavailable(lsusb):
         lsusb = "(lsusb is not available here; from /sys/bus/usb/devices:)\n" + _sysfs_usb_devices(root)
@@ -195,12 +221,16 @@ def _usb_snapshot(run: Callable[..., subprocess.CompletedProcess], root: Path = 
         "",
         "=== kernel (usb/hid, recent) ===",
     ]
-    kernel = _run_text(run, ["journalctl", "-k", "-n", str(KERNEL_LINES), "--no-pager"])
-    if _unavailable(kernel):
-        parts.append(kernel.rstrip("\n") + "\n(the host's kernel log is not visible from here; on the host: dmesg -T | grep -i usb)")
+    from_core, why_not = _kernel_from_core(core_host_facts) if core_host_facts is not None else (None, "")
+    if from_core is not None:
+        parts.append("(from the core, which reads the host's /dev/kmsg)")
+        parts.append(_usb_lines(from_core))
     else:
-        matched = [line for line in kernel.splitlines() if _USB_KERNEL.search(line)]
-        parts.append("\n".join(matched) if matched else "(no usb/hid lines in recent kernel log)")
+        kernel = _run_text(run, ["journalctl", "-k", "-n", str(KERNEL_LINES), "--no-pager"])
+        if _unavailable(kernel):
+            parts.append(kernel.rstrip("\n") + "\n" + _NO_KERNEL_LOG + (f"\n({why_not})" if why_not else ""))
+        else:
+            parts.append(_usb_lines(kernel.splitlines()))
     parts.append("")
     return "\n".join(parts) + "\n"
 
@@ -290,10 +320,12 @@ def write_support_bundle(
     cm108_path: Optional[str] = None,
     log_history: Optional[LogHistory] = None,
     core_log_lines: Optional[list[str]] = None,
+    core_host_facts: Optional[Callable[[], CoreHostFacts]] = None,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> None:
     """Writes a support-bundle archive to `path`. `core_log_lines`: the core's recent log lines, when the core is a separate
-    process (its log is not in this process's file)."""
+    process (its log is not in this process's file). `core_host_facts`: asks that core for what it sees of the host (its
+    kernel log); None where this process is the one with the host."""
     callsign = service.config.callsign or "repeater"
     version = installed_version(repo_dir)
     settings = service.export_snapshot()
@@ -360,7 +392,7 @@ def write_support_bundle(
             "system.json",
             json.dumps(system_readings if system_readings is not None else {}, indent=2, default=str) + "\n",
         )
-        archive.writestr("usb.txt", _usb_snapshot(run))
+        archive.writestr("usb.txt", _usb_snapshot(run, core_host_facts=core_host_facts))
         archive.writestr("moreopenrepeater.log", "\n".join(_tail_lines(log_path, LOG_LINES)) + "\n")
         if core_log_lines is not None:
             archive.writestr("core.log", "\n".join(core_log_lines[-LOG_LINES:]) + "\n")

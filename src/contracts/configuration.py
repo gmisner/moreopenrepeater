@@ -8,9 +8,9 @@ a bus message or a support bundle.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 from .common import MODULE_PATTERN, Message, StructuredError
 from .redaction import find_sensitive_keys
@@ -154,3 +154,21 @@ class CoreHardware(Message):
     kind: Literal["core.hardware"] = "core.hardware"
     statuses: dict[str, dict[str, Any]]
     unavailable: list[str] = Field(default_factory=list, max_length=32)
+
+
+class CoreHostFacts(Message):
+    """What the core can see of the host it runs on (`GET /host-facts`), read when asked and never on a timer. For now that
+    is the kernel's log, which the support bundle needs for USB drops and which a container only has when the core was
+    given the host's `/dev/kmsg` read-only. `kernel_log` is the newest lines, oldest first, each `[ssss.ssssss] message`
+    (with the wall-clock time in front when the core could work it out). Without it, `kernel_error` says plainly why:
+    not enabled, permission denied, not there, unreadable. A log with no lines in it is an empty list, not a missing one."""
+
+    kind: Literal["core.host_facts"] = "core.host_facts"
+    kernel_log: Optional[list[Annotated[str, StringConstraints(max_length=1000)]]] = Field(default=None, max_length=1000)
+    kernel_error: Optional[str] = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def _a_missing_log_says_why(self) -> "CoreHostFacts":
+        if self.kernel_log is None and not self.kernel_error:
+            raise ValueError("kernel_error must say why there is no kernel_log")
+        return self

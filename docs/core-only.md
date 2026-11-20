@@ -139,6 +139,15 @@ The core's recent log lines (its in-memory ring of 2000), oldest first from a cu
 `core.logs` with the lines and the newest sequence. The sequence starts over when the core
 does; `header.boot_id` says which run it is. For the API's Logs page; see docker.md.
 
+### `GET /host-facts`
+
+What the core can see of its host, as a `core.host_facts`, read when asked and never on a timer. For now that is the kernel's
+log: `kernel_log` is the newest 400 lines from `/dev/kmsg`, oldest first, each `[ssss.ssssss] message` with the wall-clock time
+(UTC) in front. Without it `kernel_error` says why: the core was not given the host's log (`MOR_KMSG_DEVICE` is `/dev/null`,
+the default in `compose.yaml`), the device is not there, permission was denied, or it could not be read. The read does not block,
+is limited in records, bytes and time, and runs off the event loop; this endpoint answers 200 whatever happens to it.
+The support bundle in the container install reads it.
+
 ### `GET /link-events`
 
 Recent link activity (connects, disconnects, keying), newest first, as a `link.events`:

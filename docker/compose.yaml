@@ -49,6 +49,11 @@ services:
     devices:
       - /dev/snd:/dev/snd
       - ${MOR_PTT_HIDRAW:-/dev/moreopenrepeater-ptt}:${MOR_PTT_HIDRAW:-/dev/moreopenrepeater-ptt}
+      # The host's kernel log, read-only, so the support bundle can show a USB drop (`disabled by hub (EMI?)`). The default
+      # maps /dev/null in its place, so a host without /dev/kmsg, or an owner who does not want this, starts all the same;
+      # the core sees the null device and says "not enabled". setup.sh sets MOR_KMSG_DEVICE=/dev/kmsg when the host has
+      # it and the current user can read it (docs/docker.md, What the container is allowed to do).
+      - ${MOR_KMSG_DEVICE:-/dev/null}:/dev/kmsg:r
     # audio is 29 on Debian and Pi OS. The gpio group number differs by system
     # (`getent group gpio`), so it is a number. dialout is for serial PTT.
     group_add:

@@ -154,6 +154,24 @@ if [ -S "$TS_DIR/tailscaled.sock" ]; then
   set_value .env MOR_TAILSCALE_DIR "$TS_DIR"
 fi
 
+# --- the host's kernel log, for the support bundle ------------------------------------------------------------------
+
+# The core gets /dev/kmsg read-only (compose.yaml), so the support bundle can show a USB drop. Compose maps /dev/null in its
+# place unless MOR_KMSG_DEVICE says otherwise, so this is only turned on when the host has /dev/kmsg and the current user can
+# open it (a host with kernel.dmesg_restrict=1 refuses everyone but root, and the core is not root). A value you set yourself,
+# /dev/null included, is kept (set_value). MOR_KMSG_FILE is only a hook for the tests.
+KMSG="${MOR_KMSG_FILE:-/dev/kmsg}"
+if [ -e "$KMSG" ] && [ ! -d "$KMSG" ]; then
+  KMSG_BEFORE="$(value .env MOR_KMSG_DEVICE)"
+  # The subshell: a failed redirection would end this script in some shells.
+  if (: < "$KMSG") 2>/dev/null; then
+    set_value .env MOR_KMSG_DEVICE "$KMSG"
+    [ -n "$KMSG_BEFORE" ] || say "  the core can read the host's kernel log, read-only (for the support bundle). To turn that off: MOR_KMSG_DEVICE=/dev/null in .env"
+  elif [ -z "$KMSG_BEFORE" ]; then
+    say "  NOTE: $KMSG is not readable by $(id -un), so the core is not given the host's kernel log (the support bundle will say so)."
+  fi
+fi
+
 # --- the AllStar node ---------------------------------------------------------------------------------------------
 
 if [ "$ALLSTAR" = 1 ]; then

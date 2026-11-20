@@ -43,7 +43,8 @@ it neither owns nor leases anything for packet, and nothing about its radio, sou
   the proposed topology, not a confirmed one.
 - **Hardware is unverified.** The entrypoints and compose are tested without radios; the audio path, PTT, an AX.25 connection and a
   message exchange through Winlink's CMS need a real radio and an authorized station, and are not claimed.
-- A dashboard page (status, sessions, start and stop) and the API's adapter; VARA FM, 9600 baud, several ports, off-grid delivery.
+- A dashboard status page is built (read-only: three network probes with a 2 second timeout and a 15 second cache, no Docker access, so
+  no start or stop; `docs/winlink.md`). Not built: sessions and counters, start and stop, VARA FM, 9600 baud, several ports, off-grid delivery.
 - Whether to keep building LinBPQ ourselves or ask upstream for a licence file.
 
 ## Considered options

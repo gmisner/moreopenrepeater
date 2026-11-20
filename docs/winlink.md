@@ -56,8 +56,29 @@ gateway on Winlink, which publishes your station: leave it off until the gateway
 - It keeps nothing but its running state and logs in memory (a tmpfs), so there is no message store to back up or to wear the SD card.
   Message text is not logged by MOR.
 - The core and the repeater do not know it exists. If it stops, the repeater is unaffected; a restart policy brings it back.
-- Not built yet: a dashboard page (status, sessions, counters, start and stop), VARA FM, 9600 baud, several ports, a shared radio, and
-  off-grid delivery. The modem's PTT and audio path and a full message exchange have not been tried on a radio.
+- Not built yet: sessions and counters on the dashboard, start and stop from the dashboard, VARA FM, 9600 baud, several ports, a shared
+  radio, and off-grid delivery. The modem's PTT and audio path and a full message exchange have not been tried on a radio.
+
+## The dashboard page
+
+**Integrations, then Winlink** is a read-only status page. The API makes three quick connections on the private network and reports
+which answered: the gateway's admin page (any web answer counts, a login prompt included), the gateway's telnet port, and the modem's KISS
+port. It says the same thing in words ("Answering" or "Not answering", with a short reason) and lists what to look at when one is down.
+
+- **It does not start or stop anything.** The API has no access to Docker and is not given any. Run the containers from the repeater's
+  computer, as above. With the profile off, nothing answers, and the page says so and shows the commands to turn it on. That is not an error.
+- **It never slows anything down.** Each check gives up after 2 seconds, the three run together, and the answer is kept for 15 seconds, so a
+  page that polls (this one asks every 30 seconds, and not while the tab is hidden) cannot hammer the gateway. A dead gateway does not
+  delay the dashboard or the repeater. A change (it came up, one part went down) is logged once as `winlink.status_changed`.
+- **It reads no message text and no password**, and returns none. "Answering" means the port accepts a connection, not that Winlink's CMS
+  is reachable or that a station is authorized.
+- **The callsign** is shown only if you also put `MOR_WINLINK_CALL` in `docker/.env` (the file compose reads for the API;
+  `winlink.env` goes to the gateway only, and the API never sees the passwords in it). Without it the page says the callsign is not
+  shown, and the gateway is unaffected.
+
+The API finds the services at `winlink` (the gateway) and `MOR_DIREWOLF_IP` (the modem, 172.28.0.40 by default), set in `docker/compose.yaml`
+as `MOREOPENREPEATER_WINLINK_HOST` and `MOREOPENREPEATER_WINLINK_MODEM_HOST`. The ports (8080, 8010, 8001) can be changed with
+`MOREOPENREPEATER_WINLINK_ADMIN_PORT`, `_TELNET_PORT` and `_KISS_PORT` in `api.env`, for a hardware TNC or another gateway.
 
 ## The images
 

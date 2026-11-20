@@ -149,6 +149,11 @@ services:
       MOREOPENREPEATER_DMR_RESTART_REQUEST: /dmr-control/request  # how the DMR page asks the bridge to restart
       MOREOPENREPEATER_DMR_STATUS: /dmr-control
       MOREOPENREPEATER_DMR_USRP_PEER: ${MOR_DMR_IP:-172.28.0.30}:34012  # the bridge, for the core to send audio to once the DMR page turns it on
+      # The Winlink page's read-only status checks (docs/winlink.md). Three quick connections, with the profile off nothing answers and
+      # the page says how to turn it on. The API cannot start or stop those containers: it holds no Docker socket.
+      MOREOPENREPEATER_WINLINK_HOST: winlink  # the gateway, by its service name on the private network
+      MOREOPENREPEATER_WINLINK_MODEM_HOST: ${MOR_DIREWOLF_IP:-172.28.0.40}  # the modem
+      MOREOPENREPEATER_WINLINK_CALL: ${MOR_WINLINK_CALL:-}  # only to show the callsign: put it in .env too, since winlink.env is not read here
       # Inside the container it listens on every address of its own network; what the host can reach is the
       # published port above (loopback by default).
       MOREOPENREPEATER_HOST: 0.0.0.0

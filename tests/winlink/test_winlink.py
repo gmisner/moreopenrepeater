@@ -198,6 +198,16 @@ def test_the_modem_has_a_fixed_address_and_the_gateway_is_told_it():
     assert default_of(gateway) == "172.28.0.40"  # inside the services subnet, apart from the core, the node and the bridge
 
 
+def test_the_api_is_told_where_the_gateway_and_the_modem_are_and_still_has_no_docker_socket():
+    api = COMPOSE["services"]["api"]
+    env = {key: str(value).split("#")[0].strip() for key, value in api["environment"].items()}
+    assert env["MOREOPENREPEATER_WINLINK_HOST"] == "winlink" and "winlink" in COMPOSE["services"]
+    assert env["MOREOPENREPEATER_WINLINK_MODEM_HOST"] == COMPOSE["services"]["direwolf"]["networks"]["services"]["ipv4_address"].split("#")[0].strip()
+    assert "services" in api["networks"]  # the private network the two containers are on
+    assert not [v for v in api.get("volumes", []) if "docker.sock" in str(v)]
+    assert "winlink" not in str(api.get("depends_on", ""))  # the dashboard never waits for it
+
+
 def test_the_gateway_has_no_device_and_the_core_is_not_involved():
     gateway = COMPOSE["services"]["winlink"]
     assert "devices" not in gateway and "group_add" not in gateway

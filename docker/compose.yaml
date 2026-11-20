@@ -142,6 +142,10 @@ services:
       # Tailscale). The default is an empty folder in this repo, so a machine without Tailscale starts fine and Docker never
       # creates a root-owned folder on the host. setup.sh points MOR_TAILSCALE_DIR at /var/run/tailscale when the socket exists.
       - ${MOR_TAILSCALE_DIR:-./empty}:/var/run/tailscale:ro
+      # An existing AllStarLink node's /etc/asterisk, read-only, for the AllStar page's import (docs/allstar.md). The default
+      # is the empty folder in this repo, so an install without an import changes nothing and Docker never creates a
+      # root-owned folder on the host. `./setup.sh --import-allstar /etc/asterisk` sets MOR_ALLSTAR_IMPORT_DIR in .env.
+      - ${MOR_ALLSTAR_IMPORT_DIR:-./empty}:/import/asterisk:ro
     environment:
       # One JSON event per line on stdout, which Docker's log driver keeps and rotates. The text log in
       # the data folder is unchanged, and the dashboard's Logs page still reads it.
@@ -150,6 +154,8 @@ services:
       MOREOPENREPEATER_LOGD_QUERY_SOCKET: /run/logd/query.sock  # the Logs page's history; without logd it says so
       MOREOPENREPEATER_TAILSCALE_SOCKET: /var/run/tailscale/tailscaled.sock  # the Remote page reads Tailscale here, read-only; there is no tailscale command in this image
       MOREOPENREPEATER_ASTERISK_CONFIG_DIR: /etc/asterisk  # the AllStar node's configuration, edited by the AllStar page
+      MOREOPENREPEATER_ALLSTAR_IMPORT_DIR: /import/asterisk  # an existing node's configuration, read by the AllStar page's import
+      MOREOPENREPEATER_ALLSTAR_IMPORT_SOURCE: ${MOR_ALLSTAR_IMPORT_DIR:-}  # where that is on the host, shown on the page only
       MOREOPENREPEATER_DMR_DIR: /etc/moreopenrepeater/dmr  # the DMR bridge's, edited by the DMR page
       MOREOPENREPEATER_DMR_RESTART_REQUEST: /dmr-control/request  # how the DMR page asks the bridge to restart
       MOREOPENREPEATER_DMR_STATUS: /dmr-control

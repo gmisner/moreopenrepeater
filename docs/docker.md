@@ -51,7 +51,8 @@ Files:
 ```
 sudo systemctl disable --now moreopenrepeater   # only if the native install is on this machine
 cd docker
-./setup.sh --callsign W1AW                      # add --allstar and --dmr to run those too, --udev to name the PTT interface
+./setup.sh --callsign W1AW                      # add --allstar and --dmr to run those too, --udev to name the PTT interface,
+                                                # --import-allstar /etc/asterisk to bring an existing ASL3 node over (docs/allstar.md)
 ```
 
 `setup.sh` does what is missing and nothing else, so it is safe to run again (it never changes a value you have set):
@@ -409,7 +410,12 @@ the node's container has started the folder is empty and the page says so (and w
 works: `MOREOPENREPEATER_USRP_NODE` in `core.env` is a node you set up by hand, which the page then leaves alone (and the core
 refuses to be pointed elsewhere). Don't set both.
 
-**Not done yet.** Importing an existing node's configuration into the volume, and nets stay in the API. Asterisk's own log
+**Importing an existing node.** `./setup.sh --import-allstar /etc/asterisk` points the AllStar page at an ASL3 node already on
+this machine and offers to bring its number, callsign, registration, startup macro and allowed links over, with a preview first
+(docs/allstar.md, Importing a node). The folder is mounted read-only into the API container only; without it an empty
+`docker/empty` folder is mounted.
+
+**Not done yet.** Nets stay in the API. Asterisk's own log
 lines go to Docker's log (they are not structured events yet). Measured on a Pi 3B+, in a separate compose project: from
 the AllStar page, choosing node 1999 rewrote `rpt.conf` and `modules.conf` in the shared volume, restarted Asterisk over AMI
 (still healthy), loaded `chan_usrp`, and the core's audio was running to `allstar:32001` a few seconds later; with the API

@@ -139,3 +139,74 @@ describe("AllStar links 200-with-error handling", () => {
 
 
 });
+
+describe("AllStar import of an existing node", () => {
+  const importPreview = {
+    configured: true,
+    available: true,
+    found: true,
+    source: "/etc/asterisk",
+    files: [{ name: "rpt.conf", status: "read", detail: "", included: [] }],
+    nodes: [
+      {
+        number: "99001",
+        callsign: "N0CALL",
+        allowed_links: 1,
+        startup_macro: "",
+        has_registration: true,
+        password_usable: true,
+        radio: "SimpleUSB/99001",
+        notes: [],
+        suggested: true,
+      },
+    ],
+    problems: [],
+    will_take: ["Node number"],
+    will_not_take: ["Sound card, PTT and COS settings"],
+    target: { "99001": { state: "new", existing: "1999", reason: null } },
+  };
+
+  function mockWithImport(preview: unknown) {
+    vi.mocked(api).mockReset();
+    vi.mocked(api).mockImplementation(async (path: string) => {
+      if (path === "/api/allstar") return allstarStatus;
+      if (path === "/api/allstar/import") return preview;
+      if (path === "/api/allstar/echolink") return { available: true, enabled: false, loaded: null, error: null, settings: null };
+      if (path === "/api/links") return { available: true, node: "12345", error: null, links: [], favorites: [], schedules: [] };
+      if (path === "/api/links/events?limit=30") return { events: [] };
+      return {};
+    });
+  }
+
+  it("offers the import to an admin when a node folder was given", async () => {
+    mockRole = "admin";
+    mockWithImport(importPreview);
+    const user = userEvent.setup();
+    renderAllStar({ link_favorites: [], link_schedules: [] });
+    await user.click(await screen.findByRole("tab", { name: /Node and EchoLink/i }));
+    expect(await screen.findByText("Found an existing node configuration")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import node 99001" })).toBeInTheDocument();
+  });
+
+  it("shows nothing about it when no folder was given", async () => {
+    mockRole = "admin";
+    mockWithImport({ ...importPreview, configured: false, found: false, nodes: [], target: null });
+    const user = userEvent.setup();
+    renderAllStar({ link_favorites: [], link_schedules: [] });
+    await user.click(await screen.findByRole("tab", { name: /Node and EchoLink/i }));
+    await waitFor(() => expect(api).toHaveBeenCalledWith("/api/allstar/import"));
+    expect(screen.queryByText("Found an existing node configuration")).not.toBeInTheDocument();
+    expect(screen.queryByText(/existing node/i)).not.toBeInTheDocument();
+  });
+
+  it.each(["operator", "viewer"])("does not even ask for it as %s", async (role) => {
+    mockRole = role;
+    mockWithImport(importPreview);
+    const user = userEvent.setup();
+    renderAllStar({ link_favorites: [], link_schedules: [] });
+    await user.click(await screen.findByRole("tab", { name: /Node and EchoLink/i }));
+    await waitFor(() => expect(screen.getByText("AllStarLink node")).toBeInTheDocument());
+    expect(api).not.toHaveBeenCalledWith("/api/allstar/import");
+    expect(screen.queryByText("Found an existing node configuration")).not.toBeInTheDocument();
+  });
+});

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 from typing import Awaitable, Sequence
 
@@ -10,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi import Path as UrlPath
 
 from ..split import settled
+from ..allstar_import import AllStarImporter, ImportRefused, NeedsConfirm, NotFound
 from ..allstar_node import AllStarNode, AllStarSetupError
 from ..autopatch import Autopatch
 from ..dmr import DmrBridge, DmrSettings, DmrSetupError
@@ -35,6 +37,7 @@ from ..models import (
     LinksResponse,
     MonitorReceiverStatus,
 )
+from ..models.allstar_import import AllStarImportPreview, AllStarImportRequest, AllStarImportResult
 from ..monitor_receiver import MonitorReceiverService
 from ..remote_base import RemoteBase
 from ..service.core_handle import ApiCoreHandle
@@ -99,6 +102,30 @@ def register(
     async def delete_allstar() -> dict:
         no_call_in_progress()
         return await change_allstar(allstar_node.release())
+
+    # Importing an existing node's configuration (docs/allstar.md). Admin only, for the preview too: it names files on
+    # the host and says why one can't be read. Nothing in either direction carries a password.
+    importer = AllStarImporter.from_env(allstar_node, os.environ)
+
+    @app.get("/api/allstar/import", response_model=AllStarImportPreview, dependencies=admin_dependencies)
+    async def get_allstar_import() -> dict:
+        return await importer.preview()
+
+    @app.post("/api/allstar/import", response_model=AllStarImportResult, dependencies=admin_dependencies)
+    async def post_allstar_import(body: AllStarImportRequest, request: Request) -> dict:
+        no_call_in_progress()
+        request.state.audit_detail = f"import node {body.node}" + (", replacing" if body.replace else "")
+        try:
+            return await importer.apply(body.node, replace=body.replace, callsign=body.callsign or None)
+        except NotFound as error:
+            raise HTTPException(status_code=404, detail=str(error))
+        except NeedsConfirm as error:
+            raise HTTPException(status_code=409, detail=str(error))
+        except ImportRefused as error:
+            raise HTTPException(status_code=422, detail=str(error))
+        except AllStarSetupError as error:
+            _logger.warning("AllStar import error: %s", str(error))
+            raise HTTPException(status_code=502, detail=str(error))
 
     echolink = EchoLink(allstar_node)
 

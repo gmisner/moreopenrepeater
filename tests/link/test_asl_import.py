@@ -56,8 +56,24 @@ def test_a_node_in_an_included_file_is_found_and_the_include_is_reported(tmp_pat
 
 
 def test_the_node_extensions_names_is_the_suggested_one(tmp_path):
-    result = scan(folder(tmp_path))
-    assert [n.number for n in result.nodes if n.suggested] == ["99001"]
+    src = folder(tmp_path)
+    assert [n.number for n in scan(src).nodes if n.suggested] == ["99001"]
+    # even when another node is the one that registers, extensions.conf's NODE wins
+    (src / "extensions.conf").write_text("[globals]\nNODE = 99006\n")
+    assert [n.number for n in scan(src).nodes if n.suggested] == ["99006"]
+    # with no hint, the node that registers is the one
+    (src / "extensions.conf").unlink()
+    assert [n.number for n in scan(src).nodes if n.suggested] == ["99001"]
+
+
+def test_the_links_list_a_template_names_is_the_one_read(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "rpt.conf").write_text(
+        "[node-main](!)\nnodes = our-links\n\n[99001](node-main)\n\n"
+        "[nodes]\n99010 = radio@203.0.113.50/99010,NONE\n\n[our-links]\n99011 = radio@203.0.113.51/99011,NONE\n"
+    )
+    assert node(scan(src), "99001").links == {"99011": "radio@203.0.113.51/99011,NONE"}
 
 
 def test_registration_is_found_in_either_file_and_only_returned_by_the_password_function(tmp_path):

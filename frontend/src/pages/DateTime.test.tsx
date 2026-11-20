@@ -17,6 +17,9 @@ vi.mock("../api", () => ({
   },
 }));
 
+// The time server card has its own tests (datetime/NtpCard.test.tsx) and its own requests, which would answer these.
+vi.mock("./datetime/NtpCard", () => ({ NtpCard: () => null }));
+
 import { notifications } from "@mantine/notifications";
 import { api, ApiError } from "../api";
 import { DateTime } from "./DateTime";

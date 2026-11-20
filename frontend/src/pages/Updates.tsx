@@ -20,6 +20,8 @@ import { notifyError, notifySuccess } from "../config";
 import { Page } from "../layout/AppShell";
 import { useSession } from "../session";
 import { labeled, InfoNote } from "../components/FieldHint";
+import { LoadingBlock } from "../components/StateCards";
+import { ContainerUpdates } from "./ContainerUpdates";
 
 const POLL_MS = 2000;
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -58,10 +60,12 @@ type AutoUpdate = {
 };
 type UpdatesInfo = {
   available: boolean;
-  channel: string;
+  channel: string | null; // null only for a container install whose branch isn't a channel
   version: Commit | null;
   status: UpdateStatus | null;
   auto: AutoUpdate;
+  install?: "native" | "container";
+  container?: { branch: string | null; channel: string | null; repo: string | null } | null;
 };
 type CheckResult = {
   channel?: string;
@@ -102,6 +106,7 @@ export function Updates() {
   const { session } = useSession();
   const isAdmin = session?.role === "admin";
   const [info, setInfo] = useState<UpdatesInfo | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [check, setCheck] = useState<CheckResult | null>(null);
   const [checking, setChecking] = useState(false);
@@ -168,7 +173,7 @@ export function Updates() {
         } else {
           notifyError(new Error(next.status?.message || "The update didn't finish"));
           setSelected(next.channel);
-          void runCheck(true, next.channel);
+          void runCheck(true, next.channel ?? "stable");
         }
       })();
     }, POLL_MS);
@@ -182,6 +187,7 @@ export function Updates() {
         const next = await api<UpdatesInfo>("/api/updates");
         if (cancelled) return;
         setInfo(next);
+        if (next.install === "container") return; // its page checks for itself; nothing below applies
         setSelected((prev) => prev ?? next.channel);
         setAutoForm({
           enabled: next.auto.enabled,
@@ -192,11 +198,14 @@ export function Updates() {
         });
         if (next.status) await renderProgressLog();
         if (isBusy(next.status)) startPolling();
-        await runCheck(false, next.channel);
+        await runCheck(false, next.channel ?? "stable");
         const restart = await api<{ available: boolean; requested: boolean }>("/api/restart").catch(() => null);
         if (!cancelled && restart) setRestartAvailable(restart.available);
       } catch (error) {
-        if (!cancelled) notifyError(error);
+        if (!cancelled) {
+          setLoadFailed(true);
+          notifyError(error);
+        }
       }
     })();
     return () => {
@@ -250,6 +259,19 @@ export function Updates() {
         </Card>
       </Page>
     );
+  }
+
+  // Until the server says which install this is, show neither page: a container install must not flash the native one.
+  if (!info && !loadFailed) {
+    return (
+      <Page title="Updates">
+        <LoadingBlock label="Loading updates" />
+      </Page>
+    );
+  }
+
+  if (info?.install === "container") {
+    return <ContainerUpdates info={{ install: "container", version: info.version, container: info.container ?? null }} />;
   }
 
   const switching = selected != null && info != null && selected !== info.channel;
@@ -401,7 +423,7 @@ export function Updates() {
               <Text size="sm" c="dimmed" w={80}>
                 Channel
               </Text>
-              <Text size="sm">{info ? CHANNELS[info.channel]?.label : "—"}</Text>
+              <Text size="sm">{info ? CHANNELS[info.channel ?? ""]?.label : "—"}</Text>
             </Group>
           </Stack>
         </Card>

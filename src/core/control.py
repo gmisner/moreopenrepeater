@@ -122,6 +122,7 @@ MAX_COMMAND_BODY_BYTES = 256 * 1024
 HARDWARE_DEADLINE_SECONDS = 2.0  # each part's status must answer in this long
 HARDWARE_PARTS = (
     "live_audio", "gpio", "tx_fan", "link_radio", "remote_base", "monitor_receiver", "autopatch", "allstar_node", "dmr",
+    "audio_device_list",
 )
 LOGS_PER_REQUEST = 500  # the most log lines one GET /logs returns
 MAX_ACTIVITY_ROWS = 20_000  # the most rows one GET /activity returns; a reader asks again for the rest

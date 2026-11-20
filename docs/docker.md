@@ -25,7 +25,10 @@ network call, so it works from the API container. Give the API the same `MOREOPE
 settings the core has (see `docker/api.env.example`); without them the page says it is not
 configured. **AllStar linking works**: the API runs the link service (the AMI connection to app_rpt), which tells the core who is linked and keying and carries a macro's link commands back (see `core-only.md`). **The AllStar node and DMR setup pages work too** once the node's and the bridge's containers are running: the API edits their
 files in volumes it shares with them, and tells the core where they are (see the AllStar and DMR containers below). The rest does not yet:
-any audio tool that needs the sound card itself still answers 503 `core.hardware`; listening and the record and score tool work (see Listening below). The weather
+any audio tool that needs the sound card itself still answers 503 `core.hardware`; listening and the record and score tool work (see Listening below). **The sound card list is the core's.** The API image has no audio libraries, and a card that a running stream already holds cannot be
+looked at again by a second process (a one-off check inside the core's container finds fewer cards than the core
+does), so the Audio page's picker shows the list the core made when it started, read over the socket like the other hardware
+parts. With the core away the picker says so (503) instead of showing an empty list. A card plugged in later shows once the core restarts. The weather
 macro (a caller dialling for the weather) is worded by the API, which does the NWS polling, and said by
 the core; with the API away the caller hears that weather is not available.
 

@@ -721,3 +721,52 @@ def test_starting_before_the_core_is_up_logs_no_errors_and_the_loops_carry_on(so
         assert client.get("/api/status").json()["state"] == "core_unavailable"
     bad = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
     assert bad == [], bad
+
+
+CARDS = [
+    {"name": "All-In-One-Cable: USB Audio (hw:2,0)", "inputs": 1, "outputs": 2, "default_samplerate": 48000.0, "card": 2, "stable_id": "usb-1209:7388-1-1.2"},
+]
+
+
+@pytest.fixture
+def split_with_cards(core, sock_dir):
+    """A real core that knows its sound cards, and an API that has no audio libraries (as in the container install)."""
+    from api.audio_devices import AudioDeviceList
+
+    core.runtime.audio_device_list = AudioDeviceList(lambda: CARDS)
+    with CoreThread(core, sock_dir / "core.sock", allow_simulate=False, log_hub=core.log_hub, activity_store=core.activity_store) as thread:
+        client, remote = split_client(sock_dir / "core.sock")
+        with client:
+            wait_for(lambda: remote.connected and remote._config is not None and remote._macros is not None)
+            yield client, remote, core, thread
+
+
+def test_the_sound_card_list_is_the_cores_not_the_apis(split_with_cards):
+    client, remote, _core, _thread = split_with_cards
+    wait_for(lambda: client.get("/api/audio/devices").status_code == 200)  # the first read of the core's hardware
+    assert client.get("/api/audio/devices").json() == CARDS
+
+
+def test_a_core_that_cannot_list_its_cards_says_so(core, sock_dir):
+    from api.audio_devices import AudioDeviceList
+
+    def broken():
+        raise OSError("no sound system")
+
+    core.runtime.audio_device_list = AudioDeviceList(broken)
+    with CoreThread(core, sock_dir / "core.sock", allow_simulate=False, log_hub=core.log_hub, activity_store=core.activity_store):
+        client, remote = split_client(sock_dir / "core.sock")
+        with client:
+            wait_for(lambda: remote.connected and remote._config is not None and remote._macros is not None)
+            wait_for(lambda: "no sound system" in client.get("/api/audio/devices").text)
+            response = client.get("/api/audio/devices")
+            assert response.status_code == 503 and "couldn't list audio devices" in response.json()["detail"]
+
+
+def test_with_the_core_away_the_sound_card_list_is_unavailable_not_empty(split_with_cards):
+    client, remote, _core, thread = split_with_cards
+    wait_for(lambda: client.get("/api/audio/devices").status_code == 200)
+    asyncio.run_coroutine_threadsafe(thread.server.stop(), thread.loop).result(5)
+    wait_for(lambda: not remote.connected)
+    wait_for(lambda: client.get("/api/audio/devices").status_code == 503, timeout=20)
+    assert "not being heard from" in client.get("/api/audio/devices").json()["detail"]

@@ -12,13 +12,19 @@
 #   sudo udevadm trigger --subsystem-match=hidraw --action=add
 #   ls -l /dev/moreopenrepeater-ptt        # should point at a hidraw node
 #
-# One device may carry this name. With two interfaces plugged in (a repeater and a link radio), the second rule
-# below would claim the name twice: narrow it with ATTRS{serial}=="..." (see `udevadm info -a -n /dev/hidrawN`).
+# One device may carry this name. With two interfaces plugged in (a repeater and a link radio), run
+# `./setup.sh --link-radio SERIAL` (`./setup.sh --list-interfaces` shows the serial numbers). It installs
+# 60-moreopenrepeater-link.rules, which names the link radio's interface /dev/moreopenrepeater-link and marks it, and the
+# line below then leaves the marked interface out, so this name stays the repeater's.
 #
 # The permission lines match the ones in packaging/99-cm108.rules, so this file stands alone on a host that
 # has not installed the native service's rules.
+
+ENV{MOREOPENREPEATER_LINK}=="1", GOTO="moreopenrepeater_ptt_end"
 
 # The All-In-One-Cable (AIOC)
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="7388", GROUP="audio", MODE="0660", SYMLINK+="moreopenrepeater-ptt"
 # CM108 and CM119 interfaces (C-Media's vendor ID, whatever name is on the dongle)
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0d8c", GROUP="audio", MODE="0660", SYMLINK+="moreopenrepeater-ptt"
+
+LABEL="moreopenrepeater_ptt_end"

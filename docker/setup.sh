@@ -18,6 +18,12 @@
 #                     the node over (it is shown first, and nothing is written until you confirm). Implies --allstar.
 #   --dmr             also start the DMR bridge container (the network, DMR Id and password are set in the dashboard)
 #   --udev            install the udev rule that gives the PTT interface a stable name (needs sudo)
+#   --gpio            give the core the Pi's GPIO header (PTT or COS on a header pin, the monitor's squelch pin, a fan pin)
+#   --serial DEVICE   give the core a serial adapter for PTT/COS on its RTS/DTR/CTS lines; repeat for more than one.
+#                     Use a /dev/serial/by-id/ name: /dev/ttyUSBn numbers move when adapters are plugged in another order.
+#   --link-radio ID   give the core the link radio's own USB interface (a second AIOC or CM108). ID is the serial number
+#                     --list-interfaces shows, or port:1-1.3 for one with none.
+#   --list-interfaces show the AIOC and CM108 interfaces plugged in, with the --link-radio ID for each, and stop
 #   --usb-speed       Raspberry Pi 3 Model B+ only: hold USB to full speed (dwc_otg.speed=1 in cmdline.txt, backed up first),
 #                     which stops the AIOC's audio glitches under load. Needs sudo and a reboot, which it does not do.
 #   --no-start        write the settings, start nothing
@@ -35,6 +41,10 @@ IMPORT_ALLSTAR=""
 DMR=0
 UDEV=0
 USB_SPEED=0
+GPIO=0
+SERIALS=""
+LINK_ID=""
+LIST_INTERFACES=0
 START=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -45,8 +55,12 @@ while [ $# -gt 0 ]; do
     --dmr) DMR=1 ;;
     --udev) UDEV=1 ;;
     --usb-speed) USB_SPEED=1 ;;
+    --gpio) GPIO=1 ;;
+    --serial) [ -n "${2:-}" ] || { echo "setup: --serial needs the device, for example --serial /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A1B2C3-if00-port0" >&2; exit 2; }; SERIALS="$SERIALS $2"; shift ;;
+    --link-radio) [ -n "${2:-}" ] || { echo "setup: --link-radio needs the interface's serial number (./setup.sh --list-interfaces shows it), or port:1-1.3" >&2; exit 2; }; LINK_ID="$2"; shift ;;
+    --list-interfaces) LIST_INTERFACES=1 ;;
     --no-start) START=0 ;;
-    -h|--help) sed -n '2,23p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,29p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "setup: unknown option $1 (see --help)" >&2; exit 2 ;;
   esac
   shift
@@ -54,6 +68,11 @@ done
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'setup: %s\n' "$*" >&2; exit 2; }
+
+if [ "$LIST_INTERFACES" = 1 ]; then
+  sh udev/interfaces.sh list
+  exit 0
+fi
 
 # --- helpers over the env files ----------------------------------------------------------------------------------
 
@@ -71,6 +90,7 @@ force_value() {
     printf '%s=%s\n' "$2" "$3" >> "$1"
   fi
 }
+as_root() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi; }
 random() { LC_ALL=C tr -dc "$1" < /dev/urandom | head -c "$2"; echo; }
 from_example() { # NAME: create NAME from NAME.example, for the owner only
   if [ ! -f "$1" ]; then
@@ -263,6 +283,162 @@ if [ ! -e "${PTT:-/dev/moreopenrepeater-ptt}" ]; then
   START=0
 fi
 
+# --- hardware the core is only given when asked: the Pi's GPIO chip, serial adapters, the link radio's interface ----------
+
+# Docker refuses to start a container whose `devices:` path does not exist, and a repeater must come back after a power
+# cut even if an adapter is gone. So none of this is in compose.yaml. Each flag checks the device is there, records it in
+# .env, and adds a small compose file (compose.gpio.yaml, compose.serial.yaml, compose.link-radio.yaml) to COMPOSE_FILE,
+# which Compose reads from .env. A device that is not there is refused here, before anything starts. MOR_DEV_DIR and
+# MOR_UDEV_RULES_DIR are only hooks for the tests.
+DEV="${MOR_DEV_DIR:-/dev}"
+RULES_DIR="${MOR_UDEV_RULES_DIR:-/etc/udev/rules.d}"
+
+# enable_compose_file NAME: add NAME to COMPOSE_FILE in .env, keeping whatever the owner already listed there
+enable_compose_file() {
+  sep="$(value .env COMPOSE_PATH_SEPARATOR)"; sep="${sep:-:}"
+  current="$(value .env COMPOSE_FILE)"
+  if [ -z "$current" ]; then
+    printf 'COMPOSE_FILE=compose.yaml%s%s\n' "$sep" "$1" >> .env
+  else
+    case "$sep$current$sep" in
+      *"$sep$1$sep"*) ;;
+      *) force_value .env COMPOSE_FILE "$current$sep$1" ;;
+    esac
+  fi
+}
+compose_file_enabled() {
+  sep="$(value .env COMPOSE_PATH_SEPARATOR)"; sep="${sep:-:}"
+  case "$sep$(value .env COMPOSE_FILE)$sep" in *"$sep$1$sep"*) return 0 ;; *) return 1 ;; esac
+}
+plain_path() { # the characters that survive an .env file and a compose file
+  case "$1" in *[!A-Za-z0-9._/+@:-]*) return 1 ;; esac
+}
+
+# find_header_chip: the /dev/gpiochipN wired to the 40-pin header, the way src/audio_io/pi_gpio.py finds it (the chip
+# labeled pinctrl-...; gpiodetect prints the labels), or the only chip there is
+find_header_chip() {
+  if command -v gpiodetect >/dev/null 2>&1; then
+    name="$(gpiodetect 2>/dev/null | sed -n 's/^\(gpiochip[0-9][0-9]*\) \[pinctrl-.*/\1/p' | head -n 1)"
+    if [ -n "$name" ]; then printf '%s/%s\n' "$DEV" "$name"; return 0; fi
+  fi
+  chips=""; count=0
+  for chip in "$DEV"/gpiochip*; do
+    [ -c "$chip" ] || continue
+    chips="$chips $chip"; count=$((count + 1))
+  done
+  [ "$count" -gt 0 ] || die "--gpio: there is no $DEV/gpiochip device on this machine. This is for a Raspberry Pi's header; nothing else has one the core can use."
+  [ "$count" = 1 ] || die "--gpio: can't tell which of$chips is the Pi's header (the one labeled pinctrl-...). Install gpiod (sudo apt install gpiod) and run this again, or set MOR_GPIOCHIP in .env."
+  printf '%s\n' "${chips# }"
+}
+
+if [ "$GPIO" = 1 ]; then
+  CHIP="$(value .env MOR_GPIOCHIP)"
+  [ -n "$CHIP" ] || CHIP="$(find_header_chip)" || exit 2
+  plain_path "$CHIP" || die "--gpio: $CHIP has characters (spaces, quotes, \$) that don't survive an .env file."
+  [ -e "$CHIP" ] || die "--gpio: $CHIP does not exist, and Docker will not start the core with a device that is missing."
+  [ -c "$CHIP" ] || die "--gpio: $CHIP is not a device."
+  set_value .env MOR_GPIOCHIP "$CHIP"
+  GPIO_GID="$(getent group gpio 2>/dev/null | cut -d: -f3 || true)"
+  if [ -n "$GPIO_GID" ]; then
+    set_value .env MOR_GPIO_GID "$GPIO_GID"
+  else
+    say "  NOTE: this machine has no gpio group. Find the group of $CHIP (ls -ln $CHIP) and set MOR_GPIO_GID in .env to its number."
+  fi
+  enable_compose_file compose.gpio.yaml
+  say "  the core gets $(value .env MOR_GPIOCHIP) (the Pi's header); the gpio group is $(value .env MOR_GPIO_GID)"
+fi
+
+# serial adapters: the dashboard offers /dev/serial/by-id names and ttyUSBn/ttyACMn, so only those are given over
+for dev in $SERIALS; do
+  plain_path "$dev" || die "--serial: $dev has characters (spaces, quotes, \$) that don't survive an .env file."
+  case "$dev" in
+    "$DEV"/serial/by-id/*|"$DEV"/ttyUSB[0-9]*|"$DEV"/ttyACM[0-9]*) ;;
+    *) die "--serial: $dev is not a name the dashboard offers. Use a $DEV/serial/by-id/ name (ls $DEV/serial/by-id), or $DEV/ttyUSBn or $DEV/ttyACMn." ;;
+  esac
+  [ -e "$dev" ] || die "--serial: $dev does not exist, and Docker will not start the core with a device that is missing. Plug the adapter in; ls $DEV/serial/by-id shows its stable name."
+  [ -c "$dev" ] || die "--serial: $dev is not a serial device."
+  case "$dev" in
+    "$DEV"/ttyUSB[0-9]*|"$DEV"/ttyACM[0-9]*)
+      say "  NOTE: $dev is numbered in the order USB devices were found, so after a reboot or another adapter it can be a different one."
+      for link in "$DEV"/serial/by-id/*; do
+        [ -L "$link" ] || continue
+        [ "$(basename "$(readlink "$link")")" != "$(basename "$dev")" ] || say "  A name that stays with this adapter: --serial $link"
+      done
+      ;;
+  esac
+  LIST="$(value .env MOR_SERIAL_DEVICES)"
+  case " $LIST " in
+    *" $dev "*) ;;
+    *)
+      LIST="${LIST:+$LIST }$dev"
+      if grep -q '^MOR_SERIAL_DEVICES=' .env; then force_value .env MOR_SERIAL_DEVICES "$LIST"; else printf 'MOR_SERIAL_DEVICES=%s\n' "$LIST" >> .env; fi
+      ;;
+  esac
+  say "  the core gets $dev"
+done
+# compose.serial.yaml is written from MOR_SERIAL_DEVICES, so .env stays the one place to look (a list in a compose file cannot
+# come from one variable); a run with no flags rewrites it the same, or leaves it out when nothing is listed
+if [ -n "$(value .env MOR_SERIAL_DEVICES)" ]; then
+  {
+    echo "# Written by setup.sh from MOR_SERIAL_DEVICES in .env; change that, not this file. See docs/docker.md, Serial ports."
+    echo "services:"
+    echo "  core:"
+    echo "    devices:"
+    for dev in $(value .env MOR_SERIAL_DEVICES); do echo "      - $dev:$dev"; done
+  } > compose.serial.yaml.new
+  mv compose.serial.yaml.new compose.serial.yaml
+  enable_compose_file compose.serial.yaml
+fi
+
+# the link radio's interface: a name made by a udev rule for that interface's serial number (or USB port)
+if [ -n "$LINK_ID" ]; then
+  CURRENT_ID="$(value .env MOR_LINK_RADIO_ID)"
+  if [ -n "$CURRENT_ID" ] && [ "$CURRENT_ID" != "$LINK_ID" ]; then
+    say "  .env already sets MOR_LINK_RADIO_ID=$CURRENT_ID; left as it is (edit .env to change it, then run ./setup.sh --link-radio $CURRENT_ID again)."
+    LINK_ID="$CURRENT_ID"
+  fi
+  sh udev/interfaces.sh rule "$LINK_ID" > link-rule.tmp || { rm -f link-rule.tmp; exit 2; }
+  set_value .env MOR_LINK_RADIO_ID "$LINK_ID"
+  if cmp -s link-rule.tmp "$RULES_DIR/60-moreopenrepeater-link.rules" 2>/dev/null && cmp -s udev/61-moreopenrepeater-ptt.rules "$RULES_DIR/61-moreopenrepeater-ptt.rules" 2>/dev/null; then
+    say "  the udev rules for the link radio are already installed"
+  else
+    # the PTT rule is copied too: this version of it leaves the link radio's interface out of the repeater's name
+    as_root cp link-rule.tmp "$RULES_DIR/60-moreopenrepeater-link.rules"
+    as_root cp udev/61-moreopenrepeater-ptt.rules "$RULES_DIR/"
+    as_root udevadm control --reload-rules
+    as_root udevadm trigger --subsystem-match=hidraw --action=add
+    as_root udevadm settle 2>/dev/null || true
+    say "  installed the udev rules that name the link radio's interface"
+  fi
+  rm -f link-rule.tmp
+  LINK_NAME="$(value .env MOR_LINK_HIDRAW)"
+  LINK_NAME="${LINK_NAME:-$DEV/moreopenrepeater-link}"
+  [ -c "$LINK_NAME" ] || die "--link-radio: $LINK_NAME does not exist after the rule was installed, and Docker will not start the core with a device that is missing. Plug the link radio's interface in (./setup.sh --list-interfaces shows what is connected and the serial number each one answers to), then run this again."
+  enable_compose_file compose.link-radio.yaml
+fi
+
+# whatever is mapped must be there, whether it was just asked for or an earlier run did it
+mapped_device_missing() { # LABEL PATH FIX
+  say ""
+  say "  NOTE: $1 $2 does not exist, and Docker will not start the core with a device that is missing."
+  say "  $3"
+  START=0
+}
+if compose_file_enabled compose.gpio.yaml; then
+  CHIP="$(value .env MOR_GPIOCHIP)"
+  [ -c "$CHIP" ] || mapped_device_missing "the GPIO chip" "$CHIP" "Run ./setup.sh --gpio on the Pi, or take compose.gpio.yaml out of COMPOSE_FILE in .env."
+fi
+if compose_file_enabled compose.serial.yaml; then
+  for dev in $(value .env MOR_SERIAL_DEVICES); do
+    [ -c "$dev" ] || mapped_device_missing "the serial port" "$dev" "Plug the adapter in, or take it out of MOR_SERIAL_DEVICES in .env and run ./setup.sh again."
+  done
+fi
+if compose_file_enabled compose.link-radio.yaml; then
+  LINK="$(value .env MOR_LINK_HIDRAW)"
+  LINK="${LINK:-$DEV/moreopenrepeater-link}"
+  [ -c "$LINK" ] || mapped_device_missing "the link radio's interface" "$LINK" "Plug it in (./setup.sh --list-interfaces shows what is connected), or take compose.link-radio.yaml out of COMPOSE_FILE in .env."
+fi
+
 # --- a Pi 3 Model B+: USB at full speed ---------------------------------------------------------------------------
 
 # The AIOC is a full-speed device behind the 3B+'s high-speed hub, so each transfer is a split transaction that the USB
@@ -270,7 +446,6 @@ fi
 # removes the split transactions (docs/docker.md, Audio glitches). It costs: every USB device on the Pi, wired Ethernet
 # included, runs at 12 Mbit/s. So it is only ever done when asked, and it is a boot setting: it takes a reboot, which
 # this script never does.
-as_root() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi; }
 MODEL="$(tr -d '\0' < "${MOR_PI_MODEL_FILE:-/proc/device-tree/model}" 2>/dev/null || true)"
 CMDLINE="${MOR_CMDLINE_FILE:-}"
 if [ -z "$CMDLINE" ]; then

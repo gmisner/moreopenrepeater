@@ -14,6 +14,8 @@
 #   --callsign CALL   the station's callsign (asked for if this is a first install and you are at a terminal)
 #   --localhost       publish the dashboard on the loopback only (a reverse proxy or `tailscale serve` on this host)
 #   --allstar         also set up and start the AllStarLink node container (its management secret is generated)
+#   --import-allstar DIR  an AllStarLink node already on this machine: DIR is its /etc/asterisk. The AllStar page offers to bring
+#                     the node over (it is shown first, and nothing is written until you confirm). Implies --allstar.
 #   --dmr             also start the DMR bridge container (the network, DMR Id and password are set in the dashboard)
 #   --udev            install the udev rule that gives the PTT interface a stable name (needs sudo)
 #   --usb-speed       Raspberry Pi 3 Model B+ only: hold USB to full speed (dwc_otg.speed=1 in cmdline.txt, backed up first),
@@ -27,6 +29,7 @@ cd "$HERE"
 CALLSIGN=""
 LOCALHOST=0
 ALLSTAR=0
+IMPORT_ALLSTAR=""
 DMR=0
 UDEV=0
 USB_SPEED=0
@@ -36,11 +39,12 @@ while [ $# -gt 0 ]; do
     --callsign) CALLSIGN="${2:-}"; shift ;;
     --localhost) LOCALHOST=1 ;;
     --allstar) ALLSTAR=1 ;;
+    --import-allstar) IMPORT_ALLSTAR="${2:-}"; ALLSTAR=1; [ -n "$IMPORT_ALLSTAR" ] || { echo "setup: --import-allstar needs the folder, for example --import-allstar /etc/asterisk" >&2; exit 2; }; shift ;;
     --dmr) DMR=1 ;;
     --udev) UDEV=1 ;;
     --usb-speed) USB_SPEED=1 ;;
     --no-start) START=0 ;;
-    -h|--help) sed -n '2,21p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "setup: unknown option $1 (see --help)" >&2; exit 2 ;;
   esac
   shift
@@ -157,6 +161,34 @@ if [ "$ALLSTAR" = 1 ]; then
     set_value "$f" MOREOPENREPEATER_AMI_HOST allstar
     set_value "$f" MOREOPENREPEATER_AMI_SECRET "$SECRET"
   done
+fi
+
+# --- an AllStar node already on this machine --------------------------------------------------------------------
+
+# The folder is mounted read-only into the API container (compose.yaml), which only reads it, when the AllStar page's
+# import is used. Without this the mount is the empty docker/empty folder, so nothing changes for an install without one.
+if [ -n "$IMPORT_ALLSTAR" ]; then
+  [ -d "$IMPORT_ALLSTAR" ] || die "--import-allstar: $IMPORT_ALLSTAR is not a folder."
+  IMPORT_DIR="$(cd "$IMPORT_ALLSTAR" && pwd)"
+  [ -e "$IMPORT_DIR/rpt.conf" ] || die "--import-allstar: there is no rpt.conf in $IMPORT_DIR (give the folder that holds the node's configuration, usually /etc/asterisk)."
+  case "$IMPORT_DIR" in
+    *[!A-Za-z0-9._/+@:-]*) die "--import-allstar: $IMPORT_DIR has characters (spaces, quotes, \$) that don't survive an .env file; copy the folder to a plainer path." ;;
+  esac
+  CURRENT_IMPORT="$(value .env MOR_ALLSTAR_IMPORT_DIR)"
+  if [ -n "$CURRENT_IMPORT" ] && [ "$CURRENT_IMPORT" != "$IMPORT_DIR" ]; then
+    say "  .env already sets MOR_ALLSTAR_IMPORT_DIR=$CURRENT_IMPORT; left as it is (edit .env to change it)."
+  else
+    set_value .env MOR_ALLSTAR_IMPORT_DIR "$IMPORT_DIR"
+    say "  the AllStar page will offer to import the node in $IMPORT_DIR (read-only)"
+  fi
+  # A host node's files are normally readable by root and the asterisk group only, and the API container runs as user 999.
+  if [ -z "$(find "$IMPORT_DIR/rpt.conf" -perm -004 2>/dev/null)" ]; then
+    say ""
+    say "  NOTE: $IMPORT_DIR/rpt.conf is not readable by other users, and the API container is not root. If the AllStar page"
+    say "  says it can't read a file, give it a private copy it can read, then point --import-allstar at the copy:"
+    say "    sudo cp -a $IMPORT_DIR /var/tmp/asterisk-import && sudo chown -R 999:999 /var/tmp/asterisk-import && sudo chmod -R go-rwx /var/tmp/asterisk-import"
+    say "  Delete the copy when the import is done: it holds the node's password."
+  fi
 fi
 
 # --- the PTT interface's stable name ------------------------------------------------------------------------------

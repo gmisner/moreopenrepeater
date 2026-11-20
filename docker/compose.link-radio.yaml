@@ -1,0 +1,15 @@
+# The link radio's own USB interface (a second CM108 or AIOC with its own sound card) for the core (#221). Turned on by
+# `./setup.sh --link-radio SERIAL`, which makes the stable name (docker/udev/60-moreopenrepeater-link.rules, written for
+# that interface's serial number) and adds this file to COMPOSE_FILE in .env.
+#
+# Why it is not in compose.yaml: Docker will not start a container whose `devices:` path is missing, and most
+# repeaters have one interface. The core already sees every sound card (/dev/snd), so the link radio's card is chosen on
+# the Audio page as before; this adds only the interface that carries its PTT and COS.
+#
+# compose.yaml says "off" for the link radio's interface; this file replaces that with the name below.
+services:
+  core:
+    devices:
+      - ${MOR_LINK_HIDRAW:-/dev/moreopenrepeater-link}:${MOR_LINK_HIDRAW:-/dev/moreopenrepeater-link}
+    environment:
+      MOREOPENREPEATER_LINK_CM108_HIDRAW: ${MOR_LINK_HIDRAW:-/dev/moreopenrepeater-link}

@@ -90,7 +90,7 @@ By hand, without the script:
 
 ```
 cd docker
-cp .env.example .env        # then edit: PTT device, gpio group, data folder
+cp .env.example .env        # then edit: PTT device, data folder (gpio, serial and a link radio: see GPIO, serial ports and a link radio)
 docker compose up -d --build
 docker compose exec core python -m core.healthcheck
 ```
@@ -156,8 +156,8 @@ and says to run `./update.sh`.
 - Gets `/dev/snd` and one `hidraw` node, by the name `/dev/moreopenrepeater-ptt` (see **A stable name for
   the PTT device**; `MOR_PTT_HIDRAW` overrides it with a `/dev/hidrawN` path).
   The group numbers for `audio` and `dialout` are the same on Debian and Pi OS;
-  the `gpio` group number differs, so it is `MOR_GPIO_GID`. GPIO pins are not
-  mapped yet: add `/dev/gpiochip0` under `devices:` if you use them.
+  the `gpio` group number differs, so it is `MOR_GPIO_GID`. The Pi's GPIO chip, serial adapters and a link radio's
+  second interface are only given when you ask (see **GPIO, serial ports and a link radio**).
 - Writes only to `/data` and the control socket volume.
 - **Reads the host's kernel log, read-only.** The core is given `/dev/kmsg` (`MOR_KMSG_DEVICE` in `.env`, which `setup.sh` sets to
   `/dev/kmsg` when the host has it and you can read it). That is what lets the support bundle show a USB drop, which only the kernel
@@ -410,9 +410,73 @@ ls -l /dev/moreopenrepeater-ptt        # points at a hidraw node
 Without the rule the core does not start, and `docker compose up` says the device does not exist. If you
 had `MOR_PTT_HIDRAW=/dev/hidraw0` in `.env`, it still works (and does not follow a renumbering): remove it
 once the rule is in. Only one device can carry the name; with two interfaces on the host, narrow the rule
-with `ATTRS{serial}`. The core is given the one path as `MOREOPENREPEATER_CM108_HIDRAW`, since the default
-`auto` reads the host's hidraw numbers, which are not the container's, and no link radio interface is given
-to it (`MOREOPENREPEATER_LINK_CM108_HIDRAW: "off"`).
+with `ATTRS{serial}`: for a link radio's second interface, `./setup.sh --link-radio` does that for you (see below).
+The core is given the one path as `MOREOPENREPEATER_CM108_HIDRAW`, since the default `auto` reads the host's hidraw
+numbers, which are not the container's, and no link radio interface is given to it unless you ask
+(`MOREOPENREPEATER_LINK_CM108_HIDRAW: "off"`).
+
+## GPIO, serial ports and a link radio
+
+The core is only given the sound cards and the one PTT interface by default. The rest of what the native install
+can use is opt-in, because Docker will not start a container whose `devices:` path is missing and a repeater has to
+come back after a power cut on a machine that may not have the hardware at all. Each of these is a flag of
+`setup.sh`, run in the `docker` folder. Each one checks the device is really there, records it in `.env`, adds a small
+compose file to `COMPOSE_FILE` (Compose reads that from `.env`; anything you already listed there stays), and
+restarts the core. Run again with the same flag and nothing changes; a value you set in `.env` is kept. If the
+device is not there, the script says so and starts nothing.
+
+| You want | Run | What the core is given |
+| --- | --- | --- |
+| PTT or COS on a Pi header pin, the monitor receiver's squelch pin, a fan on a header pin | `./setup.sh --gpio` | the one header chip, for example `/dev/gpiochip0` (`compose.gpio.yaml`) |
+| PTT or COS on a USB serial adapter's RTS, DTR, CTS, DSR or DCD | `./setup.sh --serial /dev/serial/by-id/NAME` | that adapter (`compose.serial.yaml`) |
+| A link radio with its own AIOC or CM108 | `./setup.sh --link-radio SERIAL` | that interface, as `/dev/moreopenrepeater-link` (`compose.link-radio.yaml`) |
+
+Nothing else is widened: no privileged mode, no added capability, not the whole of `/dev`.
+
+If you start Compose with your own `-f` options (for example `-f compose.yaml -f compose.host-network.yaml`), those
+replace `COMPOSE_FILE`, so name the hardware files too: `-f compose.gpio.yaml`, `-f compose.serial.yaml` and
+`-f compose.link-radio.yaml`, whichever you use.
+
+The **GPIO** card on the Audio page (the spare outputs and inputs) is the CM108's own pins, so it works with the PTT
+interface alone and needs none of this. Only header pins do.
+
+**GPIO.** `--gpio` finds the header's chip the way the core does (the one labeled `pinctrl-...`, which `gpiodetect`
+prints; on a machine with a single chip, that one), sets `MOR_GPIOCHIP`, and sets `MOR_GPIO_GID` from
+`getent group gpio` unless you already set it. On a Pi 5 or a machine with several chips and no `gpiodetect`
+(`sudo apt install gpiod`), it asks you to set `MOR_GPIOCHIP` yourself. The pins are 3.3 V only.
+
+**Serial ports.** Give a `/dev/serial/by-id/` name (`ls /dev/serial/by-id` lists them): it stays with the adapter, where
+`/dev/ttyUSB0` and `/dev/ttyUSB1` swap when you plug them in another order. A `ttyUSBn` or `ttyACMn` works, with a
+warning, and the script prints the by-id name for it when there is one. Repeat the flag for a second adapter. The list
+is `MOR_SERIAL_DEVICES` in `.env`; `compose.serial.yaml` is written from it (a compose list cannot come from one
+variable), so edit the variable, not the file. The core's user is already in the `dialout` group. The Audio page then
+offers the adapters in its serial port lists. The core lists them, since the dashboard container is given no devices.
+
+**A link radio.** The second interface needs a stable name of its own, and two interfaces cannot both carry
+`/dev/moreopenrepeater-ptt`. Plug both in, then:
+
+```
+./setup.sh --list-interfaces
+  /dev/hidraw0  AIOC  serial A1B2C3  on USB port 1-1.2  ->  --link-radio A1B2C3
+  /dev/hidraw2  AIOC  serial D4E5F6  on USB port 1-1.4  ->  --link-radio D4E5F6
+./setup.sh --link-radio D4E5F6          # the one on the link radio
+```
+
+If it is not clear which is which, unplug the link radio's interface, run `--list-interfaces`, plug it back in and run it
+again: the one that came back is it. An interface with no serial number, or two with the same one (common on cheap
+CM108 dongles), is named by its USB port instead, `--link-radio port:1-1.4`; it must then stay in that socket. The script
+writes `/etc/udev/rules.d/60-moreopenrepeater-link.rules` for that one interface (with sudo), and installs the current
+`61-moreopenrepeater-ptt.rules`, which leaves the marked interface out of the repeater's name. The repeater's interface
+stays `/dev/moreopenrepeater-ptt`. In the core, `MOREOPENREPEATER_LINK_CM108_HIDRAW` becomes the link name instead of
+`off`. The link radio's sound card is chosen on the Audio page as before, since the core already sees every card.
+
+**If a device goes away.** The core will not start while a mapped device is missing (Docker refuses), and setup.sh
+says so and starts nothing. Plug it back in, or take it out: remove its compose file from `COMPOSE_FILE` in `.env`
+(or its entry from `MOR_SERIAL_DEVICES`) and run `./setup.sh` again. Before that, a page that needs the hardware says
+what is missing and the command to run, in place of the system's "No such file or directory".
+
+**Not tried on hardware.** The flags, the compose files and the udev rules are tested against stand-ins (a fake
+`/dev`, a fake `/sys`, a shimmed `docker`). They have not been run with a second AIOC, a serial adapter or GPIO wiring.
 
 ## The AllStar container
 

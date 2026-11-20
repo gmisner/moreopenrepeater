@@ -153,3 +153,10 @@ export function serialPortOptions(
   }
   return options;
 }
+
+/** What the serial port list says when there is nothing to pick. The core lists the ports it was given, and in the
+ * container install that is none until `./setup.sh --serial` has been run on the Pi. */
+export function serialNothingFound(ports: SerialPortInfo[]): string {
+  if (ports.length > 0) return "No serial port matches.";
+  return "The core sees no serial port. In the container install, plug the adapter in and run ./setup.sh --serial /dev/serial/by-id/NAME in the docker folder on the Pi (ls /dev/serial/by-id lists the names).";
+}

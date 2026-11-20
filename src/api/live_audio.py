@@ -46,6 +46,7 @@ from playout.tts import TTSError
 
 from .audio_devices import resolve_audio_device
 from .boards import run_amixer
+from .host_hardware import header_pin_reason, serial_port_reason
 from .mixer import apply_saved_levels
 from .monitor import AudioMonitor
 from .recordings import RecordingStore
@@ -696,7 +697,7 @@ class LiveAudio:
         try:
             line = self._open_pin(pin, output=output, active_low=active_low)
         except OSError as error:
-            raise OSError(f"couldn't open GPIO{pin} for {role}: {error.strerror or error}") from error
+            raise OSError(f"couldn't open GPIO{pin} for {role}: {header_pin_reason(error)}") from error
         self._pins.append(line)
         return line
 
@@ -704,7 +705,7 @@ class LiveAudio:
         try:
             opened = self._open_serial(device, line, output=output, active_low=active_low)
         except OSError as error:
-            raise OSError(f"couldn't open {device} ({line.upper()}) for {role}: {error.strerror or error}") from error
+            raise OSError(f"couldn't open {device} ({line.upper()}) for {role}: {serial_port_reason(error)}") from error
         self._pins.append(opened)
         return opened
 

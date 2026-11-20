@@ -18,8 +18,6 @@ import { ConfigEditDrawer } from "../ConfigEditDrawer";
 import { ConfigSummaryCard } from "../ConfigSummaryCard";
 import { labeled, InfoNote } from "../FieldHint";
 import {
-  serialPortOptions,
-  serialSelectValue,
   soundDeviceOptions,
   type DeviceAssignment,
 } from "../../deviceUsage";
@@ -27,6 +25,7 @@ import { COS_METHOD_LABELS, METER_FLOOR_DB, PTT_METHOD_LABELS } from "./constant
 import { CtcssToneSelect } from "./CtcssToneSelect";
 import { LevelMeter, shortLabel } from "./helpers";
 import { RemoteBaseCard } from "./RemoteBaseCard";
+import { SerialPortSelect } from "./SerialPortSelect";
 import type { AudioDevice, ConfigSlice, LinkRadioLiveStatus, LinkValues, SerialPort } from "./types";
 
 export function LinkRadioCard({
@@ -285,17 +284,15 @@ export function LinkRadioCard({
                     ) : null}
                     {link.values.link_radio_cos === "serial" ? (
                       <>
-                        <Select
+                        <SerialPortSelect
                           label={labeled(
                             "COS serial port",
                             "A /dev/serial/by-id name stays the same when adapters are plugged in a different order.",
                           )}
-                          data={serialPortOptions(serialPorts, link.values.link_radio_cos_serial_device, serialUsage)}
-                          value={serialSelectValue(serialPorts, link.values.link_radio_cos_serial_device)}
-                          onChange={(value) => link.setField("link_radio_cos_serial_device", value || "")}
-                          searchable
-                          clearable
-                          placeholder="/dev/serial/by-id/…"
+                          ports={serialPorts}
+                          saved={link.values.link_radio_cos_serial_device}
+                          usage={serialUsage}
+                          onChange={(device) => link.setField("link_radio_cos_serial_device", device)}
                         />
                         <Select
                           label="COS line"
@@ -367,17 +364,15 @@ export function LinkRadioCard({
                     ) : null}
                     {link.values.link_radio_ptt === "serial" ? (
                       <>
-                        <Select
+                        <SerialPortSelect
                           label={labeled(
                             "PTT serial port",
                             "PTT and COS can share one adapter on different lines.",
                           )}
-                          data={serialPortOptions(serialPorts, link.values.link_radio_ptt_serial_device, serialUsage)}
-                          value={serialSelectValue(serialPorts, link.values.link_radio_ptt_serial_device)}
-                          onChange={(value) => link.setField("link_radio_ptt_serial_device", value || "")}
-                          searchable
-                          clearable
-                          placeholder="/dev/serial/by-id/…"
+                          ports={serialPorts}
+                          saved={link.values.link_radio_ptt_serial_device}
+                          usage={serialUsage}
+                          onChange={(device) => link.setField("link_radio_ptt_serial_device", device)}
                         />
                         <Select
                           label="PTT line"

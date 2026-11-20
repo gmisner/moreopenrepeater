@@ -17,6 +17,7 @@ from audio_io.pi_gpio import GpioLine, open_header_pin
 from audio_io.receiver import MonitorReceiver, MonitorSettings
 from controller.state_machine import RepeaterConfig
 
+from .host_hardware import header_pin_reason
 from .monitor import AudioMonitor
 from .recordings import RecordingStore
 from .service.core_handle import CoreHandle
@@ -145,7 +146,7 @@ class MonitorReceiverService:
             try:
                 self._pin = self._open_pin(config.monitor_gpio_pin, output=False, active_low=config.monitor_gpio_polarity == "low")
             except OSError as error:
-                self.error = f"couldn't open GPIO{config.monitor_gpio_pin} for the monitor's squelch: {error.strerror or error}"
+                self.error = f"couldn't open GPIO{config.monitor_gpio_pin} for the monitor's squelch: {header_pin_reason(error)}"
                 _logger.error("%s", self.error)
                 return
             cos_input = self._pin.read

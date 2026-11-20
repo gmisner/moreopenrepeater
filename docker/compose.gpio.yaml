@@ -1,0 +1,13 @@
+# The Pi's GPIO header for the core: PTT and COS on a header pin, the monitor receiver's squelch pin, a transmitter fan
+# on a header pin (#221). Turned on by `./setup.sh --gpio`, which finds the chip and adds this file to COMPOSE_FILE in .env.
+#
+# Why it is not in compose.yaml: Docker will not start a container whose `devices:` path is missing. A machine with no
+# GPIO chip (anything but a Raspberry Pi) must still start the core, so this is only added where the chip is.
+#
+# Only the one header chip is given, not /dev/gpiochip*, and no extra privilege: the core's user reaches the node through
+# the gpio group (group_add in compose.yaml, the host's group number in MOR_GPIO_GID, which setup.sh also sets).
+# The spare GPIO page's pins (1, 2, 4 to 8) are the CM108's, not the header's, and need none of this.
+services:
+  core:
+    devices:
+      - ${MOR_GPIOCHIP:?run ./setup.sh --gpio}:${MOR_GPIOCHIP:?run ./setup.sh --gpio}

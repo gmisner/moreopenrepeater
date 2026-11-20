@@ -288,3 +288,114 @@ def test_without_the_ip_command_it_falls_back_to_the_address_list_and_still_leav
     result = run(site, "--callsign", "W1AW", path_extra=False)
     assert f"on your network:   http://{LAN}:8000" in result.stdout
     assert "fe80" not in result.stdout and f"on your network:   http://{TAILSCALE}" not in result.stdout
+
+
+# --- a Pi 3 Model B+: USB at full speed (--usb-speed) ----------------------------------------------------------------
+
+CMDLINE = "console=serial0,115200 console=tty1 root=PARTUUID=abcd-02 rootfstype=ext4 fsck.repair=yes rootwait"
+
+
+@pytest.fixture
+def pi(site, tmp_path):
+    """A Pi 3 Model B+ as far as the script can tell, with a boot command line it may change and a `sudo` that runs."""
+    folder, bin_dir, _calls = site
+    (bin_dir / "sudo").write_text('#!/bin/sh\nexec "$@"\n')
+    (bin_dir / "sudo").chmod(0o755)
+    model = tmp_path / "model"
+    model.write_bytes(b"Raspberry Pi 3 Model B Plus Rev 1.3\0")
+    cmdline = tmp_path / "cmdline.txt"
+    cmdline.write_text(CMDLINE + "\n")
+    running = tmp_path / "proc-cmdline"
+    running.write_text(CMDLINE + "\n")
+    env = {"MOR_PI_MODEL_FILE": str(model), "MOR_CMDLINE_FILE": str(cmdline), "MOR_PROC_CMDLINE": str(running)}
+    return site, env, cmdline, running, model
+
+
+def setup_on(pi, *args):
+    site, env, *_ = pi
+    return run(site, "--callsign", "W1AW", "--no-start", *args, **env)
+
+
+def test_a_3b_plus_is_told_about_the_setting_and_nothing_is_changed_unasked(pi):
+    _site, _env, cmdline, *_ = pi
+    result = setup_on(pi)
+    assert result.returncode == 0, result.stderr
+    assert "Raspberry Pi 3 Model B+" in result.stdout and "--usb-speed" in result.stdout
+    assert "12 Mbit/s" in result.stdout  # the cost is in front of them before they choose
+    assert cmdline.read_text() == CMDLINE + "\n"
+    assert not (cmdline.parent / "cmdline.txt.before-speed1").exists()
+
+
+def test_usb_speed_adds_the_setting_to_the_one_line_and_keeps_the_original(pi):
+    _site, _env, cmdline, *_ = pi
+    result = setup_on(pi, "--usb-speed")
+    assert result.returncode == 0, result.stderr
+    assert cmdline.read_text() == CMDLINE + " dwc_otg.speed=1\n"
+    assert (cmdline.parent / "cmdline.txt.before-speed1").read_text() == CMDLINE + "\n"
+    assert "Reboot" in result.stdout and "12 Mbit/s" in result.stdout
+
+
+def test_usb_speed_run_twice_changes_it_once_and_keeps_the_first_backup(pi):
+    _site, _env, cmdline, *_ = pi
+    setup_on(pi, "--usb-speed")
+    result = setup_on(pi, "--usb-speed")
+    assert result.returncode == 0, result.stderr
+    assert cmdline.read_text() == CMDLINE + " dwc_otg.speed=1\n"
+    assert cmdline.read_text().count("dwc_otg.speed=1") == 1
+    assert (cmdline.parent / "cmdline.txt.before-speed1").read_text() == CMDLINE + "\n"
+    assert "already has dwc_otg.speed=1" in result.stdout
+
+
+def test_trailing_spaces_and_a_missing_newline_still_give_one_clean_line(pi):
+    _site, _env, cmdline, *_ = pi
+    cmdline.write_text(CMDLINE + "   ")
+    assert setup_on(pi, "--usb-speed").returncode == 0
+    assert cmdline.read_text() == CMDLINE + " dwc_otg.speed=1\n"
+
+
+def test_nothing_is_done_when_the_running_kernel_already_has_it(pi):
+    _site, _env, cmdline, running, _model = pi
+    running.write_text(CMDLINE + " dwc_otg.speed=1\n")
+    result = setup_on(pi, "--usb-speed")
+    assert result.returncode == 0, result.stderr
+    assert "already held to full speed" in result.stdout
+    assert cmdline.read_text() == CMDLINE + "\n"
+
+
+def test_a_command_line_that_is_not_one_line_is_left_alone(pi):
+    _site, _env, cmdline, *_ = pi
+    cmdline.write_text(CMDLINE + "\nsomething=else\n")
+    result = setup_on(pi, "--usb-speed")
+    assert result.returncode == 2
+    assert "single line" in result.stderr
+    assert cmdline.read_text() == CMDLINE + "\nsomething=else\n"
+
+
+def test_usb_speed_is_refused_on_any_other_board_and_nothing_is_mentioned_unasked(pi):
+    _site, _env, cmdline, _running, model = pi
+    model.write_bytes(b"Raspberry Pi 4 Model B Rev 1.5\0")
+    quiet = setup_on(pi)
+    assert quiet.returncode == 0 and "Model B+" not in quiet.stdout and "usb-speed" not in quiet.stdout
+    result = setup_on(pi, "--usb-speed")
+    assert result.returncode == 2
+    assert "only for a Raspberry Pi 3 Model B+" in result.stderr and "Raspberry Pi 4 Model B" in result.stderr
+    assert cmdline.read_text() == CMDLINE + "\n"
+
+
+def test_usb_speed_says_so_when_there_is_no_command_line_file_to_change(pi):
+    _site, _env, cmdline, *_ = pi
+    cmdline.unlink()
+    result = setup_on(pi, "--usb-speed")
+    assert result.returncode == 2
+    assert "can't find the Pi's cmdline.txt" in result.stderr
+
+
+def test_an_earlier_backup_is_never_overwritten(pi):
+    # Set once, taken out again by hand (the original line back), then asked for again: the backup is still the
+    # first original, not whatever the file said the second time.
+    _site, _env, cmdline, *_ = pi
+    backup = cmdline.parent / "cmdline.txt.before-speed1"
+    backup.write_text("the first original\n")
+    assert setup_on(pi, "--usb-speed").returncode == 0
+    assert backup.read_text() == "the first original\n"
+    assert cmdline.read_text() == CMDLINE + " dwc_otg.speed=1\n"

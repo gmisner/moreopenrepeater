@@ -556,8 +556,9 @@ line; append it to the end) and reboot. It forces the USB controller to full spe
 no longer reached through split transactions. It was tried here and it worked: no overruns under the
 memory-heavy load that gave 158 without it, and none in 19 minutes of the core and API running
 together (two station IDs went out in that time, so the audio engine was alive), where one every 3.5
-minutes was normal. The setting cannot be changed without a reboot,
-and the installer should do it. The cost is that every USB device on the Pi is held to 12 Mbit/s,
+minutes was normal. It is a boot setting, so it takes a
+reboot. On a 3B+, `./setup.sh` says so and `./setup.sh --usb-speed` does it: it backs up `cmdline.txt`,
+adds the setting to the one line and leaves the reboot to you. It is never done unasked. The cost is that every USB device on the Pi is held to 12 Mbit/s,
 including the wired Ethernet port, which is fine for a repeater on Wi-Fi and worth knowing about on a
 wired one. A Pi 4 or 5 has a different USB controller and should not need it; that has not been
 tested.

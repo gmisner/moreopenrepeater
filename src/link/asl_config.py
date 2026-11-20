@@ -87,6 +87,11 @@ def _effective(sections: list[Section], name: str, key: str, depth: int = 0) -> 
     return None
 
 
+def effective(sections: list[Section], name: str, key: str) -> Optional[str]:
+    """A section's setting, from the section itself or the templates it uses."""
+    return _effective(sections, name, key)
+
+
 @dataclass(frozen=True)
 class Node:
     number: str
@@ -156,6 +161,56 @@ def control_section(text: str, name: str, settings: dict[str, str]) -> str:
         body.append(SAVED + line if setting and setting["key"].lower() in settings else line)
     ours = [f"{key} = {value}  {MARK}" for key, value in settings.items()]
     return _rejoin(lines[: section.start + 1] + ours + body + lines[section.end :], text)
+
+
+# -- settings carried over from another node (link.asl_import) -----------------
+
+IMPORT_MARK = "; imported by moreopenrepeater"
+IMPORT_REPLACED = ";moreopenrepeater import replaced: "
+
+
+def set_section_setting(text: str, name: str, key: str, value: str) -> str:
+    """Give a section its own `key = value`, marked as imported. A line the section already has for `key` is kept as a
+    comment (IMPORT_REPLACED, not SAVED, so "Stop using this node" doesn't bring it back next to the new one). It does
+    nothing when the section's own line already says this, so doing it twice changes nothing."""
+    section = _section(text, name)
+    lines = text.splitlines()
+    wanted = key.lower()
+    body = list(lines[section.start + 1 : section.end])
+    kept: list[str] = []
+    for line in body:
+        setting = None if line.lstrip().startswith(";") or line.lstrip().startswith("#") else _SETTING.match(line)
+        if setting and setting["key"].lower() == wanted:
+            if _strip_comment(setting["value"]) == value:
+                return text
+            kept.append(IMPORT_REPLACED + line)
+        else:
+            kept.append(line)
+    new = f"{key} = {value}  {IMPORT_MARK}"
+    return _rejoin(lines[: section.start + 1] + [new] + kept + lines[section.end :], text)
+
+
+def add_section_entries(text: str, name: str, entries: dict[str, str]) -> str:
+    """Add `key = value` entries a section doesn't have yet (the section is added at the end if it is missing). Entries
+    it already has are left alone."""
+    if not entries:
+        return text
+    section = next((s for s in parse_sections(text) if s.name == name), None)
+    if section is None:
+        lines = text.splitlines()
+        while lines and not lines[-1].strip():
+            lines.pop()
+        added = [f"{key} = {value}  {IMPORT_MARK}" for key, value in entries.items()]
+        return "\n".join([*lines, "", f"[{name}]", *added]) + "\n"
+    missing = {k: v for k, v in entries.items() if k.lower() not in section.settings}
+    if not missing:
+        return text
+    lines = text.splitlines()
+    at = section.end
+    while at > section.start + 1 and not lines[at - 1].strip():
+        at -= 1  # before the blank lines that end the section
+    added = [f"{key} = {value}  {IMPORT_MARK}" for key, value in missing.items()]
+    return _rejoin(lines[:at] + added + lines[at:], text)
 
 
 def release_node(text: str, node: str) -> str:

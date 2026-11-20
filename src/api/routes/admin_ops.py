@@ -24,7 +24,7 @@ from ..health import HealthMonitor
 from ..audio_devices import list_audio_devices
 from ..live_audio import LiveAudio
 from ..log_hub import SECRET_FIELDS as LOG_SHIPPING_SECRET_FIELDS
-from ..log_hub import LogShipper
+from ..log_hub import LogHub, LogShipper
 from ..models import (
     AlertSettingsRequest,
     AlertSettingsResponse,
@@ -52,9 +52,26 @@ from ..restart import RestartControl
 from ..service.core_handle import ApiCoreHandle
 from ..auto_update import AutoUpdater
 from ..log_history import LogHistory
-from ..support_bundle import support_bundle_name, write_support_bundle
+from ..support_bundle import runner_with_mixer, support_bundle_name, write_support_bundle
 from ..tailscale import TailscaleControl, read_log as read_tailscale_log
 from ..updates import UpdateChecker, Updater, installed_version, read_log
+
+
+def _audio_devices_for_bundle(list_devices: Callable[[], list]) -> list:
+    """The sound cards for the bundle: what the dashboard shows (the core's, in the container install). Why not, when it can't."""
+    try:
+        return list(list_devices())
+    except Exception as error:  # noqa: BLE001 - the bundle is for when things are broken
+        return [{"error": f"couldn't list audio devices: {error}"}]
+
+
+def _core_log_lines(service: ApiCoreHandle, log_hub: Optional[LogHub]) -> Optional[list[str]]:
+    """The core's log, when it is another process: the log hub holds its lines with this process's. None otherwise (the
+    log file already has everything)."""
+    if log_hub is None or not getattr(service, "is_remote", False):
+        return None
+    entries, _ = log_hub.since(0, 5000)
+    return [entry.line for entry in entries]
 
 
 def register(
@@ -79,6 +96,9 @@ def register(
     admin_dependencies: Sequence,
     tailscale: TailscaleControl,
     restarter: RestartControl,
+    audio_devices: Optional[Callable[[], list]] = None,
+    run_mixer: Optional[Callable] = None,
+    log_hub: Optional[LogHub] = None,
 ) -> None:
     @app.get("/api/backup", dependencies=admin_dependencies)
     def download_backup(request: Request, recordings: bool = False) -> FileResponse:
@@ -120,11 +140,13 @@ def register(
                 receiver_openings=list(reversed(live_audio.openings)),
                 audio_glitches=list(reversed(live_audio.glitches)),
                 last_unexpected_stop=health.last_unexpected_stop,
-                audio_devices=list_audio_devices(),
+                audio_devices=_audio_devices_for_bundle(audio_devices or list_audio_devices),
                 serial_ports=find_serial_ports(),
                 cm108_interfaces=find_interfaces(),
                 cm108_path=getattr(getattr(live_audio.cm108, "device", None), "path", None),
                 log_history=log_history,
+                core_log_lines=_core_log_lines(service, log_hub),
+                **({"run": runner_with_mixer(run_mixer)} if run_mixer is not None else {}),
             )
         except BaseException:
             path.unlink(missing_ok=True)

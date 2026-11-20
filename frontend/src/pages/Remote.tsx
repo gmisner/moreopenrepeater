@@ -42,6 +42,8 @@ type TailscaleStatus = {
 type TailscaleInfo = {
   available: boolean;
   installed: boolean;
+  source?: "cli" | "socket" | null;
+  unreachable?: boolean;
   backend_state?: string | null;
   dns_name?: string | null;
   auth_url?: string | null;
@@ -71,7 +73,8 @@ function isConnected(info: TailscaleInfo | null) {
 }
 
 function phaseBadge(info: TailscaleInfo): { color: string; label: string } {
-  if (!info.available) return { color: "amber", label: "not set up" };
+  if (info.unreachable) return { color: "amber", label: "can't reach it" };
+  if (!info.available && info.source !== "socket") return { color: "amber", label: "not set up" };
   if (!info.installed) return { color: "gray", label: "not installed" };
   if (info.auth_url && !isConnected(info)) return { color: "amber", label: "needs login" };
   if (isConnected(info) && info.serve_enabled) return { color: "green", label: "serving" };
@@ -203,7 +206,15 @@ export function Remote() {
 
   return (
     <Page title="Remote access">
-      {info && !info.available ? (
+      {info && !info.available && info.source === "socket" ? (
+        <Card withBorder padding="md" radius="md">
+          <Text c="dimmed" size="sm">
+            This dashboard can see Tailscale on the host but not change it. Join the tailnet and turn Serve on or off on the
+            host itself (<Code>sudo tailscale up</Code>, <Code>tailscale serve --bg {info.port}</Code>).
+          </Text>
+        </Card>
+      ) : null}
+      {info && !info.available && info.source !== "socket" && !info.unreachable ? (
         <Card withBorder padding="md" radius="md">
           <Text c="dimmed" size="sm">
             Remote access from the dashboard needs an install made with <Code>scripts/install-pi.sh</Code>.
@@ -222,7 +233,7 @@ export function Remote() {
         </Group>
         <SimpleGrid cols={1} spacing={6}>
           {[
-            ["Tailscale", info?.installed ? "installed" : "not installed"],
+            ["Tailscale", info?.installed ? "installed" : info?.unreachable ? "can't tell from here" : "not installed"],
             ["Tailnet", connected ? "connected" : info?.backend_state || "—"],
             ["Name", info?.dns_name ? <Code key="dns">{info.dns_name}</Code> : "—"],
             ["Dashboard port", info ? String(info.port) : "—"],

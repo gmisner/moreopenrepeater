@@ -109,8 +109,51 @@ echo MOR_DATA_DIR=/srv/mor-data >> .env
   the `gpio` group number differs, so it is `MOR_GPIO_GID`. GPIO pins are not
   mapped yet: add `/dev/gpiochip0` under `devices:` if you use them.
 - Writes only to `/data` and the control socket volume.
+- The API also sees the host's Tailscale socket folder, read-only (see **Tailscale**). It holds no Tailscale command and
+  cannot change Tailscale.
 - Lives on the private `services` network, not the host's (see **The private network**). Nothing is published
   from the core. The old host-network layout is `compose.host-network.yaml`.
+
+## Tailscale
+
+The Remote access page shows whether the host runs Tailscale: its state, its name on the tailnet and whether Tailscale
+Serve is on. The API image has no `tailscale` command and must not get one, so the page reads the same two facts over
+tailscaled's local socket instead (`status` and `serve-config` on the LocalAPI, GET only). Nothing on that page can change
+Tailscale in a container install: install, join, leave and the Serve switch are done on the host (`sudo tailscale up`,
+`tailscale serve --bg 8000`). The native install, where the CLI exists, is unchanged and still uses it.
+
+How the socket gets to the API:
+
+- `compose.yaml` mounts `${MOR_TAILSCALE_DIR}` at `/var/run/tailscale`, read-only, in the `api` service only. It mounts the
+  folder rather than the socket file because tailscaled makes a new socket when it restarts, and a file mount would keep
+  pointing at the old one.
+- `MOR_TAILSCALE_DIR` defaults to `docker/empty/`, an empty folder in this repo. So `docker compose up` works on a machine
+  with no Tailscale, and Docker never creates a root-owned `/var/run/tailscale` on the host (it does that for a bind source
+  that does not exist).
+- `setup.sh` writes `MOR_TAILSCALE_DIR=/var/run/tailscale` into `.env` when `/var/run/tailscale/tailscaled.sock` exists, and
+  leaves any value you already set alone. By hand, put that line in `.env` and run `docker compose up -d`. If you install
+  Tailscale after setup, do the same.
+- The API looks for `/var/run/tailscale/tailscaled.sock` (`MOREOPENREPEATER_TAILSCALE_SOCKET`).
+
+If the page can't read Tailscale it says which of these it is, not "not installed":
+
+| The page says | It means | Fix |
+| --- | --- | --- |
+| there is no Tailscale socket | Tailscale isn't running on the host, or the container was started without the folder | start Tailscale, or set `MOR_TAILSCALE_DIR` and `docker compose up -d` |
+| the socket is there but this dashboard isn't allowed to open it | permission denied | see below |
+| the socket is there but nothing is answering | tailscaled is stopped, and left its socket file behind | start Tailscale on the host |
+| Tailscale didn't answer within a few seconds | tailscaled is stuck or very busy | check `tailscale status` on the host |
+
+**Permissions.** The container runs as uid 999, which has no special place on the host. Tailscale's own defaults are enough:
+on Linux, tailscaled makes the socket readable and writable by everyone (`srw-rw-rw-`) in `/var/run/tailscale` (mode 0755),
+and it decides what a client may do from who is on the other end: anyone who can open the socket may read, and only root or
+the configured operator may change anything. Check yours with `ls -ld /var/run/tailscale; ls -l /var/run/tailscale/tailscaled.sock`.
+If the socket or its folder is tighter than that (someone ran tailscaled with another `--socket` mode, or hardened the
+folder), the page says permission denied. Nothing here loosens it for you: either put it back to Tailscale's default, or accept
+that the page can't see Tailscale. Two cautions: the `:ro` on the mount protects the folder's files, not the socket
+(a client that can connect can send any request), so what keeps the dashboard from changing Tailscale is that uid 999 is
+neither root nor the operator, and the dashboard only sends GET requests. Don't make uid 999's host user the operator
+(`tailscale set --operator=`) unless you want that.
 
 ## Logs
 

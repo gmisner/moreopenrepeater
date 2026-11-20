@@ -6,6 +6,9 @@ request file that moreopenrepeater-tailscale.path picks up as root
 --operator=moreopenrepeater, live status comes from `tailscale status` and
 `tailscale serve status` as the service user. Auth keys are never kept in
 status or logs.
+
+With no `tailscale` command on PATH (the container install) the same two facts are read, read-only, from tailscaled's
+LocalAPI socket when compose shares it (tailscale_localapi.py). The CLI wins whenever it exists.
 """
 from __future__ import annotations
 
@@ -18,6 +21,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
+
+from .tailscale_localapi import LocalApiError, read_state, socket_path_from_env
 
 ACTIONS = frozenset({"install", "up", "serve-on", "serve-off", "down"})
 AUTH_KEY_RE = re.compile(r"^tskey-[A-Za-z0-9_-]+$")
@@ -126,40 +131,60 @@ def _serve_enabled(serve: Optional[dict]) -> bool:
     return bool(serve) and serve not in ({}, {"TCP": {}, "Web": {}, "Foreground": {}})
 
 
-def probe_tailscale(run_json: Callable[[list[str]], Optional[dict]] = _run_json) -> dict:
-    """Live Tailscale state from the CLI (needs operator or root)."""
+def _empty_probe(**overrides) -> dict:
+    return {
+        "installed": False,
+        "source": None,
+        "unreachable": False,
+        "socket_problem": None,
+        "backend_state": None,
+        "dns_name": None,
+        "auth_url": None,
+        "serve_enabled": False,
+        "serve_url": None,
+        "cli_error": None,
+        **overrides,
+    }
+
+
+def _from_status(status: dict, serve: Optional[dict], source: str) -> dict:
+    dns_name = _dns_name(status)
+    return _empty_probe(
+        installed=True,
+        source=source,
+        backend_state=status.get("BackendState") or None,
+        dns_name=dns_name,
+        auth_url=status.get("AuthURL") or None,
+        serve_enabled=_serve_enabled(serve),
+        serve_url=_serve_url(serve, dns_name),
+    )
+
+
+def probe_tailscale(
+    run_json: Callable[[list[str]], Optional[dict]] = _run_json,
+    *,
+    socket_path: Optional[str] = None,
+    read_socket: Callable[[str], tuple[dict, Optional[dict]]] = read_state,
+) -> dict:
+    """Live Tailscale state: from the CLI (needs operator or root) when there is one, otherwise read-only over
+    tailscaled's LocalAPI socket (the container install, where the API image has no CLI)."""
     if not cli_installed():
-        return {
-            "installed": False,
-            "backend_state": None,
-            "dns_name": None,
-            "auth_url": None,
-            "serve_enabled": False,
-            "serve_url": None,
-            "cli_error": None,
-        }
+        path = socket_path or socket_path_from_env(os.environ)
+        try:
+            status, serve = read_socket(path)
+        except LocalApiError as error:
+            # Not installed is only said when nothing points the other way: a missing socket is reported as what it is.
+            return _empty_probe(unreachable=True, cli_error=str(error), socket_problem=error.reason)
+        return _from_status(status, serve, "socket")
     status = run_json(["tailscale", "status", "--json"])
     if status is None:
-        return {
-            "installed": True,
-            "backend_state": None,
-            "dns_name": None,
-            "auth_url": None,
-            "serve_enabled": False,
-            "serve_url": None,
-            "cli_error": "Couldn't read Tailscale status. If you just installed it, join the tailnet first.",
-        }
+        return _empty_probe(
+            installed=True,
+            source="cli",
+            cli_error="Couldn't read Tailscale status. If you just installed it, join the tailnet first.",
+        )
     serve = run_json(["tailscale", "serve", "status", "--json"])
-    dns_name = _dns_name(status)
-    return {
-        "installed": True,
-        "backend_state": status.get("BackendState") or None,
-        "dns_name": dns_name,
-        "auth_url": status.get("AuthURL") or None,
-        "serve_enabled": _serve_enabled(serve),
-        "serve_url": _serve_url(serve, dns_name),
-        "cli_error": None,
-    }
+    return _from_status(status, serve, "cli")
 
 
 def validate_auth_key(auth_key: Optional[str]) -> Optional[str]:
@@ -180,10 +205,14 @@ class TailscaleControl:
         *,
         clock: Callable[[], float] = time.time,
         run_json: Callable[[list[str]], Optional[dict]] = _run_json,
+        socket_path: Optional[str] = None,
+        read_socket: Callable[[str], tuple[dict, Optional[dict]]] = read_state,
     ) -> None:
         self.settings = settings
         self._clock = clock
         self._run_json = run_json
+        self._socket_path = socket_path
+        self._read_socket = read_socket
         self._requested_at: Optional[float] = None
 
     @property
@@ -215,12 +244,18 @@ class TailscaleControl:
 
     def snapshot(self) -> dict:
         helper = self.helper_status()
-        live = probe_tailscale(self._run_json)
+        live = probe_tailscale(self._run_json, socket_path=self._socket_path, read_socket=self._read_socket)
+        if self.available and live["socket_problem"] == "missing":
+            # A native install (install-pi.sh) with no CLI and no socket just doesn't have Tailscale yet, and the Install
+            # button is the answer. The "socket isn't shared" explanation is for the container install.
+            live = _empty_probe()
         # Prefer AuthURL from an in-progress interactive login written by the helper.
         auth_url = live.get("auth_url") or (helper or {}).get("auth_url")
         return {
             "available": self.available,
             "installed": live["installed"],
+            "source": live["source"],
+            "unreachable": live["unreachable"],
             "backend_state": live["backend_state"],
             "dns_name": live["dns_name"],
             "auth_url": auth_url,

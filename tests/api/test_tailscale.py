@@ -1,6 +1,7 @@
 import base64
 import json
 
+import fake_tailscaled as fake
 import pytest
 from fastapi.testclient import TestClient
 
@@ -16,7 +17,14 @@ from api.tailscale import (
     tailscale_settings_from_env,
     validate_auth_key,
 )
+from api.tailscale_localapi import LocalApiError
 from api.users import UserStore
+
+
+@pytest.fixture(autouse=True)
+def _no_real_tailscaled(monkeypatch):
+    """Without the CLI the API looks for tailscaled's socket; a developer's own must not leak into these tests."""
+    monkeypatch.setenv("MOREOPENREPEATER_TAILSCALE_SOCKET", str(fake.short_dir() / "none.sock"))
 
 
 def test_settings_come_from_the_service_environment(tmp_path):
@@ -209,3 +217,140 @@ def test_log_route_tails_the_helper_log(tmp_path):
     (settings.status_dir / "tailscale.log").write_text("Installing…\nDone.\n")
     client = make_client(tmp_path, control=control)
     assert client.get("/api/tailscale/log", headers=basic("admin", "hunter2")).json() == ["Installing…", "Done."]
+
+
+# --- no CLI: tailscaled's socket (container install) ------------------------------------------------------------------
+
+
+@pytest.fixture
+def tailscaled():
+    server = fake.start()
+    server.routes["/localapi/v0/status"] = fake.Reply(body=json.dumps(fake.STATUS).encode())
+    server.routes["/localapi/v0/serve-config"] = fake.Reply(body=json.dumps(fake.SERVE).encode())
+    yield server
+    server.shutdown()
+    server.server_close()
+
+
+def no_cli(monkeypatch, present=False):
+    from api import tailscale as mod
+
+    monkeypatch.setattr(mod, "cli_installed", lambda: present)
+
+
+def test_the_cli_wins_when_it_exists_and_the_socket_is_not_even_opened(monkeypatch):
+    no_cli(monkeypatch, present=True)
+
+    def socket_must_not_be_read(_path):
+        raise AssertionError("the socket was read although the CLI exists")
+
+    def run_json(args):
+        return {"BackendState": "NeedsLogin", "Self": {"DNSName": "pi.t.ts.net."}} if args[1] == "status" else {}
+
+    live = probe_tailscale(run_json, read_socket=socket_must_not_be_read)
+    assert live["source"] == "cli" and live["backend_state"] == "NeedsLogin" and live["unreachable"] is False
+
+
+def test_the_cli_failing_is_not_papered_over_by_the_socket(monkeypatch):
+    """A CLI that can't read status keeps its own message; the socket is only for when there is no CLI."""
+    no_cli(monkeypatch, present=True)
+    live = probe_tailscale(lambda _args: None, read_socket=lambda _p: pytest.fail("socket read"))
+    assert live["installed"] is True and live["source"] == "cli" and "join the tailnet" in live["cli_error"]
+
+
+def test_without_the_cli_the_socket_gives_the_same_answer(monkeypatch, tailscaled):
+    no_cli(monkeypatch)
+    live = probe_tailscale(socket_path=tailscaled.server_address)
+    assert live["installed"] is True and live["source"] == "socket" and live["unreachable"] is False
+    assert live["backend_state"] == "Running"
+    assert live["dns_name"] == "pi.tail123.ts.net"
+    assert live["serve_enabled"] is True and live["serve_url"] == "https://pi.tail123.ts.net"
+    assert live["cli_error"] is None
+
+
+def test_the_socket_path_is_taken_from_the_environment_when_none_is_given(monkeypatch, tailscaled):
+    no_cli(monkeypatch)
+    monkeypatch.setenv("MOREOPENREPEATER_TAILSCALE_SOCKET", tailscaled.server_address)
+    assert probe_tailscale()["source"] == "socket"
+
+
+def test_no_socket_is_not_said_to_be_not_installed(monkeypatch):
+    no_cli(monkeypatch)
+    live = probe_tailscale()
+    assert live["installed"] is False and live["unreachable"] is True and live["source"] is None
+    assert "no tailscale socket" in live["cli_error"].lower() and "not installed" not in live["cli_error"].lower()
+
+
+def test_each_way_the_socket_can_fail_has_its_own_words(monkeypatch):
+    no_cli(monkeypatch)
+    said = {}
+    for reason in ("missing", "not_readable", "not_listening", "timeout", "denied"):
+        message = f"words for {reason}"
+
+        def fail(_path, reason=reason, message=message):
+            raise LocalApiError(reason, message)
+
+        live = probe_tailscale(read_socket=fail)
+        assert live["unreachable"] is True and live["cli_error"] == message and live["socket_problem"] == reason
+        said[reason] = live["cli_error"]
+    assert len(set(said.values())) == 5
+
+
+def test_a_dashboard_that_cannot_open_the_socket_says_permission_not_missing(monkeypatch, tailscaled):
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("root can open anything")
+    no_cli(monkeypatch)
+    os.chmod(tailscaled.server_address, 0o000)
+    control = TailscaleControl(None, socket_path=tailscaled.server_address)
+    snapshot = control.snapshot()
+    assert snapshot["installed"] is False and snapshot["unreachable"] is True
+    assert "permission denied" in snapshot["cli_error"] and "not installed" not in snapshot["cli_error"].lower()
+
+
+def test_the_route_reports_the_host_s_tailscale_read_only(tmp_path, monkeypatch, tailscaled):
+    no_cli(monkeypatch)
+    control = TailscaleControl(None, socket_path=tailscaled.server_address)
+    body = make_client(tmp_path, control=control).get("/api/tailscale", headers=basic("admin", "hunter2")).json()
+    assert body["available"] is False  # the container can't install, join or change Serve
+    assert body["installed"] is True and body["source"] == "socket" and body["unreachable"] is False
+    assert body["backend_state"] == "Running" and body["dns_name"] == "pi.tail123.ts.net" and body["serve_enabled"] is True
+    assert {r["method"] for r in tailscaled.requests} == {"GET"}
+
+
+def test_the_route_says_when_the_socket_is_missing(tmp_path, monkeypatch):
+    no_cli(monkeypatch)
+    body = make_client(tmp_path).get("/api/tailscale", headers=basic("admin", "hunter2")).json()
+    assert body["installed"] is False and body["unreachable"] is True
+    assert "no tailscale socket" in body["cli_error"].lower()
+
+
+def test_the_container_s_actions_still_refuse(tmp_path, monkeypatch, tailscaled):
+    """Reading over the socket adds no way to change anything: the install, join and Serve routes stay refused."""
+    no_cli(monkeypatch)
+    client = make_client(tmp_path, control=TailscaleControl(None, socket_path=tailscaled.server_address))
+    for path, payload in (("install", {}), ("up", {"auth_key": "tskey-auth-x"}), ("serve", {"enabled": True}), ("down", {})):
+        assert client.post(f"/api/tailscale/{path}", json=payload, headers=basic("admin", "hunter2")).status_code == 409, path
+    assert {r["method"] for r in tailscaled.requests} <= {"GET"}
+
+
+def test_a_native_install_with_no_cli_and_no_socket_still_offers_to_install(tmp_path, monkeypatch):
+    """install-pi.sh installs have the helper units; there a missing socket just means Tailscale isn't installed yet."""
+    no_cli(monkeypatch)
+    control, _settings, _now = make_control(tmp_path)
+    snapshot = control.snapshot()
+    assert snapshot["available"] is True and snapshot["installed"] is False
+    assert snapshot["unreachable"] is False and snapshot["cli_error"] is None
+
+
+def test_a_native_install_with_a_socket_it_cannot_open_is_told_so(tmp_path, monkeypatch):
+    no_cli(monkeypatch)
+    control, _settings, _now = make_control(tmp_path)
+
+    def denied(_path):
+        raise LocalApiError("not_readable", "permission denied")
+
+    control._read_socket = denied
+    snapshot = control.snapshot()
+    assert snapshot["unreachable"] is True and snapshot["cli_error"] == "permission denied"

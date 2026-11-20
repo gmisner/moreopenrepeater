@@ -137,6 +137,17 @@ else
   set_value .env MOR_API_HOST 0.0.0.0   # sign-in is on (above), so the dashboard may answer on every interface
 fi
 
+# --- Tailscale's socket, so the Remote page can see the host's Tailscale ------------------------------------------------
+
+# The API container has no tailscale command and must not get one. tailscaled's socket folder is shown to it read-only
+# instead (compose.yaml). The folder has to exist on the host before Docker starts, or Docker makes it as root; so it is only
+# pointed at when the socket is there, and a machine without Tailscale keeps the empty folder in this repo. A value you set
+# yourself is kept (set_value). MOR_TAILSCALE_SOCKET_DIR is only a hook for the tests.
+TS_DIR="${MOR_TAILSCALE_SOCKET_DIR:-/var/run/tailscale}"
+if [ -S "$TS_DIR/tailscaled.sock" ]; then
+  set_value .env MOR_TAILSCALE_DIR "$TS_DIR"
+fi
+
 # --- the AllStar node ---------------------------------------------------------------------------------------------
 
 if [ "$ALLSTAR" = 1 ]; then

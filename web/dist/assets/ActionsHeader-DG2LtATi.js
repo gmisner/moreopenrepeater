@@ -1,1 +1,0 @@
-import{t as e}from"./Table-CUkMG1WR.js";import{$ as t}from"./AppShell-yAJXZhpR.js";import{w as n}from"./BrandMark-DWPALHPL.js";var r=n();function i(){return(0,r.jsx)(e.Th,{children:(0,r.jsx)(t,{children:`Actions`})})}export{i as t};

@@ -143,6 +143,20 @@ describe("NTP card", () => {
       expect(screen.queryByText(/station ID times/)).not.toBeInTheDocument();
     });
 
+    it.each([
+      ["ok", "Good", "green"],
+      ["off", "Off", "red"],
+      ["unreachable", "Unreachable", "yellow"],
+      ["not_checked", "Not checked", "gray"],
+    ] as const)("colors the %s badge %s, with the word as well", async (state, word, color) => {
+      serve(status({ state, offset_ms: state === "ok" || state === "off" ? 10 : null }));
+      renderCard();
+      await field();
+      const badge = check().getByText(word).closest(".mantine-Badge-root") as HTMLElement;
+      expect(badge).not.toBeNull();
+      expect(badge.getAttribute("style")).toContain(`--mantine-color-${color}-`);
+    });
+
     it("names the chosen server in the check, not the default", async () => {
       serve(status({ server: "time.example.org", configured_server: "time.example.org" }));
       renderCard();
@@ -343,6 +357,16 @@ describe("NTP card", () => {
       expect(saveButton()).toBeEnabled();
       await user.type(input, "{Backspace}");
       expect(saveButton()).toBeDisabled();
+    });
+
+    it("does not send anything when the form is submitted with nothing changed", async () => {
+      serve(status());
+      renderCard();
+      const form = (await field()).closest("form") as HTMLFormElement;
+      await act(async () => {
+        form.requestSubmit();
+      });
+      expect(calls("/api/time/ntp")).toHaveLength(0);
     });
 
     it("does not count spaces around the same value as a change", async () => {
@@ -571,6 +595,28 @@ describe("NTP card", () => {
       await act(async () => release(status())); // the stale answer finally arrives: still the default server
       expect(screen.getByText("The Pi's clock is 8 ms ahead of time.example.org.")).toBeInTheDocument();
       expect(await field()).toHaveValue("time.example.org");
+    });
+
+    it("does not let a slow read that fails after a save put up a failure note", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setInterval", "clearInterval"] });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      let fail: (error: Error) => void = () => {};
+      let slow = false;
+      serve(
+        () => (slow ? new Promise<TimeStatus>((_, reject) => (fail = reject)) : Promise.resolve(status())),
+        async (server) => status({ server, configured_server: server }),
+      );
+      renderCard();
+      await user.type(await field(), "time.example.org");
+      slow = true;
+      await act(async () => {
+        vi.advanceTimersByTime(46_000);
+      });
+      await waitFor(() => expect(calls("/api/time")).toHaveLength(2));
+      await user.click(saveButton());
+      expect(await screen.findByText("The Pi's clock is 8 ms ahead of time.example.org.")).toBeInTheDocument();
+      await act(async () => fail(new Error("The repeater didn't answer")));
+      expect(screen.queryByText(/Couldn't refresh just now/)).not.toBeInTheDocument();
     });
   });
 

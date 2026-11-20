@@ -42,6 +42,10 @@ FLUSH_SECONDS = 2.0  # the most the log gets to reach the collector before the p
 STALL_SECONDS = 10.0
 MIN_STALL_SECONDS = 2.0
 MAX_STALL_SECONDS = 300.0
+# How long a container core tries to get a lost sound card back in-process before it restarts itself. A card that
+# dropped off USB is normally back in 3 s; a restart is for when it came back under a different device number
+# (the container's device nodes are fixed when it starts), so it is not worth waiting long.
+SOUND_CARD_GRACE_SECONDS = 6.0
 
 
 def sd_notify(message: str, env: Optional[dict] = None) -> bool:
@@ -130,6 +134,7 @@ class Watchdog:
         self._clock = clock
         self._stall_seconds = stall_seconds_from_env() if stall_seconds is None else stall_seconds
         self._watched: list[tuple[str, Callable[[], Optional[float]]]] = []
+        self._limits: dict[str, float] = {}  # a watch's own limit, where it has one
         self.on_stall: Callable[[str], None] = lambda name: None
         #: Called after `on_stall` when something has stalled. In a container this ends the process (see
         #: `exit_for_restart`); under systemd it stays None and the stopped pings do the same job.
@@ -147,27 +152,33 @@ class Watchdog:
         stall is noticed within a quarter of it."""
         return min(CONTAINER_CHECK_SECONDS, self._stall_seconds / 4)
 
-    def watch(self, name: str, last_progress: Callable[[], Optional[float]]) -> None:
+    def watch(self, name: str, last_progress: Callable[[], Optional[float]], stall_seconds: Optional[float] = None) -> None:
+        """`stall_seconds` is this one's own limit, for something that should not be given the full default
+        (a sound card that has been gone for longer than a restart needs). Never longer than the watchdog's."""
+        if stall_seconds is not None:
+            self._limits[name] = min(stall_seconds, self._stall_seconds)
         self._watched.append((name, last_progress))
 
-    def _first_stalled(self) -> Optional[str]:
+    def _first_stalled(self) -> Optional[tuple[str, float]]:
         now = self._clock()
         for name, last_progress in self._watched:
+            limit = self._limits.get(name, self._stall_seconds)
             at = last_progress()
-            if at is not None and now - at > self._stall_seconds:
-                return name
+            if at is not None and now - at > limit:
+                return name, limit
         return None
 
     def check(self) -> bool:
         """Ping systemd if everything is making progress. Once something
         stalls the pings stop for good, so systemd restarts the service."""
         if self.stalled is None:
-            self.stalled = self._first_stalled()
-            if self.stalled is not None:
+            found = self._first_stalled()
+            if found is not None:
+                self.stalled, limit = found
                 log_event(
                     _logger, logging.ERROR, "watchdog.stalled",
                     f"the {self.stalled} stopped making progress; restarting the service",
-                    error_code="watchdog.stalled", part=self.stalled, stall_s=self._stall_seconds, facts_in_text=False,
+                    error_code="watchdog.stalled", part=self.stalled, stall_s=limit, facts_in_text=False,
                 )
                 try:
                     self.on_stall(self.stalled)

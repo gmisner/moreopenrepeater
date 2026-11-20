@@ -2,7 +2,7 @@
 import json
 
 from api import core_runtime
-from api.watchdog import Watchdog, exit_for_restart
+from api.watchdog import SOUND_CARD_GRACE_SECONDS, Watchdog, exit_for_restart
 from core.build import build_core
 
 
@@ -14,7 +14,15 @@ def build(tmp_path, **env):
 def test_with_the_switch_on_the_core_restarts_itself_on_a_stall(tmp_path):
     watchdog = build(tmp_path, MOREOPENREPEATER_EXIT_ON_STALL="1").runtime.watchdog
     assert watchdog.restart is exit_for_restart
-    assert [name for name, _ in watchdog._watched] == ["controller", "audio engine", "link radio audio engine"]
+    assert [name for name, _ in watchdog._watched] == [
+        "controller", "audio engine", "link radio audio engine", "sound card",
+    ]
+    assert watchdog._limits == {"sound card": SOUND_CARD_GRACE_SECONDS}
+
+
+def test_only_a_container_restarts_itself_over_a_lost_sound_card(tmp_path):
+    watchdog = build(tmp_path).runtime.watchdog
+    assert "sound card" not in [name for name, _ in watchdog._watched]
 
 
 def test_without_it_the_core_leaves_restarting_to_systemd(tmp_path):

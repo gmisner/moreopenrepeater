@@ -2,6 +2,7 @@ import time
 
 import numpy as np
 
+from audio_io import engine as engine_module
 from audio_io.engine import PRIME_BLOCKS, AudioEngine
 from audio_io.processor import AudioProcessor, ProcessorSettings
 from controller.events import COSChanged
@@ -161,6 +162,64 @@ def test_stream_death_callback_fires_when_stream_goes_inactive():
     assert deaths == [True]
     assert not engine.running
     engine.stop()
+
+
+def test_a_stream_that_still_looks_active_but_stops_delivering_is_reported_dead(monkeypatch, structured_events):
+    # After a USB drop PortAudio can keep saying the stream is active while its callbacks have simply stopped.
+    monkeypatch.setattr(engine_module, "INPUT_SILENCE_SECONDS", 0.3)
+    deaths = []
+    engine, _, _, streams = make_engine(on_stream_dead=lambda: deaths.append(True))
+    engine.start()
+    try:
+        assert streams[0].active is True
+        deadline = time.monotonic() + 3
+        while not deaths and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert deaths == [True]
+        assert streams[0].active is True  # it never said so: the silence is the evidence
+        died = structured_events.named("audio.stream_died")
+        assert len(died) == 1 and died[0].context["reason"] == "no_audio"
+        time.sleep(0.5)
+        assert deaths == [True]  # reported once, not on every empty wait
+    finally:
+        engine.stop()
+
+
+def test_a_stream_that_keeps_delivering_is_never_reported_dead(monkeypatch):
+    monkeypatch.setattr(engine_module, "INPUT_SILENCE_SECONDS", 0.3)
+    deaths = []
+    engine, _, _, streams = make_engine(on_stream_dead=lambda: deaths.append(True))
+    engine.start()
+    try:
+        end = time.monotonic() + 1.0  # more than three silence limits, a block every 20 ms like the card
+        while time.monotonic() < end:
+            streams[0].input_queue.put_nowait(np.zeros((BLOCK, 1), dtype=np.float32))
+            time.sleep(0.02)
+        assert deaths == []
+    finally:
+        engine.stop()
+
+
+def test_a_death_seen_by_both_the_worker_and_the_cos_poller_is_reported_once(structured_events):
+    deaths = []
+    engine, _, _, streams = make_engine(on_stream_dead=lambda: deaths.append(True), cos_input=lambda: False)
+    engine.start()
+    streams[0].active = False
+    time.sleep(0.5)  # both threads have looked at it many times by now
+    engine.stop()
+    assert deaths == [True]
+    assert len(structured_events.named("audio.stream_died")) == 1
+
+
+def test_an_inactive_stream_is_still_reported_with_its_own_reason(structured_events):
+    engine, _, _, streams = make_engine(on_stream_dead=lambda: None)
+    engine.start()
+    streams[0].active = False
+    deadline = time.monotonic() + 2
+    while not structured_events.named("audio.stream_died") and time.monotonic() < deadline:
+        time.sleep(0.01)
+    engine.stop()
+    assert structured_events.named("audio.stream_died")[0].context["reason"] == "inactive"
 
 
 def test_failed_ptt_assertion_is_not_reported_as_transmitting():

@@ -45,7 +45,13 @@ from api.remote_base import RemoteBase
 from api.service import RepeaterService
 from api.usrp_endpoints import UsrpEndpoints
 from api.tx_fan import TxFan
-from api.watchdog import Watchdog, exit_for_restart, exit_on_stall_enabled, stall_seconds_from_env
+from api.watchdog import (
+    SOUND_CARD_GRACE_SECONDS,
+    Watchdog,
+    exit_for_restart,
+    exit_on_stall_enabled,
+    stall_seconds_from_env,
+)
 
 from .codes import CoreCodeChecker, paths as codes_paths
 from .config_boundary import load_config
@@ -156,6 +162,10 @@ def build_core(env: Optional[Mapping[str, str]] = None) -> CoreApp:
         watchdog=watchdog,
         usrp_endpoints=UsrpEndpoints(root / "usrp-endpoints.json"),
     )
+    if watchdog.restart is not None:
+        # Only a container restarts itself. A native install can reopen a card that returns under another number,
+        # and one unplugged for good should not put the service in a restart loop.
+        watchdog.watch("sound card", live_audio.lost_since, stall_seconds=SOUND_CARD_GRACE_SECONDS)
     return CoreApp(runtime, service, activity_store, state_path, config_notes, assets_store, log_hub)
 
 

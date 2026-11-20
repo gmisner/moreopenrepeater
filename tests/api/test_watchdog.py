@@ -72,6 +72,27 @@ def test_pings_only_while_everything_makes_progress():
     assert stalls == ["audio engine"] and len(sent) == 2
 
 
+def test_a_watch_can_have_a_shorter_limit_of_its_own(structured_events):
+    watchdog, _sent, clock = make_watchdog()  # 10 s for everything without a limit of its own
+    watchdog.watch("controller", lambda: 100.0)
+    watchdog.watch("sound card", lambda: 100.0, stall_seconds=6.0)
+    clock["now"] = 105.9
+    assert watchdog.check() is True  # 5.9 s: inside both limits
+    clock["now"] = 106.1
+    assert watchdog.check() is False  # past the sound card's 6 s, well inside the controller's 10
+    assert watchdog.stalled == "sound card"
+    stalled = structured_events.named("watchdog.stalled")[0]
+    assert stalled.context["part"] == "sound card" and stalled.context["stall_s"] == 6.0
+
+
+def test_a_watch_limit_is_never_longer_than_the_watchdogs_own():
+    watchdog, _sent, clock = make_watchdog()
+    watchdog.watch("sound card", lambda: 100.0, stall_seconds=60.0)
+    clock["now"] = 110.5
+    assert watchdog.check() is False
+    assert watchdog.stalled == "sound card"
+
+
 def test_a_failing_stall_hook_still_stops_the_pings():
     watchdog, sent, clock = make_watchdog()
     watchdog.watch("controller", lambda: 0.0)

@@ -8,11 +8,18 @@ from fastapi.testclient import TestClient
 
 from api.app import create_app
 from api.assets import AudioAssetStore
-from api.live_audio import STREAM_RECOVER_COOLDOWN, LiveAudio, cm108_from_env
+from api.live_audio import (
+    ID_REPLAY_MIN_SECONDS,
+    STREAM_RECOVER_COOLDOWN,
+    STREAM_REOPEN_POLL_SECONDS,
+    STREAM_REOPEN_QUICK_SECONDS,
+    LiveAudio,
+    cm108_from_env,
+)
 from api.service import RepeaterService
 from audio_io.engine import AudioEngine
 from controller.events import COSChanged, CTCSSChanged
-from controller.state_machine import COURTESY_TONE, RECEIVING, RepeaterConfig
+from controller.state_machine import COURTESY_TONE, IDLE, RECEIVING, TRANSMITTING_ID, RepeaterConfig
 from playout.renderer import ClipRenderer
 
 RATE = 16000
@@ -223,36 +230,153 @@ def test_dead_alsa_stream_restarts_the_engine():
     assert live.status()["error"] is None
 
 
-def test_stream_recovery_retries_failed_opens_until_the_device_returns():
-    class DisconnectableStream(FakeStream):
-        available = True
+class DisconnectableStream(FakeStream):
+    available = True
 
-        def start(self):
-            if not self.available:
-                raise RuntimeError("USB device still absent")
-            super().start()
+    def start(self):
+        if not self.available:
+            raise RuntimeError("USB device still absent")
+        super().start()
 
-    live, _service, clock, engines = make_live(stream=DisconnectableStream)
-    DisconnectableStream.available = False
+
+@pytest.fixture
+def card():
+    DisconnectableStream.available = True
+    yield DisconnectableStream
+    DisconnectableStream.available = True
+
+
+def test_a_card_that_dropped_off_is_looked_for_every_second_until_it_returns(card):
+    live, _service, clock, engines = make_live(stream=card)
+    card.available = False
     live._recover_engine()
     assert live.engine is None
     assert "USB device still absent" in live.status()["error"]
-    first_retry = live._loop.timers[-1]
-    assert first_retry.delay == STREAM_RECOVER_COOLDOWN
-    assert live.status()["retry_in_seconds"] == STREAM_RECOVER_COOLDOWN
+    first = live._loop.timers[-1]
+    assert first.delay == STREAM_REOPEN_POLL_SECONDS
+    assert live.status()["retry_in_seconds"] == STREAM_REOPEN_POLL_SECONDS
 
-    clock["mono"] += first_retry.delay
-    first_retry.run()
-    second_retry = live._loop.timers[-1]
-    assert second_retry.delay > first_retry.delay
-    assert live.engine is None
+    for _ in range(3):  # still gone: the same short wait each time, not a growing one
+        clock["mono"] += STREAM_REOPEN_POLL_SECONDS
+        live._loop.timers[-1].run()
+        assert live._loop.timers[-1].delay == STREAM_REOPEN_POLL_SECONDS
+        assert live.engine is None
 
-    DisconnectableStream.available = True
-    clock["mono"] += second_retry.delay
-    second_retry.run()
+    card.available = True
+    clock["mono"] += STREAM_REOPEN_POLL_SECONDS
+    live._loop.timers[-1].run()
     assert live.engine is engines[-1] and live.engine.running
     assert live.status()["error"] is None
     assert live.status()["retry_in_seconds"] is None
+    live.shutdown()
+
+
+def test_a_card_that_stays_gone_is_looked_for_less_and_less_often(card):
+    live, _service, clock, _engines = make_live(stream=card)
+    card.available = False
+    live._recover_engine()
+    clock["mono"] += STREAM_REOPEN_QUICK_SECONDS + 1  # past the quick stretch
+    live._loop.timers[-1].run()
+    slow = live._loop.timers[-1]
+    assert slow.delay == STREAM_RECOVER_COOLDOWN
+    clock["mono"] += slow.delay
+    slow.run()
+    assert live._loop.timers[-1].delay > slow.delay
+    live.shutdown()
+
+
+def test_a_card_that_is_not_there_when_the_core_starts_is_looked_for_instead_of_given_up_on(card):
+    card.available = False
+    live, _service, clock, engines = make_live(stream=card)
+    assert live.engine is None
+    assert live.status()["retry_in_seconds"] == STREAM_REOPEN_POLL_SECONDS
+    assert live.lost_since() is None  # it never ran: a container must not restart over a card that was never there
+
+    card.available = True
+    clock["mono"] += STREAM_REOPEN_POLL_SECONDS
+    live._loop.timers[-1].run()
+    assert live.engine is engines[-1] and live.engine.running
+    assert live.status()["error"] is None
+    live.shutdown()
+
+
+def test_the_card_counts_as_lost_from_the_moment_it_died_until_audio_is_back(card):
+    live, _service, clock, _engines = make_live(stream=card)
+    assert live.lost_since() is None
+    died_at = clock["mono"]
+    card.available = False
+    live._recover_engine()
+    assert live.lost_since() == died_at
+
+    clock["mono"] += 3
+    live._loop.timers[-1].run()  # a failed attempt does not move the time it was lost
+    assert live.lost_since() == died_at
+
+    card.available = True
+    clock["mono"] += 1
+    live._loop.timers[-1].run()
+    assert live.lost_since() is None
+    live.shutdown()
+
+
+def test_turning_audio_off_forgets_a_lost_card(card):
+    live, service, _clock, _engines = make_live(stream=card)
+    card.available = False
+    live._recover_engine()
+    assert live.lost_since() is not None
+    service.update_config(audio_enabled=False)
+    assert live.lost_since() is None
+
+
+def test_an_id_cut_off_by_the_card_dropping_is_owed_again_once_audio_is_back(card):
+    live, service, clock, _engines = make_live(stream=card)
+    owed = []
+    service.controller.id_not_heard = lambda: owed.append(True)
+    service.controller.state = TRANSMITTING_ID
+    card.available = False
+    live._recover_engine()
+    assert owed == []  # not while there is no audio to send it on
+
+    card.available = True
+    clock["mono"] += 1
+    live._loop.timers[-1].run()
+    assert owed == [True]
+
+    clock["mono"] += ID_REPLAY_MIN_SECONDS  # long past the limit, so only the state can decide
+    service.controller.state = IDLE  # a later drop while the repeater is idle has no ID to owe
+    live._recover_engine()
+    clock["mono"] += 1
+    live._loop.timers[-1].run()
+    assert live.engine is not None and live.engine.running
+    assert owed == [True]
+    live.shutdown()
+
+
+def test_a_replayed_id_that_is_cut_off_too_is_not_replayed_again_straight_away(card):
+    # The card drops on every keying (a bad cable, RF in the USB line): without a limit the repeater would key
+    # up, drop, send the ID again and key up again, for as long as it kept dropping.
+    live, service, clock, _engines = make_live(stream=card)
+    owed = []
+    service.controller.id_not_heard = lambda: owed.append(clock["mono"])
+
+    def drop_during_an_id():
+        service.controller.state = TRANSMITTING_ID
+        card.available = False
+        live._recover_engine()
+        card.available = True
+        clock["mono"] += 1
+        live._loop.timers[-1].run()  # the card is back
+        assert live.engine is not None and live.engine.running
+
+    drop_during_an_id()
+    assert len(owed) == 1
+    clock["mono"] += 8  # the replay goes out, and the card drops again
+    drop_during_an_id()
+    assert len(owed) == 1
+
+    clock["mono"] += ID_REPLAY_MIN_SECONDS  # a later ID that is cut off is owed again
+    drop_during_an_id()
+    assert len(owed) == 2
     live.shutdown()
 
 

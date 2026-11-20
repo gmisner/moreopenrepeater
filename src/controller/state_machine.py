@@ -426,6 +426,13 @@ class RepeaterController:
                 end_cycle(CYCLE_GRACE_SECONDS)  # the transmitter's release is still to be logged
         self.state = new_state
 
+    def id_not_heard(self) -> None:
+        """The ID that was on the air never got out (the sound card dropped off mid-ID). Starting an ID resets
+        the interval, so without this the next one would be a whole interval away. Owe it again now: it goes
+        out as soon as the repeater is idle, and once it has, the interval runs as usual."""
+        self._id_owed = True
+        self._id_due_at = float("-inf")
+
     def _id_due(self, now: float) -> bool:
         return (self._id_owed or self.config.idle_id) and now >= self._id_due_at
 

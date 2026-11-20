@@ -41,11 +41,14 @@ def merged(env, *names):
 
 
 BASE_ENV = {}
+# What every install gets: the sound cards, the PTT interface, and the host's kernel log read-only (/dev/null stands in
+# for it when the host has none; compose.yaml says why).
+BASE_DEVICES = ["/dev/snd:/dev/snd", "/dev/moreopenrepeater-ptt:/dev/moreopenrepeater-ptt", "/dev/null:/dev/kmsg:r"]
 
 
-def test_the_default_compose_file_maps_only_the_sound_cards_and_the_ptt_interface():
+def test_the_default_compose_file_maps_only_the_sound_cards_the_ptt_interface_and_the_kernel_log():
     devices, _ = merged(BASE_ENV, "compose.yaml")
-    assert devices == ["/dev/snd:/dev/snd", "/dev/moreopenrepeater-ptt:/dev/moreopenrepeater-ptt"]
+    assert devices == BASE_DEVICES
 
 
 def test_the_default_compose_file_has_none_of_the_optional_nodes():
@@ -80,7 +83,7 @@ def test_the_link_radio_file_maps_exactly_its_interface_and_names_it_in_the_core
     document = load("compose.link-radio.yaml")
     assert list(document["services"]) == ["core"] and set(document["services"]["core"]) == {"devices", "environment"}
     devices, environment = merged(BASE_ENV, "compose.yaml", "compose.link-radio.yaml")
-    assert devices == ["/dev/snd:/dev/snd", "/dev/moreopenrepeater-ptt:/dev/moreopenrepeater-ptt", "/dev/moreopenrepeater-link:/dev/moreopenrepeater-link"]
+    assert devices == [*BASE_DEVICES, "/dev/moreopenrepeater-link:/dev/moreopenrepeater-link"]
     assert environment["MOREOPENREPEATER_LINK_CM108_HIDRAW"] == "/dev/moreopenrepeater-link"  # not "off" any more
     assert environment["MOREOPENREPEATER_CM108_HIDRAW"] == "/dev/moreopenrepeater-ptt"  # the repeater's is unchanged
 

@@ -59,6 +59,7 @@ from contracts import (
     ConfigState,
     CoreCommand,
     CoreHardware,
+    CoreHostFacts,
     CoreLogs,
     LinkEvents,
     ProgrammingState,
@@ -94,6 +95,7 @@ from api.gpio import GpioError
 from playout.renderer import TTS_PREFIX, UnknownClipError
 from playout.wav import encode_wav
 
+from . import host_facts
 from .config_boundary import ConfigRejected, CoreConfigError, check_change, check_config
 from playout.tts import TTSError
 
@@ -122,6 +124,7 @@ MAX_CONFIG_BODY_BYTES = 64 * 1024
 #: A command can carry a whole snapshot (a restore): every setting, macro and announcement.
 MAX_COMMAND_BODY_BYTES = 256 * 1024
 HARDWARE_DEADLINE_SECONDS = 2.0  # each part's status must answer in this long
+HOST_FACTS_DEADLINE_SECONDS = 3.0  # the kernel log read has its own limits; this is the backstop above them
 HARDWARE_PARTS = (
     "live_audio", "gpio", "tx_fan", "link_radio", "remote_base", "monitor_receiver", "autopatch", "allstar_node", "dmr",
     "audio_device_list",
@@ -155,6 +158,7 @@ class ControlServer:
         log_hub=None,
         activity_store=None,
         capture_dir: Optional[Path] = None,
+        kernel_log_path: Path = host_facts.KMSG_PATH,
     ) -> None:
         """`service` is the `RepeaterService`; `runtime` the `CoreRuntime`. `clock` is
         monotonic time (health); `now` is wall-clock time (request deadlines)."""
@@ -167,6 +171,8 @@ class ControlServer:
         self._log_hub = log_hub  # the core's recent log lines, for GET /logs
         self._activity_store = activity_store  # what the core recorded about use, for GET /activity
         self._capture_dir = capture_dir  # where a recorded transmission waits for the API to take it
+        self._kernel_log_path = kernel_log_path  # the host's /dev/kmsg when compose gave it, for GET /host-facts
+        self._host_facts_lock = asyncio.Lock()  # one read of it at a time, however often it is asked for
         self._assets_have = assets_have  # is there an uploaded clip with this id? None: not checked here
         self._version = version
         self._clock = clock
@@ -183,7 +189,7 @@ class ControlServer:
         self._get: dict[str, Callable[[], dict]] = {
             "/health": self._health, "/status": self._status, "/config": self._config_state,
             "/programming": self._programming_state, "/link-events": self._link_events,
-            "/hardware": self._hardware,
+            "/hardware": self._hardware, "/host-facts": self._host_facts,
         }
         self._post: dict[str, Callable[[bytes], Awaitable[dict]]] = {
             "/speak": self._speak, "/config": self._config_change, "/command": self._command,
@@ -792,6 +798,28 @@ class ControlServer:
             else:
                 missing.append(name)
         message = CoreHardware(header=self._header(), statuses=statuses, unavailable=missing)
+        return json.loads(message.model_dump_json())
+
+    def _read_kernel_log(self) -> tuple[Optional[list[str]], Optional[str]]:
+        return host_facts.read_kernel_log(self._kernel_log_path, btime=host_facts.boot_time())
+
+    async def _host_facts(self) -> dict:
+        """`GET /host-facts`: what the core can see of its host, read now and not kept (the kernel's log, when compose gave
+        the core `/dev/kmsg`). The read never blocks and has size and time limits, runs off the event loop, and whatever
+        goes wrong is the answer's `kernel_error`: this endpoint does not fail."""
+        log: Optional[list[str]] = None
+        error: Optional[str] = None
+        try:
+            async with self._host_facts_lock:
+                log, error = await asyncio.wait_for(
+                    asyncio.to_thread(self._read_kernel_log), HOST_FACTS_DEADLINE_SECONDS,
+                )
+        except asyncio.TimeoutError:
+            log, error = None, "reading the host's kernel log took too long"
+        except Exception:  # noqa: BLE001 - the answer says so; the control server must not fail over a log
+            _logger.exception("control socket: reading the kernel log failed")
+            log, error = None, "reading the host's kernel log failed"
+        message = CoreHostFacts(header=self._header(), kernel_log=log, kernel_error=error)
         return json.loads(message.model_dump_json())
 
     def _link_events(self) -> dict:

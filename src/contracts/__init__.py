@@ -11,7 +11,7 @@ from .events import (
     core_event_adapter,
 )
 from .commands import ENDPOINTS, HARDWARE, LINK, LINK_EVENTS, MIXER, PROGRAMMING, SIMULATED, CommandName, CommandResult, CommandStatus, CoreCommand
-from .configuration import ActivityEntry, ActivityRows, ConfigApplied, ConfigChange, ConfigResult, ConfigSnapshot, ConfigState, CoreHardware, CoreLogs, LinkEvents, ProgrammingState
+from .configuration import ActivityEntry, ActivityRows, ConfigApplied, ConfigChange, ConfigResult, ConfigSnapshot, ConfigState, CoreHardware, CoreHostFacts, CoreLogs, LinkEvents, ProgrammingState
 from .health import HealthCheck, HealthReport, HealthState
 from .emit import DeliveryError, Emitter, ListSink, StdoutSink, UnixDatagramSink
 from .log_event import LogEvent, Severity
@@ -43,6 +43,7 @@ __all__ = [
     "ConfigState",
     "CoreCommand",
     "CoreHardware",
+    "CoreHostFacts",
     "CoreLogs",
     "CoreStatus",
     "ProgrammingState",

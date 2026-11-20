@@ -8,8 +8,9 @@ links or link a net's hub, and ending it drops the link it made. A net starts
 from the dashboard, a DTMF macro or a weekly schedule, and ends from any of
 those or after `net_max_minutes`, so it can't be left on.
 
-Net control logs check-ins (callsign, time, notes); the running net and the
-last MAX_NETS are kept in a JSON file, and each exports as CSV.
+Net control logs check-ins (callsign, time, name, location, license class,
+staying-for-comments, notes); the running net and the last MAX_NETS are kept
+in a JSON file, and each exports as CSV.
 """
 from __future__ import annotations
 
@@ -198,18 +199,53 @@ class NetMode:
 
     # -- check-ins --------------------------------------------------------------
 
-    def add_checkin(self, callsign: str, notes: str) -> dict:
+    def add_checkin(
+        self,
+        callsign: str,
+        notes: str = "",
+        *,
+        name: str = "",
+        location: str = "",
+        license_class: str = "",
+        staying_for_comments: bool = False,
+    ) -> dict:
         net = self._running()
         if len(net["checkins"]) >= MAX_CHECKINS:
             raise NetError("That's as many check-ins as one net can hold.")
-        checkin = {"id": uuid.uuid4().hex[:12], "callsign": callsign.strip().upper(), "at": self._clock(), "notes": notes.strip()}
+        checkin = {
+            "id": uuid.uuid4().hex[:12],
+            "callsign": callsign.strip().upper(),
+            "at": self._clock(),
+            "notes": notes.strip(),
+            "name": name.strip(),
+            "location": location.strip(),
+            "license_class": license_class.strip(),
+            "staying_for_comments": bool(staying_for_comments),
+        }
         net["checkins"].append(checkin)
         self._save()
         return checkin
 
-    def update_checkin(self, checkin_id: str, callsign: str, notes: str) -> dict:
+    def update_checkin(
+        self,
+        checkin_id: str,
+        callsign: str,
+        notes: str = "",
+        *,
+        name: str = "",
+        location: str = "",
+        license_class: str = "",
+        staying_for_comments: bool = False,
+    ) -> dict:
         checkin = self._checkin(checkin_id)
-        checkin.update(callsign=callsign.strip().upper(), notes=notes.strip())
+        checkin.update(
+            callsign=callsign.strip().upper(),
+            notes=notes.strip(),
+            name=name.strip(),
+            location=location.strip(),
+            license_class=license_class.strip(),
+            staying_for_comments=bool(staying_for_comments),
+        )
         self._save()
         return checkin
 
@@ -249,8 +285,21 @@ class NetMode:
         net = self.find(net_id)
         out = io.StringIO()
         writer = csv.writer(out)
-        writer.writerow(["Net", "Callsign", "Time", "Notes"])
+        writer.writerow(
+            ["Net", "Callsign", "Time", "Name", "Location", "License class", "Staying for comments", "Notes"]
+        )
         for checkin in net["checkins"]:
             at = datetime.fromtimestamp(checkin["at"]).strftime("%Y-%m-%d %H:%M:%S")
-            writer.writerow([_cell(net["name"]), checkin["callsign"], at, _cell(checkin["notes"])])
+            writer.writerow(
+                [
+                    _cell(net["name"]),
+                    checkin["callsign"],
+                    at,
+                    _cell(checkin.get("name", "")),
+                    _cell(checkin.get("location", "")),
+                    _cell(checkin.get("license_class", "")),
+                    "yes" if checkin.get("staying_for_comments") else "no",
+                    _cell(checkin.get("notes", "")),
+                ]
+            )
         return out.getvalue()

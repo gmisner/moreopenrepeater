@@ -91,27 +91,62 @@ def test_settings_saved_during_a_net_are_kept_after_it():
 def test_check_ins_and_csv():
     net, _, clock, _ = make_net(RepeaterConfig(net_name="Tuesday Net"))
     run(net.start("ann"))
-    first = net.add_checkin(" kd2abc ", "mobile")
+    first = net.add_checkin(
+        " kd2abc ",
+        "mobile",
+        name="Ann",
+        location="Newington, CT",
+        license_class="Extra",
+        staying_for_comments=True,
+    )
     clock["now"] += 60
     second = net.add_checkin("N0CALL", "=HYPERLINK(1)")
-    net.update_checkin(first["id"], "KD2ABC", "mobile, short time")
+    net.update_checkin(
+        first["id"],
+        "KD2ABC",
+        "mobile, short time",
+        name="Ann",
+        location="Newington, CT",
+        license_class="Extra",
+        staying_for_comments=False,
+    )
     net.delete_checkin(second["id"])
     net.add_checkin("W1AW", "")
     finished = run(net.end("ann"))
 
     rows = list(csv.reader(io.StringIO(net.csv(finished["id"]))))
-    assert rows[0] == ["Net", "Callsign", "Time", "Notes"]
+    assert rows[0] == [
+        "Net",
+        "Callsign",
+        "Time",
+        "Name",
+        "Location",
+        "License class",
+        "Staying for comments",
+        "Notes",
+    ]
     assert [r[1] for r in rows[1:]] == ["KD2ABC", "W1AW"]
-    assert rows[1][0] == "Tuesday Net" and rows[1][3] == "mobile, short time"
+    assert rows[1][0] == "Tuesday Net"
+    assert rows[1][3:8] == ["Ann", "Newington, CT", "Extra", "no", "mobile, short time"]
+    assert rows[2][3:8] == ["", "", "", "no", ""]
     assert net.status()["past"][0]["checkin_count"] == 2
 
 
 def test_a_formula_in_the_csv_is_defused():
     net, _, _, _ = make_net()
     run(net.start("ann", name="=cmd"))
-    net.add_checkin("W1AW", "@SUM(A1)")
+    net.add_checkin("W1AW", "@SUM(A1)", name="=cmd", location="+1")
     rows = list(csv.reader(io.StringIO(net.csv(net.current["id"]))))
-    assert rows[1][0] == "'=cmd" and rows[1][3] == "'@SUM(A1)"
+    assert rows[1][0] == "'=cmd" and rows[1][3] == "'=cmd" and rows[1][4] == "'+1"
+    assert rows[1][7] == "'@SUM(A1)"
+
+
+def test_old_checkins_without_the_new_fields_still_export():
+    net, _, _, _ = make_net()
+    run(net.start("ann"))
+    net.current["checkins"].append({"id": "old", "callsign": "W1AW", "at": 1_000_000.0, "notes": "legacy"})
+    rows = list(csv.reader(io.StringIO(net.csv(net.current["id"]))))
+    assert rows[1][1] == "W1AW" and rows[1][6] == "no" and rows[1][7] == "legacy"
 
 
 def test_announcements_wait_for_the_end_of_the_net():
@@ -229,11 +264,39 @@ def test_net_api():
         assert client.get("/api/status").json()["net_active"] is True
         assert client.post("/api/net/start", json={}).status_code == 409
 
-        assert client.post("/api/net/checkins", json={"callsign": "w1aw", "notes": "net control"}).status_code == 200
+        assert (
+            client.post(
+                "/api/net/checkins",
+                json={
+                    "callsign": "w1aw",
+                    "notes": "net control",
+                    "name": "Hiram",
+                    "location": "Newington, CT",
+                    "license_class": "Extra",
+                    "staying_for_comments": True,
+                },
+            ).status_code
+            == 200
+        )
         assert client.post("/api/net/checkins", json={"callsign": "not a call!"}).status_code == 422
         checkin = client.get("/api/net").json()["current"]["checkins"][0]
         assert checkin["callsign"] == "W1AW"
-        assert client.put(f"/api/net/checkins/{checkin['id']}", json={"callsign": "W1AW", "notes": "NCS"}).status_code == 200
+        assert checkin["name"] == "Hiram" and checkin["location"] == "Newington, CT"
+        assert checkin["license_class"] == "Extra" and checkin["staying_for_comments"] is True
+        assert (
+            client.put(
+                f"/api/net/checkins/{checkin['id']}",
+                json={
+                    "callsign": "W1AW",
+                    "notes": "NCS",
+                    "name": "Hiram",
+                    "location": "Newington, CT",
+                    "license_class": "Extra",
+                    "staying_for_comments": False,
+                },
+            ).status_code
+            == 200
+        )
         assert client.put("/api/net/checkins/nope", json={"callsign": "W1AW"}).status_code == 404
 
         net_id = client.get("/api/net").json()["current"]["id"]
@@ -245,6 +308,8 @@ def test_net_api():
         assert response.headers["content-type"].startswith("text/csv")
         assert 'filename="ares-net-' in response.headers["content-disposition"]
         assert "W1AW" in response.text and "NCS" in response.text
+        assert "Hiram" in response.text and "Newington, CT" in response.text
+        assert "Extra" in response.text and ",no," in response.text
 
         assert client.delete(f"/api/nets/{net_id}").json()["past"] == []
 

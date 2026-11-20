@@ -27,7 +27,16 @@ import { labeled } from "../components/FieldHint";
 import { EmptyState } from "../components/EmptyState";
 import { ActionsHeader } from "../components/ActionsHeader";
 
-type Checkin = { id: string; at: number; callsign: string; notes: string };
+type Checkin = {
+  id: string;
+  at: number;
+  callsign: string;
+  notes: string;
+  name?: string;
+  location?: string;
+  license_class?: string;
+  staying_for_comments?: boolean;
+};
 
 type CurrentNet = {
   name: string;
@@ -187,9 +196,17 @@ export function Net() {
   const [net, setNet] = useState<NetStatus | null>(null);
   const [startName, setStartName] = useState("");
   const [checkinCallsign, setCheckinCallsign] = useState("");
+  const [checkinName, setCheckinName] = useState("");
+  const [checkinLocation, setCheckinLocation] = useState("");
+  const [checkinLicenseClass, setCheckinLicenseClass] = useState("");
+  const [checkinStaying, setCheckinStaying] = useState(false);
   const [checkinNotes, setCheckinNotes] = useState("");
   const [editingCheckin, setEditingCheckin] = useState<string | null>(null);
   const [editCallsign, setEditCallsign] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+  const [editLicenseClass, setEditLicenseClass] = useState("");
+  const [editStaying, setEditStaying] = useState(false);
   const [editNotes, setEditNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [schedules, setSchedules] = useState<NetSchedule[]>([]);
@@ -268,10 +285,21 @@ export function Net() {
       if (
         await call("/api/net/checkins", {
           method: "POST",
-          json: { callsign: checkinCallsign.trim(), notes: checkinNotes.trim() },
+          json: {
+            callsign: checkinCallsign.trim(),
+            name: checkinName.trim(),
+            location: checkinLocation.trim(),
+            license_class: checkinLicenseClass.trim(),
+            staying_for_comments: checkinStaying,
+            notes: checkinNotes.trim(),
+          },
         })
       ) {
         setCheckinCallsign("");
+        setCheckinName("");
+        setCheckinLocation("");
+        setCheckinLicenseClass("");
+        setCheckinStaying(false);
         setCheckinNotes("");
         callsignRef.current?.focus();
       }
@@ -280,12 +308,29 @@ export function Net() {
     }
   };
 
+  const beginEditCheckin = (checkin: Checkin) => {
+    setEditingCheckin(checkin.id);
+    setEditCallsign(checkin.callsign);
+    setEditName(checkin.name ?? "");
+    setEditLocation(checkin.location ?? "");
+    setEditLicenseClass(checkin.license_class ?? "");
+    setEditStaying(Boolean(checkin.staying_for_comments));
+    setEditNotes(checkin.notes);
+  };
+
   const saveCheckin = async (id: string) => {
     if (!editCallsign.trim()) return;
     setEditingCheckin(null);
     await call(`/api/net/checkins/${encodeURIComponent(id)}`, {
       method: "PUT",
-      json: { callsign: editCallsign.trim(), notes: editNotes.trim() },
+      json: {
+        callsign: editCallsign.trim(),
+        name: editName.trim(),
+        location: editLocation.trim(),
+        license_class: editLicenseClass.trim(),
+        staying_for_comments: editStaying,
+        notes: editNotes.trim(),
+      },
     });
   };
 
@@ -386,39 +431,73 @@ export function Net() {
             </Text>
           </Group>
           <form onSubmit={(event) => void addCheckin(event)}>
-            <Group align="flex-end" mb="md" wrap="wrap">
-              <TextInput
-                ref={callsignRef}
-                label="Callsign"
-                required
-                pattern="[A-Za-z0-9/\-]{1,15}"
-                autoCapitalize="characters"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="e.g. W1AW"
-                value={checkinCallsign}
-                onChange={(event) => setCheckinCallsign(event.currentTarget.value)}
-              />
-              <TextInput
-                label={labeled("Notes", "Optional")}
-                style={{ flex: 1, minWidth: 200 }}
-                maxLength={300}
-                placeholder=""
-                value={checkinNotes}
-                onChange={(event) => setCheckinNotes(event.currentTarget.value)}
-              />
-              <Button type="submit" loading={busy}>
-                Check in
-              </Button>
-            </Group>
+            <Stack gap="sm" mb="md">
+              <Group align="flex-end" wrap="wrap">
+                <TextInput
+                  ref={callsignRef}
+                  label="Callsign"
+                  required
+                  pattern="[A-Za-z0-9/\-]{1,15}"
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="e.g. W1AW"
+                  value={checkinCallsign}
+                  onChange={(event) => setCheckinCallsign(event.currentTarget.value)}
+                />
+                <TextInput
+                  label={labeled("Name", "Optional")}
+                  style={{ flex: 1, minWidth: 140 }}
+                  maxLength={80}
+                  value={checkinName}
+                  onChange={(event) => setCheckinName(event.currentTarget.value)}
+                />
+                <TextInput
+                  label={labeled("Location", "Optional · city, state")}
+                  style={{ flex: 1, minWidth: 140 }}
+                  maxLength={80}
+                  value={checkinLocation}
+                  onChange={(event) => setCheckinLocation(event.currentTarget.value)}
+                />
+                <TextInput
+                  label={labeled("Class", "Optional · license class")}
+                  style={{ width: 120 }}
+                  maxLength={40}
+                  value={checkinLicenseClass}
+                  onChange={(event) => setCheckinLicenseClass(event.currentTarget.value)}
+                />
+              </Group>
+              <Group align="flex-end" wrap="wrap">
+                <TextInput
+                  label={labeled("Notes", "Optional")}
+                  style={{ flex: 1, minWidth: 200 }}
+                  maxLength={300}
+                  value={checkinNotes}
+                  onChange={(event) => setCheckinNotes(event.currentTarget.value)}
+                />
+                <Checkbox
+                  label={labeled("Staying for comments", "Mark stations that stay after the roll call")}
+                  checked={checkinStaying}
+                  onChange={(event) => setCheckinStaying(event.currentTarget.checked)}
+                  mb={6}
+                />
+                <Button type="submit" loading={busy}>
+                  Check in
+                </Button>
+              </Group>
+            </Stack>
           </form>
-          <Table.ScrollContainer minWidth={560}>
+          <Table.ScrollContainer minWidth={780}>
             <Table striped highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>#</Table.Th>
                   <Table.Th>Time</Table.Th>
                   <Table.Th>Callsign</Table.Th>
+                  <Table.Th>Name</Table.Th>
+                  <Table.Th>Location</Table.Th>
+                  <Table.Th>Class</Table.Th>
+                  <Table.Th>Comments</Table.Th>
                   <Table.Th>Notes</Table.Th>
                   <ActionsHeader />
                 </Table.Tr>
@@ -444,6 +523,34 @@ export function Net() {
                                 setEditingCheckin(null);
                               }
                             }}
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          <TextInput
+                            maxLength={80}
+                            value={editName}
+                            onChange={(event) => setEditName(event.currentTarget.value)}
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          <TextInput
+                            maxLength={80}
+                            value={editLocation}
+                            onChange={(event) => setEditLocation(event.currentTarget.value)}
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          <TextInput
+                            maxLength={40}
+                            value={editLicenseClass}
+                            onChange={(event) => setEditLicenseClass(event.currentTarget.value)}
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          <Checkbox
+                            checked={editStaying}
+                            onChange={(event) => setEditStaying(event.currentTarget.checked)}
+                            aria-label="Staying for comments"
                           />
                         </Table.Td>
                         <Table.Td>
@@ -477,18 +584,14 @@ export function Net() {
                         <Table.Td>
                           <Text fw={700}>{checkin.callsign}</Text>
                         </Table.Td>
-                        <Table.Td>{checkin.notes}</Table.Td>
+                        <Table.Td>{checkin.name || "—"}</Table.Td>
+                        <Table.Td>{checkin.location || "—"}</Table.Td>
+                        <Table.Td>{checkin.license_class || "—"}</Table.Td>
+                        <Table.Td>{checkin.staying_for_comments ? "Yes" : "—"}</Table.Td>
+                        <Table.Td>{checkin.notes || "—"}</Table.Td>
                         <Table.Td>
                           <Group gap="xs" justify="flex-end" wrap="nowrap">
-                            <Button
-                              size="compact-sm"
-                              variant="subtle"
-                              onClick={() => {
-                                setEditingCheckin(checkin.id);
-                                setEditCallsign(checkin.callsign);
-                                setEditNotes(checkin.notes);
-                              }}
-                            >
+                            <Button size="compact-sm" variant="subtle" onClick={() => beginEditCheckin(checkin)}>
                               Edit
                             </Button>
                             <Button size="compact-sm" color="red" variant="subtle" onClick={() => void deleteCheckin(checkin)}>

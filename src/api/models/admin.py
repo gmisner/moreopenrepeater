@@ -111,6 +111,8 @@ class TailscaleRunStatus(BaseModel):
 class TailscaleResponse(BaseModel):
     available: bool  # install-pi.sh units present
     installed: bool
+    source: Optional[Literal["cli", "socket"]] = None  # where the state was read: the CLI, or tailscaled's socket (read-only)
+    unreachable: bool = False  # no CLI, and tailscaled's socket couldn't be read; cli_error says why
     backend_state: Optional[str] = None
     dns_name: Optional[str] = None
     auth_url: Optional[str] = None

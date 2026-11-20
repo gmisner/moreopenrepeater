@@ -145,6 +145,35 @@ def test_a_closed_port_fails_with_a_plain_reason_and_a_problem_is_listed():
     assert len(result["problems"]) == 1 and "docker compose logs direwolf" in result["problems"][0]
 
 
+@pytest.mark.parametrize("up", [GATEWAY_ADMIN, GATEWAY_TELNET, MODEM_KISS])
+def test_any_one_part_answering_means_it_is_running_and_the_others_are_problems(up):
+    async def main():
+        async with serving(**{up: "http-200" if up == GATEWAY_ADMIN else "accept"}) as s:
+            ports = {GATEWAY_ADMIN: None, GATEWAY_TELNET: None, MODEM_KISS: None}
+            ports[up] = s[up]
+            return await WinlinkStatus(settings_for(ports[GATEWAY_ADMIN], ports[GATEWAY_TELNET], ports[MODEM_KISS])).status()
+
+    result = asyncio.run(main())
+    assert result["enabled"] is True
+    assert [check["id"] for check in result["checks"] if check["ok"]] == [up]
+    assert len(result["problems"]) == 2
+
+
+def test_the_modem_and_the_gateway_are_looked_for_at_their_own_hosts():
+    async def main(gateway_host, modem_host):
+        async with serving(admin="http-200", telnet="accept", kiss="accept") as s:
+            settings = WinlinkSettings(
+                gateway_host=gateway_host, modem_host=modem_host,
+                admin_port=s["admin"].port, telnet_port=s["telnet"].port, kiss_port=s["kiss"].port,
+            )
+            return by_id(await WinlinkStatus(settings, timeout=2.0).status())
+
+    modem_only = asyncio.run(main("no-such-service.invalid", LOCAL))
+    assert modem_only[MODEM_KISS]["ok"] and not modem_only[GATEWAY_ADMIN]["ok"] and not modem_only[GATEWAY_TELNET]["ok"]
+    gateway_only = asyncio.run(main(LOCAL, "no-such-service.invalid"))
+    assert not gateway_only[MODEM_KISS]["ok"] and gateway_only[GATEWAY_ADMIN]["ok"] and gateway_only[GATEWAY_TELNET]["ok"]
+
+
 def test_nothing_answering_is_not_enabled_and_lists_no_problems():
     result = asyncio.run(WinlinkStatus(settings_for()).status())
     assert result["enabled"] is False and result["problems"] == []

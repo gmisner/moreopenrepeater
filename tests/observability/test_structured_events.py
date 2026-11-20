@@ -65,13 +65,14 @@ def test_the_message_is_interpolated_masked_and_cut_to_the_contract(identity):
 
 def test_an_exception_is_recorded_by_type_only_never_its_text(identity):
     try:
-        raise ValueError("the pin was 4821")
+        raise ValueError("the pin was PIN-4821")  # letters outside hex, so a random boot id cannot contain it by chance
     except ValueError:
         import sys
 
         event = convert(make_record("could not do it", level=logging.ERROR, exc_info=sys.exc_info()), identity)
     assert event.error_code == "legacy.exception" and event.context["exception"] == "ValueError"
-    assert "4821" not in event.to_json_line()
+    line = event.to_json_line()
+    assert "PIN-4821" not in line and "the pin was" not in line
 
 
 def test_sequence_numbers_rise_and_the_boot_id_stays(identity):

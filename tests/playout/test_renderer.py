@@ -278,7 +278,7 @@ def test_the_renderer_s_own_clock_reads_the_station_zone_without_any_help(monkey
     from playout.tts import spoken_time
 
     tts = FakeTTS()
-    renderer, _ = make_renderer(tts=tts)  # no wall_clock given: the default
+    renderer = ClipRenderer(lambda asset_id: Path(tempfile.mkdtemp()) / asset_id, tts=tts, sample_rate=RATE)  # no wall_clock: its default
     station_clock.apply_timezone("Asia/Kolkata")
     before = spoken_time(datetime.now(ZoneInfo("Asia/Kolkata")))
     renderer.render("id_long", config(long_id_mode="voice", long_id_text="{time}"))

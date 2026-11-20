@@ -100,6 +100,18 @@ def test_every_local_time_call_follows_not_only_the_one_that_speaks():
     assert abs(datetime.now() - datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)) < timedelta(seconds=5)
 
 
+def test_the_process_is_told_to_reread_its_zone(monkeypatch):
+    """glibc's localtime_r does not reread TZ by itself, so without tzset() a Linux container would keep the old zone
+    (macOS rereads it anyway, which is why this is checked by the call rather than by the hour)."""
+    calls = []
+    monkeypatch.setattr(time, "tzset", lambda: calls.append(os.environ.get("TZ")))
+    station_clock.apply_timezone("Asia/Kolkata")
+    station_clock.apply_timezone("Asia/Kolkata")  # no change: nothing to reread
+    station_clock.apply_timezone("")
+    assert calls == ["Asia/Kolkata", os.environ.get("TZ")]
+    assert calls[0] == "Asia/Kolkata"
+
+
 def test_it_says_whether_the_zone_in_force_changed():
     assert station_clock.apply_timezone("America/Phoenix") is True
     assert station_clock.apply_timezone("America/Phoenix") is False

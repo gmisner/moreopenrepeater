@@ -38,15 +38,14 @@ class LinkScheduler:
 
     def _follow_zone(self) -> None:
         """A time zone change moves the clock the windows are written in. Links this made keep
-        their end at the same moment; windows already handled are looked at again in the new zone."""
+        their end at the same moment. (Windows already handled are not forgotten: a node dropped by hand
+        stays down for the rest of its window.)"""
         seen = self._zone_seen
         if seen == station_clock.generation():
             return
         self._zone_seen = station_clock.generation()
         delta = station_clock.shift_since(seen)
         self._ours = {node: end + delta for node, end in self._ours.items()}
-        self._handled.clear()
-        self._failed.clear()
 
     def until(self, node: str) -> Optional[datetime]:
         return self._ours.get(node)

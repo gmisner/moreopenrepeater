@@ -132,6 +132,24 @@ describe("Date and time page", () => {
     expect(screen.getByText(/5:30:\d\d PM/).textContent).not.toBe(first);
   });
 
+  it("reads the repeater's clock again a moment after the page opens, and keeps reading it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    vi.mocked(api).mockResolvedValue(info());
+    renderPage({ timezone: "" }, vi.fn());
+    expect(await screen.findByText("11:57 (UTC-07:00)")).toBeInTheDocument();
+    // The dashboard hears of a change from the repeater a moment late, so the first read can be stale.
+    vi.mocked(api).mockResolvedValue(info({ setting: "Asia/Kolkata", effective: "Asia/Kolkata", now: "2026-11-21T00:27:38+05:30" }));
+    await act(async () => {
+      vi.advanceTimersByTime(2100);
+    });
+    expect(await screen.findByText("00:27 (UTC+05:30)")).toBeInTheDocument();
+    vi.mocked(api).mockResolvedValue(info({ now: "2026-11-20T12:30:00-07:00" }));
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(await screen.findByText("12:30 (UTC-07:00)")).toBeInTheDocument();
+  });
+
   it("changes the zone, shows the new time at once, and saves only that setting", async () => {
     const user = userEvent.setup();
     vi.mocked(api).mockResolvedValue(info());

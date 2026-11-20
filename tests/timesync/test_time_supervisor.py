@@ -426,6 +426,8 @@ def test_it_writes_only_its_own_two_places(rig):
 
 
 def test_files_are_written_whole_or_not_at_all(tmp_path, monkeypatch):
+    tmp_path = tmp_path / "out"
+    tmp_path.mkdir()  # the autouse log file is in tmp_path itself
     target = tmp_path / "status.json"
     sup.write_atomic(target, "old\n")
     monkeypatch.setattr(os, "replace", lambda a, b: (_ for _ in ()).throw(OSError("gone")))

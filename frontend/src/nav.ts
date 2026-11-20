@@ -29,6 +29,7 @@ export const NAV: NavGroup[] = [
     items: [
       { id: "allstar", label: "AllStarLink", icon: "links" },
       { id: "dmr", label: "DMR", icon: "radio" },
+      { id: "winlink", label: "Winlink", icon: "mail" },
       { id: "aprs", label: "APRS", icon: "radio" },
       { id: "autopatch", label: "Autopatch", icon: "phone" },
       { id: "weather", label: "Weather", icon: "weather" },

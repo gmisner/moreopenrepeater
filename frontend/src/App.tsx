@@ -48,6 +48,7 @@ const Sensors = lazyPage(() => import("./pages/Sensors"), "Sensors");
 const Autopatch = lazyPage(() => import("./pages/Autopatch"), "Autopatch");
 const AllStar = lazyPage(() => import("./pages/AllStar"), "AllStar");
 const Dmr = lazyPage(() => import("./pages/Dmr"), "Dmr");
+const Winlink = lazyPage(() => import("./pages/Winlink"), "Winlink");
 const Aprs = lazyPage(() => import("./pages/Aprs"), "Aprs");
 const MapPage = lazyPage(() => import("./pages/MapPage"), "MapPage");
 const PublicListening = lazyPage(() => import("./pages/PublicListening"), "PublicListening");
@@ -101,6 +102,7 @@ function AuthedApp() {
               <Route path="autopatch" element={<Autopatch />} />
               <Route path="allstar" element={<AllStar />} />
               <Route path="dmr" element={<Dmr />} />
+              <Route path="winlink" element={<Winlink />} />
               <Route path="aprs" element={<Aprs />} />
               <Route path="map" element={<MapPage />} />
               <Route path="public" element={<PublicListening />} />

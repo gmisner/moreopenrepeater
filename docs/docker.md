@@ -670,6 +670,10 @@ two minutes after start, so a container that is about to fix the clock gets the 
 
 ### The server setting
 
+In the dashboard this is the **Time server** card on the **Date and time** page: an admin picks the server there, everyone else sees
+it read-only, and the card shows the clock check and whether the time container is running. The card reads `GET /api/time` about
+every 45 seconds while the tab is open and visible.
+
 The server is a host name or an IP address, kept in a small file of its own, `ntp.json`, in the `time-config` volume: not in the
 repeater's configuration. Empty means `pool.ntp.org`. It is validated very strictly, because the time container writes it into
 chrony's configuration: letters, digits, dots and hyphens in each part of a name (a part never starts or ends with a hyphen), or an

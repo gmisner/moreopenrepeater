@@ -52,6 +52,7 @@ from ..restart import RestartControl
 from ..service.core_handle import ApiCoreHandle
 from ..auto_update import AutoUpdater
 from ..log_history import LogHistory
+from ..remote_host_facts import RemoteHostFacts
 from ..support_bundle import runner_with_mixer, support_bundle_name, write_support_bundle
 from ..tailscale import TailscaleControl, read_log as read_tailscale_log
 from ..updates import ContainerInstall, UpdateChecker, Updater, check_container, installed_version, read_log
@@ -72,6 +73,12 @@ def _core_log_lines(service: ApiCoreHandle, log_hub: Optional[LogHub]) -> Option
         return None
     entries, _ = log_hub.since(0, 5000)
     return [entry.line for entry in entries]
+
+
+def _core_host_facts(service: ApiCoreHandle) -> Optional[RemoteHostFacts]:
+    """Asks the core for what it sees of the host (its kernel log), when the core is another process. None otherwise: this
+    process reads the host's own log."""
+    return RemoteHostFacts(service) if getattr(service, "is_remote", False) else None
 
 
 def register(
@@ -147,6 +154,7 @@ def register(
                 cm108_path=getattr(getattr(live_audio.cm108, "device", None), "path", None),
                 log_history=log_history,
                 core_log_lines=_core_log_lines(service, log_hub),
+                core_host_facts=_core_host_facts(service),
                 **({"run": runner_with_mixer(run_mixer)} if run_mixer is not None else {}),
             )
         except BaseException:

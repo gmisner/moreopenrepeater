@@ -43,6 +43,7 @@ from contracts import (
     CoreLogs,
     CoreStatus,
     Header,
+    CoreHostFacts,
     LinkEvents,
     CommandName,
     PROGRAMMING,
@@ -889,6 +890,21 @@ class RemoteCore:
         except ValueError:
             raise CoreUnavailable("the core's answer about link activity was not understood") from None
         return events[: max(0, limit)]
+
+    async def host_facts(self) -> CoreHostFacts:
+        """What the core can see of its host (its kernel log, when it was given one), read when asked and not cached.
+        Raises `CoreUnavailable` if the core cannot be reached or does not answer in a way that can be used."""
+        try:
+            async with self._client() as client:
+                response = await client.get("/host-facts")
+        except httpx.HTTPError:
+            raise CoreUnavailable("the core is not reachable, so its view of the host cannot be read") from None
+        if response.status_code != 200 or len(response.content) > MAX_CONFIG_BYTES:
+            raise CoreUnavailable("the core did not answer the request for its view of the host")
+        try:
+            return CoreHostFacts.model_validate_json(response.content)
+        except ValueError:
+            raise CoreUnavailable("the core's answer about the host was not understood") from None
 
     def _header(self) -> Header:
         return Header(

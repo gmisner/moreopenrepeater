@@ -67,7 +67,7 @@ from .link_radio import LinkRadio
 from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkScheduler
 from .link_bridge import LinkBridge
 from .links import LinkControl, LinkError
-from .audio_devices import list_audio_devices, set_cache_path
+from .audio_devices import audio_devices_from_core, list_audio_devices, set_cache_path
 from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env
 from .log_hub import LogHub, LogShipper
 from .logging_config import configure_logging
@@ -609,6 +609,8 @@ class AppRuntime:
             service.attach_log_hub(log_hub)  # the Logs page shows the core's log lines too
             # The core owns these and runs in its own process; this process holds no device.
             # Their status is the core's, read over the socket (split.CoreHardware); acting on them is not yet.
+            if audio_devices is list_audio_devices:  # not set by the caller: this process has no audio libraries, the core does
+                audio_devices = audio_devices_from_core(service)
             live_audio = live_audio or CoreHardware("live_audio", service, monitor=service.remote_audio_monitor("live"))
             monitor_receiver = monitor_receiver or CoreHardware(
                 "monitor_receiver", service, monitor=service.remote_audio_monitor("monitor")

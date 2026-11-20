@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -175,3 +176,49 @@ def resolve_audio_device(
             _logger.info("resolved audio device %r → %r (unique name stem)", wanted, resolved)
         return resolved
     return wanted
+
+
+class AudioDeviceList:
+    """The sound cards as the core's own process knows them, for the API to show (the core reports it as a hardware part).
+
+    Only the process that owns the sound card can say which cards there are: PortAudio looks at the cards when it starts,
+    and a card that a running stream already holds cannot be looked at again, so a second process (the API container, or a
+    one-off check inside the core's) finds fewer cards than the core does. The list PortAudio made when the core started
+    is the one the core opens its stream from, so it is the one to show. Kept for `cache_seconds`, since the API asks
+    every couple of seconds and the answer does not change."""
+
+    def __init__(
+        self,
+        list_devices: Callable[[], list[dict]] = list_audio_devices,
+        *,
+        cache_seconds: float = 30.0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._list = list_devices
+        self._cache_seconds = cache_seconds
+        self._clock = clock
+        self._cached: Optional[tuple[float, dict]] = None
+
+    def status(self) -> dict:
+        cached = self._cached
+        if cached is not None and self._clock() - cached[0] < self._cache_seconds:
+            return cached[1]
+        try:
+            result: dict = {"devices": self._list(), "error": None}
+        except Exception as error:  # noqa: BLE001 - PortAudio raises its own error types
+            result = {"devices": [], "error": str(error)}
+        self._cached = (self._clock(), result)
+        return result
+
+
+def audio_devices_from_core(remote) -> Callable[[], list[dict]]:
+    """The device lister for an API that runs apart from the core: what the core reports. Raises when the core is not
+    being heard from or could not list its cards, so the page says so instead of showing an empty list."""
+
+    def list_devices() -> list[dict]:
+        status = remote.hardware_status("audio_device_list")  # CoreUnavailable if the core is away
+        if status.get("error"):
+            raise RuntimeError(status["error"])
+        return list(status.get("devices", []))
+
+    return list_devices

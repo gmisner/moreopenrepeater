@@ -47,6 +47,7 @@ def test_every_part_reports_its_own_status(core, sock_dir):
     assert set(hardware.statuses) == set(control_module.HARDWARE_PARTS)
     assert hardware.statuses["gpio"] == core.runtime.gpio.status()
     assert hardware.statuses["live_audio"]["enabled"] == core.runtime.live_audio.status()["enabled"]
+    assert set(hardware.statuses["audio_device_list"]) == {"devices", "error"}  # the sound cards, for an API with no audio libraries
 
 
 def test_a_part_that_fails_or_is_slow_is_named_and_the_rest_still_answer(core, sock_dir, monkeypatch):

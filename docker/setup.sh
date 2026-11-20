@@ -16,6 +16,8 @@
 #   --allstar         also set up and start the AllStarLink node container (its management secret is generated)
 #   --dmr             also start the DMR bridge container (the network, DMR Id and password are set in the dashboard)
 #   --udev            install the udev rule that gives the PTT interface a stable name (needs sudo)
+#   --usb-speed       Raspberry Pi 3 Model B+ only: hold USB to full speed (dwc_otg.speed=1 in cmdline.txt, backed up first),
+#                     which stops the AIOC's audio glitches under load. Needs sudo and a reboot, which it does not do.
 #   --no-start        write the settings, start nothing
 set -eu
 
@@ -27,6 +29,7 @@ LOCALHOST=0
 ALLSTAR=0
 DMR=0
 UDEV=0
+USB_SPEED=0
 START=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,8 +38,9 @@ while [ $# -gt 0 ]; do
     --allstar) ALLSTAR=1 ;;
     --dmr) DMR=1 ;;
     --udev) UDEV=1 ;;
+    --usb-speed) USB_SPEED=1 ;;
     --no-start) START=0 ;;
-    -h|--help) sed -n '2,19p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,21p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "setup: unknown option $1 (see --help)" >&2; exit 2 ;;
   esac
   shift
@@ -158,6 +162,53 @@ if [ ! -e "${PTT:-/dev/moreopenrepeater-ptt}" ]; then
   say "  Plug in the PTT interface (AIOC or CM108) and install the rule that names it:  ./setup.sh --udev"
   START=0
 fi
+
+# --- a Pi 3 Model B+: USB at full speed ---------------------------------------------------------------------------
+
+# The AIOC is a full-speed device behind the 3B+'s high-speed hub, so each transfer is a split transaction that the USB
+# controller must time exactly, and other processes' memory traffic makes it miss. Holding the controller to full speed
+# removes the split transactions (docs/docker.md, Audio glitches). It costs: every USB device on the Pi, wired Ethernet
+# included, runs at 12 Mbit/s. So it is only ever done when asked, and it is a boot setting: it takes a reboot, which
+# this script never does.
+as_root() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi; }
+MODEL="$(tr -d '\0' < "${MOR_PI_MODEL_FILE:-/proc/device-tree/model}" 2>/dev/null || true)"
+CMDLINE="${MOR_CMDLINE_FILE:-}"
+if [ -z "$CMDLINE" ]; then
+  for candidate in /boot/firmware/cmdline.txt /boot/cmdline.txt; do
+    if [ -f "$candidate" ]; then CMDLINE="$candidate"; break; fi
+  done
+fi
+case "$MODEL" in
+  *"Raspberry Pi 3 Model B Plus"*)
+    if grep -q 'dwc_otg\.speed=1' "${MOR_PROC_CMDLINE:-/proc/cmdline}" 2>/dev/null; then
+      say "  USB is already held to full speed (dwc_otg.speed=1)."
+    elif [ "$USB_SPEED" = 1 ]; then
+      [ -n "$CMDLINE" ] && [ -f "$CMDLINE" ] || die "can't find the Pi's cmdline.txt (looked in /boot/firmware and /boot)."
+      if grep -q 'dwc_otg\.speed=1' "$CMDLINE"; then
+        say "  $CMDLINE already has dwc_otg.speed=1; it takes effect at the next reboot."
+      else
+        [ "$(grep -c '' "$CMDLINE")" = 1 ] || die "$CMDLINE is not the single line the kernel expects; not changing it."
+        [ -e "$CMDLINE.before-speed1" ] || as_root cp "$CMDLINE" "$CMDLINE.before-speed1"
+        NEW="$(head -n 1 "$CMDLINE" | sed 's/[[:space:]]*$//') dwc_otg.speed=1"
+        printf '%s\n' "$NEW" | as_root tee "$CMDLINE" >/dev/null
+        grep -q 'dwc_otg\.speed=1' "$CMDLINE" && [ "$(grep -c '' "$CMDLINE")" = 1 ] || {
+          as_root cp "$CMDLINE.before-speed1" "$CMDLINE"
+          die "couldn't write $CMDLINE; put the original back from $CMDLINE.before-speed1."
+        }
+        say "  added dwc_otg.speed=1 to $CMDLINE (the original is $CMDLINE.before-speed1)."
+        say "  Reboot the Pi for it to take effect. Every USB device, wired Ethernet included, then runs at 12 Mbit/s."
+      fi
+    else
+      say ""
+      say "  NOTE: this is a Raspberry Pi 3 Model B+. With the AIOC on it, other processes can make the USB controller miss audio"
+      say "  (\"audio glitch\" in the log). Holding USB to full speed fixes that: ./setup.sh --usb-speed, then reboot."
+      say "  It also limits wired Ethernet to 12 Mbit/s, which is why it is not done unasked."
+    fi
+    ;;
+  *)
+    [ "$USB_SPEED" = 0 ] || die "--usb-speed is only for a Raspberry Pi 3 Model B+ (this is: ${MODEL:-not a Raspberry Pi})."
+    ;;
+esac
 
 # --- start -------------------------------------------------------------------------------------------------------
 

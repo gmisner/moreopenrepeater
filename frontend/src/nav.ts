@@ -43,6 +43,7 @@ export const NAV: NavGroup[] = [
     items: [
       { id: "logs", label: "Logs", icon: "logs" },
       { id: "backup", label: "Backup & restore", icon: "backup" },
+      { id: "datetime", label: "Date and time", icon: "timing" },
       { id: "users", label: "Users", icon: "users", adminOnly: true },
       { id: "sites", label: "Sites", icon: "tower", adminOnly: true },
       { id: "audit", label: "Audit log", icon: "audit", adminOnly: true },

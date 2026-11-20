@@ -21,6 +21,7 @@ const NEEDS_CONFIG = new Set([
   "sensors",
   "recordings",
   "backup",
+  "datetime",
 ]);
 
 type Boundary = { children: ReactNode };

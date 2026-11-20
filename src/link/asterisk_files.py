@@ -73,9 +73,41 @@ class AsteriskFiles:
             return
         self.backup_dir.mkdir(parents=True, exist_ok=True)
         stem = name.replace("/", "_")
-        (self.backup_dir / f"{stem}.{time.strftime('%Y%m%d-%H%M%S')}").write_text(self.read(name))
+        base = f"{stem}.{time.strftime('%Y%m%d-%H%M%S')}"
+        target = self.backup_dir / base
+        # Two writes in one second (the dashboard's node setup does that) must not overwrite the first copy, which is the
+        # file as it was before any of them. The suffix keeps the names in the order they were made.
+        for count in range(1, 100):
+            if not target.exists():
+                break
+            target = self.backup_dir / f"{base}-{count:02d}"
+        target.write_text(self.read(name))
         for old in sorted(self.backup_dir.glob(f"{stem}.*"))[:-KEEP_BACKUPS]:
             old.unlink()
+
+    def snapshot(self, names: list[str], label: str) -> Optional[Path]:
+        """Copy each of `names` that exists into one folder, `backup_dir/<label>-<time>`, as a single restore point for a
+        change that touches several files. The first snapshot with a label is never removed (it is the state before the
+        feature was first used) and the latest nine are kept."""
+        if self.backup_dir is None:
+            return None
+        folder = self.backup_dir / f"{label}-{time.strftime('%Y%m%d-%H%M%S')}"
+        for count in range(1, 100):
+            if not folder.exists():
+                break
+            folder = self.backup_dir / f"{label}-{time.strftime('%Y%m%d-%H%M%S')}-{count:02d}"
+        folder.mkdir(parents=True, exist_ok=True)
+        for name in names:
+            try:
+                (folder / name.replace("/", "_")).write_text(self.read(name))
+            except AsteriskFilesError:
+                continue  # not there: nothing to put back
+        older = sorted(p for p in self.backup_dir.glob(f"{label}-*") if p.is_dir())
+        for old in older[1:-9]:
+            for file in old.iterdir():
+                file.unlink()
+            old.rmdir()
+        return folder
 
     def _run(self, command: list[str], stdin: Optional[bytes] = None) -> bytes:
         assert self.shell is not None

@@ -12,7 +12,7 @@
 #      moved on, it stops with nothing changed.
 #   3. writes the commit, its date, the branch and the GitHub repo into .env (MOR_COMMIT and friends), which is what
 #      the API image is built with. This is what the Updates page shows as the running version.
-#   4. docker compose up -d --build, adding the profiles (allstar, dmr, winlink) of whichever of those containers you
+#   4. docker compose up -d --build, adding the profiles (allstar, dmr, winlink, time) of whichever of those containers you
 #      have, so they are rebuilt with the rest. The repeater is off the air while the core restarts.
 #
 # To follow another channel, switch the checkout's branch first (main is dev, beta, stable) and run this:
@@ -78,10 +78,12 @@ profiles() {
   found="$(docker ps -a --filter "label=com.docker.compose.project.working_dir=$HERE" --format '{{.Label "com.docker.compose.service"}}' 2>/dev/null || true)"
   out=""
   for service in $found; do
+    # shellcheck disable=SC2209  # `time` below is a profile's name, not the command
     case "$service" in
       allstar) profile=allstar ;;
       dmr) profile=dmr ;;
       direwolf|winlink) profile=winlink ;;
+      chrony) profile=time ;;
       *) continue ;;
     esac
     case " $out " in *" --profile $profile "*) ;; *) out="$out --profile $profile" ;; esac

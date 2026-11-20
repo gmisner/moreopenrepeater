@@ -17,6 +17,9 @@
 #   --import-allstar DIR  an AllStarLink node already on this machine: DIR is its /etc/asterisk. The AllStar page offers to bring
 #                     the node over (it is shown first, and nothing is written until you confirm). Implies --allstar.
 #   --dmr             also start the DMR bridge container (the network, DMR Id and password are set in the dashboard)
+#   --time            also start the time container (chrony), which sets the Pi's clock from the NTP server picked in the dashboard.
+#                     It is given one capability, CAP_SYS_TIME, which lets it change the HOST's clock (docs/docker.md, The time
+#                     container). If this machine already runs its own time sync it says so and what to turn off: it changes nothing.
 #   --udev            install the udev rule that gives the PTT interface a stable name (needs sudo)
 #   --gpio            give the core the Pi's GPIO header (PTT or COS on a header pin, the monitor's squelch pin, a fan pin)
 #   --serial DEVICE   give the core a serial adapter for PTT/COS on its RTS/DTR/CTS lines; repeat for more than one.
@@ -39,6 +42,7 @@ LOCALHOST=0
 ALLSTAR=0
 IMPORT_ALLSTAR=""
 DMR=0
+TIME=0
 UDEV=0
 USB_SPEED=0
 GPIO=0
@@ -53,6 +57,7 @@ while [ $# -gt 0 ]; do
     --allstar) ALLSTAR=1 ;;
     --import-allstar) IMPORT_ALLSTAR="${2:-}"; ALLSTAR=1; [ -n "$IMPORT_ALLSTAR" ] || { echo "setup: --import-allstar needs the folder, for example --import-allstar /etc/asterisk" >&2; exit 2; }; shift ;;
     --dmr) DMR=1 ;;
+    --time) TIME=1 ;;
     --udev) UDEV=1 ;;
     --usb-speed) USB_SPEED=1 ;;
     --gpio) GPIO=1 ;;
@@ -60,7 +65,7 @@ while [ $# -gt 0 ]; do
     --link-radio) [ -n "${2:-}" ] || { echo "setup: --link-radio needs the interface's serial number (./setup.sh --list-interfaces shows it), or port:1-1.3" >&2; exit 2; }; LINK_ID="$2"; shift ;;
     --list-interfaces) LIST_INTERFACES=1 ;;
     --no-start) START=0 ;;
-    -h|--help) sed -n '2,29p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,34p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "setup: unknown option $1 (see --help)" >&2; exit 2 ;;
   esac
   shift
@@ -266,6 +271,38 @@ if [ -n "$IMPORT_ALLSTAR" ]; then
     say "    sudo cp -a $IMPORT_DIR /var/tmp/asterisk-import && sudo chown -R 999:999 /var/tmp/asterisk-import && sudo chmod -R go-rwx /var/tmp/asterisk-import"
     say "  Delete the copy when the import is done: it holds the node's password."
   fi
+fi
+
+# --- the time container ----------------------------------------------------------------------------------------------
+
+# Two programs setting one clock fight each other: each steps or slews what the other just fixed. The time container is a second
+# one if the host already runs its own. This only says so (it never changes the host: turning the host's off is the owner's call),
+# and the container is started anyway because the owner asked for it. MOR_TIME_UNITS is only a hook for the tests.
+host_time_sync() {
+  for unit in ${MOR_TIME_UNITS:-systemd-timesyncd chrony chronyd ntp ntpd ntpsec openntpd}; do
+    if [ "$(systemctl is-active "$unit" 2>/dev/null || true)" = "active" ]; then
+      printf '%s\n' "$unit"
+    fi
+  done
+}
+if [ "$TIME" = 1 ]; then
+  RUNNING_SYNC="$(host_time_sync)"
+  if [ -n "$RUNNING_SYNC" ]; then
+    say ""
+    for unit in $RUNNING_SYNC; do
+      say "  WARNING: $unit is running on this machine and sets the clock too."
+    done
+    say "  Two programs setting one clock fight each other, so the time container and the host's own sync should not both run."
+    say "  Pick one. To let the container do it, turn the host's off:"
+    for unit in $RUNNING_SYNC; do
+      case "$unit" in
+        systemd-timesyncd) say "    sudo timedatectl set-ntp false          (undo: sudo timedatectl set-ntp true)" ;;
+        *) say "    sudo systemctl disable --now $unit          (undo: sudo systemctl enable --now $unit)" ;;
+      esac
+    done
+    say "  Nothing was changed. The time container is being started either way."
+  fi
+  say "  The time container can change this machine's clock (it is given CAP_SYS_TIME). To remove it: docker compose --profile time rm -sf chrony"
 fi
 
 # --- the PTT interface's stable name ------------------------------------------------------------------------------
@@ -497,6 +534,7 @@ if [ "$START" = 1 ]; then
   PROFILE=""
   [ "$ALLSTAR" = 0 ] || PROFILE="--profile allstar"
   [ "$DMR" = 0 ] || PROFILE="$PROFILE --profile dmr"
+  [ "$TIME" = 0 ] || PROFILE="$PROFILE --profile time"
   say "  starting the containers (the first build takes a few minutes)"
   # shellcheck disable=SC2086
   docker compose $PROFILE up -d --build

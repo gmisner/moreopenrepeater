@@ -1,0 +1,44 @@
+# syntax=docker/dockerfile:1
+#
+# The optional time container: chrony (Debian's own package) sets the Pi's clock from the NTP server picked in the dashboard
+# (docs/docker.md, The time container). A Pi has no battery clock, so one that boots offline can be hours off; this fixes that.
+# It is off unless you ask for it (compose profile `time`), and it needs one capability, CAP_SYS_TIME, which lets it change the
+# HOST's clock (the clock belongs to the kernel and every container shares it). Nothing else: see compose.yaml.
+#
+# A small supervisor (chrony-supervisor.py) is the entrypoint: it reads the dashboard's setting from a volume, writes chrony's
+# configuration at every start and whenever the setting changes, keeps chronyd running, and writes a status file the dashboard
+# reads. The base is pinned by digest like the other images. The chrony package is not pinned to a version: Debian replaces
+# a package's version in the archive when it ships a security fix, so a pin would stop the image building one day.
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# chrony's package scripts try to start the service. There is no init system in a container, so for the install only, a policy
+# that refuses to start anything, removed again after. python3 is for the supervisor (the standard library only).
+RUN printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d && chmod +x /usr/sbin/policy-rc.d \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends chrony python3 \
+    && rm -f /usr/sbin/policy-rc.d \
+    && rm -rf /var/lib/apt/lists/* \
+    && test -x /usr/sbin/chronyd && test -x /usr/bin/chronyc
+
+# The folders: the dashboard's setting (this container only reads it) and the status this container writes. /time-config is
+# the API's uid, so a volume that this container happens to create first is still writable by the API; /time-status is root's,
+# since this container is the only writer.
+RUN mkdir -p /time-config /time-status /run/chrony && chown 999:999 /time-config
+
+COPY docker/chrony-supervisor.py /usr/local/bin/chrony-supervisor.py
+RUN chmod 755 /usr/local/bin/chrony-supervisor.py
+
+# No USER line, on purpose: chronyd must start as root to be allowed to set the clock (chrony's own check, and a container gives
+# an added capability to root only), and the container has no other capability than CAP_SYS_TIME. See compose.yaml.
+VOLUME ["/time-config", "/time-status"]
+
+# The supervisor wrote a status lately and chronyd was up. A server that cannot be reached is not "unhealthy": the container is
+# doing its job, and the dashboard says what it sees.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD ["python3", "/usr/local/bin/chrony-supervisor.py", "--check"]
+
+ENTRYPOINT ["python3", "/usr/local/bin/chrony-supervisor.py"]

@@ -155,6 +155,10 @@ services:
       - allstar-config:/etc/asterisk
       - dmr-config:/etc/moreopenrepeater/dmr
       - dmr-control:/dmr-control
+      # The NTP server setting the Date and time page writes (the optional time container reads it), and what that container
+      # says about itself, read-only: each side writes only its own (docs/docker.md, The time container).
+      - time-config:/time-config
+      - time-status:/time-status:ro
       # The host's tailscaled socket folder, read-only, so the Remote page can show whether Tailscale is up (docs/docker.md,
       # Tailscale). The default is an empty folder in this repo, so a machine without Tailscale starts fine and Docker never
       # creates a root-owned folder on the host. setup.sh points MOR_TAILSCALE_DIR at /var/run/tailscale when the socket exists.
@@ -178,6 +182,8 @@ services:
       MOREOPENREPEATER_DMR_RESTART_REQUEST: /dmr-control/request  # how the DMR page asks the bridge to restart
       MOREOPENREPEATER_DMR_STATUS: /dmr-control
       MOREOPENREPEATER_DMR_USRP_PEER: ${MOR_DMR_IP:-172.28.0.30}:34012  # the bridge, for the core to send audio to once the DMR page turns it on
+      MOREOPENREPEATER_TIME_CONFIG_DIR: /time-config  # the NTP server setting, which the dashboard writes
+      MOREOPENREPEATER_TIME_STATUS_DIR: /time-status  # what the optional time container writes about itself
       # The Winlink page's read-only status checks (docs/winlink.md). Three quick connections, with the profile off nothing answers and
       # the page says how to turn it on. The API cannot start or stop those containers: it holds no Docker socket.
       MOREOPENREPEATER_WINLINK_HOST: winlink  # the gateway, by its service name on the private network
@@ -440,6 +446,61 @@ services:
         max-size: 10m
         max-file: "3"
 
+  # The time container, off by default: `docker compose --profile time up -d --build chrony` (or ./setup.sh --time). chrony sets the
+  # Pi's clock from the NTP server picked in the dashboard (docs/docker.md, The time container). A Pi has no battery clock, so one
+  # that boots offline can be hours off, and the repeater leans on the clock (station IDs, the spoken time, schedules, log times).
+  #
+  # THE PRIVILEGE: it gets CAP_SYS_TIME, which lets it set and slew the HOST's clock. The clock is the kernel's, not the container's:
+  # every container and the host see what it does. It gets nothing else (cap_drop ALL first), and why that is one capability and
+  # not three or four:
+  #   - Chrony's own way to run without root is `-U`, "assuming the process will have all capabilities". A container gives an
+  #     added capability to root and not to another user, so an unprivileged chronyd here would start and then be unable to set
+  #     the clock. So it runs as root, and `user root` in its configuration keeps it from trying to drop to another user.
+  #   - Chrony's usual way of dropping root (-u) would need CAP_SETUID and CAP_SETGID as well, and its supervisor would need
+  #     CAP_KILL to restart it afterwards. Not worth it: root with one capability can set the clock and nothing else. It cannot
+  #     chown, read other users' files, signal other users' processes, bind a low port, use raw sockets or load anything.
+  #   - Its configuration asks for nothing else that needs a capability: no RTC (no rtcsync), no hardware timestamping, no low
+  #     port (`port 0`), no scheduler priority, no memory locking. Docker's default seccomp filter stays on: it allows
+  #     settimeofday and clock_settime only when CAP_SYS_TIME is present, and adjtimex always.
+  #   - `port 0` and `cmdport 0`: it is a client only and listens on no network port. Nothing is published.
+  # A host that also runs its own time sync (systemd-timesyncd, chronyd, ntpd) would have two programs disciplining one clock;
+  # turn the host's off (docs/docker.md).
+  chrony:
+    profiles: ["time"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.chrony
+    image: moreopenrepeater-chrony:local
+    restart: unless-stopped
+    init: true
+    user: "0:0"  # see above: root, with one capability
+    stop_grace_period: 10s
+    networks:
+      - services  # outbound only: NTP (UDP 123) and DNS. No address of its own to be reached at.
+    volumes:
+      - time-config:/time-config:ro  # the dashboard writes the NTP server here; this container only reads it
+      - time-status:/time-status  # and this container writes its status here; the dashboard only reads it
+    read_only: true
+    tmpfs:
+      - /run/chrony:size=1m,mode=0750  # its configuration (made at every start), its socket, its pid and its drift file: no disk writes
+      - /tmp:size=1m
+    cap_drop: [ALL]
+    cap_add: [SYS_TIME]
+    security_opt:
+      - no-new-privileges:true
+    cpu_shares: 128  # the repeater's processes come first
+    healthcheck:
+      test: ["CMD", "python3", "/usr/local/bin/chrony-supervisor.py", "--check"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
 networks:
   # Where the services talk to each other. Nothing is published from it except what a service names itself.
   services:
@@ -457,3 +518,5 @@ volumes:
   allstar-data:
   dmr-config:
   dmr-control:
+  time-config:
+  time-status:

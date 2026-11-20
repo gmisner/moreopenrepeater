@@ -8,6 +8,8 @@ from api.health import (
     HEARTBEAT_SECONDS,
     HealthMonitor,
     RunMarker,
+    UNDER_VOLTAGE_NOW,
+    UNDER_VOLTAGE_OCCURRED,
     SystemProbe,
 )
 from api.notify import Notifier
@@ -64,6 +66,48 @@ def test_probe_falls_back_to_vcgencmd_and_copes_without_a_pi(tmp_path):
     readings = SystemProbe(tmp_path, sys_root=tmp_path, run=no_vcgencmd, env={}).readings()
     assert readings["temperature_c"] is None and readings["throttled"] is None and readings["boot_time"] is None
     assert readings["disk"]["written_since_boot"] is None and readings["sd_protection"] is False
+
+
+def hwmon(root, name="rpi_volt", alarm="0", number=3):
+    node = root / "sys/class/hwmon" / f"hwmon{number}"
+    write(node, "name", name + "\n")
+    if alarm is not None:
+        write(node, "in0_lcrit_alarm", alarm + "\n")
+
+
+def test_without_vcgencmd_the_pis_undervoltage_alarm_is_read_from_hwmon(tmp_path):
+    # What a container sees: no vcgencmd, no firmware file, but /sys is there.
+    hwmon(tmp_path, alarm="0", number=0, name="cpu_thermal")  # another device comes first; it is skipped
+    hwmon(tmp_path, alarm="0")
+    probe = SystemProbe(tmp_path, sys_root=tmp_path, run=no_vcgencmd, env={})
+    assert probe.throttled() == 0
+    hwmon(tmp_path, alarm="1")
+    assert probe.throttled() == UNDER_VOLTAGE_NOW | UNDER_VOLTAGE_OCCURRED
+    hwmon(tmp_path, alarm="0")  # the supply recovered; that it dipped is remembered
+    assert probe.throttled() == UNDER_VOLTAGE_OCCURRED
+    readings = probe.readings()
+    assert readings["throttled"]["under_voltage_now"] is False and readings["throttled"]["under_voltage_occurred"] is True
+
+
+def test_a_new_probe_has_not_seen_a_dip_and_does_not_invent_one(tmp_path):
+    hwmon(tmp_path, alarm="0")
+    assert SystemProbe(tmp_path, sys_root=tmp_path, run=no_vcgencmd, env={}).throttled() == 0
+
+
+def test_hwmon_alarm_that_is_not_a_zero_or_a_one_is_not_a_reading(tmp_path):
+    hwmon(tmp_path, alarm="banana")
+    assert SystemProbe(tmp_path, sys_root=tmp_path, run=no_vcgencmd, env={}).throttled() is None
+    hwmon(tmp_path, alarm=None)  # a device with no alarm file
+    assert SystemProbe(tmp_path, sys_root=tmp_path, run=no_vcgencmd, env={}).throttled() is None
+
+
+def test_the_firmware_file_and_vcgencmd_still_win_over_hwmon(tmp_path):
+    hwmon(tmp_path, alarm="1")
+    assert SystemProbe(tmp_path, sys_root=tmp_path, run=lambda a, **k: subprocess.CompletedProcess(a, 0, stdout="throttled=0x4\n")).throttled() == 0x4
+    failing = lambda a, **k: subprocess.CompletedProcess(a, 1, stdout="")  # noqa: E731 - vcgencmd present but failing
+    assert SystemProbe(tmp_path, sys_root=tmp_path, run=failing).throttled() == UNDER_VOLTAGE_NOW | UNDER_VOLTAGE_OCCURRED
+    write(tmp_path, "sys/devices/platform/soc/soc:firmware/get_throttled", "0\n")
+    assert SystemProbe(tmp_path, sys_root=tmp_path, run=no_vcgencmd, env={}).throttled() == 0  # not the alarm's 1
 
 
 class FakeProbe:

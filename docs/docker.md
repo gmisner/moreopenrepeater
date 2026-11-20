@@ -511,6 +511,13 @@ This recovers from the drop. It does not stop the drops. If the hub logs `EMI?` 
 antenna close to the cable, the radio's charger or supply, the cable). A dummy load in place of the antenna, or the radio
 on its battery, tells you which.
 
+**Power warnings.** The native install asks the Pi's firmware (`vcgencmd get_throttled`) whether the supply has dipped, and
+the dashboard warns about undervoltage and throttling. A container has no `vcgencmd`, so the dashboard reads the Pi's own
+undervoltage alarm instead, the `rpi_volt` device under `/sys/class/hwmon`, which every container can see. It says only
+whether the supply is low right now, and it is not latched, so a dip between two readings (the dashboard looks every 30
+seconds) is missed, and "has happened since boot" means "since the dashboard started and saw one". Throttling and a
+capped clock are not reported this way.
+
 A restart can only help if the container can start again: a PTT device
 path that no longer exists stops it starting, which is why the PTT device has a stable name (see above). `restart: unless-stopped` covers crashes and exits, but not a manual `docker kill`
 or `docker stop`. The API container is not restarted this way: it holds no device.

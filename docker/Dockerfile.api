@@ -14,10 +14,12 @@ ENV PYTHONUNBUFFERED=1 \
 RUN groupadd --system --gid 999 moreopenrepeater \
     && useradd --system --uid 999 --gid 999 --home-dir /nonexistent --no-create-home \
        --shell /usr/sbin/nologin moreopenrepeater \
-    && mkdir -p /data /run/moreopenrepeater /run/logd /etc/asterisk /etc/moreopenrepeater/dmr /dmr-control \
-    && chown 999:999 /data /run/moreopenrepeater /run/logd /etc/asterisk /etc/moreopenrepeater/dmr /dmr-control
-# (The last three are where the AllStar node's and the DMR bridge's volumes are mounted for the dashboard to edit; owned by
-# the same uid as the node's and the bridge's own, so a volume that this container creates first is writable by all.)
+    && mkdir -p /data /run/moreopenrepeater /run/logd /etc/asterisk /etc/moreopenrepeater/dmr /dmr-control /time-config /time-status \
+    && chown 999:999 /data /run/moreopenrepeater /run/logd /etc/asterisk /etc/moreopenrepeater/dmr /dmr-control /time-config
+# (Where the AllStar node's and the DMR bridge's volumes are mounted for the dashboard to edit, owned by the same uid as the
+# node's and the bridge's own, so a volume that this container creates first is writable by all. /time-config is the NTP server
+# setting the dashboard writes, which the optional time container reads; /time-status is what that container writes back, mounted
+# read-only here, so it is root's like the time container's own.)
 
 # The project's own dependency list, so this image cannot drift from pyproject.toml. numpy and
 # sounddevice come with it (the app imports them) but no audio device is ever opened here.

@@ -14,3 +14,4 @@
 !packaging/dmr/DVSwitch.ini
 !docker/winlink-entrypoint.sh
 !docker/direwolf-entrypoint.sh
+!docker/chrony-supervisor.py

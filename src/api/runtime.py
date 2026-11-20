@@ -61,6 +61,9 @@ from .control_codes import ControlCodes
 from .gpio import GpioControl
 from .health import CHECK_SECONDS as HEALTH_CHECK_SECONDS
 from .health import HealthMonitor, RunMarker, SystemProbe, lockout_alert
+from .time_sync import CHECK_SECONDS as TIME_CHECK_SECONDS
+from .time_sync import FIRST_CHECK_SECONDS as TIME_FIRST_CHECK_SECONDS
+from .time_sync import TimeSync
 from .homeassistant import TOKEN_ENV as HOMEASSISTANT_TOKEN_ENV
 from .homeassistant import HomeAssistant
 from .hub import HubPoller, HubSiteStore
@@ -341,6 +344,7 @@ class AdminOpsBundle:
     run_marker: Optional[RunMarker] = None
     system_probe: Optional[SystemProbe] = None
     watchdog: Optional[Watchdog] = None
+    time_sync: Optional[TimeSync] = None
 
 
 _BAG_TYPES = (CoreBundle, AuthBundle, LinkingBundle, MediaBundle, SiteOpsBundle, AdminOpsBundle)
@@ -393,6 +397,7 @@ class RuntimeBuilder:
     run_marker: Optional[RunMarker] = None
     system_probe: Optional[SystemProbe] = None
     watchdog: Optional[Watchdog] = None
+    time_sync: Optional[TimeSync] = None
     net_store: Optional[StateStore] = None
     auto_update_store: Optional[StateStore] = None
     control_codes: Optional[ControlCodes] = None
@@ -488,6 +493,7 @@ class RuntimeBuilder:
                 run_marker=self.run_marker,
                 system_probe=self.system_probe,
                 watchdog=self.watchdog,
+                time_sync=self.time_sync,
             ),
         )
 
@@ -592,6 +598,7 @@ class AppRuntime:
         run_marker = admin.run_marker
         system_probe = admin.system_probe
         watchdog = admin.watchdog
+        time_sync = admin.time_sync or TimeSync.offline()  # the real one (the NTP server, the network) is the module-level app's
 
         log_path = log_path or DEFAULT_LOG_PATH
         log_hub = log_hub or LogHub()
@@ -1191,6 +1198,19 @@ class AppRuntime:
                 except Exception:
                     _loop_failed("alerts", "checking the system's health")
 
+        async def time_loop() -> None:
+            # Gentle: one UDP packet every ten minutes. Not on the health loop's 30 seconds, and never waited for by anything.
+            await asyncio.sleep(TIME_FIRST_CHECK_SECONDS)
+            while True:
+                try:
+                    for alert in await time_sync.poll():
+                        notifier.post(alert)
+                except CoreUnavailable:
+                    raise  # the core is not reached yet: the supervisor starts this loop again
+                except Exception:
+                    _loop_failed("time", "checking the clock")
+                await asyncio.sleep(TIME_CHECK_SECONDS)
+
         async def sensor_loop() -> None:
             loop = asyncio.get_running_loop()
             while True:
@@ -1250,6 +1270,7 @@ class AppRuntime:
                 tasks.append(asyncio.create_task(supervised(lambda: mailbox_loop())))
                 tasks.append(asyncio.create_task(supervised(lambda: transcribe_loop())))
                 tasks.append(asyncio.create_task(supervised(lambda: health_loop())))
+                tasks.append(asyncio.create_task(supervised(lambda: time_loop())))
                 tasks.append(asyncio.create_task(supervised(lambda: sensor_loop())))
                 tasks.append(asyncio.create_task(supervised(lambda: activity_flush_loop())))
                 core_runtime.start_long_id(tasks)
@@ -1328,6 +1349,7 @@ class AppRuntime:
         self.notifier = notifier
         self.log_shipper = log_shipper
         self.health = health
+        self.time_sync = time_sync
         self.tx_fan = tx_fan
         self.backup_sources = backup_sources
         self.watchdog = watchdog

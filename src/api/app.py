@@ -35,6 +35,7 @@ from .remote_core import RemoteCore
 from .snapshot_import import snapshot_to_import, validate_config_values
 from .service.core_handle import CommandRefused, ConfigRefused, CoreError, CoreUnavailable
 from .split import NotInSplitMode
+from .time_sync import TimeSync
 from .winlink import WinlinkStatus, settings_from_env
 from .recordings import RecordingStore
 from .routes import accounts as accounts_routes
@@ -58,6 +59,7 @@ from .routes import session as session_routes
 from .routes import simulate as simulate_routes
 from .routes import site as site_routes
 from .routes import timezone as timezone_routes
+from .routes import time_sync as time_sync_routes
 from .routes import winlink as winlink_routes
 from .runtime import (
     DEFAULT_ACTIVITY_PATH,
@@ -68,6 +70,7 @@ from .runtime import (
     DEFAULT_AUTO_UPDATE_PATH,
     DEFAULT_BACKUP_DIR,
     DEFAULT_CONTROL_CODES_PATH,
+    DEFAULT_DATA_DIR,
     DEFAULT_HUB_SITES_PATH,
     DEFAULT_LOG_SHIPPING_PATH,
     DEFAULT_MAILBOX_DIR,
@@ -458,6 +461,13 @@ def create_app(
         auth_dependencies=runtime.auth_dependencies,
     )
 
+    time_sync_routes.register(
+        app,
+        time_sync=runtime.time_sync,
+        auth_dependencies=runtime.auth_dependencies,
+        admin_dependencies=runtime.admin_dependencies,
+    )
+
     mailbox_routes.register(
         app,
         mailbox_store=runtime.mailbox_store,
@@ -579,6 +589,7 @@ app = create_app(
         log_shipper=LogShipper(_LOG_HUB, StateStore(DEFAULT_LOG_SHIPPING_PATH)),
         run_marker=RunMarker(StateStore(DEFAULT_RUN_MARKER_PATH)),
         auto_update_store=StateStore(DEFAULT_AUTO_UPDATE_PATH),
+        time_sync=TimeSync.from_env(os.environ, DEFAULT_DATA_DIR / "time-config"),
     ),
 )
 

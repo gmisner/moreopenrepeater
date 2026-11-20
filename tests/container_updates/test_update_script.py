@@ -192,6 +192,20 @@ def test_the_optional_containers_you_have_are_rebuilt_with_the_rest(checkout):
     assert build == "docker compose --profile allstar --profile winlink up -d --build"
 
 
+def test_the_time_container_is_rebuilt_with_the_rest_and_only_when_you_have_it(checkout):
+    checkout.ps_services.write_text("core\napi\nchrony\n")
+    checkout.run("update.sh")
+    assert checkout.builds() == ["docker compose --profile time up -d --build"]
+    checkout.calls.unlink()
+    checkout.ps_services.write_text("core\napi\ndmr\nchrony\nallstar\n")
+    checkout.run("update.sh")
+    assert checkout.builds() == ["docker compose --profile dmr --profile time --profile allstar up -d --build"]
+    checkout.calls.unlink()
+    checkout.ps_services.write_text("core\napi\nchrony\nchrony\n")  # one profile once, however many of its containers
+    checkout.run("update.sh")
+    assert checkout.builds() == ["docker compose --profile time up -d --build"]
+
+
 def test_without_optional_containers_it_is_the_plain_command(checkout):
     checkout.ps_services.write_text("core\napi\nlogd\n")
     checkout.run("update.sh")

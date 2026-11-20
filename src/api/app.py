@@ -35,6 +35,7 @@ from .remote_core import RemoteCore
 from .snapshot_import import snapshot_to_import, validate_config_values
 from .service.core_handle import CommandRefused, ConfigRefused, CoreError, CoreUnavailable
 from .split import NotInSplitMode
+from .winlink import WinlinkStatus, settings_from_env
 from .recordings import RecordingStore
 from .routes import accounts as accounts_routes
 from .routes import activity as activity_routes
@@ -56,6 +57,7 @@ from .routes import sensors as sensors_routes
 from .routes import session as session_routes
 from .routes import simulate as simulate_routes
 from .routes import site as site_routes
+from .routes import winlink as winlink_routes
 from .runtime import (
     DEFAULT_ACTIVITY_PATH,
     DEFAULT_AGENT_ACCESS_PATH,
@@ -440,6 +442,12 @@ def create_app(
         recordings=runtime.recordings,
         monitor_recordings=runtime.monitor_recordings,
         transcriber=runtime.transcriber,
+        auth_dependencies=runtime.auth_dependencies,
+    )
+
+    winlink_routes.register(
+        app,
+        winlink=WinlinkStatus(settings_from_env(os.environ)),
         auth_dependencies=runtime.auth_dependencies,
     )
 

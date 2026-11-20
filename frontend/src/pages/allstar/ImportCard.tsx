@@ -47,7 +47,8 @@ export function ImportCard({ onApplied }: { onApplied?: () => void }) {
 
   const load = useCallback(async () => {
     try {
-      const next = await api<ImportPreview>("/api/allstar/import");
+      const got = await api<ImportPreview>("/api/allstar/import");
+      const next: ImportPreview = { ...got, nodes: got?.nodes ?? [], files: got?.files ?? [], problems: got?.problems ?? [] };
       setPreview(next);
       setError(null);
       setPicked((prev) => {

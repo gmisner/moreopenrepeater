@@ -124,6 +124,18 @@ describe("ImportCard", () => {
     expect(await screen.findByRole("button", { name: "Import again" })).toBeInTheDocument();
   });
 
+  it("doesn't fall over on a reply with no node list", async () => {
+    vi.mocked(api).mockResolvedValue({ configured: false });
+    const { container } = render(
+      <MantineProvider theme={theme}>
+        <ImportCard />
+      </MantineProvider>,
+    );
+    await waitFor(() => expect(api).toHaveBeenCalled());
+    await waitFor(() => expect(container.querySelector('[role="status"]')).toBeNull());
+    expect(container.querySelector("section")).toBeNull();
+  });
+
   it("makes the user pick when the file has several nodes, and imports the one picked", async () => {
     const posted = vi.fn();
     answer(
@@ -227,7 +239,7 @@ describe("ImportCard", () => {
   });
 
   it("shows the server's reason when applying fails, and keeps the preview", async () => {
-    vi.mocked(api).mockImplementation(async (path: string, options?: { method?: string }) => {
+    vi.mocked(api).mockImplementation(async (_path: string, options?: { method?: string }) => {
       if (options?.method === "POST") throw new Error("Couldn't write rpt.conf: Permission denied.");
       return preview();
     });

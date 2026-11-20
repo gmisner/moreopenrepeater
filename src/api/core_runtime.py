@@ -29,6 +29,7 @@ from .allstar_audio import UsrpSettings
 from .audio_devices import AudioDeviceList
 from .boards import run_amixer
 from .dmr_audio import DmrUsrpSettings
+from .host_hardware import SerialPortList
 from .loops import run_announcement_loop, run_long_id_warm_loop, run_tick_loop
 from .usrp_endpoints import Peer, UsrpEndpoints
 from .watchdog import Watchdog, ping_interval, sd_notify
@@ -103,6 +104,7 @@ class CoreRuntime:
         self.autopatch = autopatch
         self.run_mixer = run_mixer  # runs amixer for the API (the `mixer_run` command): the core has the sound card
         self.audio_device_list = AudioDeviceList()  # the sound cards, reported to the API (it has no audio libraries)
+        self.serial_port_list = SerialPortList()  # the serial ports the core was given, reported to the API (it has no devices)
         self.allstar_node = allstar_node
         self.dmr = dmr
         self.dmr_audio = dmr_audio

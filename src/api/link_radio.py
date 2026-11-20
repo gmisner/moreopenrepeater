@@ -37,6 +37,7 @@ from playout.tts import TTSError
 
 from .audio_devices import resolve_audio_device
 from .boards import run_amixer
+from .host_hardware import header_pin_reason, missing_link_interface, serial_port_reason
 from .mixer import apply_saved_levels
 from .supervise import LoopGuard
 from .tx_limit import link_radio_transmit_limit
@@ -105,7 +106,7 @@ def setup_problem(config: RepeaterConfig, cm108: Optional[CM108Interface]) -> Op
         if _serial_key(device, line) in taken_lines:
             return f"{line.upper()} on {device} is already {taken_lines[_serial_key(device, line)]}."
     if cm108 is None and "cm108" in (config.link_radio_cos, config.link_radio_ptt):
-        return "The linked radio is set to use a CM108, but no second CM108 interface was found."
+        return missing_link_interface()
     return None
 
 
@@ -437,7 +438,7 @@ class LinkRadio:
         try:
             line = self._open_pin(pin, output=output, active_low=active_low)
         except OSError as error:
-            raise OSError(f"couldn't open GPIO{pin} for the linked radio's {role}: {error.strerror or error}") from error
+            raise OSError(f"couldn't open GPIO{pin} for the linked radio's {role}: {header_pin_reason(error)}") from error
         self._pins.append(line)
         return line
 
@@ -446,7 +447,7 @@ class LinkRadio:
             opened = self._open_serial(device, line, output=output, active_low=active_low)
         except OSError as error:
             raise OSError(
-                f"couldn't open {device} ({line.upper()}) for the linked radio's {role}: {error.strerror or error}"
+                f"couldn't open {device} ({line.upper()}) for the linked radio's {role}: {serial_port_reason(error)}"
             ) from error
         self._pins.append(opened)
         return opened

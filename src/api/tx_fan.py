@@ -17,6 +17,8 @@ from audio_io.cm108 import CM108Interface
 from audio_io.pi_gpio import GpioLine, open_header_pin
 from controller.state_machine import RepeaterConfig
 
+from .host_hardware import header_pin_reason
+
 if TYPE_CHECKING:
     from .service.core_handle import CoreHandle
 
@@ -223,7 +225,7 @@ class TxFan:
 
                 self._release = release
         except OSError as error:
-            self._problem = f"couldn't open GPIO{pin} for the fan: {error.strerror or error}"
+            self._problem = f"couldn't open GPIO{pin} for the fan: {header_pin_reason(error)}"
             _logger.error("%s", self._problem)
             return
         self._write = write

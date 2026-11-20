@@ -127,7 +127,7 @@ HARDWARE_DEADLINE_SECONDS = 2.0  # each part's status must answer in this long
 HOST_FACTS_DEADLINE_SECONDS = 3.0  # the kernel log read has its own limits; this is the backstop above them
 HARDWARE_PARTS = (
     "live_audio", "gpio", "tx_fan", "link_radio", "remote_base", "monitor_receiver", "autopatch", "allstar_node", "dmr",
-    "audio_device_list",
+    "audio_device_list", "serial_port_list",
 )
 MAX_MIXER_OUTPUT_CHARS = 64 * 1024  # a card with many controls prints a few KB; this is far past any real one
 LOGS_PER_REQUEST = 500  # the most log lines one GET /logs returns

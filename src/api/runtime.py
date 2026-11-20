@@ -69,6 +69,7 @@ from .link_schedule import POLL_SECONDS as LINK_SCHEDULE_POLL_SECONDS, LinkSched
 from .link_bridge import LinkBridge
 from .links import LinkControl, LinkError
 from .audio_devices import audio_devices_from_core, list_audio_devices, set_cache_path
+from .host_hardware import serial_ports_from_core
 from .live_audio import LiveAudio, cm108_from_env, link_cm108_from_env
 from .log_hub import LogHub, LogShipper
 from .logging_config import configure_logging
@@ -635,6 +636,8 @@ class AppRuntime:
             # Their status is the core's, read over the socket (split.CoreHardware); acting on them is not yet.
             if audio_devices is list_audio_devices:  # not set by the caller: this process has no audio libraries, the core does
                 audio_devices = audio_devices_from_core(service)
+            if serial_ports is find_serial_ports:  # likewise: only the core knows which ports it was given
+                serial_ports = serial_ports_from_core(service)
             if run_mixer is run_amixer:  # likewise: the core has the sound card and amixer, this process has neither
                 run_mixer = RemoteMixer(service)
             live_audio = live_audio or CoreHardware("live_audio", service, monitor=service.remote_audio_monitor("live"))

@@ -20,7 +20,7 @@ from .audio_devices import alsa_card_stable_id
 from .boards import alsa_card
 from .log_history import LogHistory, LogHistoryRefused, LogHistoryUnavailable
 from .mixer import parse_volumes
-from .service.core_handle import ApiCoreHandle
+from .service.core_handle import ApiCoreHandle, CoreUnavailable
 from .updates import Updater, installed_version, read_log
 
 LOG_LINES = 5000
@@ -259,6 +259,26 @@ def _mixer_for_device(device_name: str, run: Callable[..., subprocess.CompletedP
     }
 
 
+CORE_NOT_REACHABLE = "unavailable (core not reachable)"
+
+
+def bundle_callsign(service: ApiCoreHandle) -> str:
+    """The callsign for the bundle's name; a repeater whose core cannot be reached still gets a bundle."""
+    try:
+        return service.config.callsign or "repeater"
+    except CoreUnavailable:
+        return "repeater"
+
+
+def _settings_for_bundle(service: ApiCoreHandle) -> dict:
+    """The core's settings, or a short note saying they could not be read. Never an old copy, and never anything
+    beyond what `export_snapshot` already gives (the bundle exists to be sent to a helper, so the note carries no detail)."""
+    try:
+        return service.export_snapshot()
+    except CoreUnavailable:
+        return {"settings": CORE_NOT_REACHABLE}
+
+
 def _devices_snapshot(
     service: ApiCoreHandle,
     *,
@@ -269,7 +289,19 @@ def _devices_snapshot(
     run: Callable[..., subprocess.CompletedProcess],
 ) -> dict[str, Any]:
     """PortAudio devices, serial ports, CM108 hidraw, and mixer on selected cards."""
-    config = service.config
+    try:
+        if getattr(service, "stale", False):  # an old copy of the selections is not what is configured now
+            raise CoreUnavailable("the core is not being heard from")
+        config = service.config
+    except CoreUnavailable:
+        return {
+            "selected": CORE_NOT_REACHABLE,
+            "audio_devices": list(audio_devices or []),
+            "serial_ports": list(serial_ports or []),
+            "cm108_interfaces": list(cm108_interfaces or []),
+            "cm108_path": cm108_path,
+            "mixer": {},
+        }
     selected = {
         "audio_input_device": config.audio_input_device,
         "audio_output_device": config.audio_output_device,
@@ -326,10 +358,13 @@ def write_support_bundle(
     """Writes a support-bundle archive to `path`. `core_log_lines`: the core's recent log lines, when the core is a separate
     process (its log is not in this process's file). `core_host_facts`: asks that core for what it sees of the host (its
     kernel log); None where this process is the one with the host."""
-    callsign = service.config.callsign or "repeater"
+    callsign = bundle_callsign(service)
     version = installed_version(repo_dir)
-    settings = service.export_snapshot()
-    status = vars(service.snapshot())
+    settings = _settings_for_bundle(service)
+    try:
+        status = vars(service.snapshot())
+    except CoreUnavailable:
+        status = {"state": CORE_NOT_REACHABLE}
     update_lines = read_log(updater.settings, UPDATE_LOG_LINES) if updater and updater.settings else []
     health = {
         "system": system_readings if system_readings is not None else {},
@@ -351,7 +386,7 @@ def write_support_bundle(
         f"Channel:   {update_channel}\n"
         "\n"
         "Contents for radio/audio troubleshooting:\n"
-        "  config.json         settings, macros, announcements\n"
+        "  config.json         settings, macros, announcements (a note instead when the core could not be reached)\n"
         "  status.json         controller state at capture\n"
         "  audio-engine.json   levels, COS, TX, device names\n"
         "  devices.json        PortAudio list, serial ports, CM108, amixer\n"

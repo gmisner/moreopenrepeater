@@ -32,6 +32,8 @@ from controller import station_clock
 from controller.state_machine import RepeaterConfig
 from playout.renderer import TTS_PREFIX
 
+from observability import log_event
+
 from .tx_fan import fan_cm108_pin
 from .weekly import last_start, next_start, window_end
 
@@ -198,7 +200,10 @@ class GpioControl:
             self.error = f"couldn't set GPIO{pin}: {error}"
             raise GpioError(self.error) from error
         self.error = None
-        _logger.info("GPIO%d (%s) %s", pin, self.name(pin), "on" if on else "off")
+        log_event(
+            _logger, logging.INFO, "gpio.output_changed", f"GPIO{pin} ({self.name(pin)}) {'on' if on else 'off'}",
+            gpio=pin, on=on, facts_in_text=False,
+        )
 
     def _cancel_pulse(self, pin: int) -> None:
         handle = self._pulses.pop(pin, None)
@@ -231,7 +236,10 @@ class GpioControl:
                     self._cm108.release_gpio(pin)
             except OSError as error:
                 self.error = f"couldn't set up GPIO{pin}: {error}"
-                _logger.error("%s", self.error)
+                log_event(
+                    _logger, logging.ERROR, "gpio.setup_failed", self.error,
+                    error_code="gpio.hardware", gpio=pin, exception=type(error).__name__, facts_in_text=False,
+                )
             if mode != "input":
                 self._inputs.pop(pin, None)
                 self._settled.pop(pin, None)
@@ -248,7 +256,10 @@ class GpioControl:
                 _buttons, levels = await asyncio.to_thread(self._cm108.read_inputs)
             except OSError as error:
                 if self.error is None:
-                    _logger.error("reading the GPIO inputs failed: %s", error)
+                    log_event(
+                        _logger, logging.ERROR, "gpio.read_failed", f"reading the GPIO inputs failed: {error}",
+                        error_code="gpio.hardware", exception=type(error).__name__, facts_in_text=False,
+                    )
                 self.error = f"couldn't read the GPIO inputs: {error}"
                 await asyncio.sleep(1.0)
                 continue
@@ -258,7 +269,10 @@ class GpioControl:
                 level = bool(levels & (1 << (pin - 1)))
                 on = level != bool(settings.get("invert"))
                 if self._inputs.get(pin) != on:
-                    _logger.info("GPIO%d (%s) input %s", pin, self.name(pin), "on" if on else "off")
+                    log_event(
+                        _logger, logging.INFO, "gpio.input_changed", f"GPIO{pin} ({self.name(pin)}) input {'on' if on else 'off'}",
+                        gpio=pin, on=on, facts_in_text=False,
+                    )
                     changed = True
                 self._inputs[pin] = on
                 self._settle(pin, level)

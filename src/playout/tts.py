@@ -33,6 +33,8 @@ from urllib.request import Request, urlopen as _urlopen
 
 import numpy as np
 
+from observability import log_event
+
 from .kokoro_service import DEFAULT_KOKORO_SERVICE_URL
 from .piper_service import DEFAULT_PIPER_SERVICE_URL
 from .wav import decode_wav
@@ -319,7 +321,11 @@ class CommandTTS:
                         # The service is down or cannot get the voice: speak with the fallback, as for any other failure.
                         if self.fallback is None:
                             raise
-                        _logger.warning("%s failed (%s); falling back to %s", self.name, error, self.fallback.name)
+                        log_event(
+                            _logger, logging.WARNING, "tts.fallback_used", f"{self.name} failed ({error}); falling back to {self.fallback.name}",
+                            error_code="tts.fallback", engine=self.name, fallback=self.fallback.name,
+                            exception=type(error).__name__, facts_in_text=False,
+                        )
                         return self.fallback.synthesize(text, "", speed=speed)
                 else:
                     ensure_piper_voice(voice, run=self.run)
@@ -341,7 +347,10 @@ class CommandTTS:
             # Prefer warm HTTP; if the service is down, one-shot CLI may still work
             # (slow on a Pi) before we hand off to espeak.
             if self.name == "piper" and piper_service_url() and not piper_service_external():
-                _logger.warning("piper http failed (%s); trying CLI", error)
+                log_event(
+                    _logger, logging.WARNING, "tts.fallback_used", f"piper http failed ({error}); trying CLI",
+                    error_code="tts.fallback", engine="piper", fallback="cli", exception=type(error).__name__, facts_in_text=False,
+                )
                 try:
                     return self._synthesize_once(text, voice, speed)
                 except TTSError as cli_error:
@@ -358,7 +367,11 @@ class CommandTTS:
                 except TTSError as retry_error:
                     error = retry_error
             if self.fallback is not None:
-                _logger.warning("%s failed (%s); falling back to %s", self.name, error, self.fallback.name)
+                log_event(
+                    _logger, logging.WARNING, "tts.fallback_used", f"{self.name} failed ({error}); falling back to {self.fallback.name}",
+                    error_code="tts.fallback", engine=self.name, fallback=self.fallback.name,
+                    exception=type(error).__name__, facts_in_text=False,
+                )
                 # espeak voice names are not neural ids — leave blank.
                 return self.fallback.synthesize(text, "", speed=speed)
             raise error
@@ -488,8 +501,10 @@ def detect_tts(which: Callable[[str], Optional[str]] = shutil.which) -> Optional
         if path:
             engines[name] = factory(path)
     if not engines:
-        _logger.warning(
-            "no text-to-speech engine found (install piper-tts, espeak-ng, or libttspico-utils); voice IDs fall back to CW"
+        log_event(
+            _logger, logging.WARNING, "tts.no_engine",
+            "no text-to-speech engine found (install piper-tts, espeak-ng, or libttspico-utils); voice IDs fall back to CW",
+            error_code="tts.no_engine", facts_in_text=False,
         )
         return None
     primary_name = next(name for name, _factory in _ENGINES if name in engines)

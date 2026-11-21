@@ -19,6 +19,8 @@ from typing import Callable, Literal, Optional
 
 import numpy as np
 
+from observability import log_event
+
 from .audio_stream import sd
 from .resample import StreamResampler
 
@@ -229,7 +231,10 @@ class MonitorReceiver:
             try:
                 self.process_one(block)
             except Exception:
-                _logger.exception("monitor processing failed for one block")
+                log_event(
+                    _logger, logging.ERROR, "audio.block_failed", "monitor processing failed for one block",
+                    error_code="audio.process", target="monitor", exc_info=True, facts_in_text=False,
+                )
             self.last_block_at = time.monotonic()
 
     def _poll_cos(self) -> None:
@@ -238,5 +243,8 @@ class MonitorReceiver:
             try:
                 self.set_external_cos(self._cos_input())
             except OSError:
-                _logger.exception("reading the monitor's squelch pin failed")
+                log_event(
+                    _logger, logging.ERROR, "cos.read_failed", "reading the monitor's squelch pin failed",
+                    error_code="cos.hardware", target="monitor", exc_info=True, facts_in_text=False,
+                )
                 self._stop.wait(1.0)

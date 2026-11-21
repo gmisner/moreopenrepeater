@@ -14,7 +14,9 @@ from api.live_audio import (
     STREAM_REOPEN_POLL_SECONDS,
     STREAM_REOPEN_QUICK_SECONDS,
     LiveAudio,
+    _unkeyed,
     cm108_from_env,
+    link_cm108_from_env,
 )
 from api.service import RepeaterService
 from audio_io.engine import AudioEngine
@@ -774,3 +776,54 @@ def test_stream_recovery_waits_for_hardware_ptt_to_be_released():
     assert live.status()["ptt_error"] is None
     assert cm108.ptt == [False]
     live.shutdown()
+
+
+def test_a_card_that_dropped_off_is_a_restart_then_an_open_failure_with_the_type_of_the_error(card, structured_events):
+    live, _service, _clock, _engines = make_live(stream=card)
+    card.available = False
+    live._recover_engine()
+    # Other tests in this file leave engines behind that may log too, so look at this card's events by their text.
+    restarting = [e for e in structured_events.named("audio.restarting") if e.message == "restarting live audio after the stream died"]
+    failed = [e for e in structured_events.named("audio.open_failed") if "USB device still absent" in e.message]
+    assert restarting and restarting[-1].context == {"target": "live"}
+    assert failed and failed[-1].severity.name == "ERROR" and failed[-1].error_code == "audio.open"
+    assert failed[-1].context == {"target": "live", "recovering": True, "exception": "RuntimeError"}
+    assert failed[-1].message == "couldn't open audio devices: USB device still absent"  # the text line is as it was
+    live.shutdown()
+
+
+def test_an_id_cut_off_and_owed_again_is_a_named_event(card, structured_events):
+    live, service, clock, _engines = make_live(stream=card)
+    service.controller.state = TRANSMITTING_ID
+    card.available = False
+    live._recover_engine()
+    card.available = True
+    clock["mono"] += 1
+    live._loop.timers[-1].run()
+    replayed = structured_events.named("station_id.replayed")
+    assert replayed and replayed[-1].context == {}
+    assert replayed[-1].message == "audio is back; the station ID that was cut off will go out again"
+    live.shutdown()
+
+
+def test_a_cm108_that_cannot_be_opened_is_named_for_each_role(tmp_path, structured_events):
+    gone = str(tmp_path / "hidraw3")  # in the list of interfaces but not openable
+    found = [{"path": gone, "vendor": 0x0D8C, "product": 0x0012, "name": "USB Audio Device"}]
+    assert cm108_from_env({}, find=lambda: found) is None
+    assert link_cm108_from_env({"MOREOPENREPEATER_LINK_CM108_HIDRAW": gone}, None, find=lambda: found) is None
+    failed = structured_events.named("cm108.open_failed")
+    assert [(e.context["purpose"], e.context["device"], e.context["exception"]) for e in failed] == [
+        ("ptt", gone, "FileNotFoundError"), ("linked_radio", gone, "FileNotFoundError"),
+    ]
+    assert all(e.error_code == "cm108.open" and e.severity.name == "ERROR" for e in failed)
+
+
+def test_a_cm108_that_will_not_unkey_at_startup_is_a_named_error(structured_events):
+    class Stubborn:
+        def set_ptt(self, active):
+            raise PermissionError(13, "secret-device-detail")
+
+    assert _unkeyed(Stubborn()) is not None
+    failed = structured_events.named("cm108.unkey_failed")
+    assert len(failed) == 1 and failed[0].error_code == "cm108.unkey"
+    assert failed[0].context == {"exception": "PermissionError"}

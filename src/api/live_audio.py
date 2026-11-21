@@ -136,7 +136,10 @@ def cm108_from_env(env: dict, find: Callable[[], list[dict]] = find_interfaces) 
     try:
         device = LinuxHidrawDevice(path)
     except OSError as error:
-        _logger.error("found a CM108 interface at %s but couldn't open it: %s", path, error)
+        log_event(
+            _logger, logging.ERROR, "cm108.open_failed", f"found a CM108 interface at {path} but couldn't open it: {error}",
+            error_code="cm108.open", purpose="ptt", device=path, exception=type(error).__name__, facts_in_text=False,
+        )
         return None
     _logger.info("using the CM108 interface at %s (%s)", path, found[0]["name"])
     return _unkeyed(CM108Interface(device, find=find, stable_id=found[0].get("stable_id")))
@@ -160,7 +163,10 @@ def link_cm108_from_env(
     try:
         device = LinuxHidrawDevice(setting)
     except OSError as error:
-        _logger.error("couldn't open the linked radio's CM108 at %s: %s", setting, error)
+        log_event(
+            _logger, logging.ERROR, "cm108.open_failed", f"couldn't open the linked radio's CM108 at {setting}: {error}",
+            error_code="cm108.open", purpose="linked_radio", device=setting, exception=type(error).__name__, facts_in_text=False,
+        )
         return None
     matched = next((entry for entry in find() if entry["path"] == setting), None)
     _logger.info("using the CM108 interface at %s for the linked radio", setting)
@@ -173,7 +179,10 @@ def _unkeyed(interface: CM108Interface) -> CM108Interface:
     try:
         interface.set_ptt(False)
     except OSError as error:
-        _logger.error("couldn't unkey the CM108's PTT: %s", error)
+        log_event(
+            _logger, logging.ERROR, "cm108.unkey_failed", f"couldn't unkey the CM108's PTT: {error}",
+            error_code="cm108.unkey", exception=type(error).__name__, facts_in_text=False,
+        )
     return interface
 
 
@@ -576,7 +585,7 @@ class LiveAudio:
         self._retry_handle = None
         self._retry_at = None
         self._last_stream_recover = self._monotonic()
-        _logger.info("restarting live audio after the stream died")
+        log_event(_logger, logging.INFO, "audio.restarting", "restarting live audio after the stream died", target="live", facts_in_text=False)
         self._start_engine(config, recovering=True)
         if self.engine is None:
             self._schedule_reopen()
@@ -586,7 +595,10 @@ class LiveAudio:
             self._open_engine(config, recovering=recovering)
         except Exception as error:  # PortAudio raises its own error types
             self.error = f"couldn't open audio devices: {error}"
-            _logger.error("%s", self.error)
+            log_event(
+                _logger, logging.ERROR, "audio.open_failed", self.error,
+                error_code="audio.open", target="live", recovering=recovering, exception=type(error).__name__, facts_in_text=False,
+            )
             self._release_pins()
             if not recovering and self._retry_handle is None:
                 # The card may simply not be there yet (a core restarted a moment after a USB drop): keep looking
@@ -689,7 +701,10 @@ class LiveAudio:
             if now - self._last_id_replay >= ID_REPLAY_MIN_SECONDS:
                 self._last_id_replay = now
                 self._service.controller.id_not_heard()
-                _logger.info("audio is back; the station ID that was cut off will go out again")
+                log_event(
+                    _logger, logging.INFO, "station_id.replayed", "audio is back; the station ID that was cut off will go out again",
+                    facts_in_text=False,
+                )
             else:
                 _logger.warning("audio is back; the station ID was cut off again, so it is not repeated until its next turn")
 

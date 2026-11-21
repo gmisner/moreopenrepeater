@@ -184,3 +184,13 @@ def test_the_core_alone_refuses_every_code_when_there_are_no_secrets(tmp_path, m
     core = build_core({"MOREOPENREPEATER_DATA_DIR": str(tmp_path), "MOREOPENREPEATER_LOG_PATH": str(tmp_path / "c.log")})
     assert core.service.programming.code_checker("123456") is None
     assert core.service.programming.codes_locked() is False
+
+
+def test_the_core_names_its_lockout_without_a_code_or_a_secret(setup, structured_events):
+    checker, clock, secret = make(setup)
+    for _ in range(5):
+        checker.check("424242")
+    locked = structured_events.named("codes.locked_out")
+    assert len(locked) == 1 and locked[0].error_code == "codes.locked_out"
+    assert locked[0].context == {"failures": 5, "lockout_min": 10}
+    assert "424242" not in locked[0].model_dump_json() and secret not in locked[0].model_dump_json()

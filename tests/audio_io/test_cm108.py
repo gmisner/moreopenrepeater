@@ -235,3 +235,36 @@ def test_cos_reopen_does_not_restore_an_asserted_ptt_bit():
     cm108.read_cos()
 
     assert alive.written_reports == [bytes([0, 0, 0, GPIO3, 0])]
+
+
+def test_a_usb_drop_and_the_return_of_the_interface_are_named_events(structured_events):
+    original = FakeHidrawDevice()
+    original.path = "/dev/hidraw3"
+    replacement = FakeHidrawDevice()
+    replacement.path = "/dev/hidraw4"
+    cm108 = CM108Interface(
+        original,
+        find=lambda: [{"path": "/dev/hidraw4", "vendor": 0x0D8C, "product": 0x013C, "name": "AIOC"}],
+        open_device=lambda path: replacement,
+    )
+    cm108.set_ptt(True)
+    original.write_error = OSError(errno.ENODEV, "No such device")
+    cm108.set_ptt(False)
+    reopened = structured_events.named("cm108.reopened")
+    assert len(reopened) == 1 and reopened[0].context == {"device": "/dev/hidraw3"}  # the same node came back first
+    assert reopened[0].message == "reopened CM108 at /dev/hidraw3 after USB drop"
+
+
+def test_an_interface_that_stays_gone_is_one_warning_not_one_per_write(structured_events):
+    device = FakeHidrawDevice(write_error=OSError(errno.ENODEV, "No such device"))
+
+    def still_gone(path: str) -> FakeHidrawDevice:
+        raise OSError(errno.ENOENT, "No such file or directory")
+
+    cm108 = CM108Interface(device, find=lambda: [], open_device=still_gone)
+    for _ in range(3):
+        with pytest.raises(OSError):
+            cm108.set_ptt(True)
+    gone = structured_events.named("cm108.gone")
+    assert len(gone) == 1 and gone[0].error_code == "cm108.gone" and gone[0].severity.name == "WARNING"
+    assert gone[0].message.endswith("is gone; GPIO writes ignored until it reappears")

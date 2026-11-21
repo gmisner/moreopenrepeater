@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 from link.node_link import NodeLinkClient
 
+from observability import log_event
+
 from .node_directory import NodeDirectory
 from .service.snapshot import LINK_RADIO_NODE
 
@@ -115,17 +117,21 @@ class LinkControl:
             raise LinkError(held)
         client = self._require_client()
         await self._run(client.connect_node(node, monitor))
-        _logger.info("connecting node %s (%s)", node, "monitor" if monitor else "transceive")
+        mode = "monitor" if monitor else "transceive"
+        log_event(
+            _logger, logging.INFO, "link.node_requested", f"connecting node {node} ({mode})",
+            action="connect", node=node, mode=mode, facts_in_text=False,
+        )
 
     async def disconnect(self, node: str) -> None:
         client = self._require_client()
         await self._run(client.disconnect_node(node))
-        _logger.info("disconnecting node %s", node)
+        log_event(_logger, logging.INFO, "link.node_requested", f"disconnecting node {node}", action="disconnect", node=node, facts_in_text=False)
 
     async def disconnect_all(self) -> None:
         client = self._require_client()
         await self._run(client.disconnect_all())
-        _logger.info("disconnecting all links")
+        log_event(_logger, logging.INFO, "link.node_requested", "disconnecting all links", action="disconnect_all", facts_in_text=False)
 
     async def recent_events(self, limit: int = 50) -> list[dict]:
         """Newest-first connect / key activity for the dashboard."""

@@ -241,7 +241,10 @@ class AudioEngine:
                 self.process_one(block)
                 self.check_glitches()
             except Exception:
-                _logger.exception("audio processing failed for one block")
+                log_event(
+                    _logger, logging.ERROR, "audio.block_failed", "audio processing failed for one block",
+                    error_code="audio.process", target="engine", exc_info=True, facts_in_text=False,
+                )
             self.last_block_at = time.monotonic()
 
     def _stream_went_away(self) -> bool:
@@ -282,7 +285,10 @@ class AudioEngine:
             try:
                 self.processor.set_external_cos(self._cos_input())
             except OSError:
-                _logger.exception("reading hardware COS failed")
+                log_event(
+                    _logger, logging.ERROR, "cos.read_failed", "reading hardware COS failed",
+                    error_code="cos.hardware", target="engine", exc_info=True, facts_in_text=False,
+                )
                 self._stop.wait(1.0)
 
     def _write_ptt(self, active: bool) -> bool:

@@ -23,6 +23,8 @@ from controller.state_machine import RepeaterConfig
 from link.aprs_packet import AprsPosition, category, parse_packet
 from playout.tts import spell_callsign
 
+from observability import log_event
+
 from .persistence import open_database
 
 _logger = logging.getLogger("moreopenrepeater.aprs")
@@ -264,7 +266,10 @@ class AprsReceiver:
             except (OSError, ConnectionError, asyncio.TimeoutError) as error:
                 self.status.connected = False
                 self.status.error = str(error) or type(error).__name__
-                _logger.warning("APRS-IS receive from %s:%s failed: %s", host, port, self.status.error)
+                log_event(
+                    _logger, logging.WARNING, "aprs.receive_failed", f"APRS-IS receive from {host}:{port} failed: {self.status.error}",
+                    error_code="aprs.receive", server=host, port=port, exception=type(error).__name__, facts_in_text=False,
+                )
                 delay = RECONNECT_SECONDS[min(failures, len(RECONNECT_SECONDS) - 1)]
                 failures += 1
                 try:

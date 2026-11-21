@@ -345,10 +345,55 @@ keeps its readable text line in the log file exactly as before:
 | `autopatch.call_failed` | error | `direction`, `exception`; `error_code` `autopatch.call` |
 | `autopatch.originate_refused`, `.hangup_failed`, `.dtmf_failed`, `.lookup_failed` | error / warning | `error_code` `autopatch.asterisk` |
 | `autopatch.render_failed`, `.listening`, `.listen_failed`, `.connection_ended`, `.unknown_call` | | what they say; `call_id` for the last |
+| `usrp.configured` | info | `service`, `enabled`: the core pointed a service's audio at it, or stopped it |
+| `winlink.status_changed` | info, warning | `enabled`, `failing`: the Winlink gateway's status changed (warning when it is on and something is failing) |
+| `cm108.reopened`, `cm108.gone` | info, warning | `device`: the CM108 or AIOC interface came back after a USB drop, or dropped and has not come back; the second logs once, not once per write, with `error_code` `cm108.gone` |
+| `cm108.open_failed` | error | `purpose` (`ptt` or `linked_radio`), `device`, `exception`; `error_code` `cm108.open` |
+| `cm108.unkey_failed` | error | `exception`; `error_code` `cm108.unkey`. Startup could not unkey the interface, so the radio may be keyed |
+| `audio.open_failed` | error | `target` (`live`, `link_radio` or `monitor`), `exception`, and `recovering` for `live`; `error_code` `audio.open`. The sound card or its pins could not be opened |
+| `audio.restarting` | info | `target` (`live` or `link_radio`): the audio is being reopened after the stream died |
+| `audio.restart_deferred` | warning | `target` (`link_radio`): the stream died again inside the cooldown, so it waits |
+| `audio.block_failed` | error | `target` (`engine` or `monitor`), `exception`; `error_code` `audio.process`. One block of audio failed to process and the worker carried on |
+| `cos.read_failed` | error | `target` (`engine` or `monitor`), `exception`; `error_code` `cos.hardware` |
+| `station_id.replayed` | info | none: audio came back and the station ID that was cut off goes out again |
+| `station_id.cw_fallback`, `station_id.empty` | warning | none; `error_code` `station_id.no_voice` (no voice clip or speech, so CW) or `station_id.empty` (no callsign set) |
+| `usrp.unkey_missing` | warning | `service` (`allstar` or `dmr`); `error_code` `usrp.no_unkey`. The far end keyed up and never unkeyed, so the core unkeyed it |
+| `gpio.output_changed`, `gpio.input_changed` | info | `gpio` (the number), `on`. The name you gave the pin is in the text line, not in the event |
+| `gpio.setup_failed`, `gpio.read_failed` | error | `gpio` (first only), `exception`; `error_code` `gpio.hardware`. The read failure is logged once, not once per poll |
+| `controller.lockout_started`, `controller.lockout_cleared` | warning, info | `timeouts`, `window_s`, `clear_after_s` for the first; `error_code` `controller.lockout`. The stuck-carrier lockout |
+| `watchdog.notify_failed` | warning | `exception`; `error_code` `watchdog.notify`. systemd could not be told the service is alive |
+| `auth.login_failed`, `auth.login_succeeded` | warning, info | `client` (the address) for the first; `error_code` `auth.bad_credentials`. Never the password. The name that was tried is in the text line only, as it always was |
+| `codes.locked_out` | warning | `failures`, `lockout_min`; `error_code` `codes.locked_out`. Never a code or a secret. Logged by the API and by the core |
+| `mailbox.locked` | warning | `box`, `failures`; `error_code` `mailbox.locked`. Never a PIN |
+| `state.unreadable` | error | `file` (the name only), `exception`; `error_code` `state.unreadable`. A saved-state file could not be read, so it was moved aside and defaults were used |
+| `backup.saved`, `backup.failed`, `backup.restored` | info, error, info | `include_recordings` and `keep` for the first; `exception` and `error_code` `backup.failed` for the second; `recordings_added` for the third |
+| `tts.service_ready`, `tts.service_failed` | info, error | `engine` (`piper` or `kokoro`); `exception` and `error_code` `tts.service` for the second. The first is the Piper container answering before audio goes live |
+| `tts.fallback_used` | warning | `engine`, `fallback` (`espeak-ng`, `cli`, ...), `exception`; `error_code` `tts.fallback`. Never the text that was being spoken |
+| `tts.no_engine` | warning | none; `error_code` `tts.no_engine`. Voice IDs fall back to CW |
+| `core.connection_changed` | info | `connected`: the API reached the core, or lost it. Logged when it changes, not on each retry |
+| `core.socket_failed` | error | `exception`; `error_code` `core.socket`. The control socket could not start, so the core runs without it |
+| `aprs.receive_failed` | warning | `server`, `port`, `exception`; `error_code` `aprs.receive`. Receiving the APRS-IS feed for the map; beacons are `aprs.beacon_sent` and `aprs.beacon_failed` |
+| `alert.raised`, `alert.send_failed` | warning, error | `key` (what it is about, such as `lockout`) and `level` (the alert's own severity) for the first; `channel`, `key`, `exception` and `error_code` `alert.send` for the second. Never the alert's words as a fact |
+| `stream.stopped` | warning | `host`, `retry_s`; `error_code` `stream.stopped`. Never the stream password |
+| `link.node_requested` | info | `action` (`connect`, `disconnect` or `disconnect_all`), `node`, and `mode` (`monitor` or `transceive`) for a connect |
+| `link.schedule_applied`, `link.schedule_failed` | info, warning | `action` (`link` or `unlink`), `node`; `exception` and `error_code` `link.schedule` for the second |
 
 The autopatch events never carry a phone number (called or calling), an access code, a DTMF digit sent into
 a call, a channel name (it contains the number) or speech text. The dashboard's audit trail records who
 called whom; the log does not.
+
+A fact is something you could count or filter on: a number, a state, a name from a fixed list, a device node. It is never a
+secret, a PIN, a DTMF digit, the words of a message or announcement, or anything a person typed in. That is why the
+sign-in events carry the address but not the password, and the GPIO events carry the pin number but not the name you gave it. The unit test
+`tests/observability/test_event_table.py` fails if a name the code logs is missing from the table above, if the
+table lists a name nothing logs, or if a fact would be masked by the redaction filter (a fact called `pin` or
+`text` comes out as `[redacted]`).
+
+What is still `legacy.<area>` is mostly routine information (a service starting or stopping, a setting being
+applied, a simulated input), lines whose only useful detail is text someone typed (net and macro names, DTMF macro
+patterns, announcement clips that hold spoken text), the macro and programming service, the monitor and fan
+start-up problems, the AllStar and DMR setup lines, and the latency and kernel diagnostics. They still reach logd
+with their text and the correlation id of the cycle they happened in.
 
 **One cycle, one id.** When the repeater leaves idle, the core starts an activity cycle with a fresh
 `correlation_id`, and every event any of its threads logs until the repeater is idle again carries it,

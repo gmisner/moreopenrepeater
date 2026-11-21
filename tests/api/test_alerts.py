@@ -309,3 +309,17 @@ def test_alerts_page_lists_recent_alerts_and_system_readings():
 
     assert body["recent"][0]["title"] == "Something" and body["recent"][0]["note"] == "alerts are off"
     assert set(body["system"]) >= {"temperature_c", "throttled", "disk", "sd_protection"}
+
+
+def test_an_alert_and_a_channel_that_failed_are_named_events_without_the_message_as_a_fact(structured_events):
+    senders = FakeSenders(failing={"ntfy"})
+    notifier, _ = make_notifier(senders, webhook_url="https://example.com/hook")
+    run(notifier.notify(Alert("lockout", "Locked out", "details of the lockout")))
+    raised = structured_events.named("alert.raised")
+    assert len(raised) == 1 and raised[0].severity.name == "WARNING"
+    assert raised[0].context == {"key": "lockout", "level": "warning"}
+    assert raised[0].message == "alert: Locked out -- details of the lockout"
+    failed = structured_events.named("alert.send_failed")
+    assert len(failed) == 1 and failed[0].error_code == "alert.send"
+    assert failed[0].context == {"channel": "ntfy", "key": "lockout", "exception": "URLError"}
+    assert "details of the lockout" not in str(raised[0].context) + str(failed[0].context)

@@ -17,6 +17,8 @@ from typing import Callable, Optional
 
 from controller import station_clock
 
+from observability import log_event
+
 from .links import LinkControl, LinkError
 from .weekly import last_start, next_start, window_end
 
@@ -93,11 +95,17 @@ class LinkScheduler:
         except LinkError as error:
             if key not in self._failed:
                 self._failed.add(key)
-                _logger.warning("couldn't link scheduled node %s: %s", node, error)
+                log_event(
+                    _logger, logging.WARNING, "link.schedule_failed", f"couldn't link scheduled node {node}: {error}",
+                    error_code="link.schedule", action="link", node=node, exception=type(error).__name__, facts_in_text=False,
+                )
             return
         self._handled.add(key)
         self._forget_before(now)
-        _logger.info("linked node %s on schedule%s", node, f" until {end:%H:%M}" if end else "")
+        log_event(
+            _logger, logging.INFO, "link.schedule_applied", f"linked node {node} on schedule{f' until {end:%H:%M}' if end else ''}",
+            action="link", node=node, facts_in_text=False,
+        )
         if end is not None:
             self._ours[node] = max(end, self._ours.get(node, end))
 
@@ -105,9 +113,15 @@ class LinkScheduler:
         try:
             if node in await self._links.linked():
                 await self._links.disconnect(node)
-                _logger.info("unlinked node %s at the end of its schedule", node)
+                log_event(
+                    _logger, logging.INFO, "link.schedule_applied", f"unlinked node {node} at the end of its schedule",
+                    action="unlink", node=node, facts_in_text=False,
+                )
         except LinkError as error:
-            _logger.warning("couldn't unlink scheduled node %s: %s", node, error)
+            log_event(
+                _logger, logging.WARNING, "link.schedule_failed", f"couldn't unlink scheduled node {node}: {error}",
+                error_code="link.schedule", action="unlink", node=node, exception=type(error).__name__, facts_in_text=False,
+            )
 
     def _forget_before(self, now: datetime) -> None:
         cutoff = now - timedelta(days=8)

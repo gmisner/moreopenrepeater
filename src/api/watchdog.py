@@ -61,7 +61,10 @@ def sd_notify(message: str, env: Optional[dict] = None) -> bool:
             sock.connect(address)
             sock.sendall(message.encode())
     except OSError as error:
-        _logger.warning("couldn't notify systemd (%s): %s", message, error)
+        log_event(
+            _logger, logging.WARNING, "watchdog.notify_failed", f"couldn't notify systemd ({message}): {error}",
+            error_code="watchdog.notify", exception=type(error).__name__, facts_in_text=False,
+        )
         return False
     return True
 

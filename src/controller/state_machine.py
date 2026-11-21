@@ -176,7 +176,7 @@ class RepeaterController:
             return []
         self._locked_out = False
         self._timeouts = []
-        _logger.info("stuck-carrier lockout cleared")
+        log_event(_logger, logging.INFO, "controller.lockout_cleared", "stuck-carrier lockout cleared", facts_in_text=False)
         if self.state == TRANSMITTING_ID and self._resume_state_after_id == LOCKOUT:
             self._resume_state_after_id = IDLE
             return []
@@ -558,9 +558,12 @@ class RepeaterController:
         self._timeouts = []
         self.lockouts += 1
         self._up = False
-        _logger.warning(
-            "stuck-carrier lockout: %d timeouts in %.0f s; repeating stops until the channel is quiet for %.0f s",
-            limit, self.config.lockout_window, self.config.lockout_clear_after,
+        log_event(
+            _logger, logging.WARNING, "controller.lockout_started",
+            "stuck-carrier lockout: %d timeouts in %.0f s; repeating stops until the channel is quiet for %.0f s"
+            % (limit, self.config.lockout_window, self.config.lockout_clear_after),
+            error_code="controller.lockout", timeouts=limit, window_s=round(self.config.lockout_window),
+            clear_after_s=round(self.config.lockout_clear_after), facts_in_text=False,
         )
         self._set_state(LOCKOUT)
         self._tot_deadline = None

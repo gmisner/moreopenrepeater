@@ -60,6 +60,8 @@ from controller.macros import Macro
 from controller.modes import held_reason as _held_reason
 from controller.modes import effective_config
 
+from observability import log_event
+
 from .core_runtime import AnnouncementQueueFull
 from .remote_audio import RemoteAudioMonitor
 from .remote_activity import RemoteActivityStore
@@ -545,7 +547,10 @@ class RemoteCore:
     def _set_connected(self, connected: bool) -> None:
         if connected != self._connected:
             self._connected = connected
-            _logger.info("core %s", "connected" if connected else "not reachable")
+            log_event(
+                _logger, logging.INFO, "core.connection_changed", f"core {'connected' if connected else 'not reachable'}",
+                connected=connected, facts_in_text=False,
+            )
             if connected:
                 self._send_net_hint()
                 self._send_link_state()

@@ -213,3 +213,24 @@ def test_the_host_network_layout_puts_piper_back_in_the_core():
     assert old["core"]["environment"]["PIPER_SERVICE_EXTERNAL"] == "0"
     assert "piper" not in old  # its profile is one nobody starts, so `compose up` leaves it out in that layout
     assert "piper" in merged("compose.yaml")
+
+
+def test_a_voice_that_fell_back_is_a_named_warning_with_both_engines_and_the_error_type(external, structured_events):
+    def urlopen(request, timeout=None):
+        raise URLError("secret-host-detail")
+
+    fallback = CommandTTS("espeak-ng", lambda *a: ["espeak-ng"], run=lambda argv, **kw: None)
+    fallback.synthesize = lambda text, voice="", speed=1.0: ("fallback", 22050)
+    tts = CommandTTS("piper", _piper_argv, binary="service", urlopen=urlopen, run=lambda argv, **kw: None, fallback=fallback)
+    assert tts.synthesize("a secret sentence", "en_US-amy-low") == ("fallback", 22050)
+    used = structured_events.named("tts.fallback_used")
+    assert used and used[-1].severity.name == "WARNING" and used[-1].error_code == "tts.fallback"
+    assert used[-1].context == {"engine": "piper", "fallback": "espeak-ng", "exception": "TTSError"}
+    assert "a secret sentence" not in used[-1].model_dump_json()  # never the text that was being spoken
+
+
+def test_no_engine_at_all_is_a_named_warning(structured_events):
+    assert detect_tts(which=lambda binary: None) is None
+    missing = structured_events.named("tts.no_engine")
+    assert len(missing) == 1 and missing[0].severity.name == "WARNING" and missing[0].error_code == "tts.no_engine"
+    assert missing[0].context == {}

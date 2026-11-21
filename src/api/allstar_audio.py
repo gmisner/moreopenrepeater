@@ -23,6 +23,8 @@ from audio_io.resample import StreamResampler
 from controller.events import RemoteKeyed
 from link.usrp import FRAME_SAMPLES, RATE, decode, encode_voice
 
+from observability import log_event
+
 from .service.core_handle import CoreHandle
 from .service import LINK_AUDIO_NODE
 from .supervise import LoopGuard
@@ -169,7 +171,10 @@ class AllStarAudio(asyncio.DatagramProtocol):
             else:
                 guard.ok()
             if self.keyed and loop.time() - self._last_packet > UNKEY_TIMEOUT:
-                _logger.warning("no unkey from the node; unkeying")
+                log_event(
+                    _logger, logging.WARNING, "usrp.unkey_missing", "no unkey from the node; unkeying",
+                    error_code="usrp.no_unkey", service="allstar", facts_in_text=False,
+                )
                 self._set_keyed(False)
             next_at += FRAME_SECONDS
             await asyncio.sleep(max(0.0, next_at - loop.time()))

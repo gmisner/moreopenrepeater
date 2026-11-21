@@ -363,3 +363,27 @@ def test_link_stream_recover_cooldown_stops_without_restarting():
     assert rig.link.engine is rig.engines[3]
     assert rig.link.engine.running is True
     assert rig.link.status()["error"] is None
+
+
+def test_the_linked_radio_audio_restart_and_the_deferred_one_are_named(structured_events):
+    rig = Rig()
+    rig.link._recover_engine()
+    rig.clock["mono"] += 1.0
+    rig.link._recover_engine()  # died again within the cooldown
+    # The rig runs the repeater's audio too, and rigs left behind by other tests can log: pick this radio's events.
+    restarting = [e for e in structured_events.named("audio.restarting") if e.context["target"] == "link_radio"]
+    deferred = [e for e in structured_events.named("audio.restart_deferred") if e.context["target"] == "link_radio"]
+    assert restarting and restarting[0].context == {"target": "link_radio"}
+    assert deferred and deferred[0].severity.name == "WARNING"
+    assert deferred[0].message == "linked radio audio stream died again too soon; not restarting yet"
+
+
+def test_a_linked_radio_that_will_not_open_is_a_named_error(monkeypatch, structured_events):
+    rig = Rig()
+    monkeypatch.setattr(FakeStream, "start", lambda self: (_ for _ in ()).throw(RuntimeError("secret-device-detail")))
+    rig.clock["mono"] += STREAM_RECOVER_COOLDOWN
+    rig.link._recover_engine()
+    failed = structured_events.named("audio.open_failed")
+    assert failed and failed[-1].error_code == "audio.open"
+    assert failed[-1].context == {"target": "link_radio", "exception": "RuntimeError"}
+    assert "secret-device-detail" not in str(failed[0].context)

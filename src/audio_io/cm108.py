@@ -32,6 +32,8 @@ import threading
 from pathlib import Path
 from typing import Callable, Optional, Protocol
 
+from observability import log_event
+
 GPIO1 = 0x01
 GPIO2 = 0x02
 GPIO3 = 0x04
@@ -235,11 +237,16 @@ class CM108Interface:
             self._preferred_path = path
             self._preferred_id = self._identity_for_path(path) or self._preferred_id
             self._gone = False
-            _logger.info("reopened CM108 at %s after USB drop", path)
+            log_event(
+                _logger, logging.INFO, "cm108.reopened", f"reopened CM108 at {path} after USB drop", device=str(path), facts_in_text=False,
+            )
             return True
         if not self._gone:
             path = self._preferred_path or "CM108"
-            _logger.warning("%s is gone; GPIO writes ignored until it reappears", path)
+            log_event(
+                _logger, logging.WARNING, "cm108.gone", f"{path} is gone; GPIO writes ignored until it reappears",
+                error_code="cm108.gone", device=str(path), facts_in_text=False,
+            )
             self._gone = True
         return False
 

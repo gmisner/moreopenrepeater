@@ -172,3 +172,20 @@ def test_a_port_in_use_is_reported():
         node.transport.close()
 
     asyncio.run(scenario())
+
+
+def test_a_lost_unkey_is_a_named_warning_for_the_node(monkeypatch, structured_events):
+    monkeypatch.setattr(allstar_audio, "UNKEY_TIMEOUT", 0.1)
+
+    async def scenario():
+        service, audio, link, node = await start()
+        node.send(voice(1), link.listen_port)
+        await wait_until(lambda: link.keyed)
+        await wait_until(lambda: not link.keyed)
+        await link.stop()
+        node.transport.close()
+
+    asyncio.run(scenario())
+    missing = structured_events.named("usrp.unkey_missing")
+    assert len(missing) == 1 and missing[0].severity.name == "WARNING" and missing[0].error_code == "usrp.no_unkey"
+    assert missing[0].context == {"service": "allstar"} and missing[0].message == "no unkey from the node; unkeying"

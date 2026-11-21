@@ -223,7 +223,10 @@ class ControlServer:
                 os.umask(previous)
             os.chmod(self.path, SOCKET_MODE)
         except OSError as error:
-            _logger.error("control socket %s could not start: %s; the core runs without it", self.path, error)
+            log_event(
+                _logger, logging.ERROR, "core.socket_failed", f"control socket {self.path} could not start: {error}; the core runs without it",
+                error_code="core.socket", exception=type(error).__name__, facts_in_text=False,
+            )
             self._server = None
             return False
         _logger.info("control socket listening at %s", self.path)

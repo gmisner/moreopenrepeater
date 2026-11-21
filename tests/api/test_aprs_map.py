@@ -190,3 +190,17 @@ def test_stations_endpoint_and_dtmf_summary(tmp_path):
     service._run_action(RunAction("aprs"))
     [spoken] = service.controller.queued_announcements
     assert spoken.startswith("tts:1 A P R S station heard in the last hour. 1 is mobile. The closest is K 1 A B C, 3 miles north.")
+
+
+def test_a_lost_aprs_is_connection_is_a_named_warning_with_the_server_and_the_error_type(structured_events):
+    async def scenario(receiver, feed, state, store):
+        await settle()
+        await feed.queue.put(OSError("secret-detail-from-the-socket"))
+        await settle()
+
+    run_receiver(scenario, HOME)
+    failed = structured_events.named("aprs.receive_failed")
+    assert len(failed) == 1 and failed[0].severity.name == "WARNING" and failed[0].error_code == "aprs.receive"
+    assert failed[0].context == {"server": "rotate.aprs2.net", "port": 14580, "exception": "OSError"}
+    assert "secret-detail-from-the-socket" not in str(failed[0].context)
+    assert failed[0].message == "APRS-IS receive from rotate.aprs2.net:14580 failed: secret-detail-from-the-socket"

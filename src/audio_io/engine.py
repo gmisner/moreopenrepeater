@@ -52,6 +52,12 @@ PTT_RELEASE_DELAYS = (0, 0.05, 0.1, 0.2)
 TX_LIMIT_MARGIN_SECONDS = 300.0
 # The stream's glitch counters, each reported to `on_glitch` as it goes up.
 GLITCH_COUNTERS = ("dropped_input_blocks", "starved_output_blocks", "input_overflows", "output_underflows")
+# Blocks in a row that the processor may fail on while the transmitter is keyed before the engine unkeys it
+# itself (5 blocks is 100 ms of audio). A single bad block is not worth dropping a transmission for, but
+# audio that keeps failing under a keyed transmitter is no longer under the controller's control.
+KEYED_FAILURE_LIMIT = 5
+# The tap's failures are logged on the first and then once in this many, so a broken tap does not log 50 lines a second.
+TAP_FAILURE_LOG_EVERY = 500
 
 
 class AudioEngine:
@@ -116,6 +122,10 @@ class AudioEngine:
         self.tx_capped = False  # the cap tripped and the source has not stopped yet
         self.tx_cap_trips = 0
         self.last_block_at: Optional[float] = None  # time.monotonic(); the watchdog checks it
+        self._wanted = False  # what the processor last asked of the transmitter, for a block it fails to process
+        self._failed_blocks = 0  # blocks in a row the processor failed on
+        self._failure_release_logged = False
+        self._tap_failures = 0
         self._configure_device(processor.settings.sample_rate, block_size)
 
     def _configure_device(self, device_rate: int, device_block_size: int) -> None:
@@ -210,10 +220,17 @@ class AudioEngine:
         while len(self._rx_pending) >= self.block_size:
             chunk = self._rx_pending[: self.block_size]
             self._rx_pending = self._rx_pending[self.block_size :]
-            result = self.processor.process(chunk)
-            if self._on_audio is not None:
-                self._on_audio(chunk, result.out)
+            try:
+                result = self.processor.process(chunk)
+            except Exception:
+                self._processing_failed()
+                raise
+            self._failed_blocks = 0
+            self._failure_release_logged = False
+            self._wanted = result.transmitting
+            # PTT and the transmit cap come first: nothing the audio does after this can skip them.
             self._set_transmitting(result.transmitting)
+            self._tap(chunk, result.out)
             out = np.zeros_like(result.out) if self.tx_capped else result.out  # also stops a VOX radio
             self._tx_pending = np.concatenate([self._tx_pending, self._tx_resampler.process(out)])
             if result.events:
@@ -225,6 +242,40 @@ class AudioEngine:
                 self._output.put_nowait(out.reshape(-1, 1))
             except queue.Full:
                 pass  # the callback fell behind; dropping beats unbounded latency
+
+    def _tap(self, received: np.ndarray, transmitted: np.ndarray) -> None:
+        """Show a block to the `on_audio` observer. A broken observer must not touch the block."""
+        if self._on_audio is None:
+            return
+        try:
+            self._on_audio(received, transmitted)
+        except Exception:
+            self._tap_failures += 1
+            if self._tap_failures % TAP_FAILURE_LOG_EVERY == 1:
+                log_event(
+                    _logger, logging.ERROR, "audio.tap_failed", "the audio tap failed; audio carries on without it",
+                    error_code="audio.tap", failures=self._tap_failures, exc_info=True, facts_in_text=False,
+                )
+
+    def _processing_failed(self) -> None:
+        """The processor raised for a block, so there is no new answer about PTT. Keep the transmitter and the
+        transmit cap moving anyway: the cap clock still advances on what was last asked, and after
+        `KEYED_FAILURE_LIMIT` failed blocks in a row while keyed the engine unkeys the transmitter itself."""
+        self._failed_blocks += 1
+        wanted = self._wanted
+        if wanted and self._failed_blocks >= KEYED_FAILURE_LIMIT:
+            wanted = self._wanted = False
+            if not self._failure_release_logged:
+                self._failure_release_logged = True
+                log_event(
+                    _logger, logging.CRITICAL, "ptt.released_after_failures",
+                    "audio processing failed %d blocks in a row while keyed; unkeying the transmitter" % self._failed_blocks,
+                    error_code="audio.process", blocks=self._failed_blocks, facts_in_text=False,
+                )
+        try:
+            self._set_transmitting(wanted)
+        except Exception:
+            _logger.exception("couldn't update PTT after a failed block")
 
     def _work(self) -> None:
         while not self._stop.is_set():

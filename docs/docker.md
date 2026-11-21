@@ -315,6 +315,7 @@ keeps its readable text line in the log file exactly as before:
 | `ptt.failed` | error | `action` (`key` or `release`); `error_code` `ptt.hardware` |
 | `ptt.transmit_capped` | critical | `keyed_s`, `limit_s`; `error_code` `ptt.cap` |
 | `ptt.release_unconfirmed` | critical | `error_code` `ptt.hardware` |
+| `ptt.released_after_failures` | critical | `blocks`; `error_code` `audio.process`. The audio processor failed 5 blocks in a row while the transmitter was keyed, so the engine unkeyed it itself. It keys again if the controller still wants to transmit and processing recovers |
 | `audio.glitch` | info | `counter`, `count`, `state`, `transmitting` |
 | `audio.engine_started`, `audio.engine_stopped`, `audio.stream_died` | info, info, error | rates for the first; `reason` for the last: `inactive` (PortAudio said the stream stopped) or `no_audio` (it still looked active but delivered nothing for 1.5 s, which is what a USB drop usually looks like) |
 | `receiver.opened` | info | `duration_s`, `open_dbfs`, `peak_dbfs`, `ctcss_hz`, `after_tx_s` (never DTMF digits) |
@@ -354,6 +355,7 @@ keeps its readable text line in the log file exactly as before:
 | `audio.open_failed` | error | `target` (`live`, `link_radio` or `monitor`), `exception`, and `recovering` for `live`; `error_code` `audio.open`. The sound card or its pins could not be opened |
 | `audio.restarting` | info | `target` (`live` or `link_radio`): the audio is being reopened after the stream died |
 | `audio.restart_deferred` | warning | `target` (`link_radio`): the stream died again inside the cooldown, so it waits |
+| `audio.tap_failed` | error | `failures`; `error_code` `audio.tap`. The audio observer (the level meters and monitor) raised. The block was processed and keyed as normal; this logs the first failure and then one in 500 |
 | `audio.block_failed` | error | `target` (`engine` or `monitor`), `exception`; `error_code` `audio.process`. One block of audio failed to process and the worker carried on |
 | `cos.read_failed` | error | `target` (`engine` or `monitor`), `exception`; `error_code` `cos.hardware` |
 | `station_id.replayed` | info | none: audio came back and the station ID that was cut off goes out again |

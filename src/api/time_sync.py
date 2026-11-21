@@ -51,6 +51,7 @@ QUERY_TIMEOUT_SECONDS = 2.0  # one exchange with one address
 MAX_ADDRESSES = 2  # a name can have many addresses; try this many, so one dead one is not "unreachable"
 CHECK_DEADLINE_SECONDS = 8.0  # the whole check, name lookup included. A lookup that hangs is abandoned, not waited for
 CACHE_SECONDS = 60.0
+MAX_RECHECKS = 3  # how many times a caller re-asks when the server setting changes under its check
 OFFSET_LIMIT_SECONDS = 2.0  # off by this much or more: the state is "off", and (twice running) an alert goes out
 OFFSET_CLEAR_SECONDS = 1.0  # the alert clears once the clock is within this: so one that hovers at the limit does not flap
 ALERT_CONFIRM_CHECKS = 2  # in a row: one odd reading (a loaded Pi, a slow reply) is not an alert
@@ -373,6 +374,7 @@ class ClockCheck:
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="time-check")
         self._cached: Optional[tuple[float, ClockReading]] = None
         self._running: Optional[asyncio.Future] = None
+        self._running_server: Optional[str] = None
 
     @property
     def enabled(self) -> bool:
@@ -381,14 +383,21 @@ class ClockCheck:
     async def current(self) -> Optional[ClockReading]:
         if self._query is None:
             return None
-        server = self.setting.effective
-        cached = self._cached
-        if cached is not None and cached[1].server == server and self._clock() - cached[0] < self._cache_seconds:
-            return cached[1]
-        if self._running is None or self._running.done():
-            self._running = asyncio.ensure_future(self._refresh(server))
-        # Shielded: a client that hangs up must not cancel the check other callers are waiting for.
-        return await asyncio.shield(self._running)
+        for _ in range(MAX_RECHECKS):
+            server = self.setting.effective
+            cached = self._cached
+            if cached is not None and cached[1].server == server and self._clock() - cached[0] < self._cache_seconds:
+                return cached[1]
+            # A check already running is only the answer if it is asking this server: one started for the old name
+            # would otherwise come back under the new one, and a mistyped server could read as fine.
+            if self._running is None or self._running.done() or self._running_server != server:
+                self._running_server = server
+                self._running = asyncio.ensure_future(self._refresh(server))
+            # Shielded: a client that hangs up must not cancel the check other callers are waiting for.
+            reading = await asyncio.shield(self._running)
+            if reading.server == self.setting.effective:  # the setting did not change while we waited
+                return reading
+        return None  # it kept changing under us; say "not checked" rather than a reading for another server
 
     async def _refresh(self, server: str) -> ClockReading:
         loop = asyncio.get_running_loop()
@@ -549,7 +558,8 @@ class TimeSync:
 
     async def set_server(self, server: str) -> dict:
         """Change the server (TimeServerError if it is not acceptable) and check against the new one."""
-        self.setting.set(server)
+        # The write is flushed to disk and renamed into place; that waits on the SD card, so not on the event loop.
+        await asyncio.get_running_loop().run_in_executor(None, self.setting.set, server)
         log_event(
             _logger, logging.INFO, "time.server_changed", "The NTP server was changed",
             default=not self.setting.get(), facts_in_text=False,

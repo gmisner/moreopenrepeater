@@ -375,6 +375,7 @@ keeps its readable text line in the log file exactly as before:
 | `tts.no_engine` | warning | none; `error_code` `tts.no_engine`. Voice IDs fall back to CW |
 | `core.connection_changed` | info | `connected`: the API reached the core, or lost it. Logged when it changes, not on each retry |
 | `core.socket_failed` | error | `exception`; `error_code` `core.socket`. The control socket could not start, so the core runs without it |
+| `core.shutdown_step_failed` | error | `target` (`ptt_live`, `ptt_link_radio`, `gpio`, `tx_fan`, `allstar`, `dmr`, `autopatch`, `live_audio`, `monitor_receiver` or `link_radio`), `reason` (`timed_out` after 2 s, or `failed`); `error_code` `core.shutdown`. One step of shutdown went wrong. PTT is released first, so none of these leaves the transmitter keyed, and the steps after it still ran |
 | `aprs.receive_failed` | warning | `server`, `port`, `exception`; `error_code` `aprs.receive`. Receiving the APRS-IS feed for the map; beacons are `aprs.beacon_sent` and `aprs.beacon_failed` |
 | `alert.raised`, `alert.send_failed` | warning, error | `key` (what it is about, such as `lockout`) and `level` (the alert's own severity) for the first; `channel`, `key`, `exception` and `error_code` `alert.send` for the second. Never the alert's words as a fact |
 | `stream.stopped` | warning | `host`, `retry_s`; `error_code` `stream.stopped`. Never the stream password |

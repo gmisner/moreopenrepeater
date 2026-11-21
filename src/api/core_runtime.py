@@ -39,10 +39,12 @@ from .watchdog import Watchdog, ping_interval, sd_notify
 TICK_INTERVAL_SECONDS = 0.05
 ANNOUNCEMENT_POLL_SECONDS = 1.0
 LONG_ID_WARM_SECONDS = 20.0
+INTEGRATION_STOP_SECONDS = 2.0  # at shutdown, how long each integration gets to stop before the next one is tried
 EXTERNAL_PIPER_WAIT_SECONDS = 60.0  # how long the core waits for Piper's container at start; then it starts anyway
 
 _tts_logger = logging.getLogger("moreopenrepeater.tts")
 _announce_logger = logging.getLogger("moreopenrepeater.announcements")
+_core_logger = logging.getLogger("moreopenrepeater.core")
 
 
 class AnnouncementQueueFull(Exception):
@@ -285,15 +287,55 @@ class CoreRuntime:
         sd_notify("STOPPING=1")
         self.watchdog.stop()
 
+    def release_ptt(self) -> None:
+        """Unkey the transmitters. Idempotent, quick, and the first thing shutdown does: Docker sends SIGKILL about
+        10 s after SIGTERM, and a stop that hangs behind an integration must not leave the line keyed. Each radio
+        is tried even if the other one's release fails."""
+        for name, release in (("live", self.live_audio.release_ptt), ("link_radio", self.link_radio.release_ptt)):
+            try:
+                release()
+            except Exception:  # noqa: BLE001 - the other radio and the rest of shutdown still go ahead
+                log_event(
+                    _core_logger, logging.ERROR, "core.shutdown_step_failed", "couldn't release PTT at shutdown",
+                    target=f"ptt_{name}", error_code="core.shutdown", exc_info=True, facts_in_text=False,
+                )
+
     async def stop_devices(self) -> None:
-        await self.gpio.stop()
-        await self.tx_fan.stop()
-        await self.allstar_node.stop()
-        await self.dmr_audio.stop()
-        await self.autopatch.stop()
-        self.live_audio.shutdown()
-        self.monitor_receiver.shutdown()
-        self.link_radio.shutdown()
+        """PTT first, then each integration on its own timeout, then the audio engines close."""
+        self.release_ptt()
+        for name, stop in (
+            ("gpio", self.gpio.stop),
+            ("tx_fan", self.tx_fan.stop),
+            ("allstar", self.allstar_node.stop),
+            ("dmr", self.dmr_audio.stop),
+            ("autopatch", self.autopatch.stop),
+        ):
+            await self._stop_step(name, stop())
+        for name, shutdown in (
+            ("live_audio", self.live_audio.shutdown),
+            ("monitor_receiver", self.monitor_receiver.shutdown),
+            ("link_radio", self.link_radio.shutdown),
+        ):
+            try:
+                shutdown()
+            except Exception:  # noqa: BLE001
+                self._shutdown_failed(name, "failed")
+
+    async def _stop_step(self, name: str, work) -> None:
+        """One integration's stop: bounded, and whatever goes wrong is logged and does not reach the next one."""
+        try:
+            await asyncio.wait_for(work, INTEGRATION_STOP_SECONDS)
+        except asyncio.TimeoutError:
+            self._shutdown_failed(name, "timed_out")
+        except Exception:  # noqa: BLE001
+            self._shutdown_failed(name, "failed")
+
+    @staticmethod
+    def _shutdown_failed(name: str, reason: str) -> None:
+        log_event(
+            _core_logger, logging.ERROR, "core.shutdown_step_failed", f"{name} did not stop cleanly ({reason})",
+            target=name, reason=reason, error_code="core.shutdown", exc_info=reason == "failed", facts_in_text=False,
+        )
 
     async def stop_tts(self) -> None:
         loop = asyncio.get_running_loop()

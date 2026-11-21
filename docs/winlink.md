@@ -57,7 +57,7 @@ gateway on Winlink, which publishes your station: leave it off until the gateway
   Message text is not logged by MOR.
 - The core and the repeater do not know it exists. If it stops, the repeater is unaffected; a restart policy brings it back.
 - Not built yet: sessions and counters on the dashboard, start and stop from the dashboard, VARA FM, 9600 baud, several ports, a shared
-  radio, and off-grid delivery. The modem's PTT and audio path and a full message exchange have not been tried on a radio.
+  radio (designed in `docs/adr/0007-shared-radio-lease.md`, not built), and off-grid delivery. The modem's PTT and audio path and a full message exchange have not been tried on a radio.
 
 ## The dashboard page
 
@@ -86,3 +86,7 @@ Both are built on your machine from a pinned commit of the upstream source: LinB
 Dire Wolf (`wb2osz/direwolf`, 1.8.1, GPL-2.0). LinBPQ's files carry GPLv3 notices, but upstream publishes no LICENSE file or redistribution
 terms, so none of it is in this repository or a published image. Changing the pinned commit is a deliberate edit of `Dockerfile.winlink` or
 `Dockerfile.direwolf`.
+
+## Bringing it up on the air
+
+The order to check things in, one proof per step, is in `docs/winlink-on-air-checklist.md`.

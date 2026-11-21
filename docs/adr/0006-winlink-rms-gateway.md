@@ -19,7 +19,7 @@ it neither owns nor leases anything for packet, and nothing about its radio, sou
   to Winlink and a password. They fail, restart and upgrade separately, and the gateway has no device at all.
 - **Radio access (#240): a dedicated radio per module.** The packet radio has its own sound card and PTT. Compose maps that
   one card's device files (never `/dev/snd` as a whole) and the one PTT device, so the repeater's card and PTT are not in the
-  container and cannot be opened or keyed by a wrong setting. A **shared radio is deferred**: it needs safe arbitration with the
+  container and cannot be opened or keyed by a wrong setting. A **shared radio is deferred** (designed in ADR 0007, not built): it needs safe arbitration with the
   core (exclusive ownership, voice priority, PTT release on failure) and the maintainer's approval for any core change, and
   is not promised here.
 - **Amateur only.** The gateway refuses a GMRS-looking callsign (four letters and three or four digits) and a service other than

@@ -145,7 +145,7 @@ class WinlinkActivity:
             with open(self.status_dir / name, "rb") as handle:
                 data = handle.read(MAX_FILE_BYTES + 1)
         except FileNotFoundError:
-            return None, f"The {label} has not reported yet. Its container may not be running."
+            return None, f"The {label} has not reported yet. It may not be running."
         except OSError:
             return None, f"The {label}'s report could not be read."
         if len(data) > MAX_FILE_BYTES:

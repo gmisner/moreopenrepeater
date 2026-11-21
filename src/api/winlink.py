@@ -44,11 +44,11 @@ DEFAULT_KISS_PORT = 8001
 _CALLSIGN = re.compile(r"^[A-Z0-9]{3,7}$")  # what the gateway's own entrypoint accepts
 
 PROBLEMS = {
-    GATEWAY_ADMIN: "The gateway's admin page is not answering. Look at `docker compose logs winlink`.",
-    GATEWAY_TELNET: "The gateway's telnet port is not accepting connections. Look at `docker compose logs winlink`.",
+    GATEWAY_ADMIN: "The gateway's web page is not answering. Check the logs (see How to set this up below).",
+    GATEWAY_TELNET: "The gateway is not accepting connections. Check the logs (see How to set this up below).",
     MODEM_KISS: (
         "The packet modem is not accepting connections, so the gateway cannot send or hear packets. "
-        "Look at `docker compose logs direwolf`: a wrong sound card number is a common cause."
+        "Check the logs (see How to set this up below). A wrong sound card number is a common cause."
     ),
 }
 
@@ -115,7 +115,7 @@ async def _connect(target: Target) -> tuple[bool, str]:
     try:
         _, writer = await asyncio.open_connection(target.host, target.port)
     except ConnectionRefusedError:
-        return False, "Connection refused: nothing is listening there."
+        return False, "Not running (the connection was refused)."
     except OSError as error:
         if isinstance(error, TimeoutError):
             return False, "No answer."
@@ -128,7 +128,7 @@ async def _http_answers(target: Target) -> tuple[bool, str]:
     try:
         reader, writer = await asyncio.open_connection(target.host, target.port)
     except ConnectionRefusedError:
-        return False, "Connection refused: nothing is listening there."
+        return False, "Not running (the connection was refused)."
     except OSError:
         return False, "Could not reach it (the service may not be running)."
     try:

@@ -1,8 +1,9 @@
-import { Badge, Card, Code, Group, List, Stack, Table, Text } from "@mantine/core";
+import { Badge, Button, Card, Code, Group, List, Stack, Table, Text } from "@mantine/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { EmptyState } from "../components/EmptyState";
 import { labeled } from "../components/FieldHint";
+import { revealSetup, SetupSection } from "../components/SetupSection";
 import { ErrorCard, LoadingBlock } from "../components/StateCards";
 import { formatAirtime, formatBytes } from "../format";
 import { Page } from "../layout/AppShell";
@@ -100,16 +101,16 @@ function Stats({ children }: { children: React.ReactNode }) {
 
 const CHECK_LABELS: Record<CheckId, { label: string; hint: string }> = {
   gateway_admin: {
-    label: "Gateway admin page",
-    hint: "LinBPQ's web page on the private network. A login prompt counts as answering.",
+    label: "Gateway web page",
+    hint: "The gateway's own status page. A login prompt counts as answering.",
   },
   gateway_telnet: {
-    label: "Gateway telnet port",
-    hint: "The gateway's own login port on the private network. This only checks that it accepts a connection.",
+    label: "Gateway connection",
+    hint: "Whether the gateway accepts connections. This does not log in.",
   },
   modem_kiss: {
     label: "Packet modem",
-    hint: "Dire Wolf's KISS port. The gateway talks to the radio through it.",
+    hint: "The modem the gateway uses to talk to the radio.",
   },
 };
 
@@ -117,6 +118,8 @@ const ENABLE_COMMANDS = `cd docker
 cp winlink.env.example winlink.env && chmod 600 winlink.env   # set the callsign, locator, an admin password
 docker compose --profile winlink up -d --build
 docker compose ps direwolf winlink`;
+
+const LOG_COMMAND = "docker compose logs winlink direwolf";
 
 function summary(status: WinlinkStatus): { badge: string; color: string; text: string } {
   if (!status.enabled) {
@@ -145,8 +148,8 @@ function Counters({ activity }: { activity: Activity }) {
           {labeled(
             "Counters",
             <>
-              Counted from the gateway's own session record and the modem's output, and kept in memory only. They start again at zero when
-              a container restarts. No message text is read.
+              Counted from the gateway's own session record and the modem's output. They start again at zero when the gateway restarts. No
+              message text is read.
             </>,
           )}
         </h2>
@@ -190,7 +193,7 @@ function Counters({ activity }: { activity: Activity }) {
             </Stat>
             <Stat
               label="Frames sent"
-              hint="Packets the modem sent. Dire Wolf does not log each time it keys the transmitter, so there is no count of that: this is the nearest thing it reports."
+              hint="Packets the modem sent. The modem does not count each time it keys the transmitter, so this is the closest number."
             >
               {m.frames_sent}
             </Stat>
@@ -274,6 +277,7 @@ export function Winlink() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
   const latest = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -322,8 +326,8 @@ export function Winlink() {
                   {labeled(
                     "Winlink gateway",
                     <>
-                      An optional amateur-radio email gateway (LinBPQ behind Dire Wolf) that runs in its own containers. This page only
-                      checks whether they answer. It cannot start or stop them.
+                      Lets stations on the air send and receive Winlink email through this repeater. This page shows whether it is
+                      answering. It cannot start or stop it.
                     </>,
                   )}
                 </h2>
@@ -345,7 +349,7 @@ export function Winlink() {
                   <strong>{status.callsign}</strong>
                 ) : (
                   <Text span c="dimmed">
-                    not shown here. Put MOR_WINLINK_CALL in docker/.env too to show it.
+                    not shown. Add it in How to set this up below to show it here.
                   </Text>
                 )}
               </Text>
@@ -357,16 +361,16 @@ export function Winlink() {
           <Card withBorder padding="lg" radius="md" component="section" aria-label="Turn Winlink on">
             <Stack gap="sm">
               <h2 className="mor-card-title">Turn it on</h2>
-              <EmptyState>
-                The Winlink containers are not running. They are off by default and need a packet radio of their own, with its own sound
-                card. From the docker folder on the repeater's computer:
+              <EmptyState
+                action={
+                  <Button size="xs" variant="default" onClick={() => revealSetup(setSetupOpen)}>
+                    Show the steps
+                  </Button>
+                }
+              >
+                Winlink lets stations on the air send and receive email through this repeater. It is off now, and it needs a packet radio of
+                its own.
               </EmptyState>
-              <Code block>{ENABLE_COMMANDS}</Code>
-              <Text size="sm" c="dimmed" maw="75ch">
-                Give the packet radio's sound card number as <Code>MOR_PACKET_CARD</Code> in <Code>docker/.env</Code>, and the gateway
-                password from Winlink's sysop team as <Code>MOR_WINLINK_CMS_PASSWORD</Code> when you have it. If you started it and it
-                still shows here as not running, look at <Code>docker compose logs winlink</Code>. The full steps are in docs/winlink.md.
-              </Text>
             </Stack>
           </Card>
         ) : null}
@@ -412,8 +416,7 @@ export function Winlink() {
             <Stack gap="xs">
               <h2 className="mor-card-title">Sessions and counters</h2>
               <Text size="sm" c="dimmed" maw="75ch">
-                Sessions and counters are not set up on this install: the dashboard has no folder to read them from. Updating the
-                repeater's containers (docs/winlink.md) sets it up.
+                Sessions and counters are not available yet. Updating Winlink adds them. The steps are in How to set this up below.
               </Text>
             </Stack>
           </Card>
@@ -426,18 +429,39 @@ export function Winlink() {
           <Stack gap="xs">
             <h2 className="mor-card-title">Amateur radio only</h2>
             <Text size="sm" maw="75ch">
-              The Winlink gateway is for amateur radio stations. It is not for GMRS: GMRS's limited digital uses are not a licence for a
-              general email gateway, and the gateway refuses a GMRS-looking callsign. That is a guard against a mistake, not a licence
-              check. It is up to the operator to follow the rules for their station (in the US, Part 97). Amateur-radio email is not
-              private, and nothing is encrypted over the air.
+              Winlink here is for amateur radio stations. It is not for GMRS, and the gateway turns away a GMRS-style callsign. That is
+              a safety check, not a license check. You are responsible for following the rules for your station (Part 97 in the US).
+              Amateur radio email is not private, and nothing is encrypted over the air.
             </Text>
           </Stack>
         </Card>
 
-        <Text size="sm" c="dimmed" maw="75ch">
-          This page only shows what the gateway and the modem report. There are no start or stop buttons: run the containers from the
-          repeater's computer, as above.
-        </Text>
+        <SetupSection opened={setupOpen} onToggle={setSetupOpen} guide="winlink.md">
+          <Text size="sm">
+            Winlink is off until you start it. It needs a packet radio of its own, with its own sound card. This page cannot start or
+            stop it: run these steps on the repeater's computer.
+          </Text>
+          <Code block>{ENABLE_COMMANDS}</Code>
+          <Text size="sm">
+            Before you start it, open <Code>docker/.env</Code> and fill in:
+          </Text>
+          <List size="sm" spacing={4}>
+            <List.Item>
+              <Code>MOR_PACKET_CARD</Code>: the packet radio's sound card number.
+            </List.Item>
+            <List.Item>
+              <Code>MOR_WINLINK_CMS_PASSWORD</Code>: the gateway password from Winlink's sysop team, when you have it.
+            </List.Item>
+            <List.Item>
+              <Code>MOR_WINLINK_CALL</Code>: your callsign, so this page can show it.
+            </List.Item>
+          </List>
+          <Text size="sm">If it still shows as not running, or a check is not answering, look at the logs:</Text>
+          <Code block>{LOG_COMMAND}</Code>
+          <Text size="sm">
+            If sessions and counters are missing, update and restart it with the first set of commands above.
+          </Text>
+        </SetupSection>
       </Stack>
     </Page>
   );

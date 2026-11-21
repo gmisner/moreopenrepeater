@@ -23,6 +23,7 @@ import { api } from "../api";
 import { ActionsHeader } from "../components/ActionsHeader";
 import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
 import { EmptyState } from "../components/EmptyState";
+import { revealSetup, SetupSection } from "../components/SetupSection";
 import { ErrorCard, LoadingBlock } from "../components/StateCards";
 import { labeled } from "../components/FieldHint";
 import { notifyError, notifySuccess, useConfig } from "../config";
@@ -134,28 +135,28 @@ function pillColor(kind?: string) {
 function describeAllStar(status: AllStarStatus, isAdmin: boolean): { text: string; pill?: [string, string] } {
   const { audio } = status;
   if (status.manual) {
-    return { text: `The node at ${audio.node || "?"} is set up by hand (MOREOPENREPEATER_USRP_NODE).` };
+    return { text: `The node at ${audio.node || "?"} was set up outside this page, so it can't be changed here.` };
   }
   if (!status.available) {
     return {
-      text: "AllStarLink wasn't found on this machine (no /etc/asterisk/rpt.conf). Install ASL3 with install-pi.sh --allstar, or see the setup guide to use a node elsewhere.",
+      text: "AllStarLink is not installed on this machine yet. The steps are in How to set this up below.",
       pill: ["Not installed", "off"],
     };
   }
   if (status.error) return { text: status.error, pill: ["Error", "warn"] };
-  if (!status.nodes.length) return { text: "rpt.conf has no nodes yet. Set one up with sudo asl-menu." };
+  if (!status.nodes.length) return { text: "No AllStarLink node is set up on this machine yet. The steps are in How to set this up below." };
   if (!status.node) {
     const placeholder = status.nodes.length === 1 && status.nodes[0]?.number === "1999";
     const next = isAdmin
       ? placeholder
-        ? "ASL3 ships with placeholder node 1999 — run sudo asl-menu for your real node number, callsign and password, then choose it below."
-        : "Choose this machine's AllStarLink node below (from rpt.conf). Favorite nodes below are for linking out, not this list."
+        ? "This machine only has the placeholder node 1999. Use Set up node to enter your own node number, callsign and password."
+        : "Use Set up node to choose this machine's AllStarLink node. Favorites are for linking out, not for this."
       : "An admin can choose one here.";
     return { text: `The repeater isn't the radio for a node yet. ${next}`, pill: ["Not linked", "off"] };
   }
   if (status.restart_needed) {
     return {
-      text: `Set up as node ${status.node}. Restart Asterisk to apply it (sudo systemctl restart asterisk).`,
+      text: `Set up as node ${status.node}. Restart AllStarLink to apply it. The command is in How to set this up below.`,
       pill: ["Restart needed", "warn"],
     };
   }
@@ -203,7 +204,7 @@ function describeEcho(status: EchoLinkStatus, node: string | null, isAdmin: bool
   const station = `${settings.callsign || "?"} (node ${settings.node_number || "?"})`;
   if (status.loaded === false) {
     return {
-      text: `EchoLink is set up as ${station} but Asterisk hasn't loaded its driver. Check the Asterisk log (sudo journalctl -u asterisk).`,
+      text: `EchoLink is set up as ${station}, but AllStarLink did not load it. How to set this up below says where to look.`,
       pill: ["Not loaded", "warn"],
     };
   }
@@ -221,6 +222,7 @@ export function AllStar() {
   const { config, save: saveConfig } = useConfig();
   const isAdmin = session?.role === "admin";
   const canWrite = session?.role !== "viewer";
+  const [setupOpen, setSetupOpen] = useState(false);
   const [tab, setTab] = useState<string>(() => {
     const fromHash = window.location.hash.slice(1);
     return ALLSTAR_TABS.includes(fromHash) ? fromHash : "links";
@@ -580,7 +582,7 @@ export function AllStar() {
     const other = status?.node && status.node !== selectedNode ? ` Node ${status.node} gets its old radio back.` : "";
     if (
       !window.confirm(
-        `Make the repeater node ${selectedNode}'s radio? Asterisk restarts, dropping links for a few seconds.${other}`,
+        `Make the repeater node ${selectedNode}'s radio? AllStarLink restarts, dropping links for a few seconds.${other}`,
       )
     ) {
       return;
@@ -608,7 +610,7 @@ export function AllStar() {
 
   const releaseNode = async () => {
     if (!status?.node) return;
-    if (!window.confirm(`Give node ${status.node} its old radio back? Asterisk restarts, and the repeater stops linking.`)) {
+    if (!window.confirm(`Give node ${status.node} its old radio back? AllStarLink restarts, and the repeater stops linking.`)) {
       return;
     }
     setNodeBusy(true);
@@ -649,7 +651,7 @@ export function AllStar() {
     }
     if (
       !window.confirm(
-        `Save AllStarLink node ${node} (${callsign})? This updates ASL3's config and restarts Asterisk, dropping links for a few seconds.`,
+        `Save AllStarLink node ${node} (${callsign})? This restarts AllStarLink, dropping links for a few seconds.`,
       )
     ) {
       return;
@@ -757,7 +759,7 @@ export function AllStar() {
       tone_hz: echoForm.tone_hz === "" ? 0 : Number(echoForm.tone_hz),
       max_stations: Number(echoForm.max_stations) || 20,
     };
-    if (!window.confirm(`Save EchoLink as ${body.callsign}? Asterisk restarts, dropping links for a few seconds.`)) return;
+    if (!window.confirm(`Save EchoLink as ${body.callsign}? AllStarLink restarts, dropping links for a few seconds.`)) return;
     const mutationId = ++echoMutationIdRef.current;
     ++echoReadVersionRef.current;
     setEchoBusy(true);
@@ -768,7 +770,7 @@ export function AllStar() {
       setEchoFilled(false);
       setEchoEdited(false);
       setEchoSnapshot(null);
-      notifySuccess(next.loaded === false ? "Saved, but Asterisk didn't load EchoLink" : `EchoLink is on as ${body.callsign}`);
+      notifySuccess(next.loaded === false ? "Saved, but AllStarLink didn't load EchoLink" : `EchoLink is on as ${body.callsign}`);
       setEditingEcho(false);
     } catch (error) {
       if (mutationId !== echoMutationIdRef.current) return;
@@ -784,7 +786,7 @@ export function AllStar() {
   };
 
   const turnOffEcho = async () => {
-    if (!window.confirm("Turn off EchoLink? Asterisk restarts, and EchoLink stations are disconnected. The details are kept.")) {
+    if (!window.confirm("Turn off EchoLink? AllStarLink restarts, and EchoLink stations are disconnected. The details are kept.")) {
       return;
     }
     const mutationId = ++echoMutationIdRef.current;
@@ -943,10 +945,11 @@ export function AllStar() {
                   steps={steps}
                   canAct={(action) => (action === "node" ? Boolean(canEditNode) : isAdmin)}
                   onAction={(action) => (action === "node" ? setEditingNode(true) : openFavoritesEditor())}
+                  onShowSteps={() => revealSetup(setSetupOpen)}
                 />
-                {status && !status.available && !status.manual ? (
+                {status && !status.available && !status.manual && status.error ? (
                   <Text size="xs" c="dimmed" mt="md">
-                    {status.error ?? "AllStarLink wasn't found on this machine (no /etc/asterisk/rpt.conf)."}
+                    {status.error}
                   </Text>
                 ) : null}
               </Card>
@@ -1148,6 +1151,37 @@ export function AllStar() {
         </Tabs.Panel>
       </Tabs>
 
+      <Stack mt="md">
+        <SetupSection opened={setupOpen} onToggle={setSetupOpen} guide="allstar.md">
+          <Text size="sm">AllStarLink runs on the repeater's computer, so these steps run there, not in this page.</Text>
+          <Text size="sm">To install it:</Text>
+          <Code block>sudo scripts/install-pi.sh --allstar</Code>
+          <Text size="sm">If the repeater runs its services in containers, start the AllStarLink one instead:</Text>
+          <Code block>{`cd docker
+docker compose --profile allstar up -d allstar`}</Code>
+          <Text size="sm">
+            Then use Set up node on this page to enter your node number, callsign and node password from the AllStarLink portal. If the
+            page says no node exists yet, create one first:
+          </Text>
+          <Code block>sudo asl-menu</Code>
+          <Text size="sm">When this page says AllStarLink needs a restart, run:</Text>
+          <Code block>sudo systemctl restart asterisk</Code>
+          <Text size="sm">If EchoLink says AllStarLink did not load it, look for the reason in the log:</Text>
+          <Code block>sudo journalctl -u asterisk</Code>
+          <Text size="sm">
+            If this page says AllStarLink's settings cannot be changed, let the dashboard's user write to them, then restart the
+            dashboard:
+          </Text>
+          <Code block>{`sudo usermod -aG asterisk moreopenrepeater
+sudo chmod g+w /etc/asterisk/*.conf
+sudo systemctl restart moreopenrepeater`}</Code>
+          <Text size="sm">
+            If this page says the node was set up outside the dashboard, it was fixed with <Code>MOREOPENREPEATER_USRP_NODE</Code>.
+            Change it where it was set.
+          </Text>
+        </SetupSection>
+      </Stack>
+
       <ConfigEditDrawer
         opened={editingNode}
         onClose={() => {
@@ -1157,7 +1191,7 @@ export function AllStar() {
           setIdentityFilled(false);
         }}
         title="AllStarLink node"
-        subtitle="Register or pick the local ASL3 node this repeater becomes the radio for."
+        subtitle="Enter your AllStarLink node, or pick one already on this machine."
       >
         <Stack gap="md">
           {showIdentityForm ? (
@@ -1167,8 +1201,8 @@ export function AllStar() {
                   Set node number
                 </Text>
                 <Text c="dimmed" size="sm" maw="75ch">
-                  From the AllStarLink portal: node number, password, and callsign. Updates <Code>rpt.conf</Code> and
-                  makes the repeater its radio.
+                  From the AllStarLink portal: node number, password, and callsign. Saving makes this repeater the
+                  node's radio.
                 </Text>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   {status!.nodes.length > 1 ? (
@@ -1176,7 +1210,7 @@ export function AllStar() {
                       label="Change this local node"
                       data={status!.nodes.map((n) => ({
                         value: n.number,
-                        label: n.number === "1999" ? "1999 (ASL3 placeholder)" : n.number,
+                        label: n.number === "1999" ? "1999 (placeholder)" : n.number,
                       }))}
                       value={identityForm.fromNode || null}
                       onChange={(value) => {
@@ -1245,11 +1279,11 @@ export function AllStar() {
                       ? selected.controlled
                         ? "The repeater is its radio."
                         : `Its radio is ${radioName(selected.rxchannel)} now.`
-                      : "Nodes already in /etc/asterisk/rpt.conf.",
+                      : "Nodes already on this machine.",
                   )}
                   data={status!.nodes.map((n) => ({
                     value: n.number,
-                    label: n.number === "1999" ? "1999 (ASL3 placeholder)" : n.number,
+                    label: n.number === "1999" ? "1999 (placeholder)" : n.number,
                   }))}
                   value={selectedNode || null}
                   onChange={(value) => setSelectedNode(value || "")}
@@ -1269,7 +1303,7 @@ export function AllStar() {
                   </Button>
                 </Group>
                 <Text c="dimmed" size="sm">
-                  Updates the node&apos;s <Code>rxchannel</Code>, <Code>duplex</Code>, and hang time, then restarts Asterisk.
+                  Makes this repeater the radio for the node, then restarts AllStarLink.
                 </Text>
               </Stack>
             </form>

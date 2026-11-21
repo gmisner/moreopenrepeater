@@ -136,7 +136,7 @@ export function ImportCard({ onApplied }: { onApplied?: () => void }) {
         <div>
           <h2 className="mor-card-title">Found an existing node configuration</h2>
           <Text size="sm" c="dimmed" mt={4}>
-            {preview.source ? <Code>{preview.source}</Code> : "A folder"} was given to bring a node over from. Nothing is written until you click Import.
+            You can bring over a node from {preview.source ? <Code>{preview.source}</Code> : "an existing folder"}. Nothing changes until you click Import.
           </Text>
         </div>
 
@@ -150,7 +150,7 @@ export function ImportCard({ onApplied }: { onApplied?: () => void }) {
               ))}
               {result.snapshot ? (
                 <Text size="sm">
-                  A copy of every file from before is in <Code>{result.snapshot}</Code> in the data folder's asterisk-backups.
+                  A backup of your old files was saved in <Code>{result.snapshot}</Code>.
                 </Text>
               ) : null}
             </Stack>
@@ -239,8 +239,8 @@ export function ImportCard({ onApplied }: { onApplied?: () => void }) {
         </Group>
 
         {!preview.available ? (
-          <Alert color="yellow" title="The container node isn't ready">
-            Start the allstar container so it has its own files, then look again.
+          <Alert color="yellow" title="AllStarLink isn't ready yet">
+            Start AllStarLink first (the steps are in How to set this up at the bottom of this page), then look again.
           </Alert>
         ) : null}
         {target?.state === "blocked" ? (

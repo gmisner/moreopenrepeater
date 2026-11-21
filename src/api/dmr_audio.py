@@ -146,11 +146,11 @@ class DmrAudio(asyncio.DatagramProtocol):
             self._peer_ip = socket.gethostbyname(s.peer_host)
             self._transport, _ = await loop.create_datagram_endpoint(lambda: self, local_addr=(s.listen_host, s.listen_port))
         except OSError as error:
-            self.error = (
-                f"couldn't set up DMR USRP on {s.listen_host}:{s.listen_port} "
-                f"for Analog_Bridge at {s.peer_host}:{s.peer_port}: {error}"
+            _logger.error(
+                "couldn't set up DMR USRP on %s:%s for Analog_Bridge at %s:%s: %s",
+                s.listen_host, s.listen_port, s.peer_host, s.peer_port, error,
             )
-            _logger.error("%s", self.error)
+            self.error = f"The DMR audio link could not start ({error}). Restarting the repeater usually clears it. The Logs page has the details."
             return
         self.listen_port = self._transport.get_extra_info("sockname")[1]
         self._link = LinkAudio(self.rate)

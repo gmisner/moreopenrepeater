@@ -339,15 +339,15 @@ class DmrBridge:
             if self.restart is not None and self.restart.available:
                 result["error"] = "DMR packages aren't installed yet. An admin can install them from this page."
             else:
-                result["error"] = "DMR isn't installed. On the Pi run: sudo bash scripts/install-pi.sh --dmr"
+                result["error"] = "DMR is not installed yet. The steps are in How to set this up below."
             return result
         if not self.directory.is_dir():
-            result["error"] = f"DMR config directory {self.directory} is missing. Install DMR again from this page or run install-pi.sh --dmr."
+            result["error"] = "DMR's settings folder is missing. Install DMR again. The steps are in How to set this up below."
             return result
         if self.bridge_seeds_config and not self._paths()[ANALOG].exists():
             result["error"] = (
-                "The DMR bridge hasn't started yet, so it has not written its settings. "
-                "Start it with: docker compose --profile dmr up -d dmr"
+                "The DMR bridge has not started yet, so it has not saved its settings. "
+                "The steps to start it are in How to set this up below."
             )
             return result
         result["available"] = True
@@ -362,7 +362,7 @@ class DmrBridge:
     async def save(self, settings: DmrSettings) -> dict:
         async with self._lock:
             if self.directory is None:
-                raise DmrSetupError("DMR isn't installed. On the Pi run: sudo bash scripts/install-pi.sh --dmr")
+                raise DmrSetupError("DMR is not installed yet. The steps are in How to set this up on the DMR page.")
             self._require_seeded()
             self.ensure_templates()
             paths = self._paths()
@@ -459,7 +459,7 @@ class DmrBridge:
     def _require_seeded(self) -> None:
         if self.bridge_seeds_config and not self._paths()[ANALOG].exists():
             raise DmrSetupError(
-                "The DMR bridge hasn't started yet. Start it with: docker compose --profile dmr up -d dmr"
+                "The DMR bridge has not started yet. The steps to start it are in How to set this up on the DMR page."
             )
 
     async def disable(self) -> dict:
@@ -477,11 +477,11 @@ class DmrBridge:
     async def request_install(self) -> dict:
         """Ask the root helper to install DVSwitch and seed the DMR config dir."""
         if self.bridge_seeds_config:
-            raise DmrSetupError("The DMR bridge is its own container here. Start it with: docker compose --profile dmr up -d dmr")
+            raise DmrSetupError("DMR starts from the repeater's computer on this install. The steps are in How to set this up on the DMR page.")
         if self.directory is not None and self.directory.is_dir():
             raise DmrSetupError("DMR is already installed on this machine.")
         if self.restart is None or not self.restart.available:
-            raise DmrSetupError("DMR install isn't available here. On the Pi run: sudo bash scripts/install-pi.sh --dmr")
+            raise DmrSetupError("DMR can't be installed from this page. The steps are in How to set this up on the DMR page.")
         try:
             self.restart.request("install")
         except RuntimeError as error:

@@ -240,3 +240,113 @@ describe("Dmr mutation pending across poll", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /3100/ })).not.toBeDisabled());
   }, 15000);
 });
+
+describe("Dmr plain wording", () => {
+  // What a repeater owner reads. The collapsed setup and details sections may hold commands and program names; nothing else may.
+  const DEVELOPER_WORDS = [
+    /experimental/i,
+    /bench/i,
+    /#219/,
+    /docs\/winlink\.md/,
+    /\bADR\b/,
+    /\bslice\b/i,
+    /Analog_Bridge/,
+    /MMDVM/,
+    /md380/i,
+    /USRP/,
+    /DVSwitch/i,
+    /SET_INFO/,
+    /exportMetadata/,
+    /install-pi/,
+    /docker/i,
+    /\bapt\b/,
+    /systemctl/,
+    /Debian/,
+  ];
+
+  const settings = {
+    callsign: "W1AW",
+    dmr_id: "3120001",
+    repeater_ssid: "01",
+    has_password: true,
+    network: "brandmeister",
+    host: "3102.repeater.net",
+    port: 62031,
+    talkgroup: 3100,
+    slot: 2,
+    color_code: 1,
+    location: "Newington",
+    description: "test",
+    use_emulator: true,
+  };
+  const audio = { configured: true, running: true, error: null, peer: "127.0.0.1:34001", listen: "127.0.0.1:32001", keyed: false, last_heard: null };
+  const restart = { available: false, requested: false, last_action: null, state: null, message: null };
+  const running = {
+    available: true,
+    enabled: true,
+    error: null,
+    settings,
+    audio,
+    services: { analog_bridge: true, mmdvm_bridge: true, md380_emu: true },
+    restart,
+  };
+  const notInstalled = {
+    available: false,
+    enabled: false,
+    error: "DMR is not installed yet. The steps are in How to set this up below.",
+    settings: null,
+    audio: { ...audio, configured: false, running: false, peer: null, listen: null },
+    services: { analog_bridge: null, mmdvm_bridge: null, md380_emu: null },
+    restart,
+  };
+
+  const states: [string, unknown][] = [
+    ["running with nothing heard", running],
+    ["running with a station heard", { ...running, audio: { ...audio, last_heard: { radio_id: 3120002, callsign: "K1ABC", name: "Pat", talkgroup: 3100, slot: 2, started_at: 1_700_000_000, ended_at: null, active: true } } }],
+    ["part of the bridge down", { ...running, services: { analog_bridge: true, mmdvm_bridge: false, md380_emu: true } }],
+    ["not installed", notInstalled],
+    ["not installed, install offered", { ...notInstalled, restart: { ...restart, available: true } }],
+    ["bridge not started yet", { ...notInstalled, available: true, error: "The DMR bridge has not started yet, so it has not saved its settings. The steps to start it are in How to set this up below." }],
+  ];
+
+  function readingText() {
+    const copy = document.body.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll("[data-setup-section], [data-details]").forEach((node) => node.remove());
+    return copy.textContent ?? "";
+  }
+
+  beforeEach(() => {
+    mockRole = "admin";
+  });
+
+  it.each(states)("keeps developer notes out of the page while %s", async (_name, state) => {
+    vi.mocked(api).mockResolvedValue(state);
+    renderDmr();
+    await waitFor(() => expect(screen.getByText("DMR bridge")).toBeInTheDocument());
+    await waitFor(() => expect(api).toHaveBeenCalled());
+    const text = readingText();
+    for (const word of DEVELOPER_WORDS) expect(text).not.toMatch(word);
+  });
+
+  it("keeps the install steps in one collapsed section, and a guide link", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api).mockResolvedValue(notInstalled);
+    renderDmr();
+    await screen.findByRole("button", { name: "Show the steps" });
+    expect(document.querySelectorAll("[data-setup-section]")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "How to set this up" })).toHaveAttribute("aria-expanded", "false");
+    await user.click(screen.getByRole("button", { name: "Show the steps" }));
+    expect(screen.getByRole("button", { name: "How to set this up" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("sudo bash scripts/install-pi.sh --dmr")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Read the guide", hidden: true })).toHaveAttribute("href", expect.stringMatching(/docs\/dmr\.md$/));
+  });
+
+  it("says which kind of trouble it is when part of the bridge is down, and keeps the program names in Details", async () => {
+    vi.mocked(api).mockResolvedValue({ ...running, services: { analog_bridge: true, mmdvm_bridge: false, md380_emu: true } });
+    renderDmr();
+    expect(await screen.findByText("Degraded")).toBeInTheDocument();
+    expect(screen.getByText(/Part of the DMR bridge is not running/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Details" }));
+    expect(await screen.findByText(/MMDVM_Bridge down/)).toBeInTheDocument();
+  });
+});

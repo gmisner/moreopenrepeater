@@ -1,7 +1,9 @@
 import {
+  Accordion,
   Badge,
   Button,
   Card,
+  Code,
   Group,
   NumberInput,
   Select,
@@ -18,6 +20,7 @@ import { ActionsHeader } from "../components/ActionsHeader";
 import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
 import { ConfigSummaryCard } from "../components/ConfigSummaryCard";
 import { EmptyState } from "../components/EmptyState";
+import { revealSetup, SetupSection } from "../components/SetupSection";
 import { ErrorCard, LoadingBlock } from "../components/StateCards";
 import { labeled } from "../components/FieldHint";
 import { notifyError, notifySuccess, useConfig } from "../config";
@@ -186,6 +189,7 @@ export function Dmr() {
   const [selecting, setSelecting] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
   const [statusStale, setStatusStale] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const version = ++dmrReadVersionRef.current;
@@ -258,7 +262,7 @@ export function Dmr() {
   const onSave = async (event: FormEvent) => {
     event.preventDefault();
     if (!isAdmin || dmrBusy || dmrMutationIdRef.current !== 0) return;
-    if (!window.confirm(`Save DMR as ${form.callsign} / ${form.dmr_id}? The DVSwitch bridges restart.`)) return;
+    if (!window.confirm(`Save DMR as ${form.callsign} / ${form.dmr_id}? The DMR bridge restarts.`)) return;
     const mutationId = ++dmrMutationIdRef.current;
     ++dmrReadVersionRef.current;
     setDmrBusy(true);
@@ -275,7 +279,7 @@ export function Dmr() {
       if (next.settings) setForm(formFromSettings(next.settings));
       setFormEdited(false);
       setDrawerOpen(false);
-      notifySuccess(next.restart.requested ? "Saved — bridges restarting" : "Saved");
+      notifySuccess(next.restart.requested ? "Saved. The DMR bridge is restarting." : "Saved");
     } catch (error) {
       if (mutationId !== dmrMutationIdRef.current) return;
       notifyError(error);
@@ -292,7 +296,7 @@ export function Dmr() {
 
   const onDisable = async () => {
     if (!isAdmin || dmrBusy || dmrMutationIdRef.current !== 0) return;
-    if (!window.confirm("Turn off DMR? The bridges stop; saved details are kept.")) return;
+    if (!window.confirm("Turn off DMR? It stops until you turn it on again. Your saved details are kept.")) return;
     const mutationId = ++dmrMutationIdRef.current;
     ++dmrReadVersionRef.current;
     setDmrBusy(true);
@@ -354,7 +358,7 @@ export function Dmr() {
     if (!isAdmin || dmrBusy || dmrMutationIdRef.current !== 0 || installBusy || restartBusy) return;
     if (
       !window.confirm(
-        "Install DVSwitch (Analog_Bridge + MMDVM_Bridge) on this Pi? This uses apt and restarts the dashboard when finished.",
+        "Install DMR on this repeater? This can take a few minutes, and the dashboard restarts when it finishes.",
       )
     ) {
       return;
@@ -367,7 +371,7 @@ export function Dmr() {
       const next = await api<DmrStatus>("/api/dmr/install", { method: "POST" });
       if (mutationId !== dmrMutationIdRef.current) return;
       setStatus(next);
-      notifySuccess("Installing DMR — this can take a few minutes");
+      notifySuccess("Installing DMR. This can take a few minutes.");
     } catch (error) {
       if (mutationId !== dmrMutationIdRef.current) return;
       notifyError(error);
@@ -402,7 +406,7 @@ export function Dmr() {
       if (!formEditedRef.current) setFormEdited(false);
       notifySuccess(
         next.restart.requested
-          ? `Talkgroup ${talkgroup} — bridges restarting`
+          ? `Talkgroup ${talkgroup}. The DMR bridge is restarting.`
           : `Talkgroup ${talkgroup}`,
       );
     } catch (error) {
@@ -456,18 +460,18 @@ export function Dmr() {
   const summary = !status
     ? "Loading…"
     : installBusy
-      ? status.restart.message || "Installing DVSwitch packages…"
+      ? status.restart.message || "Installing DMR…"
       : restartBusy
-        ? status.restart.message || "Restarting DVSwitch bridges…"
+        ? status.restart.message || "Restarting the DMR bridge…"
         : status.error
           ? status.error
           : !status.available
             ? status.restart.available
-              ? "Install DVSwitch on this Pi, then set callsign, DMR Id, and talkgroup."
-              : "Install with: sudo bash scripts/install-pi.sh --dmr"
+              ? "DMR is not installed yet. Install it, then enter your callsign, DMR ID and talkgroup."
+              : "DMR is not installed yet. The steps are in How to set this up below."
             : status.enabled && settings
               ? `${settings.callsign} · Id ${settings.dmr_id} · TG ${settings.talkgroup} slot ${settings.slot}`
-              : "Set callsign, DMR Id, network password and talkgroup to bridge the analog repeater.";
+              : "Enter your callsign, DMR ID, network password and talkgroup to connect this repeater to DMR.";
 
   return (
     <Page title="DMR">
@@ -483,7 +487,7 @@ export function Dmr() {
           badge={installBusy ? "Installing" : restartBusy ? "Restarting" : badge}
           badgeColor={installBusy || restartBusy ? "amber" : badgeColor}
           blurb={summary}
-          hint="Cross-mode bridge via DVSwitch to BrandMeister, TGIF, or a custom master."
+          hint="Connects this repeater to DMR talkgroups on BrandMeister, TGIF, or a network you choose."
           onEdit={isAdmin && status?.available ? () => setDrawerOpen(true) : undefined}
           editLabel={status?.enabled ? "Edit…" : "Set up…"}
           secondaryAction={
@@ -499,13 +503,11 @@ export function Dmr() {
             Status may be out of date. Retrying…
           </Text>
         ) : null}
-        {status?.available && (
-          <Text size="sm" c="dimmed">
-            Analog_Bridge {serviceLabel(status.services.analog_bridge)} · MMDVM_Bridge{" "}
-            {serviceLabel(status.services.mmdvm_bridge)} · md380-emu {serviceLabel(status.services.md380_emu)}
-            {status.audio.listen ? ` · USRP ${status.audio.listen} → ${status.audio.peer}` : ""}
+        {status?.available && requiredBridgesDown ? (
+          <Text size="sm" c="amber" role="status">
+            Part of the DMR bridge is not running. Open Details to see which part.
           </Text>
-        )}
+        ) : null}
         {status?.audio.error ? (
           <Text size="sm" c="red">
             {status.audio.error}
@@ -517,7 +519,7 @@ export function Dmr() {
             <h2 className="mor-card-title">
               {labeled(
                 "Last heard",
-                <>Callsign and talkgroup from Analog_Bridge USRP metadata (exportMetadata). Updates when a DMR station keys up on the network.</>,
+                <>The last station heard on the DMR network, with its callsign and talkgroup. Updates when someone keys up.</>,
               )}
             </h2>
             {status.audio.last_heard ? (
@@ -541,7 +543,7 @@ export function Dmr() {
               </Group>
             ) : (
               <Text size="sm" c="dimmed">
-                No network transmission heard yet. Metadata appears after Analog_Bridge sends SET_INFO on the USRP path.
+                Nothing heard from the DMR network yet. The next station that talks will show here.
               </Text>
             )}
           </Card>
@@ -552,7 +554,7 @@ export function Dmr() {
             <Group justify="space-between" align="flex-start" wrap="wrap" mb="sm">
               <div>
                 <h2 className="mor-card-title">
-                  {labeled("Talkgroup favorites", <>DMR talkgroup numbers — not AllStar node numbers. One click retunes the static TX talkgroup.</>)}
+                  {labeled("Talkgroup favorites", <>DMR talkgroup numbers, not AllStarLink node numbers. One click switches the talkgroup this repeater transmits on.</>)}
                 </h2>
               </div>
               {isAdmin ? (
@@ -607,7 +609,7 @@ export function Dmr() {
                   ) : undefined
                 }
               >
-                No talkgroup favorites yet. Save the groups you use often for one-click retune.
+                No talkgroup favorites yet. Save the groups you use often to switch with one click.
               </EmptyState>
             )}
             {status.enabled && currentTg != null ? (
@@ -619,18 +621,58 @@ export function Dmr() {
         ) : (
           <EmptyState
             action={
-              isAdmin && status?.restart.available ? (
-                <Button loading={installBusy || restartBusy || dmrBusy} disabled={dmrBusy} onClick={() => void onInstall()}>
-                  Install DMR
-                </Button>
-              ) : undefined
+              <Group gap="xs" justify="center">
+                {isAdmin && status?.restart.available ? (
+                  <Button loading={installBusy || restartBusy || dmrBusy} disabled={dmrBusy} onClick={() => void onInstall()}>
+                    Install DMR
+                  </Button>
+                ) : null}
+                {status ? (
+                  <Button variant="default" onClick={() => revealSetup(setSetupOpen)}>
+                    Show the steps
+                  </Button>
+                ) : null}
+              </Group>
             }
           >
             {status?.restart.available
-              ? "Install DVSwitch on this Pi to unlock DMR setup. Debian 12 or 13 required."
-              : "DMR setup appears here after install-pi.sh --dmr on this machine."}
+              ? "DMR connects this repeater to the DMR network. Install it to get started."
+              : "DMR connects this repeater to the DMR network. It is not installed yet, and the steps are in How to set this up below."}
           </EmptyState>
         )}
+
+        {status?.available ? (
+          <div data-details>
+            <Accordion variant="separated" radius="md">
+              <Accordion.Item value="details">
+                <Accordion.Control>Details</Accordion.Control>
+                <Accordion.Panel>
+                  <Text size="sm" c="dimmed">
+                    Analog_Bridge {serviceLabel(status.services.analog_bridge)} · MMDVM_Bridge{" "}
+                    {serviceLabel(status.services.mmdvm_bridge)} · md380-emu {serviceLabel(status.services.md380_emu)}
+                    {status.audio.listen ? ` · USRP ${status.audio.listen} → ${status.audio.peer}` : ""}
+                  </Text>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+          </div>
+        ) : null}
+
+        <SetupSection opened={setupOpen} onToggle={setSetupOpen} guide="dmr.md">
+          <Text size="sm">
+            DMR runs on the repeater's computer, so these steps run there, not in this page. It needs Debian 12 or 13.
+          </Text>
+          <Text size="sm">To install it:</Text>
+          <Code block>sudo bash scripts/install-pi.sh --dmr</Code>
+          <Text size="sm">If the repeater runs its services in containers, start the DMR one instead:</Text>
+          <Code block>{`cd docker
+docker compose --profile dmr up -d dmr`}</Code>
+          <Text size="sm">
+            If saving or restarting DMR never starts, turn the DMR helper back on:
+          </Text>
+          <Code block>sudo systemctl enable --now moreopenrepeater-dmr-restart.path</Code>
+          <Text size="sm">Once it is installed, use the button at the top of this page to enter your callsign, DMR ID and network password.</Text>
+        </SetupSection>
       </Stack>
 
       <ConfigEditDrawer
@@ -640,7 +682,7 @@ export function Dmr() {
           setForm((prev) => ({ ...prev, password: "" }));
         }}
         title="DMR"
-        subtitle="DVSwitch bridge to BrandMeister, TGIF, or a custom master."
+        subtitle="Connect this repeater to a DMR network."
       >
         <form onSubmit={onSave}>
           <Stack gap="md">
@@ -715,7 +757,7 @@ export function Dmr() {
               />
             </SimpleGrid>
             <Switch
-              label={labeled("Software AMBE (md380-emu)", "Use when no USB AMBE stick is attached.")}
+              label={labeled("Software voice codec (AMBE)", "Turn this on when no USB AMBE stick is attached.")}
               checked={form.use_emulator}
               onChange={(e) => setField("use_emulator", e.currentTarget.checked)}
             />
@@ -742,7 +784,7 @@ export function Dmr() {
           setFavoriteDraft([]);
         }}
         title="Talkgroup favorites"
-        subtitle="DMR talkgroups for one-click retune. These are not AllStar node numbers."
+        subtitle="DMR talkgroups to switch to with one click. These are not AllStarLink node numbers."
       >
         <form onSubmit={(event) => void saveFavorites(event)}>
           <Stack gap="md">

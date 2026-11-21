@@ -281,15 +281,15 @@ def test_a_bridge_that_has_not_started_is_waited_for_and_nothing_is_written_for_
     tmp_path = tmp_path / "dmr"
     bridge, _ = bridge_in(tmp_path)
     status = asyncio.run(bridge.status())
-    assert status["available"] is False and "docker compose --profile dmr up -d dmr" in status["error"]
+    assert status["available"] is False and "How to set this up below" in status["error"] and "docker compose" not in status["error"]
     assert list(tmp_path.iterdir()) == []  # not even the template files: the bridge writes the first ones, with its addresses
     bridge.ensure_templates()
     assert list(tmp_path.iterdir()) == []
-    with pytest.raises(DmrSetupError, match="hasn't started"):
+    with pytest.raises(DmrSetupError, match="has not started"):
         asyncio.run(bridge.save(DmrSettings(**{k: v for k, v in REQUEST.items() if k in DmrSettings.__dataclass_fields__})))
     with pytest.raises(DmrSetupError):
         asyncio.run(bridge.select_talkgroup(100))
-    with pytest.raises(DmrSetupError, match="own container"):
+    with pytest.raises(DmrSetupError, match="starts from the repeater"):
         asyncio.run(bridge.request_install())
     assert list(tmp_path.iterdir()) == []
 

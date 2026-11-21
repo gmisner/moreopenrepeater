@@ -142,7 +142,8 @@ def test_a_closed_port_fails_with_a_plain_reason_and_a_problem_is_listed():
     assert checks[MODEM_KISS]["ok"] is False and "refused" in checks[MODEM_KISS]["reason"]
     assert checks[GATEWAY_ADMIN]["ok"] and checks[GATEWAY_TELNET]["ok"]
     assert result["enabled"] is True  # something answers, so the profile is running and one part is down
-    assert len(result["problems"]) == 1 and "docker compose logs direwolf" in result["problems"][0]
+    assert len(result["problems"]) == 1 and "see How to set this up below" in result["problems"][0]
+    assert "docker compose" not in result["problems"][0]  # the command lives in the page's setup section, not in the status text
 
 
 @pytest.mark.parametrize("up", [GATEWAY_ADMIN, GATEWAY_TELNET, MODEM_KISS])

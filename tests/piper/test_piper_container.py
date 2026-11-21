@@ -234,3 +234,12 @@ def test_no_engine_at_all_is_a_named_warning(structured_events):
     missing = structured_events.named("tts.no_engine")
     assert len(missing) == 1 and missing[0].severity.name == "WARNING" and missing[0].error_code == "tts.no_engine"
     assert missing[0].context == {}
+
+
+def test_the_api_is_told_where_the_piper_service_is_so_the_dashboard_can_preview_and_list_voices():
+    compose = yaml.safe_load((DOCKER / "compose.yaml").read_text())
+    api_env = compose["services"]["api"]["environment"]
+    core_env = compose["services"]["core"]["environment"]
+    assert api_env["PIPER_SERVICE_URL"] == core_env["PIPER_SERVICE_URL"] == "http://piper:8766"
+    assert str(api_env["PIPER_SERVICE_EXTERNAL"]) == "1"
+    assert "piper" not in (compose["services"]["api"].get("devices") or [])  # it asks over the network, it holds nothing of Piper's

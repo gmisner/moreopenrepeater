@@ -849,3 +849,29 @@ def test_the_support_bundle_has_the_cores_lines_cards_and_mixer(split_for_a_bund
     assert [card["name"] for card in devices["audio_devices"]] == [card["name"] for card in CARDS]  # the core's, not the API's empty list
     mixer = devices["mixer"]["2"]
     assert "error" not in mixer and {volume["control"] for volume in mixer["volumes"]} >= {"Speaker", "Mic"}  # read through the core
+
+
+# -- the voice, in an API that apart from the core --------------------------------------------------
+
+
+def test_the_dashboard_has_the_piper_voice_when_piper_is_a_service_of_its_own(core, sock_dir, monkeypatch):
+    # In a container install the core speaks with the Piper service, and the dashboard previews and lists voices with it too.
+    # Without this the Identification page said "install piper-tts" and "play" on an announcement failed.
+    monkeypatch.setenv("PIPER_SERVICE_URL", "http://piper:8766")
+    monkeypatch.setenv("PIPER_SERVICE_EXTERNAL", "1")
+    with CoreThread(core, sock_dir / "core.sock"):
+        client, remote = split_client(sock_dir / "core.sock")
+        with client:
+            wait_for(lambda: remote.connected and remote._config is not None)
+            info = client.get("/api/audio/tts").json()
+            assert info["engine"] == "piper"
+            assert info["voices"], "the voice list is empty"
+
+
+def test_the_dashboard_has_no_voice_of_its_own_when_there_is_no_piper_service(core, sock_dir, monkeypatch):
+    monkeypatch.delenv("PIPER_SERVICE_EXTERNAL", raising=False)
+    with CoreThread(core, sock_dir / "core.sock"):
+        client, remote = split_client(sock_dir / "core.sock")
+        with client:
+            wait_for(lambda: remote.connected and remote._config is not None)
+            assert client.get("/api/audio/tts").json()["engine"] is None

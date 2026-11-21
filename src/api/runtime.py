@@ -28,7 +28,7 @@ from link.aprs_client import APRSClient, format_frequency_comment, format_positi
 from link.asterisk_files import asterisk_files_from_env
 from observability import log_event
 from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
-from playout.tts import TTSError, detect_tts
+from playout.tts import TTSError, detect_tts, piper_service_external
 from wx.nws import fetch_active_alerts, fetch_zone_geometry, missing_zones
 
 from .activity import FLUSH_SECONDS as ACTIVITY_FLUSH_SECONDS
@@ -612,9 +612,13 @@ class AppRuntime:
         def clip_recording_path(clip_id: str) -> Path:
             return mailbox_store.path_for(clip_id) if is_mailbox_clip(clip_id) else recordings.path_for(clip_id)
 
-        # Apart from the core nothing here speaks: the core renders, so there is no engine to find or warn about.
+        # Apart from the core, this process still previews clips and says which voices there are (the Identification
+        # page, "play" on an announcement), so it needs the voice. In a container install that is the Piper service, the
+        # same one the core speaks with; the API has no speech program of its own, so without Piper there is no engine to
+        # find or warn about here.
         renderer = renderer or ClipRenderer(
-            assets_store.path_for, tts=None if getattr(service, "is_remote", False) else detect_tts(),
+            assets_store.path_for,
+            tts=detect_tts() if not getattr(service, "is_remote", False) or piper_service_external() else None,
             recording_path=clip_recording_path,
         )
         service = service or RepeaterService(state_store=state_store)

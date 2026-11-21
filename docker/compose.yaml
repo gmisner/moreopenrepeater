@@ -193,6 +193,10 @@ services:
       MOREOPENREPEATER_WINLINK_MODEM_HOST: ${MOR_DIREWOLF_IP:-172.28.0.40}  # the modem
       MOREOPENREPEATER_WINLINK_CALL: ${MOR_WINLINK_CALL:-}  # only to show the callsign: put it in .env too, since winlink.env is not read here
       MOREOPENREPEATER_WINLINK_STATUS_DIR: /winlink-status  # sessions and counters, written by the two containers, read here
+      # The voice, for what the dashboard previews (the Identification page, "play" on an announcement) and the list of
+      # voices. It is the same Piper service the core speaks with; the API only asks it over the private network.
+      PIPER_SERVICE_URL: http://piper:8766
+      PIPER_SERVICE_EXTERNAL: "1"
       # Inside the container it listens on every address of its own network; what the host can reach is the
       # published port above (loopback by default).
       MOREOPENREPEATER_HOST: 0.0.0.0

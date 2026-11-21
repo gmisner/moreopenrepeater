@@ -17,6 +17,8 @@ from audio_io.pi_gpio import GpioLine, open_header_pin
 from audio_io.receiver import MonitorReceiver, MonitorSettings
 from controller.state_machine import RepeaterConfig
 
+from observability import log_event
+
 from .host_hardware import header_pin_reason
 from .monitor import AudioMonitor
 from .recordings import RecordingStore
@@ -165,7 +167,10 @@ class MonitorReceiverService:
             receiver.start()
         except Exception as error:  # PortAudio raises its own error types
             self.error = f"couldn't open the monitor's input: {error}"
-            _logger.error("%s", self.error)
+            log_event(
+                _logger, logging.ERROR, "audio.open_failed", self.error,
+                error_code="audio.open", target="monitor", exception=type(error).__name__, facts_in_text=False,
+            )
             try:
                 receiver.stop()
             except Exception:

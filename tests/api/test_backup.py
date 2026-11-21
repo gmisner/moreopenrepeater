@@ -321,3 +321,24 @@ def test_backup_settings_are_part_of_the_config():
     assert response.status_code == 200
     assert (response.json()["backup_keep"], response.json()["backup_interval_hours"]) == (14, 6)
     assert r.client.put("/api/config", json={"backup_keep": 0}).status_code == 422
+
+
+def test_backups_saved_failed_and_restored_are_named_events(structured_events):
+    r = Repeater(backup_dir=True)
+    config = RepeaterConfig(backup_enabled=True, backup_keep=3, backup_include_recordings=True)
+    assert r.folder.run_schedule(r.sources, config, 1_800_000_000.0) is not None
+    saved = structured_events.named("backup.saved")
+    assert len(saved) == 1 and saved[0].context == {"include_recordings": True, "keep": 3}
+
+    (r.dir / "backups").rename(r.dir / "moved")
+    (r.dir / "backups").write_text("a file where the folder should be")
+    assert r.folder.run_schedule(r.sources, config, 1_800_000_000.0 + 86400 * 2) is None
+    failed = structured_events.named("backup.failed")
+    assert len(failed) == 1 and failed[0].severity.name == "ERROR" and failed[0].error_code == "backup.failed"
+    assert failed[0].context["exception"] in ("FileExistsError", "NotADirectoryError", "OSError")
+
+    source = populated()
+    archive = source.client.get("/api/backup", params={"recordings": True}).content
+    assert restore(Repeater(), archive).status_code == 200
+    restored = structured_events.named("backup.restored")
+    assert len(restored) == 1 and restored[0].severity.name == "INFO" and restored[0].context == {"recordings_added": 1}

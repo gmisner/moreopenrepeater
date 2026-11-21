@@ -36,6 +36,7 @@ from api.control_codes import (
     totp,
 )
 from api.persistence import StateStore
+from observability import log_event
 
 _logger = logging.getLogger("moreopenrepeater.core.codes")
 
@@ -111,7 +112,11 @@ class CoreCodeChecker:
             if len(self._failures) >= MAX_FAILURES:
                 self.locked_until = now + LOCKOUT_SECONDS
                 self._failures = []
-                _logger.warning("%d wrong one-time codes; codes are locked out for %d minutes", MAX_FAILURES, LOCKOUT_SECONDS // 60)
+                log_event(
+                    _logger, logging.WARNING, "codes.locked_out",
+                    "%d wrong one-time codes; codes are locked out for %d minutes" % (MAX_FAILURES, LOCKOUT_SECONDS // 60),
+                    error_code="codes.locked_out", failures=MAX_FAILURES, lockout_min=LOCKOUT_SECONDS // 60, facts_in_text=False,
+                )
             return None
 
     def _remember(self) -> None:

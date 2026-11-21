@@ -28,6 +28,8 @@ from controller.events import MailboxCommand
 from playout.renderer import RECORDING_PREFIX, TTS_PREFIX, ClipRenderer
 from playout.wav import encode_wav, read_wav
 
+from observability import log_event
+
 from .persistence import StateStore
 from .safe_paths import child_path
 from .service.core_handle import CoreHandle
@@ -255,7 +257,10 @@ class Mailbox:
         if len(failures) >= MAX_PIN_FAILURES:
             self._locked_until[box] = now + PIN_LOCKOUT_SECONDS
             self._failures.pop(box, None)
-            _logger.warning("mailbox %s locked after %d wrong PINs", box, MAX_PIN_FAILURES)
+            log_event(
+                _logger, logging.WARNING, "mailbox.locked", f"mailbox {box} locked after {MAX_PIN_FAILURES} wrong PINs",
+                error_code="mailbox.locked", box=box, failures=MAX_PIN_FAILURES, facts_in_text=False,
+            )
         self._audit("Wrong mailbox PIN", box)
         self._say("Wrong PIN.")
         return False

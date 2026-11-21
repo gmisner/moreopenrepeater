@@ -288,3 +288,49 @@ def test_output_schedule_settings(tmp_path):
         assert config["gpio_schedules"] == [{"pin": 1, "days": [4, 5], "time": "06:30", "minutes": 90, "enabled": True}]
         schedules = client.get("/api/gpio").json()["schedules"]
         assert schedules[0]["pin"] == 1 and schedules[0]["next_start"].endswith("06:30:00")
+
+
+def test_a_pin_switching_is_a_named_event_with_the_pin_and_the_state_but_not_its_name(structured_events):
+    async def scenario():
+        gpio, _, device = make()
+        gpio.start()
+        gpio.set_output(1, True)
+        gpio.set_output(1, False)
+        device.gpio = 0x02
+        await asyncio.sleep(0.05)
+        await gpio.stop()
+
+    asyncio.run(scenario())
+    changed = structured_events.named("gpio.output_changed")
+    assert [e.context for e in changed] == [{"gpio": 1, "on": True}, {"gpio": 1, "on": False}]
+    assert changed[0].message == "GPIO1 (Fan) on"  # the text line still says which one it is
+    assert "Fan" not in str([e.context for e in changed])
+    inputs = structured_events.named("gpio.input_changed")
+    assert [e.context for e in inputs] == [{"gpio": 2, "on": True}] and inputs[0].message == "GPIO2 (Door) input on"
+
+
+def test_a_cm108_that_will_not_take_a_pin_and_one_that_cannot_be_read_are_named_errors(structured_events):
+    class WontWrite(FakeHidraw):
+        def write_report(self, report):
+            raise OSError(5, "secret-hid-detail")
+
+    class WontRead(FakeHidraw):
+        def get_input_report(self, length):
+            raise OSError(5, "secret-hid-detail")
+
+    async def scenario(device):
+        service = RepeaterService(config=RepeaterConfig(gpio_pins=PINS))
+        gpio = GpioControl(service, CM108Interface(device), poll_seconds=0.01)
+        gpio.start()
+        await asyncio.sleep(0.06)  # the poll fails every time and must say so only once
+        await gpio.stop()
+
+    asyncio.run(scenario(WontWrite()))
+    asyncio.run(scenario(WontRead()))
+    setup = structured_events.named("gpio.setup_failed")
+    read = structured_events.named("gpio.read_failed")
+    assert setup and {e.error_code for e in setup} == {"gpio.hardware"}
+    assert {tuple(sorted(e.context)) for e in setup} == {("exception", "gpio")}
+    assert {e.context["gpio"] for e in setup} <= {1, 2, 3, 4}
+    assert len(read) == 1 and read[0].error_code == "gpio.hardware" and read[0].context == {"exception": "OSError"}
+    assert "secret-hid-detail" not in str([e.context for e in setup + read])

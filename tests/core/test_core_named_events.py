@@ -96,3 +96,20 @@ def test_log_event_can_carry_a_traceback_to_the_text_log_and_the_type_to_the_eve
     assert caplog.records[0].exc_info is not None  # the traceback is in the text log, as with logger.exception
     [event] = structured_events.named("demo.failed")
     assert event.context == {"exception": "ValueError"} and "private text" not in event.model_dump_json()
+
+
+def test_a_control_socket_that_cannot_start_is_a_named_error_with_the_type_of_the_failure(core, sock_dir, structured_events, monkeypatch):
+    import asyncio
+
+    from control_helpers import make_server
+    from core import control as control_module
+
+    async def refuse(*args, **kwargs):
+        raise PermissionError(13, "secret-path-detail")
+
+    monkeypatch.setattr(control_module.asyncio, "start_unix_server", refuse)
+    server = make_server(core, sock_dir / "core.sock")
+    assert asyncio.run(server.start()) is False
+    [failed] = structured_events.named("core.socket_failed")
+    assert failed.severity == 40 and failed.error_code == "core.socket" and failed.context == {"exception": "PermissionError"}
+    assert failed.message.endswith("; the core runs without it")

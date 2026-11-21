@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from email.message import EmailMessage
 from typing import Callable, Literal, Optional
 
+from observability import log_event
+
 from .persistence import StateStore
 
 _logger = logging.getLogger("moreopenrepeater.alerts")
@@ -214,7 +216,10 @@ class Notifier:
 
     async def notify(self, alert: Alert) -> None:
         now = self._clock()
-        _logger.warning("alert: %s -- %s", alert.title, alert.message)
+        log_event(
+            _logger, logging.WARNING, "alert.raised", f"alert: {alert.title} -- {alert.message}",
+            key=alert.key, level=alert.severity, facts_in_text=False,
+        )
         channels = self.channels
         entry = {"at": now, "key": alert.key, "title": alert.title, "message": alert.message, "severity": alert.severity}
         if not (self.settings.enabled and channels):
@@ -252,7 +257,10 @@ class Notifier:
                 await loop.run_in_executor(None, self._senders[channel], settings, alert, title, SEND_TIMEOUT_SECONDS)
             except Exception as error:  # noqa: BLE001 -- one broken channel mustn't stop the others
                 message = describe_error(error)
-                _logger.error("couldn't send the alert by %s: %s", channel, message)
+                log_event(
+                    _logger, logging.ERROR, "alert.send_failed", f"couldn't send the alert by {channel}: {message}",
+                    error_code="alert.send", channel=channel, key=alert.key, exception=type(error).__name__, facts_in_text=False,
+                )
                 return message
             return None
 

@@ -176,3 +176,14 @@ def test_with_no_event_loop_nothing_is_raised():
     remote.link_event(RemoteKeyed(node_id="41520", keyed=True))
     remote.link_sync({"41520": True})
     assert remote._link_state == {"41520": True}
+
+
+def test_the_api_losing_and_finding_the_core_is_a_named_event_each_time_it_changes(structured_events):
+    remote = RemoteCore("/tmp/nothing.sock")
+    remote._set_connected(True)
+    remote._set_connected(True)  # no change, no event
+    remote._set_connected(False)
+    changed = structured_events.named("core.connection_changed")
+    assert [(e.context, e.message) for e in changed] == [
+        ({"connected": True}, "core connected"), ({"connected": False}, "core not reachable"),
+    ]

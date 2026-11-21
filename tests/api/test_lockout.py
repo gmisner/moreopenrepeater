@@ -83,3 +83,14 @@ def test_lockout_settings_round_trip():
     assert response.status_code == 200
     assert service.config.lockout_timeouts == 0 and service.config.lockout_clear_after == 90
     assert client.put("/api/config", json={"lockout_clear_after": 1}).status_code == 422
+
+
+def test_the_lockout_and_its_end_are_named_events(structured_events):
+    _client, service, clock = make_client()
+    lock_out(service, clock)
+    started = structured_events.named("controller.lockout_started")
+    assert len(started) == 1 and started[0].severity.name == "WARNING" and started[0].error_code == "controller.lockout"
+    assert started[0].context == {"timeouts": 2, "window_s": 60, "clear_after_s": 20}
+    assert started[0].message == "stuck-carrier lockout: 2 timeouts in 60 s; repeating stops until the channel is quiet for 20 s"
+    service.controller.clear_lockout(clock["now"])
+    assert [e.context for e in structured_events.named("controller.lockout_cleared")] == [{}]

@@ -7,6 +7,8 @@ from typing import Callable, Optional
 
 from fastapi import FastAPI, HTTPException, Request, Response
 
+from observability import log_event
+
 from ..auth import SESSION_COOKIE_NAME, SESSION_TTL_SECONDS, SessionStore
 from ..models import LoginRequest, SessionResponse
 
@@ -36,7 +38,12 @@ def register(
         # scrypt takes tens of milliseconds; keep it off the event loop.
         identity = await asyncio.get_running_loop().run_in_executor(None, check_login, body.username, body.password)
         if identity is None:
-            _auth_logger.warning("failed login for %r from %s", body.username, request.client.host if request.client else "?")
+            client = request.client.host if request.client else "?"
+            # The username is in the text line as it always was; the event keeps only where it came from.
+            log_event(
+                _auth_logger, logging.WARNING, "auth.login_failed", f"failed login for {body.username!r} from {client}",
+                error_code="auth.bad_credentials", client=client, facts_in_text=False,
+            )
             await asyncio.sleep(login_failure_delay)
             raise HTTPException(status_code=401, detail="Invalid username or password")
         sessions.revoke(request.cookies.get(SESSION_COOKIE_NAME))
@@ -48,7 +55,7 @@ def register(
             samesite="strict",
             secure=request.url.scheme == "https",
         )
-        _auth_logger.info("login succeeded for %r", body.username)
+        log_event(_auth_logger, logging.INFO, "auth.login_succeeded", f"login succeeded for {body.username!r}", facts_in_text=False)
         return session_response(identity)
 
     @app.post("/api/logout", response_model=SessionResponse)

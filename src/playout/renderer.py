@@ -31,6 +31,8 @@ import numpy as np
 from controller.state_machine import RepeaterConfig
 from dsp.morse import morse_tone
 
+from observability import log_event
+
 from .tones import courtesy_tone, timeout_tone
 from .tts import TTSEngine, TTSError, format_voice_id, spoken_time
 from .wav import WavError, read_wav, resample
@@ -278,13 +280,19 @@ class ClipRenderer:
             if voice is not None:
                 parts.append(voice)
             elif mode == "voice":
-                _logger.warning("no voice ID clip or text-to-speech available; sending the ID in CW instead")
+                log_event(
+                    _logger, logging.WARNING, "station_id.cw_fallback", "no voice ID clip or text-to-speech available; sending the ID in CW instead",
+                    error_code="station_id.no_voice", facts_in_text=False,
+                )
                 want_cw = True
         if want_cw and config.callsign:
             cw = morse_tone(config.callsign + config.cw_id_suffix, config.cw_wpm, config.cw_tone_hz, self.sample_rate)
             parts.append(cw.astype(np.float32))
         if not parts:
-            _logger.warning("station ID is empty -- set a callsign")
+            log_event(
+                _logger, logging.WARNING, "station_id.empty", "station ID is empty -- set a callsign",
+                error_code="station_id.empty", facts_in_text=False,
+            )
             return np.zeros(0, dtype=np.float32)
         gap = np.zeros(int(_GAP_SECONDS * self.sample_rate), dtype=np.float32)
         joined: list[np.ndarray] = []

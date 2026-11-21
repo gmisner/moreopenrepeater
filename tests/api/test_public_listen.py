@@ -283,3 +283,21 @@ def test_anyone_mode_with_sign_in_on(tmp_path, monkeypatch):
     client, _service = make_auth_client(tmp_path, monkeypatch, "anyone")
     assert client.get("/api/public/status").json()["username"] is None
     assert client.get("/listen").status_code == 200
+
+
+def test_a_stream_that_stopped_is_a_named_warning_with_the_host_and_the_wait_and_never_the_password(fast, structured_events):
+    async def spawn(*command, **kwargs):
+        return FakeProcess(fail_after=1, stderr=b"icecast://source:s3cret@host: 401 Unauthorized\n")
+
+    async def go():
+        streamer = Streamer(AudioMonitor(), None, lambda: 16000, which=lambda name: "/usr/bin/ffmpeg", spawn=spawn)
+        streamer.update(SETTINGS)
+        task = asyncio.create_task(streamer.run())
+        await until(lambda: streamer.status["state"] == "retrying")
+        task.cancel()
+
+    asyncio.run(go())
+    stopped = structured_events.named("stream.stopped")
+    assert stopped and stopped[0].severity.name == "WARNING" and stopped[0].error_code == "stream.stopped"
+    assert stopped[0].context == {"host": "audio9.broadcastify.com", "retry_s": 5}
+    assert "s3cret" not in " ".join(e.model_dump_json() for e in structured_events)

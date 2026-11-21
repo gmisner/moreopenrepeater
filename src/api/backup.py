@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterator, Optional, get_args
 
+from observability import log_event
+
 from .assets import ASSET_ID, AssetInfo, AssetKind
 from .persistence import database_has_table
 from .safe_paths import child_path
@@ -255,7 +257,10 @@ def restore_backup(
         sources.hub_sites.replace_from(backup.hub_sites)
         hub_count = len(backup.hub_sites.get("sites") or [])
     added = sum(sources.recordings.import_file(p) for p in backup.recordings) if sources.recordings.enabled else 0
-    _logger.info("restored a backup from %s", time.ctime(backup.manifest.get("created_at", 0)))
+    log_event(
+        _logger, logging.INFO, "backup.restored", f"restored a backup from {time.ctime(backup.manifest.get('created_at', 0))}",
+        recordings_added=added, facts_in_text=False,
+    )
     result = {
         "macros": len(settings.get("macros", [])),
         "announcements": len(settings.get("announcements", [])),
@@ -339,10 +344,16 @@ class BackupFolder:
             self.prune(config.backup_keep)
         except Exception as error:  # noqa: BLE001 -- shown on the dashboard; the next check retries
             self.last_error = f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(now))}: {error}"
-            _logger.exception("scheduled backup failed")
+            log_event(
+                _logger, logging.ERROR, "backup.failed", "scheduled backup failed", error_code="backup.failed", exc_info=True,
+                facts_in_text=False,
+            )
             return None
         self.last_error = None
-        _logger.info("scheduled backup saved to %s", self.directory / backup.name)
+        log_event(
+            _logger, logging.INFO, "backup.saved", f"scheduled backup saved to {self.directory / backup.name}",
+            include_recordings=bool(config.backup_include_recordings), keep=config.backup_keep, facts_in_text=False,
+        )
         return backup
 
     def _describe(self, path: Path) -> SavedBackup:

@@ -115,3 +115,22 @@ def test_paused_and_other_days():
     links = FakeLinks()
     run(LinkScheduler(links, lambda: [{**NET, "enabled": False}, {**NET, "node": "2001", "days": [2]}]), at(19, 1))
     assert links.calls == []
+
+
+def test_a_scheduled_link_going_up_and_down_is_named_and_a_failure_is_named_once(structured_events):
+    links = FakeLinks()
+    scheduler = LinkScheduler(links, lambda: [NET])
+    run(scheduler, at(19), at(20))
+    applied = structured_events.named("link.schedule_applied")
+    assert [e.context for e in applied] == [{"action": "link", "node": "2000"}, {"action": "unlink", "node": "2000"}]
+    assert applied[0].message == "linked node 2000 on schedule until 20:00"
+
+    class Broken(FakeLinks):
+        async def connect(self, node, monitor):
+            raise LinkError("secret-detail-from-app_rpt")
+
+    run(LinkScheduler(Broken(), lambda: [NET]), at(19), at(19, 1))
+    failed = structured_events.named("link.schedule_failed")
+    assert len(failed) == 1 and failed[0].severity.name == "WARNING" and failed[0].error_code == "link.schedule"
+    assert failed[0].context == {"action": "link", "node": "2000", "exception": "LinkError"}
+    assert "secret-detail-from-app_rpt" not in str(failed[0].context)

@@ -181,3 +181,20 @@ def test_set_info_updates_last_heard():
         peer.transport.close()
 
     asyncio.run(scenario())
+
+
+def test_a_lost_unkey_is_a_named_warning_for_the_dmr_bridge(monkeypatch, structured_events):
+    monkeypatch.setattr(dmr_audio_mod, "UNKEY_TIMEOUT", 0.1)
+
+    async def scenario():
+        service, audio, link, peer = await start()
+        peer.send(voice(1), link.listen_port)
+        await wait_until(lambda: link.keyed)
+        await wait_until(lambda: not link.keyed)
+        await link.stop()
+        peer.transport.close()
+
+    asyncio.run(scenario())
+    missing = structured_events.named("usrp.unkey_missing")
+    assert len(missing) == 1 and missing[0].severity.name == "WARNING" and missing[0].error_code == "usrp.no_unkey"
+    assert missing[0].context == {"service": "dmr"} and missing[0].message == "no unkey from Analog_Bridge; unkeying"

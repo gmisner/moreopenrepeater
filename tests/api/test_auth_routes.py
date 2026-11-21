@@ -214,3 +214,17 @@ def test_websocket_rejects_cross_origin_handshake_even_with_session():
     with pytest.raises(Exception):
         with client.websocket_connect("/ws/status", headers={"Origin": "https://evil.example"}):
             pass
+
+
+def test_sign_ins_are_named_events_that_never_carry_the_password(structured_events):
+    client = make_client()
+    assert _login(client, password="not-the-real-pw-1").status_code == 401
+    assert _login(client).status_code == 200
+    failed = structured_events.named("auth.login_failed")
+    assert len(failed) == 1 and failed[0].severity.name == "WARNING" and failed[0].error_code == "auth.bad_credentials"
+    assert failed[0].context == {"client": "testclient"}
+    assert failed[0].message == "failed login for 'admin' from testclient"  # the text line, as it was
+    ok = structured_events.named("auth.login_succeeded")
+    assert len(ok) == 1 and ok[0].context == {} and ok[0].message == "login succeeded for 'admin'"
+    assert "not-the-real-pw-1" not in " ".join(e.model_dump_json() for e in structured_events)
+    assert "hunter2" not in " ".join(e.model_dump_json() for e in structured_events)

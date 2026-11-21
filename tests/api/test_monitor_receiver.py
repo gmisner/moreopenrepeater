@@ -317,3 +317,50 @@ def test_dashboard_can_listen_to_the_monitor(tmp_path, monkeypatch):
             monitor.monitor.feed(np.full(BLOCK, 0.25, dtype=np.float32), np.full(BLOCK, 0.25, dtype=np.float32))
         assert len(ws.receive_bytes()) == BLOCK * FRAME_BLOCKS * 2
     assert monitor.monitor.listener_count == 0
+
+
+def test_a_monitor_input_that_will_not_open_is_a_named_error_with_the_type_only(structured_events):
+    class Unopenable:
+        def start(self):
+            raise RuntimeError("secret-device-detail")
+
+        def stop(self):
+            pass
+
+    service = RepeaterService(config=RepeaterConfig(monitor_enabled=True, monitor_input_device="USB Audio 2"))
+    monitor = MonitorReceiverService(
+        service, RATE, RecordingStore(Path(tempfile.mkdtemp()) / "monitor-recordings", sample_rate=RATE),
+        receiver_factory=lambda *a, **kw: Unopenable(),
+    )
+    monitor.attach(ImmediateLoop())
+    failed = structured_events.named("audio.open_failed")
+    assert len(failed) == 1 and failed[0].error_code == "audio.open"
+    assert failed[0].context == {"target": "monitor", "exception": "RuntimeError"}
+    assert failed[0].message == "couldn't open the monitor's input: secret-device-detail"  # the text line, as it was
+    assert "secret-device-detail" not in str(failed[0].context)
+
+
+def test_a_block_the_monitor_cannot_process_and_a_squelch_pin_it_cannot_read_are_named(monkeypatch, structured_events):
+    receiver, _heard, _changes = make_receiver()
+
+    def explode(block):
+        receiver._stop.set()
+        raise ValueError("secret-block-detail")
+
+    receiver.process_one = explode
+    receiver._input.put(silence(0.02))
+    receiver._work()
+    monkeypatch.setattr(receiver_module, "COS_POLL_SECONDS", 0.001)
+
+    def unreadable():
+        receiver._stop.set()
+        raise OSError("secret-pin-detail")
+
+    receiver._stop.clear()
+    receiver._cos_input = unreadable
+    receiver._poll_cos()
+    block = structured_events.named("audio.block_failed")
+    pin = structured_events.named("cos.read_failed")
+    assert [(e.error_code, e.context) for e in block] == [("audio.process", {"target": "monitor", "exception": "ValueError"})]
+    assert [(e.error_code, e.context) for e in pin] == [("cos.hardware", {"target": "monitor", "exception": "OSError"})]
+    assert "secret" not in block[0].model_dump_json() + pin[0].model_dump_json()

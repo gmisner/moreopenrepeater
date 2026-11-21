@@ -181,3 +181,14 @@ def test_databases_use_a_write_ahead_log_but_copies_are_single_files(tmp_path):
     copy_conn.close()
     assert database_has_table(copy, "audit")
     assert sorted(p.name for p in copy.parent.iterdir()) == ["audit.db"]
+
+
+def test_an_unreadable_state_file_is_a_named_error_with_the_file_name_and_the_error_type(structured_events):
+    tmp = _tmp_path()
+    (tmp / "state.json").write_text("{not json secret-in-the-file")
+    assert StateStore(tmp / "state.json").load() is None
+    unreadable = structured_events.named("state.unreadable")
+    assert len(unreadable) == 1 and unreadable[0].severity.name == "ERROR" and unreadable[0].error_code == "state.unreadable"
+    assert unreadable[0].context == {"file": "state.json", "exception": "JSONDecodeError"}
+    assert unreadable[0].message.startswith(f"could not read {tmp / 'state.json'}; moved it to ")  # the event keeps 200 characters
+    assert "secret-in-the-file" not in unreadable[0].model_dump_json()

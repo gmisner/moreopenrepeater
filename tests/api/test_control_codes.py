@@ -240,3 +240,15 @@ def test_macros_carry_the_needs_code_flag(tmp_path, monkeypatch):
     client, _codes, _audit = make_client(Clock())
     client.post("/api/macros", json={"pattern": "*9", "description": "gate", "command": "open", "action": "say", "needs_code": True})
     assert client.get("/api/macros").json()[-1]["needs_code"] is True
+
+
+def test_the_lockout_is_a_named_warning_with_the_numbers_and_never_a_code_or_secret(structured_events):
+    clock = Clock()
+    codes = ControlCodes(None, clock)
+    secret = enrolled(codes, clock)
+    for _ in range(MAX_FAILURES):
+        codes.check("424242")
+    locked = structured_events.named("codes.locked_out")
+    assert len(locked) == 1 and locked[0].severity.name == "WARNING" and locked[0].error_code == "codes.locked_out"
+    assert locked[0].context == {"failures": MAX_FAILURES, "lockout_min": LOCKOUT_SECONDS // 60}
+    assert "424242" not in locked[0].model_dump_json() and secret not in locked[0].model_dump_json()

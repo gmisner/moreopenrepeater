@@ -18,6 +18,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
+from observability import log_event
+
 _logger = logging.getLogger("moreopenrepeater.persistence")
 
 
@@ -85,7 +87,10 @@ class StateStore:
             # silently overwriting it with defaults on the next save.
             backup = self.path.with_suffix(self.path.suffix + ".corrupt")
             os.replace(self.path, backup)
-            _logger.exception("could not read %s; moved it to %s and starting from defaults", self.path, backup)
+            log_event(
+                _logger, logging.ERROR, "state.unreadable", f"could not read {self.path}; moved it to {backup} and starting from defaults",
+                error_code="state.unreadable", file=self.path.name, exc_info=True, facts_in_text=False,
+            )
             return None
 
     def save(self, data: dict) -> None:

@@ -25,6 +25,8 @@ from playout.piper_service import PiperService, PiperServiceError, wait_until_re
 from playout.renderer import ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
+from observability import log_event
+
 from .allstar_audio import UsrpSettings
 from .audio_devices import AudioDeviceList
 from .boards import run_amixer
@@ -173,7 +175,11 @@ class CoreRuntime:
                 await loop.run_in_executor(None, kokoro_service.start_and_wait)
                 self.kokoro_service = kokoro_service
             except KokoroServiceError:
-                _tts_logger.exception("Kokoro service failed to become ready; voice IDs fall back to CW until it works")
+                log_event(
+                    _tts_logger, logging.ERROR, "tts.service_failed",
+                    "Kokoro service failed to become ready; voice IDs fall back to CW until it works",
+                    error_code="tts.service", engine="kokoro", exc_info=True, facts_in_text=False,
+                )
                 await loop.run_in_executor(None, kokoro_service.stop)
         await self._wait_for_external_piper(loop)
         piper_service = piper_service_for(self.renderer, voice=self.service.config.tts_voice)
@@ -182,7 +188,11 @@ class CoreRuntime:
                 await loop.run_in_executor(None, piper_service.start_and_wait)
                 self.piper_service = piper_service
             except PiperServiceError:
-                _tts_logger.exception("Piper service failed to become ready; voice IDs use CLI/espeak until it works")
+                log_event(
+                    _tts_logger, logging.ERROR, "tts.service_failed",
+                    "Piper service failed to become ready; voice IDs use CLI/espeak until it works",
+                    error_code="tts.service", engine="piper", exc_info=True, facts_in_text=False,
+                )
                 await loop.run_in_executor(None, piper_service.stop)
 
     async def _wait_for_external_piper(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -196,7 +206,7 @@ class CoreRuntime:
             return
         seconds = EXTERNAL_PIPER_WAIT_SECONDS
         if await loop.run_in_executor(None, wait_until_ready, piper_service_url(), seconds):
-            _tts_logger.info("the Piper service is ready")
+            log_event(_tts_logger, logging.INFO, "tts.service_ready", "the Piper service is ready", engine="piper", facts_in_text=False)
         else:
             _tts_logger.warning(
                 "the Piper service did not answer in %gs; voice IDs use the fallback voice until it does", seconds

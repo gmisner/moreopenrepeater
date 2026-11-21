@@ -321,3 +321,37 @@ def test_starting_and_stopping_the_engine_are_named_events(structured_events):
     started = structured_events.named("audio.engine_started")[0]
     assert "BlackHole 2ch" in started.message and started.context["processing_rate_hz"] > 0
     assert structured_events.named("audio.engine_stopped")
+
+
+def test_a_block_that_fails_to_process_is_a_named_error_with_the_type_and_never_the_text(structured_events):
+    engine, *_ = make_engine()
+
+    def explode(block):
+        engine._stop.set()  # one block, then the worker ends
+        raise ValueError("secret-detail-from-the-block")
+
+    engine.process_one = explode
+    engine._input.put(np.zeros(BLOCK, dtype=np.float32))
+    engine._work()
+    failed = structured_events.named("audio.block_failed")
+    assert len(failed) == 1
+    assert failed[0].error_code == "audio.process" and failed[0].severity.name == "ERROR"
+    assert failed[0].context == {"target": "engine", "exception": "ValueError"}
+    assert "secret-detail-from-the-block" not in failed[0].model_dump_json()
+    assert failed[0].message == "audio processing failed for one block"
+
+
+def test_a_hardware_cos_that_cannot_be_read_is_a_named_error(monkeypatch, structured_events):
+    monkeypatch.setattr(engine_module, "COS_POLL_SECONDS", 0.001)
+    holder = {}
+
+    def unreadable():
+        holder["engine"]._stop.set()
+        raise OSError("hidraw gone")
+
+    engine, *_ = make_engine(cos_input=unreadable)
+    holder["engine"] = engine
+    engine._poll_cos()
+    failed = structured_events.named("cos.read_failed")
+    assert len(failed) == 1 and failed[0].error_code == "cos.hardware"
+    assert failed[0].context == {"target": "engine", "exception": "OSError"}

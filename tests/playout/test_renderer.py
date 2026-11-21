@@ -284,3 +284,16 @@ def test_the_renderer_s_own_clock_reads_the_station_zone_without_any_help(monkey
     renderer.render("id_long", config(long_id_mode="voice", long_id_text="{time}"))
     after = spoken_time(datetime.now(ZoneInfo("Asia/Kolkata")))
     assert tts.calls[-1][0] in (before, after)
+
+
+def test_a_voice_id_that_became_cw_and_an_id_with_no_callsign_are_named_warnings(structured_events):
+    renderer, _ = make_renderer(tts=FakeTTS(fail=True))
+    assert len(renderer.render("id", config(id_mode="voice"))) > 0
+    cw = structured_events.named("station_id.cw_fallback")
+    assert len(cw) == 1 and cw[0].severity.name == "WARNING" and cw[0].error_code == "station_id.no_voice"
+    assert cw[0].context == {}
+
+    renderer, _ = make_renderer()
+    assert len(renderer.render("id", config(callsign="", id_mode="cw"))) == 0
+    empty = structured_events.named("station_id.empty")
+    assert len(empty) == 1 and empty[0].error_code == "station_id.empty" and empty[0].message == "station ID is empty -- set a callsign"

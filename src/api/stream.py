@@ -17,6 +17,8 @@ import time
 from typing import Callable, Optional
 from urllib.parse import quote
 
+from observability import log_event
+
 from .monitor import AudioMonitor
 from .persistence import StateStore
 
@@ -145,7 +147,10 @@ class Streamer:
             failures = 0 if streamed_for > 60 else failures + 1
             delay = RETRY_SECONDS[min(max(failures - 1, 0), len(RETRY_SECONDS) - 1)]
             detail = error or "ffmpeg stopped."
-            _logger.warning("stream to %s stopped: %s; retrying in %d s", settings["host"], detail, delay)
+            log_event(
+                _logger, logging.WARNING, "stream.stopped", f"stream to {settings['host']} stopped: {detail}; retrying in {delay} s",
+                error_code="stream.stopped", host=settings["host"], retry_s=delay, facts_in_text=False,
+            )
             self._set_status("retrying", f"{detail} Trying again in {delay} s.")
             await self._wait_for_change(delay)
 

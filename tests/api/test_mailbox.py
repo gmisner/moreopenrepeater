@@ -363,3 +363,15 @@ def test_mailbox_settings_round_trip(tmp_path, monkeypatch):
     saved = client.put("/api/config", json={"mailbox_enabled": True, "mailbox_leave_code": "*71", "mailbox_reminder_minutes": 0}).json()
     assert saved["mailbox_enabled"] is True and saved["mailbox_leave_code"] == "*71"
     assert client.put("/api/config", json={"mailbox_leave_code": "*7#"}).status_code == 422
+
+
+def test_a_locked_mailbox_is_a_named_warning_without_the_pin(structured_events):
+    mailbox, _service, _live, store, _clock = make()
+    store.save("12", np.zeros(RATE, dtype=np.float32), START)
+    for _ in range(MAX_PIN_FAILURES):
+        mailbox.handle(MailboxCommand("delete", "12", "0000"))
+    locked = structured_events.named("mailbox.locked")
+    assert len(locked) == 1 and locked[0].severity.name == "WARNING" and locked[0].error_code == "mailbox.locked"
+    assert locked[0].context == {"box": "12", "failures": MAX_PIN_FAILURES}
+    assert locked[0].message == f"mailbox 12 locked after {MAX_PIN_FAILURES} wrong PINs"
+    assert "0000" not in locked[0].model_dump_json().replace('"seq"', "")  # no PIN, wrong or right

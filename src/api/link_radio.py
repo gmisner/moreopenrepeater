@@ -35,6 +35,8 @@ from controller.state_machine import RepeaterConfig
 from playout.renderer import TTS_PREFIX, ClipRenderer, UnknownClipError
 from playout.tts import TTSError
 
+from observability import log_event
+
 from .audio_devices import resolve_audio_device
 from .boards import run_amixer
 from .host_hardware import header_pin_reason, missing_link_interface, serial_port_reason
@@ -349,10 +351,16 @@ class LinkRadio:
         if now - self._last_stream_recover < STREAM_RECOVER_COOLDOWN:
             self._stop()
             self.error = "linked radio audio stream died (USB unplug or device reset)"
-            _logger.warning("linked radio audio stream died again too soon; not restarting yet")
+            log_event(
+                _logger, logging.WARNING, "audio.restart_deferred", "linked radio audio stream died again too soon; not restarting yet",
+                target="link_radio", facts_in_text=False,
+            )
             return
         self._last_stream_recover = now
-        _logger.info("restarting linked radio audio after the stream died")
+        log_event(
+            _logger, logging.INFO, "audio.restarting", "restarting linked radio audio after the stream died", target="link_radio",
+            facts_in_text=False,
+        )
         self._stop()
         self._start(config)
 
@@ -422,7 +430,10 @@ class LinkRadio:
             engine.start()
         except Exception as error:  # PortAudio raises its own error types
             self.error = f"couldn't open the linked radio's audio devices: {error}"
-            _logger.error("%s", self.error)
+            log_event(
+                _logger, logging.ERROR, "audio.open_failed", self.error,
+                error_code="audio.open", target="link_radio", exception=type(error).__name__, facts_in_text=False,
+            )
             try:
                 engine.stop()
             except Exception:

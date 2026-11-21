@@ -218,3 +218,21 @@ def test_link_schedule_settings(tmp_path):
         ]
         schedules = client.get("/api/links").json()["schedules"]
         assert schedules[0]["node"] == "2000" and schedules[0]["next_start"].endswith("07:05:00")
+
+
+def test_link_requests_are_named_events_with_the_node_and_the_mode(structured_events):
+    async def scenario():
+        links = LinkControl(RepeaterService(), directory(), lambda: "1999")
+        links.client = FakeClient()
+        await links.connect("2001", True)
+        await links.connect("2002", False)
+        await links.disconnect("2000")
+        await links.disconnect_all()
+
+    asyncio.run(scenario())
+    requested = structured_events.named("link.node_requested")
+    assert [e.context for e in requested] == [
+        {"action": "connect", "node": "2001", "mode": "monitor"}, {"action": "connect", "node": "2002", "mode": "transceive"},
+        {"action": "disconnect", "node": "2000"}, {"action": "disconnect_all"},
+    ]
+    assert requested[0].message == "connecting node 2001 (monitor)" and requested[3].message == "disconnecting all links"

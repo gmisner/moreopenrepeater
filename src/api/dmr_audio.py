@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import socket
 import time
 from dataclasses import dataclass
 from typing import NamedTuple, Optional
@@ -35,6 +34,7 @@ from observability import log_event
 from .service.core_handle import CoreHandle
 from .service import LINK_DMR_NODE
 from .supervise import LoopGuard
+from .usrp_resolve import resolve_ipv4
 
 _logger = logging.getLogger("moreopenrepeater.dmr_audio")
 
@@ -143,7 +143,7 @@ class DmrAudio(asyncio.DatagramProtocol):
             return
         loop = asyncio.get_running_loop()
         try:
-            self._peer_ip = socket.gethostbyname(s.peer_host)
+            self._peer_ip = await resolve_ipv4(s.peer_host)
             self._transport, _ = await loop.create_datagram_endpoint(lambda: self, local_addr=(s.listen_host, s.listen_port))
         except OSError as error:
             _logger.error(
@@ -205,7 +205,7 @@ class DmrAudio(asyncio.DatagramProtocol):
                     self._seq += 1
                     self._transport.sendto(
                         encode_voice(self._seq, _to_pcm(pending[:FRAME_SAMPLES])),
-                        (s.peer_host, s.peer_port),
+                        (self._peer_ip, s.peer_port),
                     )
                     pending = pending[FRAME_SAMPLES:]
             except Exception as error:  # noqa: BLE001

@@ -1,7 +1,10 @@
 """The Winlink RMS gateway containers (ADR 0006): what the entrypoints will and will not start, and how compose gives them the radio."""
+import json
 import re
 import shutil
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -38,12 +41,32 @@ def gateway(tmp_path, **env):
 def test_a_good_setting_renders_a_gateway_that_listens_for_the_modem_and_is_off_winlink_until_it_has_a_password(tmp_path):
     result, cfg = gateway(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert "NODECALL=W1AW-10" in cfg and "LOCATOR=FN31PR" in cfg  # case is fixed, the SSID is -10
+    assert "NODECALL=W1AW\n" in cfg and "LOCATOR=FN31PR" in cfg  # case is fixed; the node is the bare call, the gateway is -10
     assert "IPADDR=172.28.0.40" in cfg and "TCPPORT=8001" in cfg and "PROTOCOL=KISS" in cfg
     assert "CMS=" not in cfg and "CMSPASS" not in cfg and "WL2KREPORT" not in cfg  # no way to Winlink, and not listed
     assert "Winlink CMS OFF" in result.stdout  # and it says so, rather than running looking ready
-    assert "APPLICATION 1,RMS,C 1 CMS,W1AW-10" in cfg
+    assert "APPLICATION 1,RMS,C 2 CMS,W1AW-10" in cfg
     assert 'USER=sysop,a-long-admin-password,W1AW,"",SYSOP' in cfg
+
+
+def test_a_station_connecting_to_the_gateway_call_reaches_the_winlink_application_not_the_node(tmp_path):
+    """Found on a bench with a stand-in modem and a stand-in CMS: with the node and the application on the same call a connection
+    gets the node (no banner, no Winlink), and with `C 1 CMS` the command goes to the radio port instead of the telnet port that
+    holds the CMS link. Neither could ever have served a radio client."""
+    _, cfg = gateway(tmp_path, MOR_WINLINK_CMS_PASSWORD="Gw.Pass+1")
+    node = re.search(r"^NODECALL=(\S+)$", cfg, re.M).group(1)
+    app = re.search(r"^APPLICATION 1,RMS,C (\d+) CMS,(\S+)$", cfg, re.M)
+    assert node == "W1AW" and app.group(2) == "W1AW-10" and node != app.group(2)  # two calls: the node and the gateway
+    telnet = re.search(r"PORTNUM=(\d+)\n DRIVER=TELNET", cfg).group(1)
+    assert app.group(1) == telnet  # the application connects through the telnet port, where CMS=1 is
+    assert "CMS=1" in cfg.split("DRIVER=TELNET")[1]
+
+
+def test_the_gateway_writes_the_two_logs_the_page_reads_and_nothing_more_is_asked_of_it(tmp_path):
+    _, cfg = gateway(tmp_path)
+    header = cfg.split("\nPORT\n")[0]
+    assert "ENABLEADIFLOG=1" in header and "LogAllConnects=1" in header  # the session record and the connect log, in its tmpfs
+    assert "LogL4Connects" not in cfg
 
 
 def test_with_the_winlink_password_it_connects_to_winlink_but_is_still_not_listed(tmp_path):
@@ -248,3 +271,125 @@ def test_what_the_dockerfiles_copy_is_not_hidden_by_dockerignore():
     for dockerfile in ("Dockerfile.winlink", "Dockerfile.direwolf"):
         for source in re.findall(r"^COPY (?!--from)(\S+) ", (DOCKER / dockerfile).read_text(), re.M):
             assert f"!{source}" in ignore, f"{dockerfile} copies {source}, which .dockerignore leaves out"
+
+
+# -- sessions and counters: the reporter inside the containers ---------------------------------------------------------------------
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+PYTHON_PATH = f"{Path(sys.executable).parent}:/usr/bin:/bin"
+
+
+def launch(script, tmp_path, env, timeout=30):
+    """The real entrypoint, started the way the container starts it, with a stand-in for the program it would exec."""
+    config = tmp_path / ("bpq32.cfg" if "winlink" in script else "direwolf.conf")
+    key = "MOR_WINLINK_CONFIG" if "winlink" in script else "MOR_DIREWOLF_CONFIG"
+    return subprocess.run(
+        [SH, str(DOCKER / script)], capture_output=True, text=True, timeout=timeout,
+        env={"PATH": PYTHON_PATH, key: str(config), "MOR_WINLINK_REPORTER": str(DOCKER / "winlink-reporter.py"),
+             "MOR_WINLINK_SCAN_SECONDS": "0.2", **env},
+    )
+
+
+def test_the_gateway_starts_the_reporter_beside_linbpq_which_reads_the_logs_linbpq_writes(tmp_path):
+    fake = tmp_path / "linbpq"
+    fake.write_text(
+        "#!/bin/sh\nmkdir -p logs\n"
+        f"cp {FIXTURES}/bpq_cms_adif_202611.adi logs/BPQ_CMS_ADIF_202611.adi\n"
+        f"cp {FIXTURES}/ConnectLog_261121.log logs/ConnectLog_261121.log\n"
+        "echo 'Password=NEVER-READ' > logs/Telnet_261121.log\nsleep 1.5\nexit 7\n"
+    )
+    fake.chmod(0o755)
+    status = tmp_path / "status"
+    status.mkdir()
+    result = launch("winlink-entrypoint.sh", tmp_path, {**GOOD, "MOR_WINLINK_BIN": str(fake), "MOR_WINLINK_STATUS_DIR": str(status)})
+    assert result.returncode == 7, result.stderr  # linbpq's own exit code: the restart policy sees what happened
+    snap = json.loads((status / "gateway.json").read_text())
+    assert snap["counters"]["sessions"] == 2 and snap["counters"]["connects"] == 3
+    assert "NEVER-READ" not in (status / "gateway.json").read_text()
+    assert not (status / "modem.json").exists()  # the gateway writes only its own file
+
+
+def test_the_reporter_stops_when_the_program_it_watches_stops(tmp_path):
+    """A reporter left running would hold the container's output open after linbpq exits."""
+    fake = tmp_path / "linbpq"
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    status = tmp_path / "status"
+    status.mkdir()
+    started = time.monotonic()
+    result = launch("winlink-entrypoint.sh", tmp_path, {**GOOD, "MOR_WINLINK_BIN": str(fake), "MOR_WINLINK_STATUS_DIR": str(status),
+                                                          "MOR_WINLINK_SCAN_SECONDS": "0.3"}, timeout=20)
+    assert result.returncode == 0 and time.monotonic() - started < 10
+
+
+def test_the_modem_runs_through_the_reporter_with_its_output_intact_and_its_exit_code(tmp_path):
+    fake = tmp_path / "direwolf"
+    fake.write_text(f"#!/bin/sh\ncat {FIXTURES}/direwolf_stdout.txt\nexit 5\n")
+    fake.chmod(0o755)
+    status = tmp_path / "status"
+    status.mkdir()
+    result = launch("direwolf-entrypoint.sh", tmp_path, {
+        "MOR_WINLINK_CALL": "W1AW", "MOR_PACKET_CARD": "2", "MOR_DIREWOLF_BIN": str(fake), "MOR_WINLINK_STATUS_DIR": str(status)})
+    assert result.returncode == 5, result.stderr
+    assert "[0L] W1AW-10>CQ:beacon from the gateway" in result.stdout  # as `docker compose logs direwolf` shows it today
+    counters = json.loads((status / "modem.json").read_text())["counters"]
+    assert counters["frames_heard"] == 3 and counters["frames_sent"] == 1
+
+
+@pytest.mark.parametrize("script, env, name", [
+    ("winlink-entrypoint.sh", GOOD, "linbpq"),
+    ("direwolf-entrypoint.sh", {"MOR_WINLINK_CALL": "W1AW", "MOR_PACKET_CARD": "2"}, "direwolf"),
+])
+def test_with_no_status_folder_or_no_python_the_program_still_runs_and_says_the_counters_are_off(tmp_path, script, env, name):
+    fake = tmp_path / name
+    fake.write_text("#!/bin/sh\necho running\nexit 4\n")
+    fake.chmod(0o755)
+    binary = {"linbpq": "MOR_WINLINK_BIN", "direwolf": "MOR_DIREWOLF_BIN"}[name]
+    result = launch(script, tmp_path, {**env, binary: str(fake), "MOR_WINLINK_STATUS_DIR": str(tmp_path / "no-such-folder")})
+    assert result.returncode == 4 and "running" in result.stdout and "sessions and counters are off" in result.stdout
+
+
+# -- compose and the images, for the same ----------------------------------------------------------------------------------
+
+
+def test_the_snapshots_live_in_memory_and_only_the_api_can_not_write_them():
+    volume = COMPOSE["volumes"]["winlink-status"]
+    assert volume["driver_opts"]["type"] == "tmpfs" and volume["driver_opts"]["device"] == "tmpfs"  # no SD card writes
+    options = dict(part.split("=") for part in volume["driver_opts"]["o"].split(","))
+    assert options["uid"] == "999" and options["gid"] == "999" and "size" in options
+    mounts = {name: [v for v in COMPOSE["services"][name].get("volumes", []) if str(v).startswith("winlink-status:")]
+              for name in COMPOSE["services"]}
+    assert mounts["api"] == ["winlink-status:/winlink-status:ro"]  # the API reads and never writes
+    assert mounts["direwolf"] == ["winlink-status:/winlink-status"] and mounts["winlink"] == ["winlink-status:/winlink-status"]
+    assert all(not found for name, found in mounts.items() if name not in ("api", "direwolf", "winlink"))
+
+
+def test_each_part_is_told_where_the_folder_is_and_the_api_still_has_no_docker_access():
+    def env(name):
+        return {k: str(v).split("#")[0].strip() for k, v in COMPOSE["services"][name]["environment"].items()}
+
+    assert env("api")["MOREOPENREPEATER_WINLINK_STATUS_DIR"] == "/winlink-status"
+    assert env("direwolf")["MOR_WINLINK_STATUS_DIR"] == "/winlink-status" and env("winlink")["MOR_WINLINK_STATUS_DIR"] == "/winlink-status"
+    api = COMPOSE["services"]["api"]
+    assert not [v for v in api.get("volumes", []) if "docker.sock" in str(v)] and "privileged" not in api and "pid" not in api
+
+
+@pytest.mark.parametrize("dockerfile", ["Dockerfile.winlink", "Dockerfile.direwolf"])
+def test_each_image_has_python_for_the_reporter_and_the_reporter_in_it(dockerfile):
+    text = (DOCKER / dockerfile).read_text()
+    assert re.search(r"apt-get install -y --no-install-recommends [^\n]*\bpython3\b", text.replace("\\\n", " "))
+    assert "COPY docker/winlink-reporter.py /usr/local/bin/winlink-reporter.py" in text
+    assert "PYTHONDONTWRITEBYTECODE=1" in text  # a read-only root
+
+
+def test_the_reporter_is_standard_library_only():
+    source = (DOCKER / "winlink-reporter.py").read_text()
+    imports = set(re.findall(r"^(?:import|from) ([a-z_]+)", source, re.M))
+    assert imports <= {"argparse", "hashlib", "json", "os", "re", "signal", "subprocess", "sys", "tempfile", "threading", "time",
+                       "collections", "datetime", "pathlib", "typing", "__future__"}
+
+
+def test_the_api_image_has_the_mount_point_for_the_status_folder_so_a_read_only_root_cannot_stop_it():
+    text = (DOCKER / "Dockerfile.api").read_text().replace("\\\n", " ")
+    assert re.search(r"mkdir -p [^&]*\s/winlink-status\b", text)

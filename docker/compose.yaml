@@ -159,6 +159,9 @@ services:
       # says about itself, read-only: each side writes only its own (docs/docker.md, The time container).
       - time-config:/time-config
       - time-status:/time-status:ro
+      # What the optional Winlink containers say about themselves (sessions and counters), read-only: an in-memory volume that
+      # only they write (docs/winlink.md). The API has no Docker access, so this is how it sees them. Empty with the profile off.
+      - winlink-status:/winlink-status:ro
       # The host's tailscaled socket folder, read-only, so the Remote page can show whether Tailscale is up (docs/docker.md,
       # Tailscale). The default is an empty folder in this repo, so a machine without Tailscale starts fine and Docker never
       # creates a root-owned folder on the host. setup.sh points MOR_TAILSCALE_DIR at /var/run/tailscale when the socket exists.
@@ -189,6 +192,7 @@ services:
       MOREOPENREPEATER_WINLINK_HOST: winlink  # the gateway, by its service name on the private network
       MOREOPENREPEATER_WINLINK_MODEM_HOST: ${MOR_DIREWOLF_IP:-172.28.0.40}  # the modem
       MOREOPENREPEATER_WINLINK_CALL: ${MOR_WINLINK_CALL:-}  # only to show the callsign: put it in .env too, since winlink.env is not read here
+      MOREOPENREPEATER_WINLINK_STATUS_DIR: /winlink-status  # sessions and counters, written by the two containers, read here
       # Inside the container it listens on every address of its own network; what the host can reach is the
       # published port above (loopback by default).
       MOREOPENREPEATER_HOST: 0.0.0.0
@@ -389,6 +393,9 @@ services:
         required: false
     environment:
       MOR_PACKET_CARD: ${MOR_PACKET_CARD:-9}
+      MOR_WINLINK_STATUS_DIR: /winlink-status  # where it writes its frame counts for the dashboard
+    volumes:
+      - winlink-status:/winlink-status  # in memory; the API reads it and the gateway writes its own file beside this one
     read_only: true
     tmpfs:
       - /run/direwolf:size=1m,mode=01777  # its configuration, made at every start
@@ -421,6 +428,9 @@ services:
       - services
     environment:
       MOR_WINLINK_KISS_HOST: ${MOR_DIREWOLF_IP:-172.28.0.40}  # winlink.env can name another modem (a hardware TNC)
+      MOR_WINLINK_STATUS_DIR: /winlink-status  # where it writes its sessions and counters for the dashboard
+    volumes:
+      - winlink-status:/winlink-status  # in memory; the API reads it and the modem writes its own file beside this one
     # No port is published: its admin page (8080) and telnet port (8010) answer on the private network only, and it reaches
     # Winlink by an outbound connection. The callsign, locator, passwords and the Winlink gateway password are in winlink.env.
     env_file:
@@ -510,6 +520,14 @@ networks:
         - subnet: ${MOR_SERVICES_SUBNET:-172.28.0.0/24}
 
 volumes:
+  # Sessions and counters from the Winlink containers to the dashboard (docs/winlink.md). A tmpfs, so nothing is written to the
+  # SD card: it is empty after a reboot and the counts start again. Owned by uid 999, which the three containers run as.
+  winlink-status:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=1m,uid=999,gid=999,mode=0755
   core-run:
   piper-voices:
   logd-run:

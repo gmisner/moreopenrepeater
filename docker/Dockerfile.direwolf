@@ -19,9 +19,13 @@ RUN git init -q /src && cd /src \
 
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 
-ENV DEBIAN_FRONTEND=noninteractive
+# python3 is for the reporter (winlink-reporter.py, the standard library only): it runs Dire Wolf, passes its output on unchanged and
+# counts frames heard and sent for the dashboard. No bytecode is written, since the root is read-only.
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libasound2t64 libudev1 \
+    && apt-get install -y --no-install-recommends libasound2t64 libudev1 python3 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/build/src/direwolf /usr/local/bin/direwolf
 
@@ -30,7 +34,8 @@ RUN groupadd --system --gid 999 moreopenrepeater \
        --shell /usr/sbin/nologin --groups audio moreopenrepeater \
     && mkdir -p /run/direwolf && chown 999:999 /run/direwolf
 COPY docker/direwolf-entrypoint.sh /usr/local/bin/direwolf-entrypoint.sh
-RUN chmod 755 /usr/local/bin/direwolf-entrypoint.sh
+COPY docker/winlink-reporter.py /usr/local/bin/winlink-reporter.py
+RUN chmod 755 /usr/local/bin/direwolf-entrypoint.sh /usr/local/bin/winlink-reporter.py
 USER 999:999
 WORKDIR /run/direwolf
 ENTRYPOINT ["/usr/local/bin/direwolf-entrypoint.sh"]

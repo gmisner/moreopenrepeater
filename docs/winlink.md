@@ -6,7 +6,9 @@ Winlink over the Internet. It runs as two optional containers, `direwolf` (the p
 
 **Status.** The containers build and start on a Raspberry Pi 3B+ (arm64): the gateway attaches to the modem's KISS port and sets its timing,
 with the modem fed test audio instead of a radio. Nothing here has been verified on the air or against Winlink's CMS: that needs a packet
-radio and an authorized station. The modem's sound card and PTT path are tested only as configuration. Treat it as a bench build.
+radio and an authorized station. The modem's sound card and PTT path are tested only as configuration. The session list and counters
+(below) were checked on a bench against a stand-in packet client and a stand-in Winlink server talking to the real LinBPQ, and against
+real Dire Wolf output from test audio. They have not seen a real station or the real CMS. Treat it as a bench build.
 
 ## What you need
 
@@ -50,14 +52,17 @@ gateway on Winlink, which publishes your station: leave it off until the gateway
 
 ## What it does and does not do
 
-- The gateway answers as `CALL-10` (`MOR_WINLINK_SSID`) on the modem's 1200 baud AX.25 port and hands connections to Winlink's CMS. Its admin
-  page (user `sysop`) and telnet port are on the private network only: nothing is published to the host or the LAN. To open the page, give
-  the `winlink` service a published port in a `compose.override.yaml` bound to the loopback, for as long as you need it.
+- The gateway answers as `CALL-10` (`MOR_WINLINK_SSID`) on the modem's 1200 baud AX.25 port and hands connections to Winlink's CMS. LinBPQ's
+  node answers as the plain `CALL`, a separate call on purpose: with both on one call a station that connects gets the node and never
+  reaches Winlink. Its admin page (user `sysop`) and telnet port are on the private network only: nothing is published to the host or the
+  LAN. To open the page, give the `winlink` service a published port in a `compose.override.yaml` bound to the loopback, for as long as you
+  need it.
 - It keeps nothing but its running state and logs in memory (a tmpfs), so there is no message store to back up or to wear the SD card.
   Message text is not logged by MOR.
 - The core and the repeater do not know it exists. If it stops, the repeater is unaffected; a restart policy brings it back.
-- Not built yet: sessions and counters on the dashboard, start and stop from the dashboard, VARA FM, 9600 baud, several ports, a shared
-  radio (designed in `docs/adr/0007-shared-radio-lease.md`, not built), and off-grid delivery. The modem's PTT and audio path and a full message exchange have not been tried on a radio.
+- Not built yet: start and stop from the dashboard, VARA FM, 9600 baud, several ports, a shared radio (designed in
+  `docs/adr/0007-shared-radio-lease.md`, not built), and off-grid delivery. The modem's PTT and audio path and a full message exchange
+  have not been tried on a radio.
 
 ## The dashboard page
 
@@ -75,6 +80,56 @@ port. It says the same thing in words ("Answering" or "Not answering", with a sh
 - **The callsign** is shown only if you also put `MOR_WINLINK_CALL` in `docker/.env` (the file compose reads for the API;
   `winlink.env` goes to the gateway only, and the API never sees the passwords in it). Without it the page says the callsign is not
   shown, and the gateway is unaffected.
+
+### Sessions and counters
+
+With the gateway running, the page also shows what it has been doing, read-only:
+
+- **Recent sessions**, newest first: the connecting station's callsign, when it started, how long it lasted, how many messages it sent
+  up to Winlink and how many Winlink delivered to it, and how it ended ("Completed", "Ended early" if the link dropped or a side quit
+  before the exchange finished, or "Unknown" if the record could not be read). The page shows the last 25.
+- **Gateway counters:** sessions today (on the station's own calendar day, so it follows the time zone setting, and it says "at least"
+  if more than 100 happened today) and since it started, messages each way, message data each way, connections accepted on the radio,
+  connections that never reached Winlink, sessions that ended early, and the time of the last session.
+- **Modem counters:** frames heard and frames sent. Dire Wolf does not log each time it keys the transmitter, so there is no count of
+  that; frames sent is the nearest thing it reports. The counts include every station the modem hears, not only ones for the gateway.
+
+A few things worth knowing about the numbers:
+
+- "Message data" is the size of the messages before compression, which is what LinBPQ records. It is not the bytes sent on the air.
+- "Connections that never reached Winlink" means a station connected on the radio and no Winlink session followed within half an hour.
+  The usual causes are no Winlink password yet, Winlink not reachable, or the station giving up first. It is a count, not a reason.
+- The counts live in memory. When a container restarts they start again from zero, and the page says "Counting since". A reboot does
+  the same. Nothing is written to the SD card.
+- If a container stops, the page says it is not reporting instead of showing old numbers as current.
+
+**Where it comes from.** The API has no Docker access, so it cannot read the containers' logs, and it is not given any. Instead each
+container writes a small summary file into `winlink-status`, an in-memory volume (a tmpfs) that the API mounts read-only:
+
+- The **gateway** container runs a small reporter (`docker/winlink-reporter.py`, standard library only) beside LinBPQ. LinBPQ keeps two
+  logs of its own for this, in its in-memory log folder: one record per session that reached Winlink (`ENABLEADIFLOG=1`), written
+  when the session ends, and one line per connection accepted (`LogAllConnects=1`). The reporter reads those two files and nothing else
+  in that folder, and writes `gateway.json`.
+- The **modem** container runs Dire Wolf through the same reporter. It passes Dire Wolf's output on unchanged, so
+  `docker compose logs direwolf` reads as before, and counts two kinds of line by their first characters: a frame heard and a frame
+  sent. It writes `modem.json`.
+
+**What it never reads or shows.** No message text and no password. The reporter writes a short list of facts (counts, times, an
+outcome word, and a callsign that looks like one) and nothing a station typed, such as its software's name or its locator; the API
+checks the files again before it shows anything. Two LinBPQ files are left alone on purpose: its telnet log, which records what a user
+types at its login (a password included, in the container's memory only), and its Winlink access log, which is a trace of the protocol.
+Dire Wolf's own output does contain the text of frames it decodes, and `docker compose logs direwolf` always has: the reporter only
+looks at how each line starts and keeps none of it. Message text, a station's identification and passwords never reach the dashboard's
+log either.
+
+**The log.** When a session ends the API logs one `winlink.session_ended` event with its facts: `duration_s`, `messages_in`,
+`messages_out`, the byte counts and the `outcome`. The station's callsign is not in the event; it is shown to the signed-in dashboard
+user and nowhere else. The event is written when the page (or anything else that asks for `/api/winlink`) next reads the status, so
+with nobody looking it appears at the next look. Sessions that were already there when the API started are not announced.
+
+**Updating an existing install.** The two images now carry python3 and the reporter, and the API gets the new read-only volume, so run
+`docker compose --profile winlink up -d --build` from the docker folder (or `./update.sh`). The gateway's configuration also changed: the
+node and the Winlink application are on separate calls now (see above), which needs the rebuilt container to take effect.
 
 The API finds the services at `winlink` (the gateway) and `MOR_DIREWOLF_IP` (the modem, 172.28.0.40 by default), set in `docker/compose.yaml`
 as `MOREOPENREPEATER_WINLINK_HOST` and `MOREOPENREPEATER_WINLINK_MODEM_HOST`. The ports (8080, 8010, 8001) can be changed with

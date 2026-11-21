@@ -6,6 +6,9 @@
 # character in a password or a callsign would be a broken or a dangerous configuration file, and a gateway that is up but
 # misconfigured is worse than one that says why it is not.
 #
+# It also starts the reporter (winlink-reporter.py) beside LinBPQ: it reads the two logs LinBPQ keeps in its tmpfs (the session
+# record and the connect log) and writes a small summary into the in-memory volume the dashboard reads (docs/winlink.md).
+#
 #   --check   (the container's health check) the admin page is answering
 #   (for tests: MOR_WINLINK_RENDER_ONLY=1 writes the configuration to MOR_WINLINK_CONFIG and stops)
 set -eu
@@ -110,20 +113,25 @@ done
 
 # --- the file ---------------------------------------------------------------------------------------------------------
 
+TELNET_PORT=2  # the port number of the telnet port in the file below, and of the application's "C n CMS"
 umask 077
 {
-  printf 'SIMPLE\nLOCATOR=%s\nNODECALL=%s\nNODEALIAS=MOR\n\n' "$LOCATOR" "$GATEWAY"
+  # Two calls, on purpose: the node answers as the bare call and the Winlink application as CALL-SSID. With both on one call a
+  # connection reaches the node and never the application. ENABLEADIFLOG writes one record for each session that reached Winlink,
+  # and LogAllConnects one line for each connection accepted, both in LinBPQ's log folder (a tmpfs): what the dashboard's sessions
+  # and counters are made from.
+  printf 'SIMPLE\nLOCATOR=%s\nNODECALL=%s\nNODEALIAS=MOR\nENABLEADIFLOG=1\nLogAllConnects=1\n\n' "$LOCATOR" "$CALL"
   printf 'PORT\n PORTNUM=1\n ID=Dire Wolf 1200\n TYPE=ASYNC\n PROTOCOL=KISS\n IPADDR=%s\n TCPPORT=%s\n CHANNEL=A\n' "$KISS_HOST" "$KISS_PORT"
   printf ' MAXFRAME=2\n FRACK=7000\n RESPTIME=1000\n RETRIES=10\n PACLEN=236\n TXDELAY=300\n SLOTTIME=100\n PERSIST=64\n'
   [ "$REPORT" = 0 ] || printf ' WL2KREPORT PUBLIC, www.winlink.org, 8778, %s, %s, 00-23, %s, PKT1200, %s, %s, %s, %s\n' \
     "$GATEWAY" "$LOCATOR" "$FREQ" "$POWER" "$HEIGHT" "$GAIN" "$DIRECTION"
   printf 'ENDPORT\n\n'
-  printf 'PORT\n PORTNUM=2\n DRIVER=TELNET\n CONFIG\n LOGGING=1\n DisconnectOnClose=1\n HTTPPORT=8080\n TCPPORT=8010\n'
+  printf 'PORT\n PORTNUM=%s\n DRIVER=TELNET\n CONFIG\n LOGGING=1\n DisconnectOnClose=1\n HTTPPORT=8080\n TCPPORT=8010\n' "$TELNET_PORT"
   if [ "$CMS" = 1 ]; then
     printf ' CMS=1\n CMSCALL=%s\n CMSPASS=%s\n' "$CALL" "$MOR_WINLINK_CMS_PASSWORD"
   fi
   printf ' USER=sysop,%s,%s,"",SYSOP\nENDPORT\n\n' "$MOR_WINLINK_ADMIN_PASSWORD" "$CALL"
-  printf 'APPLICATION 1,RMS,C 1 CMS,%s\n' "$GATEWAY"
+  printf 'APPLICATION 1,RMS,C %s CMS,%s\n' "$TELNET_PORT" "$GATEWAY"  # "C n CMS": n is the telnet port, which holds the CMS link
 } > "$CONFIG"
 
 if [ "$CMS" = 1 ]; then
@@ -134,4 +142,14 @@ fi
 [ "${MOR_WINLINK_RENDER_ONLY:-0}" = 1 ] && exit 0
 
 cd "$(dirname "$CONFIG")"
-exec /usr/local/bin/linbpq
+
+# Sessions and counters for the dashboard. The reporter reads only what is in LinBPQ's log folder and writes only into the status
+# folder; if that is not there or there is no python, the gateway runs the same and says so.
+STATUS_DIR="${MOR_WINLINK_STATUS_DIR:-/winlink-status}"
+REPORTER="${MOR_WINLINK_REPORTER:-/usr/local/bin/winlink-reporter.py}"
+if [ -d "$STATUS_DIR" ] && [ -f "$REPORTER" ] && command -v python3 >/dev/null 2>&1; then
+  python3 "$REPORTER" gateway --logs "$PWD/logs" --out "$STATUS_DIR/gateway.json" --interval "${MOR_WINLINK_SCAN_SECONDS:-5}" --parent $$ &
+else
+  note "sessions and counters are off: no status folder or no python here (the gateway runs the same)"
+fi
+exec "${MOR_WINLINK_BIN:-/usr/local/bin/linbpq}"

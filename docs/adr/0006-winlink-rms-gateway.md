@@ -63,7 +63,7 @@ it neither owns nor leases anything for packet, and nothing about its radio, sou
   message exchange through Winlink's CMS need a real radio and an authorized station, and are not claimed.
 - A dashboard status page is built (read-only: three network probes with a 2 second timeout and a 15 second cache, no Docker access, so
   no start or stop; `docs/winlink.md`), and it shows sessions and counters (above). Not built: start and stop, VARA FM, 9600 baud,
-  several ports, off-grid delivery.
+  several ports, off-grid delivery (ADR 0008: no RMS Relay, and a LinBPQ mail mode only if wanted).
 - **Session records and counters are checked on a bench, not on the air.** The parsing was written against output captured from the pinned
   LinBPQ build run against a stand-in packet client and a stand-in Winlink CMS, and from Dire Wolf fed test audio. A real station and the
   real CMS may write something the samples do not show. LinBPQ's record is written only for sessions that reached the CMS.

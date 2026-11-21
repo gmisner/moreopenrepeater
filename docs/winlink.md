@@ -61,7 +61,8 @@ gateway on Winlink, which publishes your station: leave it off until the gateway
   Message text is not logged by MOR.
 - The core and the repeater do not know it exists. If it stops, the repeater is unaffected; a restart policy brings it back.
 - Not built yet: start and stop from the dashboard, VARA FM, 9600 baud, several ports, a shared radio (designed in
-  `docs/adr/0007-shared-radio-lease.md`, not built), and off-grid delivery. The modem's PTT and audio path and a full message exchange
+  `docs/adr/0007-shared-radio-lease.md`, not built), and off-grid delivery (considered in
+  `docs/adr/0008-winlink-off-grid-delivery.md`: not RMS Relay, and a LinBPQ mail mode only if the owner wants it). The modem's PTT and audio path and a full message exchange
   have not been tried on a radio.
 
 ## The dashboard page

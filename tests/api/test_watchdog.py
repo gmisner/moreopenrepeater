@@ -1,3 +1,4 @@
+import builtins
 import os
 import socket
 import tempfile
@@ -135,5 +136,8 @@ def test_a_systemd_socket_that_is_not_there_is_a_named_warning_with_the_error_ty
     assert sd_notify("READY=1", {"NOTIFY_SOCKET": str(tmp_path / "missing")}) is False
     failed = structured_events.named("watchdog.notify_failed")
     assert len(failed) == 1 and failed[0].severity.name == "WARNING" and failed[0].error_code == "watchdog.notify"
-    assert failed[0].context == {"exception": "OSError"}
+    # The type's name is the fact. A missing socket is FileNotFoundError on Linux and may be another OSError subclass elsewhere.
+    assert list(failed[0].context) == ["exception"]
+    named = getattr(builtins, failed[0].context["exception"], None)
+    assert isinstance(named, type) and issubclass(named, OSError)
     assert failed[0].message.startswith("couldn't notify systemd (READY=1): ")

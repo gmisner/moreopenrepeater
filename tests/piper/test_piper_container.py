@@ -243,3 +243,60 @@ def test_the_api_is_told_where_the_piper_service_is_so_the_dashboard_can_preview
     assert api_env["PIPER_SERVICE_URL"] == core_env["PIPER_SERVICE_URL"] == "http://piper:8766"
     assert str(api_env["PIPER_SERVICE_EXTERNAL"]) == "1"
     assert "piper" not in (compose["services"]["api"].get("devices") or [])  # it asks over the network, it holds nothing of Piper's
+
+
+def test_a_slow_voice_download_does_not_hold_up_speech_in_a_voice_the_service_already_has(external):
+    """Review finding: `ensure_piper_voice_remote` used to run under the speak lock, so a download of one voice (up to
+    180 s) held up a station ID spoken in another."""
+    import threading
+
+    downloading, release = threading.Event(), threading.Event()
+
+    def urlopen(request, timeout=None):
+        url = request.full_url
+        if url.endswith("/voices"):
+            return Reply(json.dumps({"en_US-amy-low": {}}).encode())
+        if url.endswith("/download"):
+            downloading.set()
+            assert release.wait(10)
+            return Reply(b"ok")
+        return Reply(wav())
+
+    tts = CommandTTS("piper", _piper_argv, binary="service", urlopen=urlopen)
+    slow = threading.Thread(target=lambda: tts.synthesize("preview", "en_GB-cori-high"))
+    slow.start()
+    try:
+        assert downloading.wait(5)
+        result = []
+        station_id = threading.Thread(target=lambda: result.append(tts.synthesize("this is the id", "en_US-amy-low")))
+        station_id.start()
+        station_id.join(timeout=3)
+        assert not station_id.is_alive(), "the ID was held up by another voice's download"
+        assert result and result[0][1] == 22050
+    finally:
+        release.set()
+        slow.join(timeout=10)
+
+
+def test_two_speakers_asking_for_the_same_missing_voice_download_it_once(external):
+    import threading
+
+    downloads, present = [], set()
+
+    def urlopen(request, timeout=None):
+        url = request.full_url
+        if url.endswith("/voices"):
+            return Reply(json.dumps({v: {} for v in present}).encode())
+        if url.endswith("/download"):
+            downloads.append(json.loads(request.data)["voice"])
+            present.add("en_GB-cori-high")
+            return Reply(b"ok")
+        return Reply(wav())
+
+    tts = CommandTTS("piper", _piper_argv, binary="service", urlopen=urlopen)
+    threads = [threading.Thread(target=lambda: tts.synthesize("x", "en_GB-cori-high")) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert downloads == ["en_GB-cori-high"]

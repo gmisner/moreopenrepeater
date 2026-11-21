@@ -68,10 +68,10 @@ class DmrRestartControl:
                 "state": "failed",
                 "action": self._last_action,
                 "started_at": self._requested_at,
-                "message": "The DMR helper didn't pick up the request. Is moreopenrepeater-dmr-restart.path enabled?",
+                "message": "The DMR change did not start. The repeater's DMR helper may be off. The fix is in How to set this up on the DMR page.",
             }
         if status and status.get("state") == "running" and now - float(status.get("started_at") or now) > STALLED_AFTER_SECONDS:
-            return {**status, "state": "failed", "message": "The DMR change has been running for too long; see the log."}
+            return {**status, "state": "failed", "message": "The DMR change is taking too long. Check the Logs page."}
         return status
 
     def busy(self) -> bool:
@@ -90,7 +90,7 @@ class DmrRestartControl:
 
     def request(self, action: Action = "restart") -> None:
         if self.settings is None:
-            raise RuntimeError("DMR service restart isn't set up on this install (needs install-pi.sh)")
+            raise RuntimeError("DMR can't be restarted from this page on this install. The steps are in How to set this up on the DMR page.")
         if action not in ("restart", "stop", "install"):
             raise ValueError(f"unknown action {action!r}")
         if action == "install" and self.busy():

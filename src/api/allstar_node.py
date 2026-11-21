@@ -403,9 +403,9 @@ class AllStarNode:
 
     def _require_files(self) -> None:
         if self._manual is not None:
-            raise AllStarSetupError("The node is set up by MOREOPENREPEATER_USRP_NODE; change it there.")
+            raise AllStarSetupError("This node was set up outside the dashboard, so it can't be changed here. The steps are in How to set this up on the AllStarLink page.")
         if self._files is None:
-            raise AllStarSetupError("AllStarLink's rpt.conf wasn't found on this machine.")
+            raise AllStarSetupError("AllStarLink isn't installed on this machine yet. The steps are in How to set this up on the AllStarLink page.")
 
     def _check_writable(self) -> Optional[str]:
         """Check that key conf files under self._files.directory are writable by the service user.
@@ -421,11 +421,8 @@ class AllStarNode:
                 # os.access checks real UID/GID, which covers group permissions.
                 if not os.access(path, os.W_OK):
                     return (
-                        f"Config file {name} is not writable by the service user. "
-                        "Run: sudo usermod -aG asterisk moreopenrepeater && "
-                        f"sudo chmod g+w {path} && "
-                        "sudo systemctl restart moreopenrepeater. "
-                        "See docs/allstar.md for details."
+                        "AllStarLink's settings can't be changed by the dashboard yet. "
+                        "The fix is in How to set this up on the AllStarLink page."
                     )
         return None
 

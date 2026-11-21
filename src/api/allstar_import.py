@@ -118,9 +118,9 @@ class AllStarImporter:
     async def apply(self, number: str, *, replace: bool = False, callsign: Optional[str] = None) -> dict:
         async with self._lock:
             if self._directory is None or not self._requested():
-                raise NotFound("No folder was given to import from (see docs/allstar.md, Importing a node).")
+                raise NotFound("There is no folder to import a node from.")
             if not self._can_edit:
-                raise ImportRefused("The container node's files aren't available yet. Start the allstar container first.")
+                raise ImportRefused("AllStarLink isn't ready yet. Start it first (see How to set this up on the AllStarLink page).")
             found = await asyncio.get_running_loop().run_in_executor(None, scan, self._directory)
             source = next((n for n in found.nodes if n.number == number), None)
             if source is None:
@@ -199,7 +199,7 @@ def _plan(mine, reg: str, iax: str, number: str) -> dict:
         return {
             "state": "blocked",
             "existing": None,
-            "reason": "The container node's rpt.conf has no node to turn into this one. Start the allstar container once so it has its default files.",
+            "reason": "This machine has no node to turn into this one yet. Start AllStarLink once so it creates its starting files (see How to set this up on the AllStarLink page).",
         }
     configured = [n for n in mine if n.number not in PLACEHOLDER_NODES or _registered(reg, iax, n.number)]
     if configured:

@@ -181,8 +181,9 @@ def test_the_preview_says_what_it_found_and_what_it_will_and_will_not_take(site,
     assert node["allowed_links"] == 2 and node["startup_macro"] == "*81" and node["has_registration"] is True
     assert node["radio"] == "SimpleUSB/usb_fixture" and node["suggested"] is True and by_number["99006"]["suggested"] is False
     assert any("Callsign" in line for line in body["will_take"]) and any("Registration password" in line for line in body["will_take"])
-    assert any("rxchannel" in line and "USRP" in line for line in body["will_not_take"])
-    assert any("simpleusb.conf" in line for line in body["will_not_take"])
+    assert any("Radio settings" in line for line in body["will_not_take"])
+    assert any("Sound card" in line for line in body["will_not_take"])
+    assert not any("rxchannel" in line or ".conf" in line for line in body["will_not_take"])  # plain words, not file names
     assert {f["name"]: f["status"] for f in body["files"]}["rpt.conf"] == "read"
     assert body["target"]["99001"] == {"state": "new", "existing": "1999", "reason": None}
     assert snapshot_of(etc) == before  # a preview writes nothing
@@ -298,7 +299,7 @@ def test_applying_writes_the_node_into_the_container_files_and_not_the_radio(sit
     assert ami.commands == ["core restart now"]
     assert body["status"]["node"] == "99001" and body["status"]["audio"]["running"]
     assert body["took"][:2] == ["Node number 99001", "Callsign N0CALL"] and "Registration password" in body["took"]
-    assert any("rxchannel" in line for line in body["left"])
+    assert any("Radio settings" in line for line in body["left"])
     assert PASSWORD not in everything_said(tmp_path, audit, response)
     assert not any(s in everything_said(tmp_path, audit, response) for s in OTHER_SECRETS)
 

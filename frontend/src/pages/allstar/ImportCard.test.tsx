@@ -227,7 +227,7 @@ describe("ImportCard", () => {
   it("holds the button off while the container node isn't there, or can't take it", async () => {
     answer(preview({ available: false }));
     show();
-    await screen.findByText("The container node isn't ready");
+    await screen.findByText("AllStarLink isn't ready yet");
     expect(screen.getByRole("button", { name: "Import node 99001" })).toBeDisabled();
   });
 

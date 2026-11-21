@@ -1,4 +1,4 @@
-import { Button, Code, Text, VisuallyHidden } from "@mantine/core";
+import { Button, Text, VisuallyHidden } from "@mantine/core";
 import type { SetupStep } from "./model";
 import "./allstar.css";
 
@@ -6,10 +6,13 @@ export function SetupChecklist({
   steps,
   canAct,
   onAction,
+  onShowSteps,
 }: {
   steps: SetupStep[];
   canAct: (action: "node" | "favorites") => boolean;
   onAction: (action: "node" | "favorites") => void;
+  /** Opens the page's "How to set this up" section. */
+  onShowSteps?: () => void;
 }) {
   const done = steps.filter((s) => s.done).length;
   const current = steps.find((s) => !s.done)?.id;
@@ -41,12 +44,12 @@ export function SetupChecklist({
                 <VisuallyHidden> ({step.done ? "done" : "to do"})</VisuallyHidden>
               </div>
               {!step.done ? <p className="mor-step-detail">{step.detail}</p> : null}
-              {!step.done && step.id === "install" ? (
-                <p className="mor-step-detail">
-                  <Code>sudo scripts/install-pi.sh --allstar</Code>
-                </p>
-              ) : null}
             </div>
+            {!step.done && step.id === "install" && onShowSteps ? (
+              <Button size="xs" variant={step.id === current ? "filled" : "default"} onClick={onShowSteps}>
+                Show the steps
+              </Button>
+            ) : null}
             {!step.done && step.action && canAct(step.action) ? (
               <Button size="xs" variant={step.id === current ? "filled" : "default"} onClick={() => onAction(step.action!)}>
                 {step.action === "node" ? "Set up node" : "Add favorites"}

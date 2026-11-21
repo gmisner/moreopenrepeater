@@ -210,3 +210,81 @@ describe("AllStar import of an existing node", () => {
     expect(screen.queryByText("Found an existing node configuration")).not.toBeInTheDocument();
   });
 });
+
+describe("AllStar plain wording", () => {
+  // What a repeater owner reads. The collapsed How to set this up section may hold commands and file names; nothing else may.
+  const DEVELOPER_WORDS = [
+    /experimental/i,
+    /bench/i,
+    /#219/,
+    /docs\/winlink\.md/,
+    /\bADR\b/,
+    /\bslice\b/i,
+    /ASL3/,
+    /Asterisk/,
+    /rpt\.conf/,
+    /asl-menu/,
+    /install-pi/,
+    /docker/i,
+    /systemctl/,
+    /journalctl/,
+    /usermod/,
+    /MOREOPENREPEATER_/,
+    /container/i,
+  ];
+
+  function readingText() {
+    const copy = document.body.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll("[data-setup-section]").forEach((node) => node.remove());
+    return copy.textContent ?? "";
+  }
+
+  const links = { available: true, node: "12345", error: null, links: [], favorites: [], schedules: [] };
+  const states: [string, Record<string, unknown>][] = [
+    ["linked and ready", {}],
+    ["not installed", { available: false, nodes: [], node: null, identity: null, error: null }],
+    ["no node yet", { nodes: [], node: null, identity: null }],
+    ["only the placeholder node", { nodes: [{ number: "1999", rxchannel: "SimpleUSB/usb", duplex: "1", controlled: false }], node: null, identity: null }],
+    ["a restart needed", { restart_needed: true }],
+    ["set up outside the dashboard", { manual: true }],
+    ["a settings file that cannot be written", { error: "AllStarLink's settings can't be changed by the dashboard yet. The fix is in How to set this up on the AllStarLink page." }],
+  ];
+
+  beforeEach(() => {
+    mockRole = "admin";
+    window.location.hash = ""; // an earlier test may have left a tab in the address
+  });
+
+  it.each(states)("keeps developer notes out of the page while %s", async (_name, patch) => {
+    vi.mocked(api).mockImplementation(async (path: string) => {
+      if (path === "/api/allstar") return { ...allstarStatus, ...patch };
+      if (path === "/api/allstar/echolink") return { available: true, enabled: true, loaded: false, error: null, settings: { callsign: "W1AW", node_number: "12345", astnode: "12345", location: "", name: "", email: "", lat: null, lon: null, frequency_mhz: null, tone_hz: null, max_stations: 20, has_password: true } };
+      if (path === "/api/links") return links;
+      if (path === "/api/links/events?limit=30") return { events: [] };
+      return {};
+    });
+    renderAllStar({});
+    await waitFor(() => expect(screen.getByText("This machine's node")).toBeInTheDocument());
+    await waitFor(() => expect(api).toHaveBeenCalledWith("/api/links"));
+    const text = readingText();
+    for (const word of DEVELOPER_WORDS) expect(text).not.toMatch(word);
+  });
+
+  it("keeps the install steps in one collapsed section, opened from the setup checklist", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api).mockImplementation(async (path: string) => {
+      if (path === "/api/allstar") return { ...allstarStatus, available: false, nodes: [], node: null, identity: null };
+      if (path === "/api/links") return links;
+      if (path === "/api/links/events?limit=30") return { events: [] };
+      return {};
+    });
+    renderAllStar({});
+    const show = await screen.findByRole("button", { name: "Show the steps" });
+    expect(document.querySelectorAll("[data-setup-section]")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "How to set this up" })).toHaveAttribute("aria-expanded", "false");
+    await user.click(show);
+    expect(screen.getByRole("button", { name: "How to set this up" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("sudo scripts/install-pi.sh --allstar")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Read the guide", hidden: true })).toHaveAttribute("href", expect.stringMatching(/docs\/allstar\.md$/));
+  });
+});

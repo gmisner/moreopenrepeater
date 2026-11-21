@@ -35,16 +35,16 @@ MAX_INCLUDES = 40
 # What the controller takes over from the source node, and what it deliberately leaves. Shown on the page.
 TAKEN = (
     "Node number",
-    "Callsign (the CW ID in idrecording)",
-    "Registration password (written to the container's registration files, never shown)",
+    "Callsign",
+    "Registration password (saved safely and never shown)",
     "Startup macro",
-    "Allowed links (the entries in the node's nodes list)",
+    "Allowed links",
 )
 LEFT = (
-    "Radio channel driver settings (rxchannel, txchannel, duplex): the radio here is the controller's core over USRP",
-    "Sound card, PTT and COS settings (simpleusb.conf, usbradio.conf, voter.conf are not read)",
-    "The management interface login (manager.conf is not read): the container has its own",
-    "IAX users and peers, EchoLink and anything else in the other files",
+    "Radio settings: this repeater is the node's radio now",
+    "Sound card, PTT and COS settings",
+    "The management login: this install has its own",
+    "Other connections, such as IAX users and EchoLink",
 )
 
 # The names of the files this looks at, besides the ones rpt.conf includes.

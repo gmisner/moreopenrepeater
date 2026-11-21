@@ -133,7 +133,7 @@ export function setupSteps(status: StatusLike | null, favoriteCount: number): Se
     {
       id: "install",
       title: "Install AllStarLink on this machine",
-      detail: "Run install-pi.sh --allstar on the repeater, or point it at a node running elsewhere (see the setup guide).",
+      detail: "AllStarLink is not installed on this machine yet. The steps are in How to set this up below.",
       done: installed,
     },
     {
@@ -149,8 +149,8 @@ export function setupSteps(status: StatusLike | null, favoriteCount: number): Se
   if (status?.restart_needed) {
     steps.push({
       id: "restart",
-      title: "Restart Asterisk",
-      detail: "Your node is set up but Asterisk hasn't picked it up yet. Run sudo systemctl restart asterisk.",
+      title: "Restart AllStarLink",
+      detail: "Your node is set up but AllStarLink hasn't picked it up yet. Restart it (the command is in How to set this up below).",
       done: false,
     });
   }

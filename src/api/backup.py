@@ -37,6 +37,7 @@ from observability import log_event
 from .assets import ASSET_ID, AssetInfo, AssetKind
 from .persistence import database_has_table
 from .safe_paths import child_path
+from .service.core_handle import CommandRefused, ConfigRefused, CoreUnavailable
 
 if TYPE_CHECKING:
     from controller.state_machine import RepeaterConfig
@@ -241,13 +242,30 @@ def restore_backup(
 ) -> dict:
     """Applies an opened backup. `settings` is `backup.settings` after the
     API's validation; users are checked here, before anything changes.
+    The settings go to the core first: if it is down or refuses them, the
+    clips, accounts and history are left exactly as they were.
     `import_settings` defaults to `service.import_snapshot` (the API runs
     it on the event loop instead of this worker thread).
     A backup with no dashboard accounts leaves the current ones alone,
     rather than turning sign-in off."""
     users = sources.users.parse(backup.users) if backup.users is not None else None
+    # The core is the one step that can fail for reasons outside this archive (it is down, or it refuses
+    # the settings), so it goes first. Everything after it is a local write, and the audio clips are only
+    # replaced once the macros that name them have been taken, so a failure here strands nothing.
+    try:
+        (import_settings or sources.service.import_snapshot)(settings)
+    except CoreUnavailable as error:
+        raise CoreUnavailable(
+            "Nothing was restored: the audio clips, accounts and history are as they were. "
+            f"{error}"
+        ) from None
+    except (CommandRefused, ConfigRefused) as error:
+        raise type(error)(
+            error.code,
+            f"Nothing was restored: the audio clips, accounts and history are as they were. {error.message}",
+            retryable=error.retryable,
+        ) from None
     sources.assets.replace(backup.assets, backup.directory / "audio")
-    (import_settings or sources.service.import_snapshot)(settings)
     if users:
         sources.users.replace(users)
     for name, path in backup.history.items():

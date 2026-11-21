@@ -37,6 +37,7 @@ from .service.core_handle import CommandRefused, ConfigRefused, CoreError, CoreU
 from .split import NotInSplitMode
 from .time_sync import TimeSync
 from .winlink import WinlinkStatus, settings_from_env
+from .winlink_activity import WinlinkActivity
 from .recordings import RecordingStore
 from .routes import accounts as accounts_routes
 from .routes import activity as activity_routes
@@ -455,9 +456,11 @@ def create_app(
         auth_dependencies=runtime.auth_dependencies,
     )
 
+    winlink_settings = settings_from_env(os.environ)
     winlink_routes.register(
         app,
-        winlink=WinlinkStatus(settings_from_env(os.environ)),
+        winlink=WinlinkStatus(winlink_settings),
+        activity=WinlinkActivity(winlink_settings.status_dir),
         auth_dependencies=runtime.auth_dependencies,
     )
 

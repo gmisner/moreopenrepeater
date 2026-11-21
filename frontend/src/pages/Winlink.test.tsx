@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NAV } from "../nav";
@@ -12,6 +12,70 @@ vi.mock("../api", () => ({
 
 import { api } from "../api";
 
+const activity = {
+  gateway: {
+    counters: {
+      sessions_today: 2,
+      sessions_today_is_minimum: false,
+      sessions_total: 5,
+      incomplete: 1,
+      messages_in: 3,
+      messages_out: 4,
+      bytes_in: 1536,
+      bytes_out: 2_500_000,
+      connects: 7,
+      failed_connects: 2,
+      last_session_at: "2026-11-21T01:33:07Z",
+      since: "2026-11-20T12:00:00Z",
+    },
+    sessions: [
+      {
+        id: "aaaaaaaaaaaa",
+        callsign: "N0CALL-1",
+        started_at: "2026-11-21T01:32:53Z",
+        duration_s: 14,
+        messages_in: 0,
+        messages_out: 0,
+        bytes_in: 0,
+        bytes_out: 0,
+        outcome: "ended_early",
+      },
+      {
+        id: "bbbbbbbbbbbb",
+        callsign: "K1ABC",
+        started_at: "2026-11-21T01:29:52Z",
+        duration_s: 185,
+        messages_in: 1,
+        messages_out: 2,
+        bytes_in: 120,
+        bytes_out: 300,
+        outcome: "completed",
+      },
+      {
+        id: "cccccccccccc",
+        callsign: null,
+        started_at: "2026-11-20T23:00:00Z",
+        duration_s: 3700,
+        messages_in: 0,
+        messages_out: 0,
+        bytes_in: 0,
+        bytes_out: 0,
+        outcome: "unknown",
+      },
+    ],
+  },
+  modem: {
+    counters: {
+      frames_heard: 42,
+      frames_sent: 9,
+      last_heard_at: "2026-11-21T01:34:00Z",
+      last_sent_at: null,
+      since: "2026-11-20T12:00:00Z",
+    },
+  },
+  notes: [] as string[],
+};
+
 const running = {
   enabled: true,
   callsign: "W1AW",
@@ -21,6 +85,7 @@ const running = {
     { id: "modem_kiss", ok: true, reason: "Accepting connections." },
   ],
   problems: [],
+  activity,
 };
 
 const modemDown = {
@@ -90,12 +155,13 @@ describe("Winlink", () => {
     expect(screen.queryByText("Turn it on")).not.toBeInTheDocument();
   });
 
-  it("always says it is amateur radio only, not for GMRS, and that sessions are not shown yet", async () => {
+  it("always says it is amateur radio only, not for GMRS, and offers no start or stop", async () => {
     vi.mocked(api).mockResolvedValue(running);
     renderWinlink();
     await screen.findByText("Running");
     expect(screen.getByText(/not for GMRS/)).toBeInTheDocument();
-    expect(screen.getByText(/Sessions and message counters are not shown yet/)).toBeInTheDocument();
+    expect(screen.getByText(/no start or stop buttons/)).toBeInTheDocument();
+    expect(screen.queryByText(/not shown yet/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /start|stop|restart/i })).not.toBeInTheDocument();
   });
 
@@ -112,6 +178,143 @@ describe("Winlink", () => {
     expect(await screen.findByText("Couldn't load Winlink status")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Running")).toBeInTheDocument();
+  });
+
+  describe("counters", () => {
+    async function counters() {
+      vi.mocked(api).mockResolvedValue(running);
+      renderWinlink();
+      await screen.findByText("Running");
+      return within(screen.getByRole("region", { name: "Winlink counters" }));
+    }
+    const valueOf = (region: ReturnType<typeof within>, label: string) =>
+      region.getByText(label).closest("dt")!.nextElementSibling as HTMLElement;
+
+    it("shows the gateway's counters with the right number against each label", async () => {
+      const region = await counters();
+      expect(valueOf(region, "Sessions today")).toHaveTextContent(/^2$/);
+      expect(valueOf(region, "Sessions since it started")).toHaveTextContent(/^5$/);
+      expect(valueOf(region, "Messages from stations")).toHaveTextContent(/^3$/);
+      expect(valueOf(region, "Messages to stations")).toHaveTextContent(/^4$/);
+      expect(valueOf(region, "Connections accepted")).toHaveTextContent(/^7$/);
+      expect(valueOf(region, "Connections that never reached Winlink")).toHaveTextContent(/^2$/);
+      expect(valueOf(region, "Sessions that ended early")).toHaveTextContent(/^1$/);
+    });
+
+    it("writes message sizes in plain units and says they are before compression", async () => {
+      const region = await counters();
+      expect(valueOf(region, "Message data from stations")).toHaveTextContent("1.5 KB");
+      expect(valueOf(region, "Message data to stations")).toHaveTextContent("2.4 MB");
+    });
+
+    it("shows what the modem heard and sent, and says it cannot count how often the transmitter was keyed", async () => {
+      const region = await counters();
+      expect(valueOf(region, "Frames heard")).toHaveTextContent(/^42$/);
+      expect(valueOf(region, "Frames sent")).toHaveTextContent(/^9$/);
+      expect(region.getByText(/does not log each time it keys the transmitter/)).toBeInTheDocument();
+    });
+
+    it("says when the counts began, since a restart starts them again", async () => {
+      const region = await counters();
+      expect(region.getByText(/Counting since/)).toBeInTheDocument();
+    });
+
+    it("says at least when the day's session list was full", async () => {
+      const full = structuredClone(running);
+      full.activity.gateway.counters.sessions_today_is_minimum = true;
+      vi.mocked(api).mockResolvedValue(full);
+      renderWinlink();
+      await screen.findByText("Running");
+      const region = within(screen.getByRole("region", { name: "Winlink counters" }));
+      expect(valueOf(region, "Sessions today")).toHaveTextContent("at least 2");
+    });
+
+    it("says in words what a part that is not reporting means, and still shows the part that is", async () => {
+      const partial = structuredClone(running);
+      partial.activity.modem = null as never;
+      partial.activity.notes = ["The modem is not reporting: its last report is too old, so it may have stopped."];
+      vi.mocked(api).mockResolvedValue(partial);
+      renderWinlink();
+      await screen.findByText("Running");
+      const region = within(screen.getByRole("region", { name: "Winlink counters" }));
+      expect(valueOf(region, "Sessions today")).toHaveTextContent(/^2$/);
+      expect(region.queryByText("Frames heard")).not.toBeInTheDocument();
+      expect(region.getByText(/The modem is not reporting/)).toBeInTheDocument();
+    });
+
+    it("says the counters are not set up when this install has no status folder, and shows no zeros in their place", async () => {
+      vi.mocked(api).mockResolvedValue({ ...running, activity: null });
+      renderWinlink();
+      await screen.findByText("Running");
+      expect(screen.getByText(/Sessions and counters are not set up on this install/)).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Winlink counters" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Recent Winlink sessions" })).not.toBeInTheDocument();
+    });
+
+    it("shows neither counters nor sessions while the gateway is switched off", async () => {
+      vi.mocked(api).mockResolvedValue({ ...off, activity: null });
+      renderWinlink();
+      await screen.findByText("Not running");
+      expect(screen.queryByRole("region", { name: "Winlink counters" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Recent Winlink sessions" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("recent sessions", () => {
+    async function sessions() {
+      vi.mocked(api).mockResolvedValue(running);
+      renderWinlink();
+      await screen.findByText("Running");
+      return within(screen.getByRole("region", { name: "Recent Winlink sessions" }));
+    }
+
+    it("lists each session newest first with the station, length, message counts and how it ended in words", async () => {
+      const region = await sessions();
+      const rows = region.getAllByRole("row").slice(1); // the first row is the headings
+      expect(rows).toHaveLength(3);
+      const first = within(rows[0]);
+      expect(first.getByText("N0CALL-1")).toBeInTheDocument();
+      expect(first.getByText("14s")).toBeInTheDocument();
+      expect(first.getByText("Ended early")).toBeInTheDocument();
+      const second = within(rows[1]);
+      expect(second.getByText("K1ABC")).toBeInTheDocument();
+      expect(second.getByText("3m 5s")).toBeInTheDocument();
+      expect(second.getByText("Completed")).toBeInTheDocument();
+      expect(second.getAllByRole("cell").map((cell) => cell.textContent)).toEqual(
+        expect.arrayContaining(["1", "2"]), // one message from the station, two to it
+      );
+    });
+
+    it("has a name for every column, so a screen reader can tell from-station from to-station", async () => {
+      const region = await sessions();
+      for (const name of ["Station", "Started", "Length", "From station", "To station", "How it ended"]) {
+        expect(region.getByRole("columnheader", { name })).toBeInTheDocument();
+      }
+    });
+
+    it("says a station whose callsign could not be read is unknown, and an hour-long session in hours", async () => {
+      const region = await sessions();
+      const last = within(region.getAllByRole("row")[3]);
+      expect(last.getByText("unknown")).toBeInTheDocument();
+      expect(last.getByText("1h 2m")).toBeInTheDocument();
+    });
+
+    it("says there are no sessions yet, in plain words, when the gateway has had none", async () => {
+      const empty = structuredClone(running);
+      empty.activity.gateway.sessions = [];
+      empty.activity.gateway.counters.sessions_total = 0;
+      vi.mocked(api).mockResolvedValue(empty);
+      renderWinlink();
+      await screen.findByText("Running");
+      const region = within(screen.getByRole("region", { name: "Recent Winlink sessions" }));
+      expect(region.getByText(/No sessions yet/)).toBeInTheDocument();
+      expect(region.queryByRole("table")).not.toBeInTheDocument();
+    });
+
+    it("never shows anything but the callsign of a station: no message text field exists to show", async () => {
+      const region = await sessions();
+      expect(region.queryByText(/subject|body|password/i)).not.toBeInTheDocument();
+    });
   });
 
   it("has a Winlink entry in the Integrations group of the navigation", () => {

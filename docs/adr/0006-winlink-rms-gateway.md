@@ -33,6 +33,24 @@ it neither owns nor leases anything for packet, and nothing about its radio, sou
   owner only, ignored by git), never defaults, never printed, and written only into the gateway's in-memory configuration
   (a tmpfs). The configuration is made from the environment at every start and checked first; a value that could add lines to it
   or break it stops the start.
+- **Sessions and counters come from LinBPQ's own session record and Dire Wolf's output, through a small reporter in each container
+  and an in-memory volume.** LinBPQ writes one record per session that reached Winlink (its ADIF log, `ENABLEADIFLOG=1`: callsign, end
+  time, length, messages and message sizes each way, how it ended) and one line per accepted connection (`LogAllConnects=1`), in its
+  tmpfs log folder. The reporter (`docker/winlink-reporter.py`, standard library only) reads those two files, nothing else in the folder,
+  and writes a short whitelist of facts to `/winlink-status/gateway.json`; in the modem container it runs Dire Wolf as a child, passes its
+  output through unchanged and counts lines that start like a frame heard or a frame sent. The API mounts the volume read-only,
+  checks every field again, caches for 15 seconds like the status probes, and logs `winlink.session_ended` with facts and no callsign.
+  Nothing is written to disk: the volume is a tmpfs and the counts start again with the container. Dire Wolf does not log each time
+  it keys the transmitter, so frames sent stands in for it, and the page says so.
+  Rejected: an HTTP read of LinBPQ's own pages (the Links and Users pages show only what is connected right now, so a poll misses short
+  sessions and cannot know counts, and each request adds a line to LinBPQ's telnet log); its telnet monitor commands (they need the
+  sysop password in the API); reading container logs from the API (that needs Docker access, which it must not get); LinBPQ's Winlink
+  access log (a protocol trace, not a record of sessions); and a second KISS client in the API (it would put every frame's text in
+  the API's memory). LinBPQ's telnet log is never read: it records what a user types at its login, a password included.
+- **Two calls.** The node answers as the plain call and the Winlink application as CALL-SSID, and the application connects through the
+  telnet port (`C 2 CMS`, the port number of the telnet port in the generated file). Found while building the above, on a bench with a
+  stand-in modem and CMS: with the node and the application on one call, or with the command pointing at the radio's port, a station
+  that connected never reached Winlink. The first slice's tests only checked the file's text.
 - **Honest readiness.** Without the Winlink password the gateway starts but says that nothing can reach Winlink. Listing on Winlink's
   channel list (which publishes the station) is a separate, off-by-default setting. Installing this grants no Winlink authorization:
   that is the operator's step.
@@ -44,7 +62,11 @@ it neither owns nor leases anything for packet, and nothing about its radio, sou
 - **Hardware is unverified.** The entrypoints and compose are tested without radios; the audio path, PTT, an AX.25 connection and a
   message exchange through Winlink's CMS need a real radio and an authorized station, and are not claimed.
 - A dashboard status page is built (read-only: three network probes with a 2 second timeout and a 15 second cache, no Docker access, so
-  no start or stop; `docs/winlink.md`). Not built: sessions and counters, start and stop, VARA FM, 9600 baud, several ports, off-grid delivery.
+  no start or stop; `docs/winlink.md`), and it shows sessions and counters (above). Not built: start and stop, VARA FM, 9600 baud,
+  several ports, off-grid delivery.
+- **Session records and counters are checked on a bench, not on the air.** The parsing was written against output captured from the pinned
+  LinBPQ build run against a stand-in packet client and a stand-in Winlink CMS, and from Dire Wolf fed test audio. A real station and the
+  real CMS may write something the samples do not show. LinBPQ's record is written only for sessions that reached the CMS.
 - Whether to keep building LinBPQ ourselves or ask upstream for a licence file.
 
 ## Considered options

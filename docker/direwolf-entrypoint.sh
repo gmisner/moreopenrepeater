@@ -5,6 +5,9 @@
 # given: the repeater's sound card and PTT are not in this container, so a wrong setting here cannot key the repeater.
 # The configuration is made from the environment at every start and checked first.
 #
+# It runs Dire Wolf through the reporter (winlink-reporter.py), which passes its output on unchanged and counts the frames heard and
+# the frames sent for the dashboard's counters. The text of a frame is never kept (docs/winlink.md).
+#
 #   --check   (the container's health check) the KISS port is listening
 #   (for tests: MOR_DIREWOLF_RENDER_ONLY=1 writes the configuration to MOR_DIREWOLF_CONFIG and stops)
 set -eu
@@ -66,4 +69,12 @@ umask 077
 
 printf 'direwolf: %s-%s on %s, KISS on 8001%s\n' "$CALL" "$SSID" "$ADEVICE" "${PTT:+, $PTT}"
 [ "${MOR_DIREWOLF_RENDER_ONLY:-0}" = 1 ] && exit 0
-exec /usr/local/bin/direwolf -t 0 -c "$CONFIG"
+
+DIREWOLF="${MOR_DIREWOLF_BIN:-/usr/local/bin/direwolf}"
+STATUS_DIR="${MOR_WINLINK_STATUS_DIR:-/winlink-status}"
+REPORTER="${MOR_WINLINK_REPORTER:-/usr/local/bin/winlink-reporter.py}"
+if [ -d "$STATUS_DIR" ] && [ -f "$REPORTER" ] && command -v python3 >/dev/null 2>&1; then
+  exec python3 "$REPORTER" modem --out "$STATUS_DIR/modem.json" --interval "${MOR_WINLINK_SCAN_SECONDS:-5}" -- "$DIREWOLF" -t 0 -c "$CONFIG"
+fi
+printf 'direwolf: sessions and counters are off: no status folder or no python here (the modem runs the same)\n'
+exec "$DIREWOLF" -t 0 -c "$CONFIG"

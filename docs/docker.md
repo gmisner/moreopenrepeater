@@ -347,6 +347,7 @@ keeps its readable text line in the log file exactly as before:
 | `autopatch.render_failed`, `.listening`, `.listen_failed`, `.connection_ended`, `.unknown_call` | | what they say; `call_id` for the last |
 | `usrp.configured` | info | `service`, `enabled`: the core pointed a service's audio at it, or stopped it |
 | `winlink.status_changed` | info, warning | `enabled`, `failing`: the Winlink gateway's status changed (warning when it is on and something is failing) |
+| `winlink.session_ended` | info | `duration_s`, `messages_in`, `messages_out`, `bytes_in`, `bytes_out`, `outcome` (`completed`, `ended_early` or `unknown`): a Winlink session ended. No callsign and no message text; logged when the Winlink page next reads the status (docs/winlink.md) |
 | `cm108.reopened`, `cm108.gone` | info, warning | `device`: the CM108 or AIOC interface came back after a USB drop, or dropped and has not come back; the second logs once, not once per write, with `error_code` `cm108.gone` |
 | `cm108.open_failed` | error | `purpose` (`ptt` or `linked_radio`), `device`, `exception`; `error_code` `cm108.open` |
 | `cm108.unkey_failed` | error | `exception`; `error_code` `cm108.unkey`. Startup could not unkey the interface, so the radio may be keyed |

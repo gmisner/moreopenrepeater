@@ -26,9 +26,13 @@ RUN git init -q /src && cd /src \
 
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 
-ENV DEBIAN_FRONTEND=noninteractive
+# python3 is for the reporter (winlink-reporter.py, the standard library only): it reads the two logs LinBPQ keeps and writes the
+# summary the dashboard's Winlink page shows. No bytecode is written, since the root is read-only.
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libminiupnpc18 libconfig11 libpcap0.8t64 zlib1g \
+    && apt-get install -y --no-install-recommends libminiupnpc18 libconfig11 libpcap0.8t64 zlib1g python3 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/linbpq /usr/local/bin/linbpq
 
@@ -39,7 +43,8 @@ RUN groupadd --system --gid 999 moreopenrepeater \
        --shell /usr/sbin/nologin moreopenrepeater \
     && mkdir -p /run/bpq && chown 999:999 /run/bpq
 COPY docker/winlink-entrypoint.sh /usr/local/bin/winlink-entrypoint.sh
-RUN chmod 755 /usr/local/bin/winlink-entrypoint.sh
+COPY docker/winlink-reporter.py /usr/local/bin/winlink-reporter.py
+RUN chmod 755 /usr/local/bin/winlink-entrypoint.sh /usr/local/bin/winlink-reporter.py
 USER 999:999
 WORKDIR /run/bpq
 ENTRYPOINT ["/usr/local/bin/winlink-entrypoint.sh"]

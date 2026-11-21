@@ -69,6 +69,7 @@ class WinlinkSettings:
     telnet_port: int = DEFAULT_TELNET_PORT
     kiss_port: int = DEFAULT_KISS_PORT
     callsign: Optional[str] = None  # the station's callsign, without the gateway's SSID (the dashboard cannot read it)
+    status_dir: Optional[str] = None  # where the gateway and modem containers write their sessions and counters (winlink_activity.py)
 
     def targets(self) -> dict[str, Optional[Target]]:
         gateway = self.gateway_host
@@ -98,6 +99,7 @@ def settings_from_env(env: Mapping[str, str]) -> WinlinkSettings:
         telnet_port=_port(env, "MOREOPENREPEATER_WINLINK_TELNET_PORT", DEFAULT_TELNET_PORT),
         kiss_port=_port(env, "MOREOPENREPEATER_WINLINK_KISS_PORT", DEFAULT_KISS_PORT),
         callsign=callsign,
+        status_dir=env.get("MOREOPENREPEATER_WINLINK_STATUS_DIR", "").strip() or None,
     )
 
 

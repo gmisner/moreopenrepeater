@@ -1,0 +1,72 @@
+direwolf: W1AW-10 on UDP:7355 null, KISS on 8001
+Dire Wolf Release 1.8.1, November 2025
+Includes optional support for:  cm108-ptt
+Warning: Could not open 'symbols-new.txt'.
+The "new" OVERLAID character information will not be available.
+
+Reading config file /run/direwolf/direwolf.conf
+Could not open any of these file locations:
+    tocalls.yaml
+    data/tocalls.yaml
+    ../data/tocalls.yaml
+    /usr/local/share/direwolf/tocalls.yaml
+    /usr/share/direwolf/tocalls.yaml
+It won't be possible to extract device identifiers from packets.
+Audio input device for receive: UDP:7355  (channel 0)
+Audio out device for transmit: null  (channel 0)
+Channel 0: 1200 baud, AFSK 1200 & 2200 Hz, A+, 44100 sample rate, Tx AX.25.
+
+Note: PTT not configured for channel 0. (OK if using VOX.)
+When using VOX, ensure that it adds very little delay (e.g. 10-20) milliseconds
+between the time that transmit audio ends and PTT is deactivated.
+For example, if using a SignaLink USB, turn the DLY control all the
+way counter clockwise.
+
+Using VOX built in to the radio is a VERY BAD idea.  This is intended
+for voice operation, with gaps in the sound, and typically has a delay of about a
+half second between the time the audio stops and the transmitter is turned off.
+When using APRS your transmiter will be sending a quiet carrier for
+about a half second after your packet ends.  This may interfere with the
+the next station to transmit.  This is being inconsiderate.
+
+If you are trying to use VOX with connected mode packet, expect
+frustration and disappointment.  Connected mode involves rapid responses
+which you will probably miss because your transmitter is still on when
+the response is being transmitted.
+
+Read the User Guide 'Transmit Timing' section for more details.
+
+Disabled AGW network client port.
+Ready to accept KISS TCP client application 0 on port 8001 ...
+
+N0CALL-1 audio level = 80(23/22)    _||||||__
+[0.3] N0CALL-1>W1AW-10,WIDE1-1:the quick brown fox 0001<0x0a>
+deviceid_decode_dest called without any deviceid data.
+Raw Touch Tone Data, Internal error - UNKNOWN vendor/model
+he quick brown fox 0001
+
+K1ABC audio level = 79(23/22)    _||||||__
+[0.3] K1ABC>W1AW-10:hello from a test station 0002<0x0a>
+deviceid_decode_dest called without any deviceid data.
+ERROR!!!  Unknown APRS Data Type Indicator "h", Internal error - UNKNOWN vendor/model
+
+N0CALL-1 audio level = 79(22/23)    |||||____
+[0.2] N0CALL-1>APRS:!4237.14N/07120.83W-test beacon 0003<0x0a>
+deviceid_decode_dest called without any deviceid data.
+Position, House QTH (VHF)
+Use of "APRS" in the destination field is obsolete.  You can help to improve the quality of APRS signals.
+Tell the sender (N0CALL-1) to use the proper product identifier from https://github.com/aprsorg/aprs-deviceid 
+N 42 37.1400, W 071 20.8300
+test beacon 0003
+
+Attached to KISS TCP client application 0 on port 8001 ...
+
+Ready to accept KISS TCP client application 1 on port 8001 ...
+[0L] W1AW-10>CQ:beacon from the gateway
+
+KISS client application 0 on TCP port 8001 has gone away.
+
+
+Attached to KISS TCP client application 1 on port 8001 ...
+
+Ready to accept KISS TCP client application 0 on port 8001 ...

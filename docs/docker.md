@@ -370,7 +370,7 @@ keeps its readable text line in the log file exactly as before:
 | `mailbox.locked` | warning | `box`, `failures`; `error_code` `mailbox.locked`. Never a PIN |
 | `state.unreadable` | error | `file` (the name only), `exception`; `error_code` `state.unreadable`. A saved-state file could not be read, so it was moved aside and defaults were used |
 | `backup.saved`, `backup.failed`, `backup.restored` | info, error, info | `include_recordings` and `keep` for the first; `exception` and `error_code` `backup.failed` for the second; `recordings_added` for the third |
-| `tts.service_ready`, `tts.service_failed` | info, error | `engine` (`piper` or `kokoro`); `exception` and `error_code` `tts.service` for the second. The first is the Piper container answering before audio goes live |
+| `tts.service_ready`, `tts.service_failed` | info, error | `engine` (`piper` or `kokoro`); `exception` and `error_code` `tts.service` for the second. The first is the Piper container answering, which can be after audio is already live (the core does not wait for it) |
 | `tts.fallback_used` | warning | `engine`, `fallback` (`espeak-ng`, `cli`, ...), `exception`; `error_code` `tts.fallback`. Never the text that was being spoken |
 | `tts.no_engine` | warning | none; `error_code` `tts.no_engine`. Voice IDs fall back to CW |
 | `core.connection_changed` | info | `connected`: the API reached the core, or lost it. Logged when it changes, not on each retry |
@@ -891,10 +891,11 @@ or `docker stop`. The API container is not restarted this way: it holds no devic
 ONNX runtime or voices; it was 458 MB) and a crash or a slow voice load happens in another container. Nothing is published. The default voice
 (`en_US-amy-low`) is baked into the `piper` image so the first start works offline; any other voice the dashboard picks is
 downloaded by the Piper container into the `piper-voices` volume the first time (the core asks it to, so the core needs no
-internet access for it). **The core never waits long for it.** At start it waits up to 60 seconds for Piper to answer, so the first long ID
-is not spoken by the fallback voice, then starts anyway; and if Piper is down or cannot get a voice, the core speaks with `espeak-ng`
-(still in the core image) and keeps repeating. A voice ID rendered by the fallback is kept until the voice or the callsign changes, so if
-Piper was down when the core started, restart the core once it is back. If you want no Piper at all, stop the `piper` service and the core uses `espeak-ng`.
+internet access for it). **The core never waits for it.** Audio and PTT start at once, whether or not Piper is up, so a restart after a stall or a
+sound card drop is not held up by a Piper that is down. A background check looks for Piper (every 30 seconds at most) until it answers. While
+it is down, or if it cannot get a voice, the core speaks with `espeak-ng` (still in the core image) and keeps repeating. If a voice ID was
+rendered by the fallback in the meantime, it is thrown away and rendered again with the Piper voice when Piper answers, so there is no need
+to restart the core. If you want no Piper at all, stop the `piper` service and the core uses `espeak-ng`.
 
 Measured on a Pi 3B+, with the core image built without Piper: the `piper` container is healthy in 36 seconds, and uses about 110 MB of the
 905 (about the same as it did inside the core). A test sentence took 5.3 seconds the first time and 2.6 seconds warm. Asking for a second

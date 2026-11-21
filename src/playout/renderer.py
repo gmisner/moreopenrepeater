@@ -94,6 +94,11 @@ class ClipRenderer:
         self._store(key, samples)
         return samples
 
+    def clear_cache(self) -> None:
+        """Forget every rendered clip, e.g. because the voice that speaks them has just become available."""
+        with self._lock:
+            self._cache.clear()
+
     def _store(self, key: tuple, samples: np.ndarray) -> None:
         with self._lock:
             self._cache[key] = samples

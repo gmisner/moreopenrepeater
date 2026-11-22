@@ -1,0 +1,10 @@
+/* The bar only ever animates while a page is loading. Reduced motion gets the same bar with no easing. */
+@media (prefers-reduced-motion: reduce) {
+  .mor-nprogress,
+  .mor-nprogress > * {
+    transition: none !important;
+  }
+  .mor-nprogress > *::before {
+    display: none;
+  }
+}

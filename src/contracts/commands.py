@@ -84,7 +84,10 @@ MIXER = frozenset({CommandName.MIXER_RUN})
 MAX_MIXER_ARGS = 12
 _MIXER_CARD = re.compile(r"^[0-9]{1,3}$")
 _MIXER_VALUE = re.compile(r"^[A-Za-z0-9%+.,-]{1,16}$")
+#: A value that starts with `-` has to be a negative number (`-3.5dB`), or amixer would read it as an option.
+_MIXER_NEGATIVE = re.compile(r"^-[0-9]+(?:[.,][0-9]+)?(?:dB|%)?$")
 
+# Always `fullmatch`: Python's `$` also matches just before a trailing newline, so `match` on `^...$` lets "5\n" through.
 _DTMF = re.compile(r"^[0-9A-D*#]$")
 _NODE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 _HOST = re.compile(r"^[A-Za-z0-9_.:-]{1,253}$")
@@ -147,9 +150,9 @@ def _valid(kind: str, value: Any) -> bool:
             isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and 0 < value <= 400
         )
     if kind == "digit":
-        return isinstance(value, str) and bool(_DTMF.match(value))
+        return isinstance(value, str) and bool(_DTMF.fullmatch(value))
     if kind == "node":
-        return isinstance(value, str) and bool(_NODE.match(value))
+        return isinstance(value, str) and bool(_NODE.fullmatch(value))
     if kind == "clip":
         return isinstance(value, str) and 0 < len(value) <= MAX_CLIP_CHARS and "\x00" not in value
     if kind == "seconds":  # a recording length: a real number, not a bool, within what one can be
@@ -160,26 +163,26 @@ def _valid(kind: str, value: Any) -> bool:
     if kind == "pin":
         return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 64
     if kind == "digits":
-        return isinstance(value, str) and bool(_DIGITS.match(value))
+        return isinstance(value, str) and bool(_DIGITS.fullmatch(value))
     if kind == "text":  # a short label (who asked, why): no control characters
         return isinstance(value, str) and 0 < len(value) <= 200 and value.isprintable()
     if kind == "pattern":
-        return isinstance(value, str) and bool(_PATTERN.match(value))
+        return isinstance(value, str) and bool(_PATTERN.fullmatch(value))
     if kind == "identifier":
-        return isinstance(value, str) and bool(_IDENTIFIER.match(value))
+        return isinstance(value, str) and bool(_IDENTIFIER.fullmatch(value))
     if kind == "link_event":
         return value in LINK_EVENTS
     if kind == "link_nodes":
         return (
             isinstance(value, dict) and len(value) <= MAX_LINK_NODES
-            and all(isinstance(k, str) and bool(_NODE.match(k)) and isinstance(v, bool) for k, v in value.items())
+            and all(isinstance(k, str) and bool(_NODE.fullmatch(k)) and isinstance(v, bool) for k, v in value.items())
         )
     if kind == "usrp_service":
         return value in USRP_SERVICES
     if kind == "usrp_peer":  # None, or where to send: a host and a port, nothing else
         return value is None or (
             isinstance(value, dict) and set(value) == {"host", "port"}
-            and isinstance(value["host"], str) and bool(_HOST.match(value["host"]))
+            and isinstance(value["host"], str) and bool(_HOST.fullmatch(value["host"]))
             and isinstance(value["port"], int) and not isinstance(value["port"], bool) and 1 <= value["port"] <= 65535
         )
     if kind == "mixer_args":
@@ -195,12 +198,13 @@ def _mixer_args_valid(args: Any) -> bool:
     if not isinstance(args, list) or not 3 <= len(args) <= MAX_MIXER_ARGS or not all(isinstance(a, str) for a in args):
         return False
     if args[0] == "-c":
-        return len(args) == 3 and bool(_MIXER_CARD.match(args[1])) and args[2] == "scontents"
+        return len(args) == 3 and bool(_MIXER_CARD.fullmatch(args[1])) and args[2] == "scontents"
     if args[:1] == ["-q"] and len(args) >= 6 and args[1] == "-c" and args[3] == "sset":
         control, values = args[4], args[5:]
         return (
-            bool(_MIXER_CARD.match(args[2])) and 0 < len(control) <= 64 and control.isprintable() and not control.startswith("-")
-            and 1 <= len(values) <= 4 and all(_MIXER_VALUE.match(v) for v in values)
+            bool(_MIXER_CARD.fullmatch(args[2])) and 0 < len(control) <= 64 and control.isprintable() and not control.startswith("-")
+            and 1 <= len(values) <= 4
+            and all(_MIXER_VALUE.fullmatch(v) and (not v.startswith("-") or _MIXER_NEGATIVE.fullmatch(v)) for v in values)
         )
     return False
 

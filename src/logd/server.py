@@ -68,6 +68,8 @@ class Collector:
         self._tasks: list[asyncio.Task] = []
         self.received = self.rejected = self.written = 0
         self.dropped_queue = self.dropped_write = self.write_errors = 0
+        self.writer_errors = self.critical_errors = 0  # failures of the writer loop and of the critical file that were not an OSError
+        self._writer_failing = self._critical_failing = False  # the latest pass failed; cleared by one that did not
         self.last_rejected: Optional[str] = None
         self._overflow_recorded = 0
 
@@ -103,13 +105,20 @@ class Collector:
             self._sock = None
         for task in self._tasks:
             task.cancel()
-        for task in self._tasks:
+        try:
+            for task in self._tasks:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as error:  # noqa: BLE001 - a task that had already died must not skip the rest
+                    _logger.warning("a collector task had stopped on %s", type(error).__name__)
+        finally:
             try:
-                await task
-            except asyncio.CancelledError:
-                pass
-        await self._drain()  # what is still queued is written, not lost with the process
-        self.path.unlink(missing_ok=True)
+                await self._drain()  # what is still queued is written, not lost with the process
+            except Exception as error:  # noqa: BLE001
+                _logger.warning("could not write the last events: %s", type(error).__name__)
+            self.path.unlink(missing_ok=True)
 
     # -- events in -----------------------------------------------------------------------------------------
 
@@ -150,14 +159,28 @@ class Collector:
             except asyncio.TimeoutError:
                 pass
             self._wake.clear()
-            await self._drain()
+            try:
+                await self._drain()
+                self._writer_failing = False
+            except Exception as error:  # noqa: BLE001 - nothing may end this loop: a dead writer is a collector that
+                # accepts events and stores none while reporting itself fine. Batches are counted where they fail.
+                self._writer_failing = True
+                self.writer_errors += 1
+                _logger.warning("the event writer hit %s and carries on", type(error).__name__)
 
     async def _drain(self) -> None:
         loop = asyncio.get_running_loop()
         while self._queue:
             batch = [self._queue.popleft() for _ in range(min(self.batch_size, len(self._queue)))]
             if self.critical is not None:  # its own try: a failed store write must not lose the errors
-                await loop.run_in_executor(None, self.critical.append, batch)
+                try:
+                    await loop.run_in_executor(None, self.critical.append, batch)
+                    self._critical_failing = False
+                except Exception as error:  # noqa: BLE001 - `append` handles OSError itself; this is anything else
+                    self._critical_failing = True
+                    self.critical_errors += 1
+                    if self.critical_errors == 1:  # once: it would repeat for every batch
+                        _logger.warning("the critical events file failed on %s", type(error).__name__)
             try:
                 await loop.run_in_executor(None, self.store.insert_many, batch)
                 self.written += len(batch)
@@ -193,12 +216,16 @@ class Collector:
         return {
             "received": self.received, "rejected": self.rejected, "last_rejected": self.last_rejected,
             "written": self.written, "dropped_queue": self.dropped_queue, "dropped_write": self.dropped_write,
-            "write_errors": self.write_errors, "queue": len(self._queue), "queue_size": self.queue_size,
+            "write_errors": self.write_errors, "writer_errors": self.writer_errors,
+            "critical_errors": self.critical_errors, "queue": len(self._queue), "queue_size": self.queue_size,
         }
 
     def health(self) -> str:
-        """`degraded` when it is losing events right now; there is no `failed`, a collector that answers is up."""
+        """`degraded` when it is losing events right now; there is no `failed`, a collector that answers is up.
+        That includes a writer or critical file whose latest pass failed, until a pass that works."""
         if self.write_errors and self.dropped_write:
+            return "degraded"
+        if self._writer_failing or self._critical_failing:
             return "degraded"
         return "degraded" if len(self._queue) >= self.queue_size * 0.8 else "ok"
 

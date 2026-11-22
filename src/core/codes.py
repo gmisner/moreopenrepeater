@@ -49,9 +49,36 @@ class CoreCodeChecker:
         self._lock = threading.Lock()  # checked from the audio thread
         self._users: dict[str, dict] = {}
         self._seen: Optional[tuple[int, int]] = None  # (mtime_ns, size) of the secrets file as last read
-        self._replayed: dict[str, int] = {k: int(v) for k, v in ((self._replay.load() or {}).get("last_step") or {}).items()}
+        self._replayed: dict[str, int] = self._load_replayed()
         self._failures: list[float] = []
         self.locked_until: Optional[float] = None
+
+    def _load_replayed(self) -> dict[str, int]:
+        """The last accepted step of each user. A record that is not what this class wrote is ignored with a
+        warning, not a crash: the core must start. The cost is that a code accepted in the last minute or so
+        could be accepted once more."""
+        try:
+            data = self._replay.load()
+            steps = data.get("last_step") if isinstance(data, dict) else None
+            if steps is None:
+                return {}
+            return {str(name): int(step) for name, step in steps.items()}
+        except (AttributeError, TypeError, ValueError):
+            _logger.warning("the one-time code replay record is not in the expected form; starting it empty")
+            return {}
+
+    @staticmethod
+    def _usable(user: object) -> bool:
+        """An enrolled user whose secret is a real base32 key and whose last step is a number. One bad entry
+        must not make `check` raise for everyone (it runs on the audio thread), so it is left out instead."""
+        if not isinstance(user, dict) or not user.get("secret"):
+            return False
+        try:
+            totp(str(user["secret"]), 0)
+            int(user.get("last_step", -1))
+        except (ValueError, TypeError):  # binascii.Error is a ValueError
+            return False
+        return True
 
     # -- the secrets file (read only) ----------------------------------------------------------
 
@@ -75,7 +102,10 @@ class CoreCodeChecker:
             _logger.warning("the one-time code secrets are unreadable; every code will be refused")
             self._users, self._seen = {}, signature
             return
-        self._users = {name: user for name, user in users.items() if isinstance(user, dict) and user.get("secret")}
+        self._users = {name: user for name, user in users.items() if self._usable(user)}
+        skipped = sum(1 for user in users.values() if isinstance(user, dict) and user.get("secret")) - len(self._users)
+        if skipped:
+            _logger.warning("%d one-time code secret(s) are not valid and are ignored", skipped)
         self._seen = signature
 
     # -- checking ------------------------------------------------------------------------------

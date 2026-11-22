@@ -252,3 +252,14 @@ def test_the_lockout_is_a_named_warning_with_the_numbers_and_never_a_code_or_sec
     assert len(locked) == 1 and locked[0].severity.name == "WARNING" and locked[0].error_code == "codes.locked_out"
     assert locked[0].context == {"failures": MAX_FAILURES, "lockout_min": LOCKOUT_SECONDS // 60}
     assert "424242" not in locked[0].model_dump_json() and secret not in locked[0].model_dump_json()
+
+
+def test_the_secrets_file_is_private_to_the_service(tmp_path):
+    import os
+    import stat
+
+    from api.persistence import StateStore
+
+    path = tmp_path / "data" / "control-codes.json"
+    ControlCodes(StateStore(path)).begin("alice")
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600

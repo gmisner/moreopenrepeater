@@ -162,7 +162,7 @@ def test_audit_log_records_who_changed_what_but_not_passwords():
     entries = client.get("/api/audit").json()
     summary = [(e["actor"], e["action"], e["status"]) for e in reversed(entries)]
     assert summary == [
-        ("admin", "POST /api/login", 401),
+        ("anonymous", "POST /api/login", 401),  # the typed name is never kept: it may be a pasted password
         ("admin", "POST /api/login", 200),
         ("admin", "PUT /api/config", 200),
         ("admin", "POST /api/users", 200),

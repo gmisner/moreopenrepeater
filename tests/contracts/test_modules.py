@@ -206,3 +206,10 @@ def test_location_source_rules_and_ranges():
         location(source="fixed")
     with pytest.raises(ValidationError):
         location(latitude=91)
+
+
+def test_a_capability_name_with_a_trailing_newline_is_refused():
+    import pytest
+
+    with pytest.raises(ValueError):
+        manifest("a", capabilities=["gps.position\n"])

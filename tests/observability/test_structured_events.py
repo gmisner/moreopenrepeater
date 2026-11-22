@@ -169,3 +169,20 @@ def test_the_json_line_is_one_line_a_collector_can_read_back(identity, seen):
     log_event(logger, Severity.INFO, "audio.engine_started", rate=16000)
     line = convert(records[0], identity).to_json_line()
     assert "\n" not in line and LogEvent.model_validate(json.loads(line)).event == "audio.engine_started"
+
+
+def test_a_legacy_line_that_logged_a_repr_of_its_arguments_is_masked(identity):
+    record = make_record("saving %r", args=({"password": "hunter2", "name": "x"},))
+    event = convert(record, identity)
+    assert "hunter2" not in event.message and "name" in event.message
+    record = make_record("connect failed: token=abc123 host=example.org")
+    assert "abc123" not in convert(record, identity).message
+
+
+def test_the_text_formatter_masks_secrets_in_the_finished_line():
+    from observability import MaskingFormatter
+
+    formatter = MaskingFormatter("%(levelname)s %(message)s")
+    record = make_record("got %r", args=({"psk": "letmein", "audio_device": "hw:1"},))
+    line = formatter.format(record)
+    assert "letmein" not in line and "hw:1" in line

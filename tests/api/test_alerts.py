@@ -317,9 +317,9 @@ def test_an_alert_and_a_channel_that_failed_are_named_events_without_the_message
     run(notifier.notify(Alert("lockout", "Locked out", "details of the lockout")))
     raised = structured_events.named("alert.raised")
     assert len(raised) == 1 and raised[0].severity.name == "WARNING"
-    assert raised[0].context == {"key": "lockout", "level": "warning"}
+    assert raised[0].context == {"topic": "lockout", "level": "warning"}
     assert raised[0].message == "alert: Locked out -- details of the lockout"
     failed = structured_events.named("alert.send_failed")
     assert len(failed) == 1 and failed[0].error_code == "alert.send"
-    assert failed[0].context == {"channel": "ntfy", "key": "lockout", "exception": "URLError"}
+    assert failed[0].context == {"channel": "ntfy", "topic": "lockout", "exception": "URLError"}
     assert "details of the lockout" not in str(raised[0].context) + str(failed[0].context)

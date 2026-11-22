@@ -22,7 +22,7 @@ from typing import Any, Iterator, Optional
 
 from contracts import LogEvent, Sequencer, Severity
 from contracts.common import CODE_PATTERN, ID_PATTERN
-from contracts.redaction import redact
+from contracts.redaction import mask_text, redact
 
 EXTRA_KEY = "mor_event"  # where `log_event` puts its fields on the record
 MAX_MESSAGE = 200
@@ -106,7 +106,16 @@ def _legacy_name(logger_name: str) -> str:
 
 
 def _clean_message(text: str) -> str:
-    return redact({"m": text})["m"][:MAX_MESSAGE]  # masks bearer tokens and user:pass@host
+    return redact({"m": text})["m"][:MAX_MESSAGE]  # masks bearer tokens, user:pass@host and secret-word=value
+
+
+class MaskingFormatter(logging.Formatter):
+    """The plain text formatter with credentials masked in the finished line (`password=x`, `Bearer ...`,
+    `user:pass@host`). The log file, the live log stream and the console use it, so a legacy line that logged
+    an argument's `%r` does not keep a secret the structured events would have masked."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return mask_text(super().format(record))
 
 
 def record_to_event(snap: RecordSnapshot, identity: ProcessIdentity, seq: int) -> LogEvent:
@@ -163,10 +172,10 @@ def log_event(
     level = int(severity)
     if not logger.isEnabledFor(level):
         return
-    if not (_NAME.match(event) and len(event) <= MAX_EVENT_NAME):
+    if not (_NAME.fullmatch(event) and len(event) <= MAX_EVENT_NAME):
         context = {**context, "name": str(event)[:MAX_EVENT_NAME]}
         event = "log.bad_event_name"
-    if correlation_id is not None and not _ID.match(correlation_id):
+    if correlation_id is not None and not _ID.fullmatch(correlation_id):
         context, correlation_id = {**context, "correlation_id": str(correlation_id)[:64]}, None
     shown = redact(context)
     text = message or event

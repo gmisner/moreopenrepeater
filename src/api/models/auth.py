@@ -8,9 +8,15 @@ from pydantic import BaseModel, Field
 
 from .types import Role
 
+#: Far above what an account can have (a username up to 64, a password up to 200), so no real account is
+#: locked out, and low enough that a login cannot be used to push a megabyte through scrypt or the log.
+LOGIN_USERNAME_MAX = 256
+LOGIN_PASSWORD_MAX = 1024
+
+
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(max_length=LOGIN_USERNAME_MAX)
+    password: str = Field(max_length=LOGIN_PASSWORD_MAX)
 
 
 class SessionResponse(BaseModel):

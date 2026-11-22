@@ -220,3 +220,42 @@ def test_a_command_result_can_carry_output_and_most_do_not():
         header=header(request_id=new_id()), status=CommandStatus.APPLIED, output={"returncode": 0, "stdout": "x", "stderr": ""}
     )
     assert CommandResult.model_validate_json(with_output.model_dump_json()).output["stdout"] == "x"
+
+
+@pytest.mark.parametrize("kind, value", [
+    ("digit", "5\n"), ("digits", "5551212\n"), ("pattern", "*9\n"), ("identifier", "abc\n"), ("node", "41520\n"),
+])
+def test_a_trailing_newline_does_not_get_past_a_pattern(kind, value):
+    """Python's `$` matches before a final newline, so these passed when they were checked with `match`."""
+    from contracts.commands import _valid
+
+    assert _valid(kind, value) is False
+    assert _valid(kind, value.rstrip("\n")) is True
+
+
+def test_a_newline_cannot_ride_along_in_a_command_parameter():
+    for command, params in [
+        ("simulate_dtmf", {"digit": "5\n"}),
+        ("autopatch_dial", {"number": "5551212\n", "actor": "x"}),
+        ("delete_macro", {"pattern": "12\n"}),
+        ("delete_announcement", {"announcement_id": "abc\n"}),
+        ("usrp_configure", {"service": "dmr", "peer": {"host": "10.0.0.1\n", "port": 1}}),
+        ("link_event", {"node_id": "1\n", "event": "keyed"}),
+    ]:
+        with pytest.raises(ValidationError):
+            CoreCommand(header=header(), command=command, params=params)
+    with pytest.raises(ValidationError):
+        mixer(["-q", "-c", "2", "sset", "Speaker", "75%\n"])
+    with pytest.raises(ValidationError):
+        mixer(["-c", "2\n", "scontents"])
+
+
+@pytest.mark.parametrize("value", ["-D", "-s", "--stdin", "-h", "-3.5dB-x", "--3"])
+def test_a_mixer_value_that_starts_with_a_dash_must_be_a_negative_number(value):
+    with pytest.raises(ValidationError):
+        mixer(["-q", "-c", "2", "sset", "Mic", value])
+
+
+@pytest.mark.parametrize("value", ["-3", "-3.5dB", "-12dB", "-0,5dB", "-20%"])
+def test_negative_levels_are_still_accepted(value):
+    assert mixer(["-q", "-c", "2", "sset", "Mic", value]).params["args"][-1] == value

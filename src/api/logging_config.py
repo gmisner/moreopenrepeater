@@ -16,7 +16,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Mapping, Optional
 
-from observability import CollectorHandler, JsonLineHandler, ProcessIdentity
+from observability import CollectorHandler, JsonLineHandler, MaskingFormatter, ProcessIdentity
 
 from .log_hub import HubHandler, LogHub
 
@@ -57,7 +57,7 @@ def configure_logging(
                 owner.removeHandler(handler)
                 handler.close()  # a collector sender has a thread to stop (closing twice is harmless)
 
-    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    formatter = MaskingFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     file_handler = RotatingFileHandler(log_path, maxBytes=2_000_000, backupCount=3)
     file_handler.setFormatter(formatter)

@@ -56,7 +56,7 @@ class Programming:
         """Run a saved macro as if its code had been dialed; `source` names what ran it."""
         macro = next((m for m in self.list_macros() if m.pattern == pattern), None)
         if macro is None:
-            _logger.warning("%s: there's no macro %r", source, pattern)
+            _logger.warning("%s: there's no macro for that code", source)
             return False
         self._action_source = source
         try:
@@ -70,7 +70,7 @@ class Programming:
         user = self.code_checker(coded.code) if self.code_checker is not None else None
         if user is None:
             locked = self.codes_locked()
-            _logger.warning("macro %s: one-time code rejected%s", coded.pattern, " (locked out)" if locked else "")
+            _logger.warning("a macro's one-time code was rejected%s", " (locked out)" if locked else "")
             if self.audit_hook is not None:
                 self.audit_hook("DTMF", "DTMF code rejected", coded.pattern)
             host.speak(TTS_PREFIX + ("Codes are locked out. Try again later." if locked else "Code rejected."))
@@ -107,7 +107,7 @@ class Programming:
     def run_action(self, action: RunAction) -> None:
         host = self._host
         source = self._action_source
-        _logger.info("%s action %s(%r)", source, action.action, action.argument)
+        _logger.info("%s action %s", source, action.action)
         if self.audit_hook is not None:
             self.audit_hook(source, f"{source} {action.action}", action.argument)
         if action.action == "tx_disable":
@@ -147,7 +147,7 @@ class Programming:
         elif action.action == "announcement":
             announcement = next((a for a in self.scheduler.list() if a.id == action.argument), None)
             if announcement is None:
-                _logger.warning("DTMF macro refers to unknown announcement %r", action.argument)
+                _logger.warning("DTMF macro refers to an announcement that does not exist")
             else:
                 host.speak(
                     self.announcement_clip(announcement),
@@ -204,7 +204,7 @@ class Programming:
             elif host.audio_output.arm_parrot():
                 host.speak(TTS_PREFIX + "Parrot ready. Key up and speak.")
         else:
-            _logger.warning("DTMF action %s(%r) did nothing", action.action, action.argument)
+            _logger.warning("DTMF action %s did nothing", action.action)
 
     def speak(self, clip: str, *, on_linked_radio: bool = False) -> None:
         """Queue `clip` like an announcement, rendering it off the event loop
@@ -231,7 +231,7 @@ class Programming:
         return self._host.controller.list_macros()
 
     def add_macro(self, macro: Macro) -> list[Macro]:
-        _logger.info("add_macro(pattern=%r, command=%r)", macro.pattern, macro.command)
+        _logger.info("add_macro: a macro was saved")
         host = self._host
         macros = [m for m in host.controller.list_macros() if m.pattern != macro.pattern]
         macros.append(macro)
@@ -240,7 +240,7 @@ class Programming:
         return host.controller.list_macros()
 
     def delete_macro(self, pattern: str) -> list[Macro]:
-        _logger.info("delete_macro(pattern=%r)", pattern)
+        _logger.info("delete_macro: a macro was removed")
         host = self._host
         macros = [m for m in host.controller.list_macros() if m.pattern != pattern]
         host.controller.set_macros(macros)
@@ -254,7 +254,7 @@ class Programming:
         return self.scheduler.next_run(announcement_id)
 
     def save_announcement(self, announcement: Announcement) -> Announcement:
-        _logger.info("save_announcement(id=%r, name=%r)", announcement.id, announcement.name)
+        _logger.info("save_announcement(id=%s)", announcement.id)
         self.scheduler.upsert(announcement, self._host.wall_now())
         self._host._persist()
         return announcement
@@ -277,7 +277,7 @@ class Programming:
         host = self._host
         due = self.scheduler.due(host.wall_now())
         for announcement in due:
-            _logger.info("announcement %r is due", announcement.name)
+            _logger.info("announcement %s is due", announcement.id)
         items = [(self.announcement_clip(a), a.on_linked_radio) for a in due]
         if host.net_active and host.saved_config.net_hold_announcements:
             self._held_announcements = (self._held_announcements + items)[-MAX_HELD_ANNOUNCEMENTS:]

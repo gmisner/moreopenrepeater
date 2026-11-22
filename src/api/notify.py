@@ -218,7 +218,7 @@ class Notifier:
         now = self._clock()
         log_event(
             _logger, logging.WARNING, "alert.raised", f"alert: {alert.title} -- {alert.message}",
-            key=alert.key, level=alert.severity, facts_in_text=False,
+            topic=alert.key, level=alert.severity, facts_in_text=False,
         )
         channels = self.channels
         entry = {"at": now, "key": alert.key, "title": alert.title, "message": alert.message, "severity": alert.severity}
@@ -259,7 +259,7 @@ class Notifier:
                 message = describe_error(error)
                 log_event(
                     _logger, logging.ERROR, "alert.send_failed", f"couldn't send the alert by {channel}: {message}",
-                    error_code="alert.send", channel=channel, key=alert.key, exception=type(error).__name__, facts_in_text=False,
+                    error_code="alert.send", channel=channel, topic=alert.key, exception=type(error).__name__, facts_in_text=False,
                 )
                 return message
             return None

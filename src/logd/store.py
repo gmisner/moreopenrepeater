@@ -32,6 +32,14 @@ QUERY_SECONDS = 5.0  # a query that takes longer is stopped
 QUOTA_TARGET = 0.85  # a prune that is over the quota brings the file down to this share of it
 QUOTA_ROUNDS = 6
 MAX_VACUUM_CALLS = 100_000
+#: How often a prune may compact the file and fold the write-ahead log into it (`_shrink`). Once routine events
+#: start to expire (after 14 days of uptime) most prunes remove something, and doing that every minute is a
+#: steady stream of rewrites on an SD card for no gain: freed pages are reused by the next inserts, and the
+#: size quota counts used pages, not the file. So it is at most once an hour, and the first prune after a
+#: start does one. The quota loop itself still gives pages back each round it runs (that is what keeps the
+#: file under the cap), and the log file's size is held down between shrinks by `journal_size_limit`.
+SHRINK_INTERVAL_SECONDS = 3600.0
+WAL_SIZE_LIMIT = 4 * 1024 * 1024
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -109,6 +117,7 @@ class EventStore:
         routine_days: float = DEFAULT_ROUTINE_DAYS,
         critical_days: float = DEFAULT_CRITICAL_DAYS,
         clock: Callable[[], float] = time.time,
+        shrink_interval_seconds: float = SHRINK_INTERVAL_SECONDS,
     ) -> None:
         """`path=None` keeps everything in memory (tests)."""
         self.path = path
@@ -116,6 +125,9 @@ class EventStore:
         self.routine_days = routine_days
         self.critical_days = critical_days
         self.clock = clock
+        self.shrink_interval_seconds = shrink_interval_seconds
+        self.shrinks = 0  # how many times `_shrink` has run (for tests and curiosity)
+        self._last_shrink: Optional[float] = None
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(str(path) if path else ":memory:", check_same_thread=False, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
@@ -125,6 +137,7 @@ class EventStore:
                 self._conn.execute("PRAGMA auto_vacuum = INCREMENTAL")  # only possible before the first table
             self._conn.execute("PRAGMA journal_mode = WAL")
             self._conn.execute("PRAGMA synchronous = NORMAL")  # fewer syncs: the SD card's wear, and a lost second is fine
+            self._conn.execute(f"PRAGMA journal_size_limit = {WAL_SIZE_LIMIT}")  # the log is cut back to this after a checkpoint
         self._conn.executescript(_SCHEMA)
         # Queries on a file use their own connection, so a slow search does not hold up the writer.
         self._rconn = self._conn
@@ -343,7 +356,7 @@ class EventStore:
                     "INSERT INTO gaps (time, kind, module, boot_id, count, detail) VALUES (?, 'quota_pruned', 'logd', NULL, ?, ?)",
                     [now, over, f"over the {self.max_bytes} byte quota"],
                 )
-            if removed or over:
+            if (removed or over) and self._shrink_due(now):
                 self._shrink()
         return {"retention": removed, "quota": over}
 
@@ -365,8 +378,16 @@ class EventStore:
                 return
             self._conn.execute("PRAGMA incremental_vacuum(256)").fetchall()
 
+    def _shrink_due(self, now: float) -> bool:
+        last = self._last_shrink
+        # A clock that went backwards counts as due, or the next shrink would wait for it to catch up.
+        return last is None or now < last or now - last >= self.shrink_interval_seconds
+
     def _shrink(self) -> None:
-        """Give freed pages back, and fold the write-ahead log into the file."""
+        """Give freed pages back, and fold the write-ahead log into the file. Called at most once per
+        `shrink_interval_seconds` (see `SHRINK_INTERVAL_SECONDS` for why)."""
+        self._last_shrink = self.clock()
+        self.shrinks += 1
         if self._file:
             self._release_free_pages()
             self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")

@@ -66,3 +66,48 @@ def test_depth_size_and_string_length_are_bounded():
 
 def test_never_raises_on_odd_keys():
     assert redact({1: "x", None: "y"}) == {"int": "x", "NoneType": "y"}
+
+
+def test_every_secret_word_is_redacted_as_a_key():
+    secrets = ["pin", "pwd", "pass", "psk", "password", "token", "key", "session", "authorization", "ssh_key", "session_id", "wifiPwd"]
+    out = redact({name: "value" for name in secrets})
+    assert set(out.values()) == {REDACTED}, out
+
+
+def test_benign_keys_that_only_share_a_word_with_content_or_secret_keys_keep_their_values():
+    benign = {
+        "audio_device": "hw:1,0", "error_message": "no such device", "rx_gpio_pin": 17, "ptt_gpio_pin": 4,
+        "content_type": "audio/wav", "text_length": 12, "dtmf_mute": True, "message_count": 3, "session_count": 4,
+        "key_up_ms": 40, "fan_cm108_pin": 1, "audio_input_device": "usb",
+    }
+    assert redact(benign) == benign
+
+
+def test_content_keys_stay_omitted_including_ones_with_a_qualifier_that_is_not_known_to_be_benign():
+    out = redact({"message": "hi", "sms_message": "hi", "message_body": "hi", "text_to_speak": "hi", "audio": "x", "audio_data": "x", "rx_audio": "x"})
+    assert set(out.values()) == {OMITTED}, out
+
+
+def test_secrets_in_free_text_are_masked_like_bearer_is():
+    from contracts.redaction import mask_text
+
+    for text, secret in [
+        ("login with password=hunter2 now", "hunter2"),
+        ("password: hunter2", "hunter2"),
+        ("sent token=abc123xyz to peer", "abc123xyz"),
+        ("{'password': 'hunter2', 'user': 'bob'}", "hunter2"),
+        ('{"api_key": "s3cr3t value"}', "s3cr3t"),
+        ("X-Auth-Token: abcdef", "abcdef"),
+        ("wifi psk=letmein pwd=letmein2", "letmein"),
+        ("https://x/y?session=abcd1234&a=1", "abcd1234"),
+    ]:
+        assert secret not in mask_text(text), text
+    assert "'user': 'bob'" in mask_text("{'password': 'hunter2', 'user': 'bob'}")
+    benign = "ptt_gpio_pin=17 audio_device: hw:1 error_message=bad"
+    assert mask_text(benign) == benign
+    assert mask_text("password=[redacted]") == "password=[redacted]"
+    assert mask_text("it took 12:30:01 to run") == "it took 12:30:01 to run"
+
+
+def test_free_text_masking_applies_to_string_values_too():
+    assert "hunter2" not in redact({"detail": "retry with password=hunter2"})["detail"]

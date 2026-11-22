@@ -223,8 +223,49 @@ def test_sign_ins_are_named_events_that_never_carry_the_password(structured_even
     failed = structured_events.named("auth.login_failed")
     assert len(failed) == 1 and failed[0].severity.name == "WARNING" and failed[0].error_code == "auth.bad_credentials"
     assert failed[0].context == {"client": "testclient"}
-    assert failed[0].message == "failed login for 'admin' from testclient"  # the text line, as it was
+    assert failed[0].message == "failed login from testclient"
     ok = structured_events.named("auth.login_succeeded")
     assert len(ok) == 1 and ok[0].context == {} and ok[0].message == "login succeeded for 'admin'"
     assert "not-the-real-pw-1" not in " ".join(e.model_dump_json() for e in structured_events)
     assert "hunter2" not in " ".join(e.model_dump_json() for e in structured_events)
+
+
+def test_a_failed_login_never_records_the_typed_username_anywhere(structured_events):
+    """People paste their password into the username box. It must not reach the event, its text, the log
+    file or the audit trail (which is kept and can be read by other accounts)."""
+    import logging
+
+    pasted = "my-pasted-passw0rd-xyz"
+    lines: list[str] = []
+
+    class Text(logging.Handler):
+        def emit(self, record):
+            lines.append(record.getMessage())
+
+    handler = Text()
+    logging.getLogger("moreopenrepeater").addHandler(handler)
+    try:
+        client = make_client()
+        assert _login(client, username=pasted, password="wrong").status_code == 401
+    finally:
+        logging.getLogger("moreopenrepeater").removeHandler(handler)
+    failed = structured_events.named("auth.login_failed")
+    assert len(failed) == 1 and failed[0].error_code == "auth.bad_credentials"
+    assert failed[0].context == {"client": "testclient"}
+    assert pasted not in " ".join(e.model_dump_json() for e in structured_events)
+    assert pasted not in " ".join(lines)
+    assert any("failed login" in line for line in lines)
+    assert _login(client).status_code == 200
+    audit = client.get("/api/audit").json()
+    assert pasted not in str(audit)
+    assert any(entry["action"] == "POST /api/login" and entry["actor"] == "anonymous" for entry in audit)
+
+
+def test_login_fields_are_bounded_but_far_above_what_an_account_can_have():
+    client = make_client()
+    # The most an account can have: a 64 character username (users) and a 200 character password.
+    assert _login(client, username="u" * 64, password="p" * 200).status_code == 401
+    assert _login(client, username="u" * 256, password="p" * 1024).status_code == 401
+    assert _login(client, username="u" * 257, password="x").status_code == 422
+    assert _login(client, username="admin", password="p" * 1025).status_code == 422
+    assert _login(client).status_code == 200  # the real account is unaffected

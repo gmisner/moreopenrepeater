@@ -34,18 +34,20 @@ def register(
     async def login(body: LoginRequest, request: Request, response: Response) -> SessionResponse:
         if not auth_enabled():
             return session_response(local_identity)
-        request.state.audit_actor = body.username
         # scrypt takes tens of milliseconds; keep it off the event loop.
         identity = await asyncio.get_running_loop().run_in_executor(None, check_login, body.username, body.password)
         if identity is None:
             client = request.client.host if request.client else "?"
-            # The username is in the text line as it always was; the event keeps only where it came from.
+            # Never the typed username, not even a hash: people paste their password into that box, and the
+            # event goes to the log file, the live log stream, logd (kept for weeks) and the support bundle.
+            # The audit trail gets "anonymous" for the same reason (the actor is set only after a success).
             log_event(
-                _auth_logger, logging.WARNING, "auth.login_failed", f"failed login for {body.username!r} from {client}",
+                _auth_logger, logging.WARNING, "auth.login_failed", f"failed login from {client}",
                 error_code="auth.bad_credentials", client=client, facts_in_text=False,
             )
             await asyncio.sleep(login_failure_delay)
             raise HTTPException(status_code=401, detail="Invalid username or password")
+        request.state.audit_actor = body.username
         sessions.revoke(request.cookies.get(SESSION_COOKIE_NAME))
         response.set_cookie(
             SESSION_COOKIE_NAME,

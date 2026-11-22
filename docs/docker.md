@@ -336,7 +336,7 @@ Three places, from the quickest to the most durable:
   A line looks like `{"schema_version":1,"time":"...","boot_id":"...","seq":41,"severity":20,
   "event":"legacy.audio","module":"core","module_version":"0.1.0","message":"audio engine started ...",
   "context":{"logger":"moreopenrepeater.audio"}}`. Code that has not been given a proper event name yet
-  logs as `legacy.<area>` with its text as the message (bearer tokens and `user:pass@host` masked, cut to 200
+  logs as `legacy.<area>` with its text as the message (bearer tokens, `user:pass@host` and `password=x` or `token: x` style pairs masked, cut to 200
   characters, an exception recorded by its type only). Code that has something to count says so with
   `observability.log_event(logger, Severity.WARNING, "audio.glitch", count=1, state="idle")`, which has a
   stable dotted name and a context of facts that is redacted by the contract's rules (credentials,
@@ -376,6 +376,11 @@ Three places, from the quickest to the most durable:
   `/health`, `/stats`, `/events`, `/gaps`). Settings go in `docker/logd.env` (copy `logd.env.example`):
   `MOREOPENREPEATER_LOGD_MAX_MB`, `..._ROUTINE_DAYS`, `..._CRITICAL_DAYS`. When the size limit is reached
   the oldest routine events go first, then the oldest of the rest, and the pruning is recorded as a gap.
+  The file is compacted and its write-ahead log folded in at most once an hour (and on the first prune after a
+  start), not on every prune: once routine events begin to expire after about 14 days, a prune removes something
+  nearly every minute, and rewriting the file that often would only wear an SD card. Freed pages are reused by
+  new events and the size limit counts used pages, so the cap holds in between; while the file is over the limit
+  each prune still gives freed pages back at once.
   A damaged database is set aside as `events.db.damaged-<time>` and a new one started.
   The dashboard reads this history: **Logs, then the History tab** searches it (words, level, which part, a
   time span, paged back from the newest) and shows a notice when the collector knows events are missing.
@@ -468,7 +473,7 @@ keeps its readable text line in the log file exactly as before:
 | `gpio.setup_failed`, `gpio.read_failed` | error | `gpio` (first only), `exception`; `error_code` `gpio.hardware`. The read failure is logged once, not once per poll |
 | `controller.lockout_started`, `controller.lockout_cleared` | warning, info | `timeouts`, `window_s`, `clear_after_s` for the first; `error_code` `controller.lockout`. The stuck-carrier lockout |
 | `watchdog.notify_failed` | warning | `exception`; `error_code` `watchdog.notify`. systemd could not be told the service is alive |
-| `auth.login_failed`, `auth.login_succeeded` | warning, info | `client` (the address) for the first; `error_code` `auth.bad_credentials`. Never the password. The name that was tried is in the text line only, as it always was |
+| `auth.login_failed`, `auth.login_succeeded` | warning, info | `client` (the address) for the first; `error_code` `auth.bad_credentials`. Never the password, and never the name that was typed either (people paste their password into that box); the audit trail records the actor as `anonymous` for a failed sign-in |
 | `codes.locked_out` | warning | `failures`, `lockout_min`; `error_code` `codes.locked_out`. Never a code or a secret. Logged by the API and by the core |
 | `mailbox.locked` | warning | `box`, `failures`; `error_code` `mailbox.locked`. Never a PIN |
 | `state.unreadable` | error | `file` (the name only), `exception`; `error_code` `state.unreadable`. A saved-state file could not be read, so it was moved aside and defaults were used |
@@ -480,7 +485,7 @@ keeps its readable text line in the log file exactly as before:
 | `core.socket_failed` | error | `exception`; `error_code` `core.socket`. The control socket could not start, so the core runs without it |
 | `core.shutdown_step_failed` | error | `target` (`ptt_live`, `ptt_link_radio`, `gpio`, `tx_fan`, `allstar`, `dmr`, `autopatch`, `live_audio`, `monitor_receiver` or `link_radio`), `reason` (`timed_out` after 2 s, or `failed`); `error_code` `core.shutdown`. One step of shutdown went wrong. PTT is released first, so none of these leaves the transmitter keyed, and the steps after it still ran |
 | `aprs.receive_failed` | warning | `server`, `port`, `exception`; `error_code` `aprs.receive`. Receiving the APRS-IS feed for the map; beacons are `aprs.beacon_sent` and `aprs.beacon_failed` |
-| `alert.raised`, `alert.send_failed` | warning, error | `key` (what it is about, such as `lockout`) and `level` (the alert's own severity) for the first; `channel`, `key`, `exception` and `error_code` `alert.send` for the second. Never the alert's words as a fact |
+| `alert.raised`, `alert.send_failed` | warning, error | `topic` (what it is about, such as `lockout`) and `level` (the alert's own severity) for the first; `channel`, `topic`, `exception` and `error_code` `alert.send` for the second. Never the alert's words as a fact |
 | `stream.stopped` | warning | `host`, `retry_s`; `error_code` `stream.stopped`. Never the stream password |
 | `link.node_requested` | info | `action` (`connect`, `disconnect` or `disconnect_all`), `node`, and `mode` (`monitor` or `transceive`) for a connect |
 | `link.schedule_applied`, `link.schedule_failed` | info, warning | `action` (`link` or `unlink`), `node`; `exception` and `error_code` `link.schedule` for the second |
@@ -493,8 +498,9 @@ A fact is something you could count or filter on: a number, a state, a name from
 secret, a PIN, a DTMF digit, the words of a message or announcement, or anything a person typed in. That is why the
 sign-in events carry the address but not the password, and the GPIO events carry the pin number but not the name you gave it. The unit test
 `tests/observability/test_event_table.py` fails if a name the code logs is missing from the table above, if the
-table lists a name nothing logs, or if a fact would be masked by the redaction filter (a fact called `pin` or
-`text` comes out as `[redacted]`).
+table lists a name nothing logs, or if a fact would be masked by the redaction filter (a fact called `pin`, `key`,
+`session` or `text` comes out as `[redacted]`; a hardware `gpio_pin`, an `audio_device` or an `error_message` does not).
+The text log file, the live log stream and the console pass each line through the same masking for `secret-word=value` pairs.
 
 What is still `legacy.<area>` is mostly routine information (a service starting or stopping, a setting being
 applied, a simulated input), lines whose only useful detail is text someone typed (net and macro names, DTMF macro

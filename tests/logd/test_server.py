@@ -187,6 +187,103 @@ def test_a_failing_write_is_counted_and_the_next_batch_still_goes_in(run_dir):
     assert stats["write_errors"] == 1 and stats["dropped_write"] == 1 and message == "stored after"
 
 
+def test_a_critical_file_that_raises_something_other_than_oserror_does_not_stop_the_writer(run_dir):
+    class Exploding:
+        calls = 0
+
+        def append(self, events):
+            Exploding.calls += 1
+            if Exploding.calls == 1:
+                raise ValueError("not a disk problem")
+
+    async def go():
+        store = EventStore(None)
+        async with Running(run_dir, store=store, critical=Exploding()) as r:
+            send(r.events, make_event(0, message="first", severity=Severity.ERROR))
+            await until(lambda: r.collector.stats()["critical_errors"] == 1)
+            assert r.collector.health() == "degraded"  # it says so while the file is failing
+            send(r.events, make_event(1, message="second"))
+            await until(lambda: store.stats()["events"] == 2)  # the store write was not skipped, nor the loop ended
+            await until(lambda: r.collector.health() == "ok")  # and the next good pass clears it
+            return r.collector.stats(), [t.done() for t in r.collector._tasks]
+
+    stats, done = asyncio.run(go())
+    assert stats["critical_errors"] == 1 and stats["written"] == 2 and done == [False, False]
+
+
+def test_a_store_that_raises_once_does_not_end_the_writer_and_the_events_after_it_are_kept(run_dir):
+    async def go():
+        store = EventStore(None)
+        real = store.insert_many
+        calls = []
+
+        def flaky(events):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("odd failure")  # not an OSError
+            return real(events)
+
+        store.insert_many = flaky
+        async with Running(run_dir, store=store) as r:
+            send(r.events, make_event(0, message="lost"))
+            await until(lambda: r.collector.stats()["write_errors"] == 1)
+            send(r.events, make_event(1, message="kept"))
+            await until(lambda: store.stats()["events"] == 1)
+            return r.collector.stats(), r.collector._tasks[0].done()
+
+    stats, writer_done = asyncio.run(go())
+    assert stats["dropped_write"] == 1 and stats["written"] == 1 and not writer_done
+
+
+def test_an_error_that_escapes_a_drain_is_counted_and_reported_and_the_writer_goes_on(run_dir):
+    async def go():
+        store = EventStore(None)
+        async with Running(run_dir, store=store) as r:
+            real = r.collector._drain
+            raised = []
+
+            async def once():
+                if not raised:
+                    raised.append(1)
+                    raise RuntimeError("something unexpected")
+                await real()
+
+            r.collector._drain = once
+            send(r.events, make_event(0, message="first"))
+            await until(lambda: r.collector.stats()["writer_errors"] == 1)
+            degraded = r.collector.health()
+            send(r.events, make_event(1, message="second"))
+            await until(lambda: store.stats()["events"] == 2)
+            await until(lambda: r.collector.health() == "ok")
+            return degraded, r.collector._tasks[0].done()
+
+    degraded, writer_done = asyncio.run(go())
+    assert degraded == "degraded" and not writer_done
+
+
+def test_stopping_still_drains_when_a_task_had_already_died(run_dir):
+    async def go():
+        store = EventStore(None)
+        r = Running(run_dir, store=store, flush_seconds=30)
+        await r.collector.start()
+
+        async def dead():
+            raise RuntimeError("died long ago")
+
+        task = asyncio.create_task(dead())
+        await asyncio.sleep(0)
+        r.collector._tasks.append(task)
+        for i in range(5):
+            send(r.events, make_event(i))
+        await until(lambda: r.collector.stats()["received"] == 5)
+        await r.collector.stop()  # must not raise
+        events = store.stats()["events"]
+        store.insert_many([make_event(99)])  # the store is still open, so the caller can close it
+        return events
+
+    assert asyncio.run(go()) == 5
+
+
 def test_stopping_writes_what_is_still_queued(run_dir):
     async def go():
         store = EventStore(None)

@@ -205,6 +205,53 @@ def test_the_file_shrinks_after_a_prune(tmp_path):
     s.close()
 
 
+def test_many_prunes_that_each_remove_a_little_shrink_the_file_at_most_once_an_hour(tmp_path):
+    """After 14 days of uptime routine events expire every minute. Compacting and checkpointing each time is
+    SD card wear for nothing, so it waits an hour."""
+    clock = [NOW]
+    s = EventStore(tmp_path / "events.db", clock=lambda: clock[0])
+    # One event a minute for 3 hours, all of it routine and old enough to expire as the clock moves.
+    s.insert_many([event(message=f"m{i}", when=NOW + i * 60) for i in range(180)])
+    clock[0] = NOW + 14 * 86400
+    prunes_that_removed_something = 0
+    for minute in range(180):
+        clock[0] = NOW + 14 * 86400 + minute * 60
+        if s.prune()["retention"]:
+            prunes_that_removed_something += 1
+    assert prunes_that_removed_something >= 150
+    assert 1 <= s.shrinks <= 4  # the first prune, then once per hour: 3 hours is at most 4, never 150
+    s.close()
+
+
+def test_the_first_prune_that_removes_something_still_shrinks_and_the_next_one_waits(tmp_path):
+    clock = [NOW]
+    s = EventStore(tmp_path / "events.db", clock=lambda: clock[0])
+    s.insert_many([event(message=f"m{i}", when=NOW - 15 * 86400 + i) for i in range(10)])
+    s.insert_many([event(message=f"n{i}", when=NOW - 14 * 86400 + 30 + i) for i in range(10)])
+    assert s.prune()["retention"] == 10 and s.shrinks == 1
+    clock[0] = NOW + 600  # ten minutes later more has expired
+    assert s.prune()["retention"] == 10 and s.shrinks == 1  # nothing extra was written to the card
+    clock[0] = NOW + 3600
+    s.insert_many([event(message="late", when=NOW - 15 * 86400)])
+    assert s.prune()["retention"] == 1 and s.shrinks == 2  # an hour on, it is due again
+    s.close()
+
+
+def test_the_size_cap_still_holds_when_the_shrink_is_not_due(tmp_path):
+    s = EventStore(tmp_path / "events.db", max_bytes=300_000, clock=lambda: NOW, shrink_interval_seconds=10**9)
+    s.insert_many([event(message="old", when=NOW - 15 * 86400)])
+    s.prune()  # uses up the one shrink this store will do
+    assert s.shrinks == 1
+    s.insert_many([event(message=f"routine {i}", blob="x" * 300, when=NOW - 4000 + i) for i in range(5000)])
+    assert s.used_bytes() > 300_000
+    removed = s.prune()
+    assert removed["quota"] > 0 and s.used_bytes() <= 300_000 and s.shrinks == 1
+    # The quota loop gave the freed pages back itself, so the file is back under the cap too, apart from the log.
+    s._conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+    assert (tmp_path / "events.db").stat().st_size <= 300_000 + 64 * 1024
+    s.close()
+
+
 def test_a_quota_below_what_an_empty_file_needs_empties_it_and_stops(tmp_path):
     s = EventStore(tmp_path / "events.db", max_bytes=1000, clock=lambda: NOW)
     s.insert_many([event(message="a"), event(message="b")])

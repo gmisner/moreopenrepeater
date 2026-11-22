@@ -194,3 +194,52 @@ def test_the_core_names_its_lockout_without_a_code_or_a_secret(setup, structured
     assert len(locked) == 1 and locked[0].error_code == "codes.locked_out"
     assert locked[0].context == {"failures": 5, "lockout_min": 10}
     assert "424242" not in locked[0].model_dump_json() and secret not in locked[0].model_dump_json()
+
+
+# -- hardening from the security read ---------------------------------------------------------------
+
+
+def test_one_bad_secret_does_not_stop_the_others_or_make_check_raise(setup):
+    clock, secrets_path, replay_path, secret = setup
+    write_secrets(secrets_path, {
+        "broken": {"secret": "this is !! not base32"},
+        "oddstep": {"secret": new_secret(), "last_step": "never"},
+        "alice": {"secret": secret},
+    })
+    checker = CoreCodeChecker(secrets_path, replay_path, clock)
+    assert checker.check("000000") is None  # no exception, and it counts as a wrong code
+    assert len(checker._failures) == 1
+    assert checker.check(code_for(secret, clock)) == "alice"
+
+
+@pytest.mark.parametrize("record", ["[1, 2]", '{"last_step": 5}', '{"last_step": {"alice": "soon"}}', '{"last_step": [1]}', "5"])
+def test_a_replay_record_in_the_wrong_form_does_not_stop_the_core_from_starting(setup, record):
+    clock, secrets_path, replay_path, secret = setup
+    replay_path.write_text(record)
+    checker = CoreCodeChecker(secrets_path, replay_path, clock)  # must not raise
+    assert checker.check(code_for(secret, clock)) == "alice"
+
+
+def test_a_rejected_code_is_not_in_the_log_or_the_events(core_with_codes, monkeypatch, structured_events):
+    import logging
+
+    core, secret = core_with_codes
+    monkeypatch.setattr(core.service, "speak", lambda clip, on_linked_radio=False: None)
+    lines = []
+
+    class Text(logging.Handler):
+        def emit(self, record):
+            lines.append(record.getMessage())
+
+    handler = Text()
+    logging.getLogger("moreopenrepeater").addHandler(handler)
+    try:
+        for _ in range(5):
+            core.service.programming.run_coded(
+                CodedCommand(command=RunAction(action="tx_disable", pattern="*70"), pattern="*70", code="424242")
+            )
+    finally:
+        logging.getLogger("moreopenrepeater").removeHandler(handler)
+    everything = " ".join(lines) + " ".join(e.model_dump_json() for e in structured_events)
+    assert "424242" not in everything and secret not in everything and "*70" not in everything
+    assert any("one-time code was rejected" in line for line in lines)

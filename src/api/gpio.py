@@ -175,7 +175,7 @@ class GpioControl:
                 self.set_output(pin, verb == "on")
             return f"{name} {verb}."
         except (ValueError, GpioError) as error:
-            _logger.warning("GPIO macro %r: %s", text, error)
+            _logger.warning("GPIO macro was not run: %s", error)
             return "That output is not set up."
 
     def name(self, pin: int) -> str:
@@ -308,7 +308,7 @@ class GpioControl:
         say = settings.get(f"{state}_say", "").strip()
         macro = settings.get(f"{state}_macro", "")
         if say:
-            _logger.info("GPIO%d (%s) %s: saying %r", pin, self.name(pin), state, say)
+            _logger.info("GPIO%d (%s) %s: saying its message", pin, self.name(pin), state)
             self._service.speak(TTS_PREFIX + say)
         if macro:
             self._service.run_macro(macro, f"GPIO{pin}")

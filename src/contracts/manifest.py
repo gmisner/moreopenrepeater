@@ -82,7 +82,7 @@ class ModuleManifest(BaseModel):
     @field_validator("capabilities")
     @classmethod
     def _capability_names(cls, value: list[str]) -> list[str]:
-        bad = [c for c in value if not re.match(CODE_PATTERN, c)]
+        bad = [c for c in value if not re.fullmatch(CODE_PATTERN, c)]
         if bad:
             raise ValueError(f"capabilities must be dotted lowercase names, got {bad[0]!r}")
         return value

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional
 
-from observability import JsonLineHandler, ProcessIdentity
+from observability import JsonLineHandler, MaskingFormatter, ProcessIdentity
 
 from .critical import CriticalFile
 from .server import Collector, QueryServer
@@ -135,7 +135,7 @@ def configure_logging(env: Mapping[str, str]) -> None:
         logger.addHandler(JsonLineHandler(ProcessIdentity("logd", "0.1.0")))
     else:
         handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        handler.setFormatter(MaskingFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
         logger.addHandler(handler)
 
 

@@ -411,14 +411,16 @@ def fake(tmp_path, body=FAKE_DIREWOLF):
     return path
 
 
-def test_the_modem_runs_unchanged_with_its_output_passed_through_and_counted(tmp_path):
+def test_the_modem_runs_with_its_exit_code_its_own_messages_passed_on_and_its_frames_counted_and_not_logged(tmp_path):
     out = tmp_path / "modem.json"
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "modem", "--out", str(out), "--", str(fake(tmp_path))],
         env={**os.environ, "FIXTURE": str(FIXTURES / "direwolf_stdout.txt")}, capture_output=True, timeout=20,
     )
     assert result.returncode == 3  # its exit code is the modem's, so the container's restart policy sees what really happened
-    assert result.stdout.startswith(DIREWOLF[:200]) and result.stdout.rstrip().endswith(b"last frame")  # nothing added or dropped
+    assert result.stdout.startswith(DIREWOLF[:200])  # its own messages are passed on as they are
+    assert result.stdout.rstrip().endswith(b"frame heard (text and callsigns are not logged)")  # the last frame is named, not shown
+    assert b"last frame" not in result.stdout and b"N9XYZ" not in result.stdout
     counters = json.loads(out.read_text())["counters"]
     assert counters["frames_heard"] == 4 and counters["frames_sent"] == 1
     assert b"N9XYZ" not in out.read_bytes()
@@ -452,5 +454,47 @@ def test_a_very_long_line_is_passed_on_without_being_held_whole(tmp_path):
     body = "#!/bin/sh\nhead -c 3000000 /dev/zero | tr '\\0' 'a'\necho\necho '[0.3] A1B>W1AW-10:after'\n"
     started = time.monotonic()
     result = subprocess.run([sys.executable, str(SCRIPT), "modem", "--", str(fake(tmp_path, body))], capture_output=True, timeout=30)
-    assert result.returncode == 0 and len(result.stdout) >= 3_000_000 and result.stdout.rstrip().endswith(b"after")
+    assert result.returncode == 0 and len(result.stdout) >= 3_000_000 and result.stdout.rstrip().endswith(b"(text and callsigns are not logged)")
+    assert b"after" not in result.stdout  # the frame line after it is named, not shown
     assert time.monotonic() - started < 20
+
+
+# -- keeping a frame's text out of the container's log ---------------------------------------------------------------------
+
+
+def _filtered(lines):
+    frames = rep.FrameFilter()
+    out = []
+    for line in lines:
+        out += frames.feed(line)
+    return b"".join(out).decode()
+
+
+def test_a_heard_frames_block_becomes_one_line_with_the_audio_level_and_no_call_or_text():
+    text = _filtered(DIREWOLF.splitlines(keepends=True))
+    for secret in ("N0CALL-1", "K1ABC", "quick brown fox", "hello from a test", "test beacon", "Position, House QTH", "N 42 37.1400"):
+        assert secret not in text
+    assert text.count("frame heard, audio level 80(23/22)") == 1 and text.count("frame heard") == 3
+    assert text.count("frame sent") == 1 and "W1AW-10>CQ" not in text
+
+
+def test_everything_that_is_not_about_a_frame_passes_on_unchanged():
+    lines = [line for line in DIREWOLF.splitlines(keepends=True)]
+    text = _filtered(lines)
+    for kept in ("Dire Wolf Release 1.8.1", "Channel 0: 1200 baud", "Ready to accept KISS TCP client application 0 on port 8001",
+                 "KISS client application 0 on TCP port 8001 has gone away."):
+        assert kept in text
+    assert _filtered([b"Could not open the sound card\n", b"\n", b"ERROR something broke\n"]) == "Could not open the sound card\n\nERROR something broke\n"
+
+
+def test_a_frame_with_no_audio_level_line_is_dropped_too_and_the_block_that_never_ends_does_not_swallow_the_log():
+    assert _filtered([b"[0.3] K1ABC>W1AW-10:secret words<0x0a>\n", b"decoded secret words\n", b"\n"]) == "frame heard (text and callsigns are not logged)\n\n"
+    long_block = [b"[0.3] K1ABC>W1AW-10:x\n"] + [b"secret line %d\n" % n for n in range(rep.MAX_FRAME_BLOCK_LINES + 5)] + [b"after\n"]
+    text = _filtered(long_block)
+    assert text.endswith("after\n")
+    assert "secret line 0\n" not in text and "secret line 20\n" not in text  # the block's lines are dropped up to the limit
+
+
+def test_two_frames_in_a_row_with_no_blank_line_between_show_no_text():
+    text = _filtered([b"K1ABC audio level = 70(20/20)   __\n", b"[0.3] K1ABC>W1AW-10:one\n", b"[0.3] N0CALL>W1AW-10:two\n", b"\n"])
+    assert "frame heard" in text and "one" not in text and "two" not in text and "K1ABC" not in text and "N0CALL" not in text

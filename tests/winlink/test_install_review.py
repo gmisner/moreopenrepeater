@@ -262,9 +262,9 @@ def test_the_message_is_for_the_log_so_it_says_how_to_fix_it(tmp_path):
 # -- the docs say what the log holds ----------------------------------------------------------------------------------------
 
 
-def test_the_docs_say_that_frame_text_reaches_dockers_log_on_the_card_and_how_to_avoid_it():
+def test_the_docs_say_that_the_modems_frame_text_is_not_passed_on_to_dockers_log():
     text = " ".join((DOCS / "winlink.md").read_text().split())
     assert "nothing wears the SD card" not in text and "there is no message store to back up or to wear the SD card" not in text
-    assert "Docker's log" in text and "30 MB" in text and "the text of the frames" in text
-    assert "driver: none" in text and "docker compose logs direwolf" in text
+    assert "so the reporter does not pass it on" in text and "frame heard, audio level" in text
+    assert "The decoded text is never stored anywhere" in text
     assert "never kept" not in (DOCKER / "direwolf-entrypoint.sh").read_text()

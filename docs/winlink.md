@@ -94,77 +94,18 @@ gateway on Winlink, which publishes your station: leave it off until the gateway
   `compose.override.yaml` is not a way to do this on a machine where `setup.sh` has set `COMPOSE_FILE` (for `--gpio` and the others):
   Compose reads that file on its own only while `COMPOSE_FILE` is not set. Do not use `-f` either; it also ignores `COMPOSE_FILE`
   (`docs/docker.md`, Compose files and the `-f` option).
-- It keeps no message store, and its own logs and running state are in memory (a tmpfs), so there is nothing to back up. **The modem's
-  output is the exception, and it does reach the SD card.** Dire Wolf prints every frame it decodes, the text of the frames included
-  (every station it hears, not only ones for the gateway), and that goes to Docker's log for the `direwolf` container, which Docker
-  keeps on the host's disk: the `local` log driver, up to 3 files of 10 MB each (about 30 MB) in `/var/lib/docker/containers`. MOR
-  itself writes none of it: the reporter counts frames and passes the output on unchanged, and nothing else of MOR's logs it. To keep
-  frame text off the card, give the modem no Docker log, in a file of its own listed in `COMPOSE_FILE` like the one above:
-
-  ```
-  services:
-    direwolf:
-      logging: !override
-        driver: none
-  ```
-
-  With it, `docker compose logs direwolf` is empty, so you lose the modem's own messages when something is wrong; take it out
-  of `COMPOSE_FILE` to see them again. A smaller `max-size` in `compose.yaml` shortens how long text stays but still writes it.
-  The gateway's own Docker log is a separate question: this section covers only what is known of Dire Wolf's.
-- The core and the repeater do not know it exists. If it stops, the repeater is unaffected; a restart policy brings it back.
-- Not built yet: start and stop from the dashboard, VARA FM, 9600 baud, several ports, a shared radio (designed in
-  `docs/adr/0007-shared-radio-lease.md`, not built), and off-grid delivery (considered in
-  `docs/adr/0008-winlink-off-grid-delivery.md`: not RMS Relay, and a LinBPQ mail mode only if the owner wants it). The modem's PTT and audio path and a full message exchange
-  have not been tried on a radio.
-
-## The dashboard page
-
-**Integrations, then Winlink** is a read-only status page. The API makes three quick connections on the private network and reports
-which answered: the gateway's admin page (any web answer counts, a login prompt included), the gateway's telnet port, and the modem's KISS
-port. It says the same thing in words ("Answering" or "Not answering", with a short reason) and lists what to look at when one is down.
-
-- **It does not start or stop anything.** The API has no access to Docker and is not given any. Run the containers from the repeater's
-  computer, as above. With the profile off, nothing answers, and the page says so and shows the commands to turn it on. That is not an error.
-- **It never slows anything down.** Each check gives up after 2 seconds, the three run together, and the answer is kept for 15 seconds, so a
-  page that polls (this one asks every 30 seconds, and not while the tab is hidden) cannot hammer the gateway. A dead gateway does not
-  delay the dashboard or the repeater. A change (it came up, one part went down) is logged once as `winlink.status_changed`.
-- **It reads no message text and no password**, and returns none. "Answering" means the port accepts a connection, not that Winlink's CMS
-  is reachable or that a station is authorized.
-- **The callsign** is shown only if you also put `MOR_WINLINK_CALL` in `docker/.env` (the file compose reads for the API;
-  `winlink.env` goes to the gateway only, and the API never sees the passwords in it). Without it the page says the callsign is not
-  shown, and the gateway is unaffected.
-
-### Sessions and counters
-
-With the gateway running, the page also shows what it has been doing, read-only:
-
-- **Recent sessions**, newest first: the connecting station's callsign, when it started, how long it lasted, how many messages it sent
-  up to Winlink and how many Winlink delivered to it, and how it ended ("Completed", "Ended early" if the link dropped or a side quit
-  before the exchange finished, or "Unknown" if the record could not be read). The page shows the last 25.
-- **Gateway counters:** sessions today (on the station's own calendar day, so it follows the time zone setting, and it says "at least"
-  if more than 100 happened today) and since it started, messages each way, message data each way, connections accepted on the radio,
-  connections that never reached Winlink, sessions that ended early, and the time of the last session.
-- **Modem counters:** frames heard and frames sent. Dire Wolf does not log each time it keys the transmitter, so there is no count of
-  that; frames sent is the nearest thing it reports. The counts include every station the modem hears, not only ones for the gateway.
-
-A few things worth knowing about the numbers:
-
-- "Message data" is the size of the messages before compression, which is what LinBPQ records. It is not the bytes sent on the air.
-- "Connections that never reached Winlink" means a station connected on the radio and no Winlink session followed within half an hour.
-  The usual causes are no Winlink password yet, Winlink not reachable, or the station giving up first. It is a count, not a reason.
-- The counts live in memory. When a container restarts they start again from zero, and the page says "Counting since". A reboot does
-  the same. Nothing is written to the SD card.
-- If a container stops, the page says it is not reporting instead of showing old numbers as current.
-
-**Where it comes from.** The API has no Docker access, so it cannot read the containers' logs, and it is not given any. Instead each
-container writes a small summary file into `winlink-status`, an in-memory volume (a tmpfs) that the API mounts read-only:
-
+- It keeps no message store, and its own logs and running state are in memory (a tmpfs), so there is nothing to back up. Dire Wolf
+  prints a block of text for every frame it hears (every station it can hear, not only ones for the gateway: the sender's call, the
+  frame's text, and what it decoded from it). Docker would keep that on the SD card in the `direwolf` container's log, so the reporter
+  does not pass it on. In its place the log has one line per frame, `frame heard, audio level 80(23/22)` or `frame sent`, with no call
+  and no text. The audio level is what to check when setting up (`docs/winlink-on-air-checklist.md`). Dire Wolf's start-up text, its
+  errors and its KISS client messages are passed on as they are. The decoded text is never stored anywhere.
 - The **gateway** container runs a small reporter (`docker/winlink-reporter.py`, standard library only) beside LinBPQ. LinBPQ keeps two
   logs of its own for this, in its in-memory log folder: one record per session that reached Winlink (`ENABLEADIFLOG=1`), written
   when the session ends, and one line per connection accepted (`LogAllConnects=1`). The reporter reads those two files and nothing else
   in that folder, and writes `gateway.json`.
-- The **modem** container runs Dire Wolf through the same reporter. It passes Dire Wolf's output on unchanged, so
-  `docker compose logs direwolf` reads as before, and counts two kinds of line by their first characters: a frame heard and a frame
+- The **modem** container runs Dire Wolf through the same reporter. It passes Dire Wolf's output on, except the block it prints for each frame
+  (see above), which it replaces with one line, and counts two kinds of line by their first characters: a frame heard and a frame
   sent. It writes `modem.json`.
 
 **What it never reads or shows.** No message text and no password. The reporter writes a short list of facts (counts, times, an

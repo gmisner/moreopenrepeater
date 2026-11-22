@@ -11,7 +11,7 @@ writes a small JSON snapshot into a volume the API only reads (an in-memory tmpf
                 (LogAllConnects=1)
             Nothing else is opened. LinBPQ's telnet log keeps the password a user typed and its CMS log is a protocol trace,
             so neither is read, and no other file in that folder is.
-  modem     runs Dire Wolf as a child, passes its output through unchanged (so `docker compose logs direwolf` is as before),
+  modem     runs Dire Wolf as a child and passes its output on, except what it prints about each frame it hears or sends (see FrameFilter),
             and counts two kinds of line by their first characters only: a frame heard, and a frame sent. A line's text is
             matched and dropped, never stored.
 
@@ -253,6 +253,55 @@ class GatewayTracker:
                 "counters": dict(self.counters), "sessions": [dict(s) for s in sorted(self._sessions, key=lambda s: s["end"])]}
 
 
+_AUDIO_LEVEL = re.compile(rb"^\S+ audio level = (\d+\(\d+/\d+\))")  # N0CALL-1 audio level = 80(23/22)    _||||||__
+MAX_FRAME_BLOCK_LINES = 40  # a frame's block is a few lines; this ends one that never gets its blank line
+
+
+class FrameFilter:
+    """Keeps what Dire Wolf prints about a frame out of the container's log.
+
+    For every frame it hears, Dire Wolf prints a block that ends with a blank line: an `audio level` line that names the sender,
+    the frame itself (its text is whatever a station sent, which can be someone's message), and then whatever it decoded from
+    that. Docker stores the container's output on the SD card, and the dashboard does not need any of it, so the block is
+    replaced by one line: that a frame was heard or sent, and for a heard one the audio level, which is what an owner checks when
+    setting up. Nothing else is changed: start-up text, errors and KISS client messages pass on as they are.
+    """
+
+    def __init__(self) -> None:
+        self._dropping = 0  # lines of a frame's block dropped so far; 0 when not inside one
+        self._announced = False  # the block's first line already said a frame was heard
+
+    @property
+    def dropping(self) -> bool:
+        return self._dropping > 0
+
+    def feed(self, line: bytes) -> list[bytes]:
+        """What to write for `line` (the start of one of Dire Wolf's lines): a list, empty to write nothing."""
+        if self._dropping:
+            if not line.strip():
+                self._dropping = 0  # the blank line that ends the block is kept, so the log keeps its shape
+                return [line]
+            if self._dropping < MAX_FRAME_BLOCK_LINES:
+                self._dropping += 1
+                return self._frame_line(line) if (_HEARD.match(line) or _SENT.match(line)) else []
+            self._dropping = 0  # a block that never ended: go back to passing lines on
+        level = _AUDIO_LEVEL.match(line)
+        if level:
+            self._dropping, self._announced = 1, True
+            return [b"frame heard, audio level " + level.group(1) + b" (text and callsigns are not logged)\n"]
+        if _HEARD.match(line) or _SENT.match(line):
+            self._dropping, self._announced = 1, False
+            return self._frame_line(line)
+        return [line]
+
+    def _frame_line(self, line: bytes) -> list[bytes]:
+        heard = bool(_HEARD.match(line))
+        if heard and self._announced:
+            return []  # the audio level line already said it
+        self._announced = self._announced or heard
+        return [(b"frame heard" if heard else b"frame sent") + b" (text and callsigns are not logged)\n"]
+
+
 class ModemCounter:
     """Frames heard and frames sent, from the first characters of Dire Wolf's output lines. The rest of a line is never kept."""
 
@@ -445,14 +494,19 @@ def run_modem(command: list[str], out_path, *, interval: float = SCAN_SECONDS) -
     thread = threading.Thread(target=writer, daemon=True)
     thread.start()
     out = sys.stdout.buffer
+    frames = FrameFilter()
     at_start = True
     assert child.stdout is not None
     for piece in iter(lambda: child.stdout.readline(LINE_BYTES), b""):
         if at_start:
             counter.feed(piece)
+            pieces = frames.feed(piece)
+        else:
+            pieces = [] if frames.dropping else [piece]  # the rest of a very long line that is being dropped
         at_start = piece.endswith(b"\n")
         try:
-            out.write(piece)
+            for piece_out in pieces:
+                out.write(piece_out)
             out.flush()
         except (OSError, ValueError):
             pass  # nobody is reading the log: the modem still runs

@@ -6,10 +6,10 @@
 # given: the repeater's sound card and PTT are not in this container, so a wrong setting here cannot key the repeater.
 # The configuration is made from the environment at every start and checked first.
 #
-# It runs Dire Wolf through the reporter (winlink-reporter.py), which passes its output on unchanged and counts the frames heard and
-# the frames sent for the dashboard's counters. The reporter keeps no frame text, but it passes Dire Wolf's output on, and that output
-# has the text of every frame it decodes: it goes to Docker's log for this container, which is on disk (docs/winlink.md, What it
-# does and does not do).
+# It runs Dire Wolf through the reporter (winlink-reporter.py), which counts the frames heard and the frames sent for the
+# dashboard's counters and passes Dire Wolf's output on, except the block Dire Wolf prints for each frame (the sender's call, the
+# frame's text and what it decoded). Docker keeps this container's output on disk, so each such block becomes one line,
+# "frame heard, audio level ..." or "frame sent", with no call and no text (docs/winlink.md, What it does and does not do).
 #
 #   --check   (the container's health check) the KISS port is listening, and the PTT device is a real one when cm108 PTT is asked for
 #   (for tests: MOR_DIREWOLF_RENDER_ONLY=1 writes the configuration to MOR_DIREWOLF_CONFIG and stops;

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from test_winlink import GOOD, gateway, modem, run
+from test_winlink import GOOD, modem, run
 
 DOCKER = Path(__file__).resolve().parents[2] / "docker"
 DOCS = Path(__file__).resolve().parents[2] / "docs"

@@ -1,5 +1,6 @@
 """Fixes from a review of the container install's scripts: the layouts that must live in COMPOSE_FILE, a packet radio's interface that
 must stay out of the repeater's name, .env's mode, and a wait that must not say "healthy" when it is not (#221)."""
+# ruff: noqa: F811  (pytest fixtures are imported from the neighboring test modules and named again as arguments)
 import re
 import stat
 import subprocess

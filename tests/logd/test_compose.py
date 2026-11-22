@@ -1,5 +1,4 @@
 """The compose file keeps the rule the architecture sets for logging (#221, #229): the radio never depends on it."""
-import re
 from pathlib import Path
 
 import yaml
@@ -62,6 +61,8 @@ def test_json_logging_is_on_for_all_three():
 
 
 def test_the_collector_image_installs_only_what_it_imports():
+    import re
+
     wanted = [line.strip() for line in (DOCKER / "pins" / "logd.in").read_text().splitlines() if line.strip() and not line.startswith("#")]
     assert wanted == ["pydantic>=2"]  # no numpy, audio or web framework
     # the image installs the pinned file (exact versions and hashes, tests/container_updates/test_pinned_requirements.py): pydantic and

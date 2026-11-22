@@ -1,0 +1,4 @@
+# Piper inside the core, for the old host-network layout (WITH_PIPER=1 in Dockerfile.core). The Piper container (Dockerfile.piper)
+# is its own thing. The exact versions and hashes are in ../core-piper-requirements.txt, which is resolved with the core's own
+# pins (numpy and the rest stay as ../core-requirements.txt has them).
+piper-tts[http]>=1.2

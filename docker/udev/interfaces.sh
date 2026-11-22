@@ -4,12 +4,15 @@
 #   sh udev/interfaces.sh list            the CM108 and AIOC interfaces plugged in, with the serial number and the USB
 #                                         port each one is on
 #   sh udev/interfaces.sh rule ID         the udev rule that gives the interface ID the name /dev/moreopenrepeater-link
+#   sh udev/interfaces.sh rule ID packet  the same for the Winlink packet radio's interface: /dev/moreopenrepeater-packet
 #
 # ID is a serial number as `list` shows it, or `port:1-1.3` for an interface that has none (many CM108 dongles do not,
 # and two of the same model can share one). A port names the socket, so the interface must stay in that socket.
 #
-# Two interfaces cannot both be /dev/moreopenrepeater-ptt, so the link radio's is named first and the rule for the
-# repeater's name (61-moreopenrepeater-ptt.rules) skips an interface that this one has claimed.
+# Two interfaces cannot both be /dev/moreopenrepeater-ptt, so the link radio's (or the packet radio's) is named first and the
+# rule for the repeater's name (61-moreopenrepeater-ptt.rules) skips an interface that one of them has claimed. Any CM108 or
+# AIOC interface that is not the repeater's needs one of these, whether or not its PTT is used: the repeater's rule names every
+# one it is not told to leave out.
 set -eu
 
 SYS="${MOR_SYS_ROOT:-/sys}"
@@ -41,16 +44,22 @@ case "${1:-}" in
       kind="CM108/CM119 ($vendor:$product)"
       [ "$vendor" != "1209" ] || kind="AIOC"
       if [ "$serial" = "-" ]; then
-        echo "  /dev/$name  $kind  no serial number  on USB port $port  ->  --link-radio port:$port"
+        echo "  /dev/$name  $kind  no serial number  on USB port $port  ->  --link-radio port:$port  (or --packet-radio port:$port)"
       elif [ "$(printf '%s\n' "$found" | awk -v s="$serial" '$4 == s' | wc -l | tr -d ' ')" -gt 1 ]; then
-        echo "  /dev/$name  $kind  serial $serial (another interface has the same one)  on USB port $port  ->  --link-radio port:$port"
+        echo "  /dev/$name  $kind  serial $serial (another interface has the same one)  on USB port $port  ->  --link-radio port:$port  (or --packet-radio port:$port)"
       else
-        echo "  /dev/$name  $kind  serial $serial  on USB port $port  ->  --link-radio $serial"
+        echo "  /dev/$name  $kind  serial $serial  on USB port $port  ->  --link-radio $serial  (or --packet-radio $serial)"
       fi
     done
     ;;
   rule)
     id="${2:-}"
+    kind="${3:-link}"
+    case "$kind" in
+      link) who="the link radio's"; name="moreopenrepeater-link"; mark="MOREOPENREPEATER_LINK"; flag="--link-radio" ;;
+      packet) who="the Winlink packet radio's"; name="moreopenrepeater-packet"; mark="MOREOPENREPEATER_PACKET"; flag="--packet-radio" ;;
+      *) echo "interfaces: rule's kind is link or packet, not '$kind'" >&2; exit 2 ;;
+    esac
     case "$id" in
       port:*)
         port="${id#port:}"
@@ -67,14 +76,14 @@ case "${1:-}" in
         ;;
     esac
     cat <<RULES
-# Written by docker/setup.sh --link-radio: names the link radio's interface $id /dev/moreopenrepeater-link.
+# Written by docker/setup.sh $flag: names $who interface $id /dev/$name.
 # It must sort before 61-moreopenrepeater-ptt.rules, which then leaves this interface out of the repeater's name.
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="7388", $match, GROUP="audio", MODE="0660", SYMLINK+="moreopenrepeater-link", ENV{MOREOPENREPEATER_LINK}="1"
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0d8c", $match, GROUP="audio", MODE="0660", SYMLINK+="moreopenrepeater-link", ENV{MOREOPENREPEATER_LINK}="1"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="7388", $match, GROUP="audio", MODE="0660", SYMLINK+="$name", ENV{$mark}="1"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0d8c", $match, GROUP="audio", MODE="0660", SYMLINK+="$name", ENV{$mark}="1"
 RULES
     ;;
   *)
-    echo "usage: interfaces.sh list | rule ID" >&2
+    echo "usage: interfaces.sh list | rule ID [link|packet]" >&2
     exit 2
     ;;
 esac

@@ -37,16 +37,18 @@ the core; with the API away the caller hears that weather is not available.
 
 Files:
 
-- `docker/Dockerfile.api`: the same base image, the project's own dependency list (read from
-  `pyproject.toml`), the app and the built web assets. No audio libraries.
+- `docker/Dockerfile.api`: the same base image, the project's own dependency list (from `pyproject.toml`, pinned in
+  `docker/api-requirements.txt`), the app and the built web assets. No audio libraries.
 - `docker/Dockerfile.core`: `python:3.13-slim-trixie` (pinned by digest, so one
-  line builds for amd64 and arm64), the core's four Python packages,
+  line builds for amd64 and arm64), the core's four Python packages (pinned, with their dependencies),
   `espeak-ng` and `libportaudio2` (Piper is `docker/Dockerfile.piper`, its own container).
 - `docker/Dockerfile.chrony` and `docker/chrony-supervisor.py`: the optional time container (see **The time container**).
 - `docker/compose.yaml`: the services, their devices, volumes and the private network.
 - `docker/setup.sh`: the install (see **Install**).
 - `docker/update.sh`: the update (see **Updating**).
-- `docker/core-requirements.txt`: what the core imports. No FastAPI, uvicorn or mcp.
+- `docker/core-requirements.txt`: what the core imports. No FastAPI, uvicorn or mcp. Like `logd-requirements.txt`,
+  `api-requirements.txt` and `core-piper-requirements.txt`, it is exact versions with hashes (see **Updating the pinned
+  Python packages**).
 
 ## Install
 
@@ -136,6 +138,27 @@ on their old image.
 **Channels.** The container install follows the branch its checkout is on: `main` is the dev channel, `beta` is beta,
 `stable` is stable (the same three as the native install, see `docs/raspberry-pi.md`). To change channel, switch the
 branch and update: `git checkout stable && ./update.sh`.
+
+**Updating the pinned Python packages.** The core, the log collector and the dashboard images install exact versions of
+every Python package, with a hash for each file, from `docker/core-requirements.txt`, `core-piper-requirements.txt` (Piper
+inside the core), `logd-requirements.txt` and `api-requirements.txt`. The images install them with `pip --require-hashes`,
+so a rebuild gets exactly those files or fails: `./update.sh` cannot pull a new major of numpy, pydantic or sounddevice
+into the core by itself. (The base image is pinned by digest and the other downloads by commit or checksum in the same way.)
+The files are written, not edited, from the ranges in `docker/pins/*.in` and from `pyproject.toml`, by a script that needs
+[uv](https://docs.astral.sh/uv/):
+
+```
+cd docker
+./pins/update.sh                           # same versions, adds anything new
+./pins/update.sh --upgrade-package numpy   # move one package (and what it needs)
+./pins/update.sh --upgrade                 # move everything that the ranges allow
+```
+
+Read the diff, build the images (`docker compose build`), run the tests, and commit the changed files together. The hashes
+cover every file PyPI has for a version, including the Linux amd64 and arm64 wheels the Pi and a PC use; a package with no
+wheel for them is refused, because the images have no compiler. Change a range (in `pyproject.toml` for the dashboard, in
+`docker/pins/*.in` for the others) and run the script when a new dependency is needed. `python -m pip install -e .` for
+development is not pinned.
 
 **The Updates page.** The dashboard can show what is running and whether GitHub has newer commits on the branch you
 follow, but it cannot update anything: it is a separate container with no access to Docker or the host, on purpose, and
@@ -286,10 +309,11 @@ Three places, from the quickest to the most durable:
   the card's life matters, start the stack with the memory override and the history lives in RAM instead:
 
   ```
-  docker compose -f compose.yaml -f compose.protect-sd.yaml up -d
+  ./setup.sh --protect-sd         # and ./setup.sh --no-protect-sd to put the history back on the card
   ```
 
-  `/var/lib/logd` becomes a 64 MB tmpfs (the quota drops to 48 MB to fit), so the history starts afresh at
+  This adds `compose.protect-sd.yaml` to `COMPOSE_FILE` in `.env` (see **Compose files and the `-f` option**), so a later
+  `./update.sh` keeps it. `/var/lib/logd` becomes a 64 MB tmpfs (the quota drops to 48 MB to fit), so the history starts afresh at
   every reboot. Errors are the exception: every event at error severity or worse is also appended to
   `critical-events.jsonl` on a small volume (`logd-critical`; the file is renamed to `.1` at 1 MB, so 2 MB is
   the most it ever holds), and the collector puts those back into an empty history when it starts. So after
@@ -466,7 +490,9 @@ ls -l /dev/moreopenrepeater-ptt        # points at a hidraw node
 Without the rule the core does not start, and `docker compose up` says the device does not exist. If you
 had `MOR_PTT_HIDRAW=/dev/hidraw0` in `.env`, it still works (and does not follow a renumbering): remove it
 once the rule is in. Only one device can carry the name; with two interfaces on the host, narrow the rule
-with `ATTRS{serial}`: for a link radio's second interface, `./setup.sh --link-radio` does that for you (see below).
+with `ATTRS{serial}`: for a link radio's second interface, `./setup.sh --link-radio` does that for you (see below), and
+`./setup.sh --packet-radio` does it for the Winlink packet radio's CM108 or AIOC. Any second CM108 or AIOC on the machine needs
+one of the two, because this rule names every one it is not told to leave out, and after a reboot the wrong one could win.
 The core is given the one path as `MOREOPENREPEATER_CM108_HIDRAW`, since the default `auto` reads the host's hidraw
 numbers, which are not the container's, and no link radio interface is given to it unless you ask
 (`MOREOPENREPEATER_LINK_CM108_HIDRAW: "off"`).
@@ -488,10 +514,6 @@ device is not there, the script says so and starts nothing.
 | A link radio with its own AIOC or CM108 | `./setup.sh --link-radio SERIAL` | that interface, as `/dev/moreopenrepeater-link` (`compose.link-radio.yaml`) |
 
 Nothing else is widened: no privileged mode, no added capability, not the whole of `/dev`.
-
-If you start Compose with your own `-f` options (for example `-f compose.yaml -f compose.host-network.yaml`), those
-replace `COMPOSE_FILE`, so name the hardware files too: `-f compose.gpio.yaml`, `-f compose.serial.yaml` and
-`-f compose.link-radio.yaml`, whichever you use.
 
 The **GPIO** card on the Audio page (the spare outputs and inputs) is the CM108's own pins, so it works with the PTT
 interface alone and needs none of this. Only header pins do.
@@ -518,6 +540,9 @@ offers the adapters in its serial port lists. The core lists them, since the das
 ./setup.sh --link-radio D4E5F6          # the one on the link radio
 ```
 
+Any other CM108 or AIOC interface on the machine (the Winlink packet radio's, see below) needs the same treatment, even if its
+PTT is never used: the repeater's rule names every interface it is not told to leave out.
+
 If it is not clear which is which, unplug the link radio's interface, run `--list-interfaces`, plug it back in and run it
 again: the one that came back is it. An interface with no serial number, or two with the same one (common on cheap
 CM108 dongles), is named by its USB port instead, `--link-radio port:1-1.4`; it must then stay in that socket. The script
@@ -526,6 +551,21 @@ writes `/etc/udev/rules.d/60-moreopenrepeater-link.rules` for that one interface
 stays `/dev/moreopenrepeater-ptt`. In the core, `MOREOPENREPEATER_LINK_CM108_HIDRAW` becomes the link name instead of
 `off`. The link radio's sound card is chosen on the Audio page as before, since the core already sees every card.
 
+**A packet radio's interface (Winlink).** If the Winlink packet radio uses a CM108 or AIOC (`docs/winlink.md`), its interface
+gets a name of its own the same way, and the repeater's rule leaves it out:
+
+```
+./setup.sh --packet-radio D4E5F6        # the ID --list-interfaces shows for it (or port:1-1.4)
+```
+
+It writes `/etc/udev/rules.d/60-moreopenrepeater-packet.rules`, makes `/dev/moreopenrepeater-packet`, and installs the current
+`61-moreopenrepeater-ptt.rules`. Without this, the packet radio's interface can take `/dev/moreopenrepeater-ptt` after a reboot
+or a replug (two interfaces cannot both have it, and which wins is not something you control), and the core would key the packet
+radio instead of the repeater. This is for **any** second CM108 or AIOC, whether the packet radio's PTT uses it or it is only the
+sound card. Nothing is mapped into a container by this flag: to key the packet radio with the interface, set
+`MOR_PACKET_PTT_HIDRAW=/dev/moreopenrepeater-packet` in `.env`. Installs without a packet radio are unchanged. The repeater's own
+interface stays `/dev/moreopenrepeater-ptt`.
+
 **If a device goes away.** The core will not start while a mapped device is missing (Docker refuses), and setup.sh
 says so and starts nothing. Plug it back in, or take it out: remove its compose file from `COMPOSE_FILE` in `.env`
 (or its entry from `MOR_SERIAL_DEVICES`) and run `./setup.sh` again. Before that, a page that needs the hardware says
@@ -533,6 +573,31 @@ what is missing and the command to run, in place of the system's "No such file o
 
 **Not tried on hardware.** The flags, the compose files and the udev rules are tested against stand-ins (a fake
 `/dev`, a fake `/sys`, a shimmed `docker`). They have not been run with a second AIOC, a serial adapter or GPIO wiring.
+
+### Compose files and the `-f` option
+
+The extra compose files (`compose.gpio.yaml`, `compose.serial.yaml`, `compose.link-radio.yaml`, and the two layouts
+`compose.protect-sd.yaml` and `compose.host-network.yaml`) are all turned on the same way: `setup.sh` lists them in
+`COMPOSE_FILE` in `.env`, which Compose reads on every run, `./update.sh` included. So a flag stays on until you turn it off:
+
+| You want | Run |
+| --- | --- |
+| the log history in memory, off the SD card | `./setup.sh --protect-sd` (off: `--no-protect-sd`) |
+| the old layout, the core and the dashboard on the host's network | `./setup.sh --host-network` (off: `--no-host-network`) |
+
+Running the same flag twice changes nothing, and turning one off leaves the others in `COMPOSE_FILE` (the line goes when
+only `compose.yaml` is left). Each restarts the containers it changes.
+
+Do not start Compose with your own `-f` options, for example `docker compose -f compose.yaml -f compose.protect-sd.yaml up -d`.
+`-f` makes Compose ignore `COMPOSE_FILE`, so that command would recreate the core **without** the GPIO chip, serial adapters or
+link radio's interface that `setup.sh` added there, and `./update.sh` (which does not use `-f`) would drop what you did by hand
+the next time it ran. If you did start it that way once, run `./setup.sh --protect-sd` (or `--host-network`) to put it where
+`update.sh` finds it.
+
+A file of your own works the same way. Compose reads `compose.override.yaml` on its own only while `COMPOSE_FILE` is **not** set;
+once `setup.sh` has set it (any of the flags above), an override file is skipped. `setup.sh` lists an existing
+`compose.override.yaml` for you when it first creates `COMPOSE_FILE`; otherwise give your file a name of its own and add it to
+`COMPOSE_FILE` in `.env`, after the others (`COMPOSE_FILE=compose.yaml:compose.gpio.yaml:compose.mine.yaml`).
 
 ## The AllStar container
 
@@ -619,8 +684,11 @@ loopback, and a service that relies on the host's loopback relies on the host. N
   secret from `allstar.env` (`./setup.sh --allstar` writes them). The dashboard's AllStar page turns the radio's audio to and
   from AllStar on. (`MOREOPENREPEATER_USRP_NODE=172.28.0.20:32001` in `core.env` does it by hand instead, and the page then
   leaves it alone.) A bench with no node is unchanged.
-- **The way back:** `docker compose -f compose.yaml -f compose.host-network.yaml up -d` puts the core and the API back
-  on the host's network with the loopback addresses, for a site that still has an Asterisk or a DMR bridge on the host.
+- **The way back:** `./setup.sh --host-network` puts the core and the API back
+  on the host's network with the loopback addresses (`--no-host-network` returns to the private network), for a site that still
+  has an Asterisk or a DMR bridge on the host. It lists `compose.host-network.yaml` in `COMPOSE_FILE` (see **Compose files and the
+  `-f` option**), so `./update.sh` keeps it. The DMR bridge's audio port (`MOREOPENREPEATER_DMR_USRP_LISTEN`) is on the
+  loopback there too: on the host's network the default of every address would have put that UDP port on the LAN.
   A host DMR bridge's audio path (a USRP pair on the host's loopback) is not reachable from the private network: use the
   override if you still run DMR on the host.
 - **Measured on a Pi 3B+** (a separate compose project with a copy of the data, while the live stack was stopped): all

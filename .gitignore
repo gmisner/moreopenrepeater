@@ -17,5 +17,7 @@ __pycache__/
 /docker/logd.env
 /docker/allstar.env
 /docker/winlink.env
+/docker/direwolf.env
 /docker/compose.serial.yaml
 /docker/link-rule.tmp
+/docker/packet-rule.tmp

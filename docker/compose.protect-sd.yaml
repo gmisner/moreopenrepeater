@@ -1,6 +1,11 @@
 # Spare the SD card: the log collector's history lives in memory (#221, #229).
 #
-#   docker compose -f compose.yaml -f compose.protect-sd.yaml up -d
+#   ./setup.sh --protect-sd        (and ./setup.sh --no-protect-sd to put the history back on the card)
+#
+# That adds this file to COMPOSE_FILE in .env, which is where Compose and ./update.sh read the list of files from, and restarts the
+# stack. Do not start Compose with `-f compose.yaml -f compose.protect-sd.yaml`: -f ignores COMPOSE_FILE, so it would leave out the
+# GPIO chip, serial adapters or link radio's interface that setup.sh added there (the core would start without them), and
+# ./update.sh would not know about this file.
 #
 # The history then starts afresh at every reboot, which is the price of no constant small writes. Errors are the
 # exception: the collector also appends them to a small file (about 2 MB at most) on a volume, and puts them

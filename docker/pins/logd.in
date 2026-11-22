@@ -1,0 +1,4 @@
+# What the collector needs, and nothing else: no numpy, no audio, no web framework. The exact versions and hashes are in
+# ../logd-requirements.txt (docs/docker.md, Updating the pinned Python packages).
+# src/contracts uses pydantic. pyproject gets it today through FastAPI.
+pydantic>=2

@@ -1,0 +1,8 @@
+# What the core needs, and nothing the web app needs (no FastAPI, uvicorn or mcp). These are the ranges; the exact versions and
+# hashes are in ../core-requirements.txt, which is what the image installs (docs/docker.md, Updating the pinned Python packages).
+# Keep these in step with `dependencies` in pyproject.toml.
+numpy>=1.26
+sounddevice>=0.4
+httpx>=0.27
+# src/contracts uses pydantic. pyproject gets it today through FastAPI.
+pydantic>=2

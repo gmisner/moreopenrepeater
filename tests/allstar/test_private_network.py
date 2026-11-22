@@ -120,6 +120,8 @@ def test_the_host_network_override_restores_the_old_layout_and_changes_nothing_e
         assert old[name]["environment"]["MOREOPENREPEATER_USRP_LISTEN"] == "127.0.0.1:34001"
         assert old[name]["environment"]["MOREOPENREPEATER_AUDIOSOCKET_ADDRESS"] == "127.0.0.1:9092"
         assert "network_mode" not in new[name] and "services" in new[name]["networks"]
+    for name in ("core", "api"):
+        assert old[name]["environment"]["MOREOPENREPEATER_DMR_USRP_LISTEN"] == "127.0.0.1:34011", name
     assert "ports" not in old["api"]  # a host-network service publishes nothing
     assert old["api"]["environment"]["MOREOPENREPEATER_HOST"] == "127.0.0.1"  # loopback by default, as before
     assert old["api"]["environment"]["MOREOPENREPEATER_PORT"] == "8000"
@@ -144,3 +146,22 @@ def test_the_dashboard_edits_the_nodes_own_configuration_through_the_volume_the_
     assert api["user"] == node["user"] == "999:999"  # one owner for the files both write
     dockerfile = (DOCKER / "Dockerfile.api").read_text()
     assert "/etc/asterisk" in dockerfile and "chown 999:999" in dockerfile  # a volume the API creates first is still writable
+
+
+def test_the_host_network_layout_leaves_no_audio_listener_on_every_address():
+    """On the host's network `0.0.0.0` is every interface, the LAN included: a UDP port that takes audio to be transmitted (filtered
+    only by the sender's address) must be on the loopback there. So each *_LISTEN setting compose.yaml gives the core and the API
+    must be moved to the loopback by the overlay; a new listener added to compose.yaml without it fails here."""
+    base = (DOCKER / "compose.yaml").read_text()
+    anchor = re.search(r"^x-link-addresses: &link_addresses\n((?:  .*\n)+)", base, re.M).group(1)
+    listeners = set(re.findall(r"^  (MOREOPENREPEATER_\w*LISTEN):", anchor, re.M))
+    assert {"MOREOPENREPEATER_USRP_LISTEN", "MOREOPENREPEATER_AUDIOSOCKET_LISTEN", "MOREOPENREPEATER_DMR_USRP_LISTEN"} <= listeners
+    class Loader(yaml.SafeLoader):  # the overlay uses Compose's !reset and !override tags
+        pass
+
+    Loader.add_multi_constructor("!", lambda loader, suffix, node: None)
+    overlay = yaml.load((DOCKER / "compose.host-network.yaml").read_text(), Loader=Loader)["services"]
+    for name in ("core", "api"):
+        environment = overlay[name]["environment"]
+        for listener in listeners:
+            assert str(environment[listener]).startswith("127.0.0.1:"), (name, listener)

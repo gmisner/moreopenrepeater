@@ -22,14 +22,12 @@ RUN groupadd --system --gid 999 moreopenrepeater \
 # read-only here, so it is root's like the time container's own. /winlink-status is the same idea for the optional Winlink
 # containers' sessions and counters: read-only here, written by them.)
 
-# The project's own dependency list, so this image cannot drift from pyproject.toml. numpy and
-# sounddevice come with it (the app imports them) but no audio device is ever opened here.
-COPY pyproject.toml /tmp/pyproject.toml
-RUN python - <<'PY' > /tmp/api-requirements.txt \
-    && pip install -r /tmp/api-requirements.txt
-import tomllib
-print("\n".join(tomllib.load(open("/tmp/pyproject.toml", "rb"))["project"]["dependencies"]))
-PY
+# The project's dependency list from pyproject.toml, pinned to exact versions with hashes (docker/pins/update.sh writes
+# docker/api-requirements.txt from it, and a test fails if the two disagree). A rebuild installs those files or fails, so
+# ./update.sh cannot bring in a new major of FastAPI, pydantic or the rest by itself. numpy and sounddevice come with it (the app
+# imports them) but no audio device is ever opened here.
+COPY docker/api-requirements.txt /tmp/api-requirements.txt
+RUN pip install --require-hashes --only-binary=:all: -r /tmp/api-requirements.txt
 
 # Run from /app so the app finds its web assets (web/dist) beside src, as it does from a checkout.
 COPY src /app/src

@@ -26,7 +26,14 @@
 #                     Use a /dev/serial/by-id/ name: /dev/ttyUSBn numbers move when adapters are plugged in another order.
 #   --link-radio ID   give the core the link radio's own USB interface (a second AIOC or CM108). ID is the serial number
 #                     --list-interfaces shows, or port:1-1.3 for one with none.
-#   --list-interfaces show the AIOC and CM108 interfaces plugged in, with the --link-radio ID for each, and stop
+#   --packet-radio ID the Winlink packet radio's own USB interface, if it is a CM108 or an AIOC (same ID as --link-radio). It
+#                     is named /dev/moreopenrepeater-packet and kept out of the repeater's /dev/moreopenrepeater-ptt name, which
+#                     it could otherwise take after a reboot or a replug. Needed for any second CM108 or AIOC, PTT used or not.
+#   --list-interfaces show the AIOC and CM108 interfaces plugged in, with the ID for each, and stop
+#   --protect-sd      keep the log collector's history in memory (compose.protect-sd.yaml), so it does not write to the SD card
+#   --no-protect-sd   turn that off again
+#   --host-network    the old layout: the core and the dashboard on the host's network (compose.host-network.yaml)
+#   --no-host-network turn that off again
 #   --usb-speed       Raspberry Pi 3 Model B+ only: hold USB to full speed (dwc_otg.speed=1 in cmdline.txt, backed up first),
 #                     which stops the AIOC's audio glitches under load. Needs sudo and a reboot, which it does not do.
 #   --no-start        write the settings, start nothing
@@ -48,8 +55,12 @@ USB_SPEED=0
 GPIO=0
 SERIALS=""
 LINK_ID=""
+PACKET_ID=""
+PROTECT_SD=""
+HOST_NETWORK=""
 LIST_INTERFACES=0
 START=1
+EXIT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --callsign) CALLSIGN="${2:-}"; shift ;;
@@ -63,9 +74,14 @@ while [ $# -gt 0 ]; do
     --gpio) GPIO=1 ;;
     --serial) [ -n "${2:-}" ] || { echo "setup: --serial needs the device, for example --serial /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A1B2C3-if00-port0" >&2; exit 2; }; SERIALS="$SERIALS $2"; shift ;;
     --link-radio) [ -n "${2:-}" ] || { echo "setup: --link-radio needs the interface's serial number (./setup.sh --list-interfaces shows it), or port:1-1.3" >&2; exit 2; }; LINK_ID="$2"; shift ;;
+    --packet-radio) [ -n "${2:-}" ] || { echo "setup: --packet-radio needs the interface's serial number (./setup.sh --list-interfaces shows it), or port:1-1.3" >&2; exit 2; }; PACKET_ID="$2"; shift ;;
+    --protect-sd) PROTECT_SD=on ;;
+    --no-protect-sd) PROTECT_SD=off ;;
+    --host-network) HOST_NETWORK=on ;;
+    --no-host-network) HOST_NETWORK=off ;;
     --list-interfaces) LIST_INTERFACES=1 ;;
     --no-start) START=0 ;;
-    -h|--help) sed -n '2,34p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,41p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "setup: unknown option $1 (see --help)" >&2; exit 2 ;;
   esac
   shift
@@ -87,13 +103,21 @@ value() { [ -f "$1" ] && sed -n "s/^$2=//p" "$1" | tail -n 1 || true; }
 set_value() {
   [ -n "$(value "$1" "$2")" ] || printf '%s=%s\n' "$2" "$3" >> "$1"
 }
-# force_value FILE NAME VALUE: replace an uncommented NAME= line, or add it
+# force_value FILE NAME VALUE: replace an uncommented NAME= line, or add it. The file is rewritten in place (cat >, not mv), so
+# it keeps its mode and its owner: the settings files are readable by their owner only, and a renamed new file would not be.
+# The temporary copy is owner-only too, for the moment it exists.
 force_value() {
   if grep -q "^$2=" "$1" 2>/dev/null; then
-    sed "s|^$2=.*|$2=$3|" "$1" > "$1.new" && mv "$1.new" "$1"
+    (umask 077; sed "s|^$2=.*|$2=$3|" "$1" > "$1.new") && cat "$1.new" > "$1" && rm -f "$1.new"
   else
     printf '%s=%s\n' "$2" "$3" >> "$1"
   fi
+}
+# drop_value FILE NAME: remove the uncommented NAME= lines (in place, as force_value does)
+drop_value() {
+  grep -q "^$2=" "$1" 2>/dev/null || return 0
+  (umask 077; grep -v "^$2=" "$1" > "$1.new" || true)
+  cat "$1.new" > "$1" && rm -f "$1.new"
 }
 as_root() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi; }
 random() { LC_ALL=C tr -dc "$1" < /dev/urandom | head -c "$2"; echo; }
@@ -118,7 +142,7 @@ fi
 # --- settings files -----------------------------------------------------------------------------------------------
 
 for f in .env api.env core.env; do from_example "$f"; done
-chmod 600 api.env core.env
+chmod 600 .env api.env core.env
 [ "$ALLSTAR" = 0 ] || { from_example allstar.env; chmod 600 allstar.env; }
 
 # --- the saved configuration the core will not start without ---------------------------------------------------
@@ -335,7 +359,14 @@ enable_compose_file() {
   sep="$(value .env COMPOSE_PATH_SEPARATOR)"; sep="${sep:-:}"
   current="$(value .env COMPOSE_FILE)"
   if [ -z "$current" ]; then
-    printf 'COMPOSE_FILE=compose.yaml%s%s\n' "$sep" "$1" >> .env
+    # With COMPOSE_FILE unset Compose reads compose.override.yaml beside compose.yaml; once it is set Compose reads only what it
+    # lists. So an override file the owner already has is listed too, in the place Compose had it.
+    if [ -f compose.override.yaml ]; then
+      printf 'COMPOSE_FILE=compose.yaml%scompose.override.yaml%s%s\n' "$sep" "$sep" "$1" >> .env
+      say "  NOTE: compose.override.yaml is kept: it is now listed in COMPOSE_FILE in .env, because Compose stops reading it on its own once COMPOSE_FILE is set."
+    else
+      printf 'COMPOSE_FILE=compose.yaml%s%s\n' "$sep" "$1" >> .env
+    fi
   else
     case "$sep$current$sep" in
       *"$sep$1$sep"*) ;;
@@ -347,8 +378,42 @@ compose_file_enabled() {
   sep="$(value .env COMPOSE_PATH_SEPARATOR)"; sep="${sep:-:}"
   case "$sep$(value .env COMPOSE_FILE)$sep" in *"$sep$1$sep"*) return 0 ;; *) return 1 ;; esac
 }
+# disable_compose_file NAME: take NAME out of COMPOSE_FILE in .env, keeping the rest in order. When only compose.yaml is left the
+# line goes, which is what an install that never used one looks like.
+disable_compose_file() {
+  compose_file_enabled "$1" || return 0
+  sep="$(value .env COMPOSE_PATH_SEPARATOR)"; sep="${sep:-:}"
+  kept=""
+  set -f
+  old_ifs="$IFS"; IFS="$sep"
+  for item in $(value .env COMPOSE_FILE); do
+    [ "$item" = "$1" ] || kept="${kept:+$kept$sep}$item"
+  done
+  IFS="$old_ifs"
+  set +f
+  if [ -z "$kept" ] || [ "$kept" = compose.yaml ]; then
+    drop_value .env COMPOSE_FILE
+  else
+    force_value .env COMPOSE_FILE "$kept"
+  fi
+}
 plain_path() { # the characters that survive an .env file and a compose file
   case "$1" in *[!A-Za-z0-9._/+@:-]*) return 1 ;; esac
+}
+
+# --- the shipped overlays: --protect-sd and --host-network -------------------------------------------------------------
+
+# These are compose files that change how the stack runs, and they are turned on the way the hardware ones below are: by listing
+# them in COMPOSE_FILE in .env. Do not start Compose with `-f compose.yaml -f compose.protect-sd.yaml`: -f ignores COMPOSE_FILE,
+# so that command would leave the GPIO chip, serial adapters and link radio's interface out of the core, and ./update.sh (which
+# reads .env) would drop the overlay again the next time it ran. Kept in COMPOSE_FILE, both stay until turned off here.
+overlay() { # FLAG FILE STATE: turn the overlay on or off, and say so
+  case "$3" in
+    on)
+      if compose_file_enabled "$2"; then say "  $2 is already on"; else enable_compose_file "$2"; say "  turned on $2 ($1; it is in COMPOSE_FILE in .env, so ./update.sh keeps it)"; fi ;;
+    off)
+      if compose_file_enabled "$2"; then disable_compose_file "$2"; say "  turned off $2 (it was in COMPOSE_FILE in .env)"; fi ;;
+  esac
 }
 
 # find_header_chip: the /dev/gpiochipN wired to the 40-pin header, the way src/audio_io/pi_gpio.py finds it (the chip
@@ -454,6 +519,42 @@ if [ -n "$LINK_ID" ]; then
   enable_compose_file compose.link-radio.yaml
 fi
 
+# the Winlink packet radio's interface: named by a udev rule for that interface's serial number (or USB port), which also keeps
+# it out of the repeater's /dev/moreopenrepeater-ptt. Any CM108 or AIOC that is not the repeater's needs this, its PTT used or not.
+if [ -n "$PACKET_ID" ]; then
+  CURRENT_ID="$(value .env MOR_PACKET_RADIO_ID)"
+  if [ -n "$CURRENT_ID" ] && [ "$CURRENT_ID" != "$PACKET_ID" ]; then
+    say "  .env already sets MOR_PACKET_RADIO_ID=$CURRENT_ID; left as it is (edit .env to change it, then run ./setup.sh --packet-radio $CURRENT_ID again)."
+    PACKET_ID="$CURRENT_ID"
+  fi
+  [ "$PACKET_ID" != "$(value .env MOR_LINK_RADIO_ID)" ] || die "--packet-radio: $PACKET_ID is the link radio's interface (MOR_LINK_RADIO_ID); one interface cannot be both."
+  sh udev/interfaces.sh rule "$PACKET_ID" packet > packet-rule.tmp || { rm -f packet-rule.tmp; exit 2; }
+  set_value .env MOR_PACKET_RADIO_ID "$PACKET_ID"
+  if cmp -s packet-rule.tmp "$RULES_DIR/60-moreopenrepeater-packet.rules" 2>/dev/null && cmp -s udev/61-moreopenrepeater-ptt.rules "$RULES_DIR/61-moreopenrepeater-ptt.rules" 2>/dev/null; then
+    say "  the udev rules for the packet radio are already installed"
+  else
+    # the PTT rule is copied too: this version of it leaves the packet radio's interface out of the repeater's name
+    as_root cp packet-rule.tmp "$RULES_DIR/60-moreopenrepeater-packet.rules"
+    as_root cp udev/61-moreopenrepeater-ptt.rules "$RULES_DIR/"
+    as_root udevadm control --reload-rules
+    as_root udevadm trigger --subsystem-match=hidraw --action=add
+    as_root udevadm settle 2>/dev/null || true
+    say "  installed the udev rules that name the packet radio's interface and keep it out of the repeater's name"
+  fi
+  rm -f packet-rule.tmp
+  PACKET_NAME="$DEV/moreopenrepeater-packet"
+  [ -c "$PACKET_NAME" ] || die "--packet-radio: $PACKET_NAME does not exist after the rule was installed. Plug the packet radio's interface in (./setup.sh --list-interfaces shows what is connected and the serial number each one answers to), then run this again."
+  say "  the packet radio's interface is $PACKET_NAME, and it is no longer a candidate for /dev/moreopenrepeater-ptt."
+  say "  To key the packet radio with it: MOR_PACKET_PTT_HIDRAW=$PACKET_NAME in .env, and MOR_PACKET_PTT=cm108 in direwolf.env (docs/winlink.md)."
+fi
+
+overlay --protect-sd compose.protect-sd.yaml "$PROTECT_SD"
+overlay --host-network compose.host-network.yaml "$HOST_NETWORK"
+if [ "$HOST_NETWORK" = on ]; then
+  say "  NOTE: in this layout the core and the dashboard reach the AllStar node and the DMR bridge on 127.0.0.1. Set the loopback addresses"
+  say "  in core.env as docs/allstar.md describes (MOREOPENREPEATER_USRP_NODE and so on); the services network's addresses are not used."
+fi
+
 # whatever is mapped must be there, whether it was just asked for or an earlier run did it
 mapped_device_missing() { # LABEL PATH FIX
   say ""
@@ -522,6 +623,12 @@ case "$MODEL" in
     ;;
 esac
 
+# --- the Winlink packet modem's own settings ------------------------------------------------------------------------
+
+# The modem (Dire Wolf) is given direwolf.env, never winlink.env, which also holds the gateway's passwords. An owner who already has
+# a winlink.env gets a direwolf.env made from it once (docker/split-winlink-env.sh); one that exists is never touched.
+sh ./split-winlink-env.sh
+
 # --- which version this is ---------------------------------------------------------------------------------------
 
 # The API image has no git, so the commit goes in as a build argument from .env (docker/update.sh does the same on every
@@ -539,14 +646,25 @@ if [ "$START" = 1 ]; then
   # shellcheck disable=SC2086
   docker compose $PROFILE up -d --build
   waited=0
-  while [ "$waited" -lt "${MOR_SETUP_WAIT:-240}" ]; do
+  while :; do
     # shellcheck disable=SC2086
     status="$(docker compose $PROFILE ps --format '{{.Name}} {{.Status}}')"
-    if ! printf '%s\n' "$status" | grep -v '(healthy)' | grep -q .; then break; fi
+    unhealthy="$(printf '%s\n' "$status" | grep -v '(healthy)' | grep . || true)"
+    [ -n "$status" ] || unhealthy="(no container is running)"
+    [ -n "$unhealthy" ] || break
+    [ "$waited" -lt "${MOR_SETUP_WAIT:-240}" ] || break
     sleep 5
     waited=$((waited + 5))
   done
   say "$status"
+  if [ -n "$unhealthy" ]; then
+    # The rest of the script still runs: the sign-in below is shown once, and it is already saved, so it must not be lost.
+    EXIT=1
+    say ""
+    say "setup: these are not healthy after $waited seconds:"
+    printf '%s\n' "$unhealthy" | sed 's/^/  /'
+    say "  Look at why with: docker compose logs --tail 50 SERVICE   (the name is the part after moreopenrepeater- and before -1)"
+  fi
 fi
 
 # --- what to open -------------------------------------------------------------------------------------------------
@@ -585,3 +703,4 @@ if [ -n "$GENERATED" ]; then
   say "Sign in as:  $USER_SET  /  $GENERATED"
   say "This is the only time the password is shown. It is saved in $HERE/api.env (readable by you only)."
 fi
+exit "$EXIT"

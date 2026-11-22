@@ -1,20 +1,39 @@
 #!/bin/sh
-# Starts Dire Wolf, the packet modem for the Winlink gateway, from settings in the environment (winlink.env).
+# Starts Dire Wolf, the packet modem for the Winlink gateway, from settings in the environment (direwolf.env, never winlink.env:
+# the modem decodes untrusted radio traffic and is not given the gateway's passwords).
 #
 # It is given one sound card and one PTT device by compose.yaml (never all of /dev/snd), and opens only the card it was
 # given: the repeater's sound card and PTT are not in this container, so a wrong setting here cannot key the repeater.
 # The configuration is made from the environment at every start and checked first.
 #
 # It runs Dire Wolf through the reporter (winlink-reporter.py), which passes its output on unchanged and counts the frames heard and
-# the frames sent for the dashboard's counters. The text of a frame is never kept (docs/winlink.md).
+# the frames sent for the dashboard's counters. The reporter keeps no frame text, but it passes Dire Wolf's output on, and that output
+# has the text of every frame it decodes: it goes to Docker's log for this container, which is on disk (docs/winlink.md, What it
+# does and does not do).
 #
-#   --check   (the container's health check) the KISS port is listening
-#   (for tests: MOR_DIREWOLF_RENDER_ONLY=1 writes the configuration to MOR_DIREWOLF_CONFIG and stops)
+#   --check   (the container's health check) the KISS port is listening, and the PTT device is a real one when cm108 PTT is asked for
+#   (for tests: MOR_DIREWOLF_RENDER_ONLY=1 writes the configuration to MOR_DIREWOLF_CONFIG and stops;
+#    MOR_PACKET_PTT_DEVICE names the PTT device, /dev/packet-ptt in the container)
 set -eu
 
 CONFIG="${MOR_DIREWOLF_CONFIG:-/run/direwolf/direwolf.conf}"
+PTT_DEVICE="${MOR_PACKET_PTT_DEVICE:-/dev/packet-ptt}"
+
+# real_device PATH: PATH is a character device that is not /dev/null. compose.yaml maps /dev/null at /dev/packet-ptt when
+# MOR_PACKET_PTT_HIDRAW is not set (a path must be there for the container to start), and /dev/null is a character device, so
+# `-c` alone would take "no PTT device" for one and Dire Wolf would run, write its PTT bytes to nowhere, and never key.
+# Inside the container the mapped node is a new node with /dev/null's device numbers (1:3), not the same file, so `-ef` is not enough.
+real_device() {
+  [ -c "$1" ] || return 1
+  [ "$1" -ef /dev/null ] && return 1
+  null_numbers="$(stat -L -c '%t:%T' /dev/null 2>/dev/null || true)"
+  [ -z "$null_numbers" ] || [ "$(stat -L -c '%t:%T' "$1" 2>/dev/null || true)" != "$null_numbers" ]
+}
 
 if [ "${1:-}" = "--check" ]; then
+  if [ "${MOR_PACKET_PTT:-none}" = cm108 ] && ! real_device "$PTT_DEVICE"; then
+    exit 1  # asked to key by CM108 and there is no device to key: not healthy, whatever the KISS port says
+  fi
   awk '$4 == "0A" && $2 ~ /:1F41$/ { found = 1 } END { exit !found }' /proc/net/tcp /proc/net/tcp6 2>/dev/null  # 8001
   exit $?
 fi
@@ -30,7 +49,7 @@ ok() {
 
 fail() { printf 'direwolf: %s\n' "$*" >&2; exit 2; }
 
-[ -n "${MOR_WINLINK_CALL:-}" ] || fail "MOR_WINLINK_CALL is required (winlink.env)"
+[ -n "${MOR_WINLINK_CALL:-}" ] || fail "MOR_WINLINK_CALL is required (direwolf.env: run sh ./split-winlink-env.sh to make it from winlink.env, or copy direwolf.env.example)"
 CALL="$(printf '%s' "$MOR_WINLINK_CALL" | tr 'a-z' 'A-Z')"
 ok "$CALL" '[A-Z0-9]{3,7}' || fail "MOR_WINLINK_CALL is not a callsign"
 if ok "$CALL" '[A-Z]{3,4}[0-9]{3,4}'; then
@@ -55,8 +74,8 @@ case "${MOR_PACKET_PTT:-none}" in
   cm108)
     GPIO="${MOR_PACKET_PTT_GPIO:-3}"
     ok "$GPIO" '[1-8]' || fail "MOR_PACKET_PTT_GPIO must be 1 to 8"
-    [ -c /dev/packet-ptt ] || fail "MOR_PACKET_PTT=cm108 but there is no PTT device (set MOR_PACKET_PTT_HIDRAW in .env)"
-    PTT="PTT CM108 $GPIO /dev/packet-ptt" ;;
+    real_device "$PTT_DEVICE" || fail "MOR_PACKET_PTT=cm108 but there is no PTT device: MOR_PACKET_PTT_HIDRAW is not set in .env (the container then gets /dev/null there), or it names something that is not there. Set it to the packet radio's interface, for example /dev/moreopenrepeater-packet (./setup.sh --packet-radio)"
+    PTT="PTT CM108 $GPIO $PTT_DEVICE" ;;
   *) fail "MOR_PACKET_PTT must be none or cm108" ;;
 esac
 

@@ -12,8 +12,10 @@
 #      moved on, it stops with nothing changed.
 #   3. writes the commit, its date, the branch and the GitHub repo into .env (MOR_COMMIT and friends), which is what
 #      the API image is built with. This is what the Updates page shows as the running version.
-#   4. docker compose up -d --build, adding the profiles (allstar, dmr, winlink, time) of whichever of those containers you
-#      have, so they are rebuilt with the rest. The repeater is off the air while the core restarts.
+#   4. docker compose up -d --build, with the compose files COMPOSE_FILE in .env lists (setup.sh puts the overlays you turned
+#      on there: --gpio, --serial, --link-radio, --protect-sd, --host-network), adding the profiles (allstar, dmr, winlink,
+#      time) of whichever of those containers you have, so they are rebuilt with the rest. The repeater is off the air while
+#      the core restarts.
 #
 # To follow another channel, switch the checkout's branch first (main is dev, beta, stable) and run this:
 #   git checkout stable && ./update.sh
@@ -28,7 +30,7 @@ RECORD_ONLY=0
 case "${1:-}" in
   "") ;;
   --record-only) RECORD_ONLY=1 ;;
-  -h|--help) sed -n '2,21p' "$HERE/update.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help) sed -n '2,23p' "$HERE/update.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) echo "update: unknown option $1 (see --help)" >&2; exit 2 ;;
 esac
 
@@ -120,8 +122,14 @@ main() {
   record_version
   say "  this is $(git rev-parse --short HEAD) on $(git symbolic-ref --quiet --short HEAD)"
 
+  # An existing winlink.env keeps working: the packet modem now has its own settings file, made from it once (the modem is not
+  # given the gateway's passwords).
+  sh ./split-winlink-env.sh
+
   PROFILE="$(profiles)"
   say "Rebuilding and restarting the containers (the repeater is off the air for a minute or two)"
+  # No -f here, on purpose: Compose reads COMPOSE_FILE from .env, which lists the overlays setup.sh turned on (compose.gpio.yaml,
+  # compose.serial.yaml, compose.link-radio.yaml, compose.protect-sd.yaml, compose.host-network.yaml). A -f would ignore it.
   # shellcheck disable=SC2086
   docker compose $PROFILE up -d --build
   say "Done. The dashboard's Updates page shows the new version once it is back."

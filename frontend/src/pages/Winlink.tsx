@@ -116,6 +116,7 @@ const CHECK_LABELS: Record<CheckId, { label: string; hint: string }> = {
 
 const ENABLE_COMMANDS = `cd docker
 cp winlink.env.example winlink.env && chmod 600 winlink.env   # set the callsign, locator, an admin password
+sh ./split-winlink-env.sh   # after you set them: makes the modem's own settings file (no passwords)
 docker compose --profile winlink up -d --build
 docker compose ps direwolf winlink`;
 

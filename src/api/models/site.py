@@ -103,6 +103,7 @@ class PublicStatus(BaseModel):
     text: str
     on_air: bool
     receiving: bool
+    unavailable: bool = False  # the core can't be heard: on_air and receiving are then false because nothing is known
     net: Optional[str]
     audio: bool
     listeners: int

@@ -26,7 +26,7 @@ from playout.renderer import TTS_PREFIX
 
 from .links import LinkControl, LinkError
 from .persistence import StateStore
-from .service.core_handle import ApiCoreHandle
+from .service.core_handle import ApiCoreHandle, CoreError, CoreUnavailable
 from .weekly import last_start, next_start, window_end
 
 _logger = logging.getLogger("moreopenrepeater.net")
@@ -68,6 +68,8 @@ class NetMode:
         self._wall_clock = wall_clock
         # Starts and ends nobody asked for over the API (that's audited already).
         self.audit_hook: Callable[[str, str, str], None] = lambda actor, action, detail: None
+        # Start and end change `current` only after the core has answered, so two requests must not interleave.
+        self._lock = asyncio.Lock()
         data = (store.load() if store is not None else None) or {}
         self.current: Optional[dict] = data.get("current")
         self.past: list[dict] = data.get("past", [])
@@ -90,48 +92,68 @@ class NetMode:
 
     # -- starting and ending --------------------------------------------------
 
+    async def _tell_core(self, active: bool, what: str) -> None:
+        """Turn net mode on or off in the core. The API's own record (`current`, and what it saved) changes only
+        after this returns, so a core that is down, slow or refusing leaves both as they were: the dashboard
+        never shows a net the core isn't running, or hides one it still is."""
+        try:
+            await self._service.command("set_net_active", active=active)
+        except CoreError as error:
+            # The core may have taken the command and lost the answer. Make what it gets told on its next
+            # connect match the record we are keeping, which is unchanged.
+            self._service.sync_net_state(self.current is not None)
+            if isinstance(error, CoreUnavailable):
+                raise CoreUnavailable(
+                    f"The net was not {what}, and nothing was saved: {error} "
+                    "The core will be set back to match the dashboard when it answers again."
+                ) from None
+            raise
+
     async def start(self, actor: str, name: str = "", ends_at: Optional[float] = None, scheduled_for: Optional[datetime] = None) -> dict:
-        if self.current is not None:
-            raise NetError("A net is already running.")
-        config = self._service.saved_config
-        now = self._clock()
-        limit = now + config.net_max_minutes * 60
-        self.current = {
-            "id": uuid.uuid4().hex[:12],
-            "name": name.strip() or config.net_name,
-            "started_at": now,
-            "ends_at": min(ends_at, limit) if ends_at else limit,
-            "started_by": actor,
-            "scheduled_for": scheduled_for.isoformat() if scheduled_for else None,
-            "linked_node": None,
-            "link_error": None,
-            "checkins": [],
-        }
-        self._save()
-        _logger.info("net %r started by %s", self.current["name"], actor)
-        await self._service.command("set_net_active", active=True)
-        self._say(config.net_start_say, self.current["name"])
-        await self._link_for_net()
-        return self.current
+        async with self._lock:
+            if self.current is not None:
+                raise NetError("A net is already running.")
+            config = self._service.saved_config
+            now = self._clock()
+            limit = now + config.net_max_minutes * 60
+            net = {
+                "id": uuid.uuid4().hex[:12],
+                "name": name.strip() or config.net_name,
+                "started_at": now,
+                "ends_at": min(ends_at, limit) if ends_at else limit,
+                "started_by": actor,
+                "scheduled_for": scheduled_for.isoformat() if scheduled_for else None,
+                "linked_node": None,
+                "link_error": None,
+                "checkins": [],
+            }
+            await self._tell_core(True, "started")
+            self.current = net
+            self._save()
+            _logger.info("net %r started by %s", net["name"], actor)
+            self._say(config.net_start_say, net["name"])
+            await self._link_for_net()
+            return self.current
 
     async def end(self, actor: str) -> dict:
-        net = self.current
-        if net is None:
-            raise NetError("No net is running.")
-        net = {**net, "ended_at": self._clock(), "ended_by": actor}
-        self.current = None
-        self.past = [net, *self.past][:MAX_NETS]
-        self._save()
-        _logger.info("net %r ended by %s", net["name"], actor)
-        config = self._service.saved_config
-        self._say(config.net_end_say, net["name"])
-        await self._service.command("set_net_active", active=False)
-        if net.get("linked_node") and self._links is not None:
-            try:
-                await self._links.disconnect(net["linked_node"])
-            except LinkError as error:
-                _logger.warning("couldn't drop the net's link to %s: %s", net["linked_node"], error)
-        return net
+        async with self._lock:
+            running = self.current
+            if running is None:
+                raise NetError("No net is running.")
+            config = self._service.saved_config
+            await self._tell_core(False, "ended")
+            net = {**running, "ended_at": self._clock(), "ended_by": actor}
+            self.current = None
+            self.past = [net, *self.past][:MAX_NETS]
+            self._save()
+            _logger.info("net %r ended by %s", net["name"], actor)
+            self._say(config.net_end_say, net["name"])
+            if net.get("linked_node") and self._links is not None:
+                try:
+                    await self._links.disconnect(net["linked_node"])
+                except LinkError as error:
+                    _logger.warning("couldn't drop the net's link to %s: %s", net["linked_node"], error)
+            return net
 
     def _say(self, template: str, name: str) -> None:
         if template.strip():
@@ -163,6 +185,9 @@ class NetMode:
                     spoken = "" if self._service.saved_config.net_end_say.strip() else "Net mode off."
             except NetError:
                 spoken = "A net is already running." if action == "net_start" else "No net is running."
+            except CoreError as error:  # the net did not change; there is no core to say so through
+                _logger.warning("net %s from %s did not happen: %s", action, source, error)
+                return
             if spoken:
                 self._service.speak(TTS_PREFIX + spoken)
 

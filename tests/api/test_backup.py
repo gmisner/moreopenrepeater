@@ -342,3 +342,87 @@ def test_backups_saved_failed_and_restored_are_named_events(structured_events):
     assert restore(Repeater(), archive).status_code == 200
     restored = structured_events.named("backup.restored")
     assert len(restored) == 1 and restored[0].severity.name == "INFO" and restored[0].context == {"recordings_added": 1}
+
+
+def _state_of(target: Repeater):
+    return (
+        sorted(a.id for a in target.assets.list_assets()),
+        sorted(p.name for p in (target.dir / "audio").glob("*.wav")),
+        target.users.get("bob") is not None,
+        [r.duration for r in target.activity.rows(0, 2e9)],
+        [m.pattern for m in target.service.list_macros()],
+        target.service.saved_config.callsign,
+        target.service.saved_config.courtesy_tone_asset_id,
+    )
+
+
+def _stranding_target():
+    """An install with its own clip, macro, account and history, ready to be restored over."""
+    target = Repeater()
+    clip = target.assets.save_asset("id", "keep-me.wav", WAV)
+    target.service.update_config(courtesy_tone_asset_id=clip.id)  # a setting that names the old clip
+    target.service.add_macro(Macro(pattern="*55", description="old", command="disconnect_all", node_id=""))
+    target.users.add("bob", "hunter22", "admin")
+    target.client.post("/api/login", json={"username": "bob", "password": "hunter22"})
+    target.activity.add(ActivityRow("rx", 1.0, 3.0))
+    return target
+
+
+def test_a_restore_with_the_core_down_replaces_nothing():
+    from api.service.core_handle import CoreUnavailable
+
+    archive = populated().client.get("/api/backup", params={"recordings": True}).content
+    target = _stranding_target()
+    before = _state_of(target)
+
+    async def down(name, **params):
+        raise CoreUnavailable("the core is not reachable; nothing was changed")
+
+    target.service.command = down
+    result = restore(target, archive)
+
+    assert result.status_code == 503 and result.json()["code"] == "core.unavailable"
+    detail = result.json()["detail"]
+    assert "Nothing was restored" in detail and "audio clips, accounts and history are as they were" in detail
+    assert _state_of(target) == before  # the old clip is still there, and the setting that names it still works
+    assert target.recordings.list() == []  # no recordings were added either
+
+
+def test_a_restore_the_core_refuses_replaces_nothing():
+    from api.service.core_handle import CommandRefused
+
+    archive = populated().client.get("/api/backup").content
+    target = _stranding_target()
+    before = _state_of(target)
+
+    async def refuse(name, **params):
+        raise CommandRefused("command.unsafe_snapshot", "not a usable number: hang_time")
+
+    target.service.command = refuse
+    result = restore(target, archive)
+
+    assert result.status_code == 422 and result.json()["code"] == "command.unsafe_snapshot"
+    assert "Nothing was restored" in result.json()["detail"] and "hang_time" in result.json()["detail"]
+    assert _state_of(target) == before
+
+
+def test_a_restore_works_again_once_the_core_is_back():
+    from api.service.core_handle import CoreUnavailable
+
+    archive = populated().client.get("/api/backup").content
+    target = Repeater()
+    target.users.add("bob", "hunter22", "admin")
+    target.client.post("/api/login", json={"username": "bob", "password": "hunter22"})
+    real = target.service.command
+    state = {"down": True}
+
+    async def flaky(name, **params):
+        if state["down"]:
+            raise CoreUnavailable("the core is not reachable; nothing was changed")
+        await real(name, **params)
+
+    target.service.command = flaky
+    assert restore(target, archive).status_code == 503
+    state["down"] = False
+    assert restore(target, archive).status_code == 200
+    assert target.service.saved_config.callsign == "W1AW"

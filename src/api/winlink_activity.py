@@ -152,7 +152,7 @@ class WinlinkActivity:
             return None, f"The {label}'s report could not be read."
         try:
             parsed = json.loads(data)
-        except ValueError:
+        except (ValueError, RecursionError):  # deeply nested input is not a ValueError, and must not become a 500
             return None, f"The {label}'s report could not be read."
         if not isinstance(parsed, dict) or parsed.get("v") != 1 or parsed.get("kind") != kind:
             return None, f"The {label}'s report could not be read."

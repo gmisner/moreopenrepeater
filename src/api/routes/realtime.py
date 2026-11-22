@@ -19,6 +19,7 @@ from ..models import ListenSource, PublicStatus, StatusResponse
 from ..monitor import AudioMonitor
 from ..monitor_receiver import MonitorReceiverService
 from ..net import NetMode
+from ..remote_core import UNAVAILABLE_STATE
 from ..service.core_handle import ApiCoreHandle
 from playout.renderer import ClipRenderer
 
@@ -126,6 +127,7 @@ def register(
             text=config.public_page_text,
             on_air=snapshot.ptt_active,
             receiving=snapshot.cos_active,
+            unavailable=snapshot.state == UNAVAILABLE_STATE,
             net=nets.current["name"] if nets.current else None,
             audio=config.public_page_audio,
             listeners=sum(public_listeners.values()),

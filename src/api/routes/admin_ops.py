@@ -53,7 +53,7 @@ from ..service.core_handle import ApiCoreHandle
 from ..auto_update import AutoUpdater
 from ..log_history import LogHistory
 from ..remote_host_facts import RemoteHostFacts
-from ..support_bundle import runner_with_mixer, support_bundle_name, write_support_bundle
+from ..support_bundle import bundle_callsign, runner_with_mixer, support_bundle_name, write_support_bundle
 from ..tailscale import TailscaleControl, read_log as read_tailscale_log
 from ..updates import ContainerInstall, UpdateChecker, Updater, check_container, installed_version, read_log
 
@@ -164,7 +164,7 @@ def register(
         return FileResponse(
             path,
             media_type="application/zip",
-            filename=support_bundle_name(service.config.callsign, now),
+            filename=support_bundle_name(bundle_callsign(service), now),
             background=BackgroundTask(path.unlink, missing_ok=True),
         )
 

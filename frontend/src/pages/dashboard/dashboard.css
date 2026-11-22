@@ -31,6 +31,7 @@
 .mor-onair[data-tone="rx"] { border-color: color-mix(in srgb, var(--dash-green) 55%, var(--mor-border)); }
 .mor-onair[data-tone="tx"] { border-color: color-mix(in srgb, var(--dash-red) 55%, var(--mor-border)); }
 .mor-onair[data-tone="alert"] { border-color: color-mix(in srgb, var(--dash-red) 60%, var(--mor-border)); }
+.mor-onair[data-tone="unavailable"] { border-color: color-mix(in srgb, var(--dash-amber) 60%, var(--mor-border)); }
 
 .mor-onair-station {
   display: flex;
@@ -69,6 +70,7 @@
 .mor-onair-state[data-tone="tx"] { color: var(--dash-red); }
 .mor-onair-state[data-tone="alert"] { color: var(--dash-red); }
 .mor-onair-state[data-tone="idle"] { color: var(--mantine-color-text); }
+.mor-onair-state[data-tone="unavailable"] { color: var(--dash-amber); }
 
 .mor-onair-copy {
   margin-top: var(--mantine-spacing-xs);
@@ -409,6 +411,7 @@
 [data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="rx"] { border-color: var(--dash-green); }
 [data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="tx"] { border-color: var(--dash-red); }
 [data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="alert"] { border-color: var(--dash-red); }
+[data-mantine-color-scheme="dark"] .mor-dash .mor-onair[data-tone="unavailable"] { border-color: var(--dash-amber); }
 .mor-dash .mor-onair-callsign { letter-spacing: .06em; }
 .mor-dash .mor-onair-state { letter-spacing: -.035em; }
 .mor-dash .mor-path-node { min-width: 0; }

@@ -12,9 +12,12 @@ from api.app import create_app
 from api.audit import AuditLog
 from api.auth import AuthSettings
 from api.persistence import StateStore
+from api.remote_core import RemoteCore
 from api.service import RepeaterService
+from api.service.core_handle import CoreUnavailable
 from api.support_bundle import support_bundle_name, write_support_bundle
 from api.users import UserStore
+from controller.state_machine import RepeaterConfig
 
 
 @pytest.fixture(autouse=True)
@@ -162,3 +165,80 @@ def test_support_bundle_download_is_admin_only_and_audited():
     operator = TestClient(r.client.app)
     operator.post("/api/login", json={"username": "op", "password": "operator pass"})
     assert operator.get("/api/support-bundle").status_code == 403
+
+
+# -- the core is not reachable: the bundle is needed most then, and everything API-side still goes in --------
+
+
+def _quiet_run(cmd, **_kwargs):
+    class Result:
+        returncode = 0
+        stdout = "kernel: usb 1-1.3: reset full-speed USB device\n" if cmd[:2] == ["journalctl", "-k"] else "journal line\n"
+        stderr = ""
+
+    return Result()
+
+
+def _write(tmp_path, service):
+    log_path = tmp_path / "app.log"
+    log_path.write_text("api line one\n")
+    path = tmp_path / "bundle.zip"
+    write_support_bundle(
+        path, service=service, log_path=log_path, repo_dir=tmp_path, update_channel="dev", live_audio_status=None,
+        system_readings={"temperature_c": 40.0}, updater=None, now=1_700_000_000.0,
+        cm108_interfaces=[{"path": "/dev/hidraw4", "name": "C-Media"}], run=_quiet_run,
+    )
+    return path
+
+
+def test_a_stale_core_still_gets_a_bundle_with_a_note_where_the_settings_were(tmp_path):
+    remote = RemoteCore(tmp_path / "no-core.sock")
+    remote._config = RepeaterConfig(callsign="W1AW", ptt_serial_device="/dev/ttyUSB0")  # read once, now not heard from
+    remote._macros = []
+    assert remote.stale
+
+    with zipfile.ZipFile(_write(tmp_path, remote)) as archive:
+        assert "config.json" in archive.namelist()
+        settings = json.loads(archive.read("config.json"))
+        assert settings == {"settings": "unavailable (core not reachable)"}
+        assert "W1AW" not in archive.read("config.json").decode()  # no old copy passed off as current
+        assert "api line one" in archive.read("moreopenrepeater.log").decode()
+        assert "journal line" in archive.read("journal.txt").decode()
+        assert "reset full-speed USB device" in archive.read("usb.txt").decode()
+        assert json.loads(archive.read("devices.json"))["cm108_interfaces"][0]["path"] == "/dev/hidraw4"
+        assert json.loads(archive.read("status.json"))["state"] == "core_unavailable"
+        assert json.loads(archive.read("system.json"))["temperature_c"] == 40.0
+        assert "could not be reached" in archive.read("README.txt").decode()
+
+
+def test_a_core_that_was_never_reached_still_gets_a_bundle(tmp_path):
+    remote = RemoteCore(tmp_path / "no-core.sock")  # no configuration at all yet
+    with zipfile.ZipFile(_write(tmp_path, remote)) as archive:
+        assert json.loads(archive.read("config.json")) == {"settings": "unavailable (core not reachable)"}
+        devices = json.loads(archive.read("devices.json"))
+        assert devices["selected"] == "unavailable (core not reachable)" and devices["mixer"] == {}
+        assert devices["cm108_interfaces"][0]["name"] == "C-Media"
+        assert "api line one" in archive.read("moreopenrepeater.log").decode()
+
+
+def test_nothing_from_the_old_settings_leaks_into_the_bundle_when_the_core_is_down(tmp_path):
+    remote = RemoteCore(tmp_path / "no-core.sock")
+    remote._config = RepeaterConfig(callsign="W1AW", ptt_serial_device="/dev/ttyUSB-marker")
+    remote._macros = []
+    with zipfile.ZipFile(_write(tmp_path, remote)) as archive:
+        everything = b"".join(archive.read(name) for name in archive.namelist()).decode(errors="replace")
+    assert "ttyUSB-marker" not in everything and "password" not in everything.lower().replace("does not include passwords", "")
+
+
+def test_the_download_works_while_the_core_is_down():
+    r = Repeater(auth=True)
+
+    def down():
+        raise CoreUnavailable("the core is not being heard from, so its settings cannot be exported now")
+
+    r.service.export_snapshot = down
+    response = r.client.get("/api/support-bundle")
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert json.loads(archive.read("config.json")) == {"settings": "unavailable (core not reachable)"}
+        assert "ERROR hard" in archive.read("moreopenrepeater.log").decode()

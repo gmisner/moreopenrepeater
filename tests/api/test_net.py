@@ -5,15 +5,18 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from api.activity import ActivityRecorder, ActivityStore
 from api.app import create_app
 from api.assets import AudioAssetStore
 from api.links import LinkError
-from api.net import NetMode
+from api.net import NetError, NetMode
 from api.persistence import StateStore
+from api.remote_core import RemoteCore
 from api.service import RepeaterService
+from api.service.core_handle import CommandRefused, CoreUnavailable
 from controller.announcements import Announcement
 from controller.macros import Macro
 from controller.state_machine import RepeaterConfig
@@ -280,3 +283,168 @@ def test_net_preview_uses_the_net_tone():
     during = client.post("/api/audio/preview", json={"clip": "courtesy_tone", "net": True}).content
     assert normal != during
 
+
+
+# -- the core is not there (#229): the dashboard changes nothing until the core has said yes -----------
+
+
+class UnreachableCore(RepeaterService):
+    """A service whose core is down: every command raises `CoreUnavailable`, as `RemoteCore` does."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.down = False
+        self.commands = []
+        self.hints = []
+
+    async def command(self, name, **params):
+        self.commands.append((name, params))
+        if self.down:
+            raise CoreUnavailable("the core is not reachable; nothing was changed")
+        await super().command(name, **params)
+
+    def sync_net_state(self, active):
+        self.hints.append(active)
+        super().sync_net_state(active)
+
+
+def make_down_net(config=None, store=None, wall=datetime(2026, 10, 5, 19, 0)):
+    clock = {"now": 1_000_000.0, "wall": wall}
+    service = UnreachableCore(config=config or RepeaterConfig(callsign="W1AW"), clock=lambda: 0.0, wall_clock=lambda: clock["wall"])
+    service.speak = lambda clip: None
+    net = NetMode(service, None, store, clock=lambda: clock["now"], wall_clock=lambda: clock["wall"])
+    return net, service, clock
+
+
+def test_a_net_does_not_start_while_the_core_is_down(tmp_path):
+    store = StateStore(tmp_path / "nets.json")
+    net, service, _ = make_down_net(store=store)
+    service.down = True
+
+    with pytest.raises(CoreUnavailable) as raised:
+        run(net.start("ann"))
+    assert "The net was not started" in str(raised.value) and "not reachable" in str(raised.value)
+    assert net.current is None and net.status()["current"] is None
+    assert (store.load() or {}).get("current") is None  # nothing saved either
+    assert service.hints == [False]  # whatever the core hears on reconnect matches the record
+
+    service.down = False  # the core is back: the same request now works, nothing is stuck
+    run(net.start("ann"))
+    assert net.current is not None and service.net_active is True
+
+
+def test_a_net_does_not_end_while_the_core_is_down(tmp_path):
+    store = StateStore(tmp_path / "nets.json")
+    net, service, _ = make_down_net(store=store)
+    run(net.start("ann"))
+    net.add_checkin("W1AW", "")
+    service.down = True
+
+    with pytest.raises(CoreUnavailable) as raised:
+        run(net.end("ann"))
+    assert "The net was not ended" in str(raised.value)
+    assert net.current is not None and net.past == []
+    assert store.load()["current"]["id"] == net.current["id"]  # still saved as running
+    assert service.hints[-1] is True and service.net_active is True  # the core is still told it runs
+
+    service.down = False
+    ended = run(net.end("ann"))
+    assert net.current is None and ended["checkins"][0]["callsign"] == "W1AW"
+    assert service.net_active is False and store.load()["current"] is None
+
+
+def test_a_refusal_from_the_core_changes_nothing_either():
+    net, service, _ = make_down_net()
+
+    async def refuse(name, **params):
+        raise CommandRefused("command.invalid", "no")
+
+    service.command = refuse
+    with pytest.raises(CommandRefused):
+        run(net.start("ann"))
+    assert net.current is None and service.hints == [False]
+
+
+def test_a_scheduled_net_starts_when_the_core_comes_back():
+    schedule = {"days": [0], "time": "19:00", "minutes": 60, "enabled": True}
+    net, service, clock = make_down_net(RepeaterConfig(net_schedules=[schedule]), wall=datetime(2026, 10, 5, 19, 0, 10))
+    service.down = True
+    with pytest.raises(CoreUnavailable):
+        run(net.tick())
+    assert net.current is None and net.past == []  # not marked as having run
+
+    service.down = False
+    clock["wall"] = datetime(2026, 10, 5, 19, 2)
+    run(net.tick())
+    assert net.current["started_by"] == "schedule"
+
+
+def test_a_net_that_is_due_to_end_stays_on_the_record_until_the_core_takes_it():
+    net, service, clock = make_down_net(RepeaterConfig(net_max_minutes=30))
+    run(net.start("ann"))
+    clock["now"] += 31 * 60
+    service.down = True
+    with pytest.raises(CoreUnavailable):
+        run(net.tick())
+    assert net.current is not None and net.past == []
+
+    service.down = False
+    run(net.tick())
+    assert net.current is None and net.past[0]["ended_by"] == "time limit"
+
+
+def test_two_starts_at_once_start_one_net():
+    net, service, _ = make_down_net()
+
+    async def go():
+        return await asyncio.gather(net.start("a"), net.start("b"), return_exceptions=True)
+
+    results = run(go())
+    assert sum(isinstance(r, NetError) for r in results) == 1
+    assert [c for c in service.commands if c[1] == {"active": True}] and len(service.commands) == 1
+
+
+def test_the_api_says_503_and_shows_no_net_when_the_core_is_down():
+    client, service = make_client()
+    service.__class__ = UnreachableCore
+    service.down, service.commands, service.hints = True, [], []
+    with client:
+        response = client.post("/api/net/start", json={"name": "ARES net"})
+        assert response.status_code == 503 and response.json()["code"] == "core.unavailable"
+        assert "not started" in response.json()["detail"]
+        assert client.get("/api/net").json()["current"] is None
+        service.down = False
+        assert client.post("/api/net/start", json={"name": "ARES net"}).status_code == 200
+        service.down = True
+        response = client.post("/api/net/end")
+        assert response.status_code == 503 and "not ended" in response.json()["detail"]
+        assert client.get("/api/net").json()["current"]["name"] == "ARES net"
+
+
+def test_the_core_hint_follows_the_record_not_the_failed_request(tmp_path):
+    """Against the real client: a start that cannot reach the core leaves the hint it resends on reconnect
+    at 'no net', and an end that cannot leaves it at 'net running', so the core is never left in net mode with
+    nothing to end it."""
+    remote = RemoteCore(tmp_path / "no-core.sock")
+    remote._config = RepeaterConfig(callsign="W1AW")  # a config the dashboard had already read
+    nets = NetMode(remote, None, None)
+    assert remote._net_hint is None
+
+    with pytest.raises(CoreUnavailable):
+        run(nets.start("ann"))
+    assert nets.current is None and remote._net_hint is False
+
+    nets.current = {"id": "x", "name": "n", "started_at": 0.0, "ends_at": 1e12, "started_by": "a", "scheduled_for": None,
+                    "linked_node": None, "link_error": None, "checkins": []}
+    remote._net_hint = False  # as if the core last heard 'off'
+    with pytest.raises(CoreUnavailable):
+        run(nets.end("ann"))
+    assert nets.current is not None and remote._net_hint is True
+
+
+def test_a_restart_with_a_net_on_the_record_tells_the_core(tmp_path):
+    store = StateStore(tmp_path / "nets.json")
+    net, _, _ = make_down_net(store=store)
+    run(net.start("ann"))
+    _, service, _ = make_down_net(store=store)
+    assert service.hints == [True]

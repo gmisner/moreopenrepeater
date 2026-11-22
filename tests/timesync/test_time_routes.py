@@ -207,10 +207,88 @@ def test_an_answer_about_the_old_server_is_not_used_for_the_new_one(tmp_path):
         await asyncio.sleep(0.1)
         setting.set("other.example.org")  # the setting changes while the first check is out
         release.set()
-        await first
-        return check._cached
+        reading = await first
+        return reading, check._cached
 
-    assert asyncio.run(scenario()) is None and asked == ["pool.ntp.org"]
+    reading, cached = asyncio.run(scenario())
+    assert asked == ["pool.ntp.org", "other.example.org"]  # the caller asked again rather than hand back the old answer
+    assert reading.server == "other.example.org" and cached[1] is reading
+
+
+def test_a_check_for_the_old_server_is_not_shared_with_a_caller_asking_about_the_new_one(tmp_path):
+    """A mistyped server must not read as fine because the check for the previous one was still in the air."""
+    release = threading.Event()
+    asked = []
+
+    def query(server):
+        asked.append(server)
+        if server == "pool.ntp.org":
+            release.wait(5)
+            return ts.SntpResult(True, offset=0.0, delay=0.01, stratum=2)
+        return ts.SntpResult(False, error="timeout")  # the mistyped one does not answer
+
+    setting = ts.NtpSetting(tmp_path)
+
+    async def scenario():
+        check = ts.ClockCheck(setting, query)
+        old = asyncio.ensure_future(check.current())
+        await asyncio.sleep(0.1)
+        setting.set("typo.example.org")
+        new = await asyncio.wait_for(check.current(), 3)  # does not wait for the old check, nor reuse its answer
+        release.set()
+        return new, await old
+
+    new, old = asyncio.run(scenario())
+    assert new.server == "typo.example.org" and new.result.ok is False
+    assert asked.count("typo.example.org") >= 1
+    assert old.server == "typo.example.org"  # the old caller was moved onto the current server too
+
+
+def test_changing_the_server_through_the_route_shows_the_new_servers_answer_not_the_old_ones(tmp_path):
+    """The PUT arrives while a poll for the old server is running (the dashboard polls every few seconds)."""
+    release = threading.Event()
+
+    def query(server):
+        if server == "pool.ntp.org":
+            release.wait(5)
+            return ts.SntpResult(True, offset=0.0, delay=0.01, stratum=2)
+        return ts.SntpResult(False, error="timeout")
+
+    setting = ts.NtpSetting(tmp_path / "cfg")
+    sync = ts.TimeSync(setting, ts.ClockCheck(setting, query), tmp_path / "status")
+
+    async def scenario():
+        poll = asyncio.ensure_future(sync.status())
+        await asyncio.sleep(0.1)
+        changed = await asyncio.wait_for(sync.set_server("typo.example.org"), 3)
+        release.set()
+        await poll
+        return changed
+
+    changed = asyncio.run(scenario())
+    assert changed["server"] == "typo.example.org" and changed["state"] == "unreachable" and changed["reachable"] is False
+
+
+def test_saving_the_server_does_not_block_the_event_loop(tmp_path):
+    saved_on = []
+    setting = ts.NtpSetting(tmp_path / "cfg")
+    real_set = setting.set
+
+    def spy(server):
+        saved_on.append(threading.get_ident())
+        real_set(server)
+
+    setting.set = spy
+    sync = ts.TimeSync(setting, ts.ClockCheck(setting, Query()), tmp_path / "status")
+
+    async def scenario():
+        loop_thread = threading.get_ident()
+        await sync.set_server("time.example.org")
+        return loop_thread
+
+    loop_thread = asyncio.run(scenario())
+    assert saved_on and saved_on[0] != loop_thread
+    assert setting.get() == "time.example.org"
 
 
 # -- never blocking --------------------------------------------------------------------------------------------------------------

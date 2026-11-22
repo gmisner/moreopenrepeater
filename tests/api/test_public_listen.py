@@ -32,6 +32,20 @@ def test_public_page_is_off_by_default(tmp_path, monkeypatch):
             ws.receive_json()
 
 
+def test_public_status_says_so_when_the_core_cannot_be_heard(tmp_path, monkeypatch):
+    """on_air and receiving are false then because nothing is known, not because the repeater is quiet."""
+    import dataclasses
+
+    from api.remote_core import UNAVAILABLE_STATE
+
+    client, service = make_client(tmp_path, monkeypatch, public_page_mode="anyone")
+    real = service.snapshot
+    service.snapshot = lambda: dataclasses.replace(real(), state=UNAVAILABLE_STATE, ptt_active=False, cos_active=False)
+    status = client.get("/api/public/status").json()
+    assert status["unavailable"] is True and status["on_air"] is False and status["receiving"] is False
+    assert status["callsign"] == "W1AW"  # everything else it reported is still there
+
+
 def test_public_page_shows_status_without_signing_in(tmp_path, monkeypatch):
     client, _service = make_client(tmp_path, monkeypatch, public_page_mode="anyone", public_page_text="146.940 -600 PL 100")
     client.post("/api/users", json={"username": "alice", "password": "password1", "role": "admin"})
@@ -40,7 +54,7 @@ def test_public_page_shows_status_without_signing_in(tmp_path, monkeypatch):
     status = client.get("/api/public/status").json()
     assert status == {
         "callsign": "W1AW", "text": "146.940 -600 PL 100", "on_air": False, "receiving": False,
-        "net": None, "audio": True, "listeners": 0, "max_listeners": 20, "username": None,
+        "unavailable": False, "net": None, "audio": True, "listeners": 0, "max_listeners": 20, "username": None,
     }
     # Mantine SPA shell (ADR 0001); listen UI is rendered client-side.
     listen = client.get("/listen")

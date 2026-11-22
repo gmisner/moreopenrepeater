@@ -171,6 +171,22 @@ def test_a_file_that_is_not_what_the_reporter_writes_is_ignored_with_a_note(tmp_
     assert any("gateway" in note for note in result["notes"])
 
 
+@pytest.mark.parametrize("nested", ["[" * 200_000, '{"a":' * 40_000, "[" * 5_000 + "]" * 5_000])
+def test_a_deeply_nested_file_is_unreadable_not_an_error(tmp_path, nested):
+    assert len(nested) <= MAX_FILE_BYTES
+    result = with_gateway(tmp_path, nested)
+    assert result["gateway"] is None
+    assert any("gateway" in note and "could not be read" in note for note in result["notes"])
+
+
+def test_a_deeply_nested_modem_file_does_not_hide_a_good_gateway_file(tmp_path):
+    real_snapshots(tmp_path)
+    (tmp_path / "modem.json").write_text("[" * 200_000)
+    result = run(activity(tmp_path).read())
+    assert result["gateway"] is not None and result["modem"] is None
+    assert any("modem" in note and "could not be read" in note for note in result["notes"])
+
+
 def test_a_huge_file_is_not_read(tmp_path):
     (tmp_path / "gateway.json").write_text(" " * (MAX_FILE_BYTES + 10) + json.dumps(GATEWAY_OK))
     assert run(activity(tmp_path).read())["gateway"] is None
@@ -420,3 +436,11 @@ def test_nothing_secret_or_free_form_is_in_the_response(monkeypatch, tmp_path):
     for word in ("hunter2", "RMS Express", "PRIVATE", "password"):
         assert word not in text
     assert os.path.exists(tmp_path / "gateway.json")  # and the API never writes there: it only reads
+
+
+def test_the_route_answers_200_when_a_report_is_deeply_nested(monkeypatch, tmp_path):
+    (tmp_path / "gateway.json").write_text("[" * 200_000)
+    response = make_client(monkeypatch, tmp_path).get("/api/winlink")
+    assert response.status_code == 200
+    activity_body = response.json()["activity"]
+    assert activity_body["gateway"] is None and any("could not be read" in note for note in activity_body["notes"])

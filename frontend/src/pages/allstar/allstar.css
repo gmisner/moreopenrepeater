@@ -441,65 +441,6 @@
 .mor-week-list b { font-family: var(--as-mono); font-variant-numeric: tabular-nums; }
 .mor-week-list small { color: var(--mantine-color-dimmed); }
 
-/* ---------- Setup checklist ---------- */
-
-.mor-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--mantine-spacing-md);
-}
-
-.mor-step {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  gap: var(--mantine-spacing-md);
-  align-items: start;
-}
-
-.mor-step-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 0.86rem;
-  font-weight: 700;
-  border: 2px solid var(--as-off);
-  color: var(--mantine-color-dimmed);
-}
-
-.mor-step[data-done] .mor-step-mark {
-  background: var(--as-green);
-  border-color: var(--as-green);
-  color: var(--mor-on-status);
-}
-
-.mor-step[data-current] .mor-step-mark {
-  border-color: var(--as-accent);
-  color: var(--mantine-color-text);
-}
-
-.mor-step-title { font-weight: 600; }
-.mor-step[data-done] .mor-step-title { color: var(--mantine-color-dimmed); }
-.mor-step-detail { margin: 2px 0 0; font-size: 0.86rem; color: var(--mantine-color-dimmed); max-width: 62ch; }
-
-.mor-progress {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--mor-panel-2);
-  overflow: hidden;
-}
-
-.mor-progress span {
-  display: block;
-  height: 100%;
-  width: var(--fill, 0%);
-  background: var(--as-accent);
-  border-radius: inherit;
-}
-
 /* ---------- Narrow screens ---------- */
 
 .mor-as-links[data-empty] { grid-template-columns: 1fr; }
@@ -512,8 +453,6 @@
   .mor-map { height: 340px; }
   .mor-map-label { max-width: 104px; }
   .mor-week { grid-template-columns: 2.2rem minmax(0, 1fr); }
-  .mor-step { grid-template-columns: 28px minmax(0, 1fr); }
-  .mor-step > :last-child { grid-column: 2; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

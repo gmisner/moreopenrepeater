@@ -15,6 +15,7 @@ const STATE_COPY: Record<string, string> = {
   lockout: "Locked out after repeated time-outs.",
   announcing: "Playing an announcement.",
   patch: "Phone call on the air.",
+  core_unavailable: "The dashboard can't reach the repeater's core, so it can't tell what the repeater is doing.",
 };
 
 const STATE_LABEL: Record<string, string> = {
@@ -27,15 +28,30 @@ const STATE_LABEL: Record<string, string> = {
   lockout: "Locked out",
   announcing: "Announcing",
   patch: "Phone call",
+  core_unavailable: "Core unavailable",
+  unknown: "Unknown",
 };
 
-type Tone = "idle" | "rx" | "tx" | "alert";
+type Tone = "idle" | "rx" | "tx" | "alert" | "unavailable";
 
-function stateTone(state: string): Tone {
+// The states in which the transmitter is, or is about to be, on the air.
+const TX_STATES = new Set(["transmitting_id", "courtesy_tone", "hang_time", "announcing", "patch"]);
+
+/** The core can't be heard (or no status has arrived yet): nothing here says what the radio is doing. */
+export function isUnknown(state: string): boolean {
+  return state === "core_unavailable" || state === "unknown";
+}
+
+export function stateTone(state: string): Tone {
   if (state === "receiving") return "rx";
   if (state === "timeout" || state === "lockout") return "alert";
-  if (state === "idle" || state === "unknown") return "idle";
-  return "tx";
+  if (state === "idle" || state === "unknown") return "idle"; // "unknown" is only the wait for the first status
+  if (TX_STATES.has(state)) return "tx";
+  return "unavailable"; // a state this page doesn't know is not drawn as a transmission
+}
+
+export function stateLabel(state: string): string {
+  return STATE_LABEL[state] ?? state.replaceAll("_", " ");
 }
 
 const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
@@ -140,6 +156,7 @@ export const OnAir = memo(function OnAir({ config }: { config: Config | null }) 
   const tone = stateTone(state);
   const cos = Boolean(status?.cos_active);
   const ptt = Boolean(status?.ptt_active);
+  const unknown = isUnknown(state);
   const ctcss = num(status?.ctcss_hz);
   const required = num(config?.require_ctcss_hz);
   const accessOk = required == null || ctcss != null;
@@ -148,34 +165,42 @@ export const OnAir = memo(function OnAir({ config }: { config: Config | null }) 
   const toneValue =
     cos && ctcss != null ? `${hz(ctcss)} Hz` : required != null ? `Needs ${hz(required)}` : cos ? "None" : "Not required";
 
-  const stages: PathStage[] = [
-    { name: "Receiver", value: cos ? "Carrier" : "Quiet", lit: cos ? "rx" : undefined, wire: cos && accessOk ? "rx" : undefined },
-    {
-      name: "Tone",
-      value: toneValue,
-      lit: cos && ctcss != null ? "rx" : undefined,
-      wire: repeating ? "rx" : undefined,
-    },
-    {
-      name: "Controller",
-      value: STATE_LABEL[state] ?? state.replaceAll("_", " "),
-      lit: tone === "rx" ? "rx" : tone === "tx" ? "busy" : tone === "alert" ? "tx" : undefined,
-      wire: ptt ? "tx" : undefined,
-    },
-    { name: "Transmitter", value: status?.transmitter_enabled === false ? "Muted" : ptt ? "Keyed" : "Off", lit: ptt ? "tx" : undefined },
-  ];
+  // While the core can't be heard, "no carrier" and "not keyed" are not facts: say so rather than show Quiet and Off.
+  const stages: PathStage[] = unknown
+    ? [
+        { name: "Receiver", value: "Unknown" },
+        { name: "Tone", value: "Unknown" },
+        { name: "Controller", value: stateLabel(state) },
+        { name: "Transmitter", value: "Unknown" },
+      ]
+    : [
+        { name: "Receiver", value: cos ? "Carrier" : "Quiet", lit: cos ? "rx" : undefined, wire: cos && accessOk ? "rx" : undefined },
+        {
+          name: "Tone",
+          value: toneValue,
+          lit: cos && ctcss != null ? "rx" : undefined,
+          wire: repeating ? "rx" : undefined,
+        },
+        {
+          name: "Controller",
+          value: stateLabel(state),
+          lit: tone === "rx" ? "rx" : tone === "tx" ? "busy" : tone === "alert" ? "tx" : undefined,
+          wire: ptt ? "tx" : undefined,
+        },
+        { name: "Transmitter", value: status?.transmitter_enabled === false ? "Muted" : ptt ? "Keyed" : "Off", lit: ptt ? "tx" : undefined },
+      ];
 
   const tot = num(config?.tot_duration);
   const hang = num(config?.hang_time);
   const idInterval = num(config?.id_interval);
 
   return (
-    <Card withBorder radius="md" className="mor-onair" data-tone={status?.locked_out ? "alert" : tone} component="section" aria-label="On the air">
+    <Card withBorder radius="md" className="mor-onair" data-tone={tone === "unavailable" ? tone : status?.locked_out ? "alert" : tone} component="section" aria-label="On the air">
       <StationLine status={status} config={config} />
       <div className="mor-onair-main">
         <div>
           <h2 className="mor-onair-state" data-tone={tone}>
-            {STATE_LABEL[state] ?? state.replaceAll("_", " ")}
+            {stateLabel(state)}
           </h2>
           <p className="mor-onair-copy" style={{ marginBottom: 0 }}>
             {status ? STATE_COPY[state] ?? "" : "Waiting for the controller."}
@@ -187,11 +212,11 @@ export const OnAir = memo(function OnAir({ config }: { config: Config | null }) 
             remaining={num(status?.tot_remaining)}
             total={tot}
             mode="fill"
-            idleText={tot != null ? `${clock(tot)} limit` : "Not running"}
+            idleText={unknown ? "Unknown" : tot != null ? `${clock(tot)} limit` : "Not running"}
             warnUnder={tot != null ? Math.min(30, tot * 0.2) : undefined}
           />
-          <Timer label="Hang time" remaining={num(status?.hang_remaining)} total={hang} mode="drain" idleText="Not running" />
-          <Timer label="Next ID" remaining={num(status?.id_due_in)} total={idInterval} mode="drain" idleText="None owed" />
+          <Timer label="Hang time" remaining={num(status?.hang_remaining)} total={hang} mode="drain" idleText={unknown ? "Unknown" : "Not running"} />
+          <Timer label="Next ID" remaining={num(status?.id_due_in)} total={idInterval} mode="drain" idleText={unknown ? "Unknown" : "None owed"} />
         </dl>
       </div>
       <SignalPath stages={stages} />

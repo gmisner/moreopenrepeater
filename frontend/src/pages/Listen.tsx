@@ -7,6 +7,7 @@ type PublicStatus = {
   text?: string;
   on_air?: boolean;
   receiving?: boolean;
+  unavailable?: boolean;
   net?: string | null;
   audio?: boolean;
   username?: string | null;
@@ -109,7 +110,9 @@ export function Listen() {
 
   const stateLabel = !status
     ? "…"
-    : status.on_air
+    : status.unavailable
+      ? "Can't tell right now"
+      : status.on_air
       ? status.receiving
         ? "Someone's talking"
         : "On the air"

@@ -543,6 +543,12 @@ installs AllStarLink (ASL3) and connects the controller to it. The manual
 steps, and how to reach the dashboard securely from other devices, are in
 `docs/raspberry-pi.md`.
 
+Already running this native install and want the container install (the modular one,
+[docs/docker.md](docs/docker.md))? Don't install fresh: `docker/migrate-from-native.sh` moves your
+configuration, accounts, audio clips and history over, starts with a dry run that changes nothing, and
+leaves the native data untouched so you can go back. See
+[Moving from the native install](docs/docker.md#moving-from-the-native-install).
+
 ## Development
 
 Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for how to

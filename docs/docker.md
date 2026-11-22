@@ -50,6 +50,12 @@ Files:
 
 ## Install
 
+**Already running the native install on this machine?** Do not start with the commands below: they make a new, empty
+install and would leave your saved configuration, accounts and history behind. Use
+[Moving from the native install](#moving-from-the-native-install) (`docker/migrate-from-native.sh`, issue
+[#233](https://github.com/gmisner/moreopenrepeater/issues/233)). It starts with a dry run that changes nothing. The
+rest of this section is for a machine with no native install.
+
 ```
 sudo systemctl disable --now moreopenrepeater   # only if the native install is on this machine
 cd docker
@@ -106,14 +112,111 @@ backup does not put history back.
 
 `MOR_DATA_DIR` must hold a `state.json` (the saved configuration). The core
 refuses to start without one and exits with status 2, so Compose will not
-restart-loop it. To start from an installed Pi's configuration, copy it and give
-it to uid 999:
+restart-loop it. To start from an installed Pi's configuration, use the migration script (below), which does this and
+more. By hand, copy it and give it to uid 999:
 
 ```
 sudo mkdir -p /srv/mor-data && sudo cp /opt/moreopenrepeater/data/state.json /srv/mor-data/
 sudo chown -R 999:999 /srv/mor-data
 echo MOR_DATA_DIR=/srv/mor-data >> .env
 ```
+
+## Moving from the native install
+
+For an owner who already runs the native install (`scripts/install-pi.sh`, the `moreopenrepeater` service, code in
+`/opt/moreopenrepeater`, settings in `/etc/moreopenrepeater/env`) and wants the container install on the same machine.
+Issue [#233](https://github.com/gmisner/moreopenrepeater/issues/233). Both installs keep the same data folder format, so the
+data comes over as it is. `docker/migrate-from-native.sh` does the moving, and it is careful about it:
+
+- It is a **dry run unless you pass `--apply`**. The dry run says what it found and what it would do, and changes nothing
+  (it does ask for your sudo password if it has to read files that belong to the `moreopenrepeater` user).
+- The native data is **only ever read**. Nothing is moved or deleted, so going back is just stopping the containers and
+  starting the native service.
+- It stops the native service itself, only with `--apply`, and prints the command that undoes that.
+
+```
+cd docker
+./migrate-from-native.sh            # 1. dry run: read what it found, check the plan, nothing changes
+./migrate-from-native.sh --apply    # 2. do it (the repeater goes off the air while the containers build)
+```
+
+Run it as yourself, not with `sudo`: it uses sudo where it must (reading the native files, stopping the service, writing
+files the container owns) and tells you so. It needs Docker and the Compose plugin installed already, and python3 (which the
+native install has).
+
+**What it refuses, changing nothing:** Docker is missing or can't be asked, the container stack in this folder is already
+running, the native data folder has no `state.json` with a callsign, a native process is running outside systemd, or the
+target data folder (`MOR_DATA_DIR` in `docker/.env`, else `docker/data`, or `--target DIR`) is not empty. With
+`--into-existing` a target that already holds files is allowed, and the script never overwrites a file in it unless you
+also pass `--force` (the old file is then kept as `NAME.before-migrate`).
+
+**What carries over, and what does not:**
+
+| | Carried | How |
+| --- | --- | --- |
+| Saved configuration, macros, announcements | yes | `state.json` |
+| Dashboard accounts, API tokens, agent access | yes | `users.json`, `tokens.json`, `agent-access.json` (mode 0600) |
+| Audio clips | yes | `audio/` with its `index.json` |
+| Activity history, audit log, APRS and sensor history | yes | `activity.db`, `audit.db`, `aprs.db`, `sensors.db`, copied with SQLite's backup API (a consistent copy, the `-wal` file folded in), then integrity checked |
+| Hub registry and the other small settings files | yes | `hub-sites.json` (0600), `alerts.json`, `nets.json`, `control-codes.json`, `stream.json`, `log-shipping.json`, `mailbox/` |
+| Saved transmissions | only with `--recordings` | `recordings/`, `monitor-recordings/` (they add up) |
+| Dashboard login (user and password) | yes | `api.env`, file to file, never printed. `setup.sh` keeps a login that is already there, so your admin login keeps working |
+| Dashboard port, loopback-only host | yes | `.env` (`MOR_API_PORT`, `MOR_API_HOST=127.0.0.1`) |
+| Stall seconds, Home Assistant token, transcription key | yes | `core.env` and `api.env` |
+| AMI settings pointing at a remote Asterisk | yes | both `api.env` and `core.env` |
+| AMI settings pointing at this machine's Asterisk | no | in the container install the node is its own container with its own login |
+| Piper and Kokoro voices, speech models | no | the container install has its own Piper container |
+| The native install's backups, update schedule, process marker | no | native-only; the backups stay where they are as your safety copy |
+| The PTT udev rule | not by this script | it passes `--udev` to `setup.sh` when the rule is not installed |
+| AllStar node on the host | **no** | printed as exact next commands (below) |
+| DMR (DVSwitch) on the host | **no, there is no importer** | by hand (below) |
+| SD card protection (journal and log in memory) | no | the container counterpart is `compose.protect-sd.yaml` (see Sparing the SD card) |
+| Tailscale | stays on the host | the dashboard reads its socket read-only |
+
+Env keys the script does not recognize are **listed, not guessed**. Values are never printed, not even in the dry run: it says
+`(secret)`. Files in the data folder that it does not know are listed as left behind, with the reason.
+
+**What `--apply` does, in order:** the checks above; reading everything and working out the whole plan; stopping the native
+service (`sudo systemctl disable --now moreopenrepeater`, and `moreopenrepeater-core` if that is the one in use); copying the
+data (as uid 999; symbolic links in the native data folder are skipped, not followed; a failed copy removes what it wrote);
+writing `api.env`, `core.env` and `.env`, keeping any value already set; then running `./setup.sh`. `setup.sh` writes the rest,
+leaves the copied `state.json` alone (it only seeds one that is missing), keeps the login that was copied (or, if the native
+install had none, turns sign-in on with a generated password it prints once), and starts the containers. The flags it gets are
+only the ones that are safe to run for you: `--udev` when the container's PTT name rule is missing, `--gpio` and `--serial DEVICE`
+when the saved configuration uses them and the device exists. With a link radio in the configuration it passes `--no-start` and
+tells you to run `./setup.sh --link-radio ID` (which starts the containers), since the interface needs its own name first.
+`--no-setup` stops after the copy and prints the `setup.sh` command instead.
+
+**AllStar on the host.** The script does not touch it. The container install runs its own node, and two nodes with one number
+and the same IAX port must not run together. To bring the node over, stop the host's (`sudo systemctl disable --now asterisk`),
+run `./setup.sh --import-allstar /etc/asterisk`, and click **Import node** on the dashboard's AllStarLink page (see
+[allstar.md](allstar.md), Importing a node from an existing ASL3 install). Until then the repeater runs with no AllStar link.
+
+**DMR on the host (DVSwitch).** There is no importer. The script says it found one and does not read its settings. To move
+it: look up the callsign, DMR Id, network and password in `/etc/moreopenrepeater/dmr/*.ini`, stop the host's bridge
+(`sudo systemctl disable --now analog_bridge mmdvm_bridge`; undo with `enable --now`), run `./setup.sh --dmr`, and enter them again
+on the dashboard's DMR page.
+
+**Going back.** Because the native data was only read, this is the whole rollback:
+
+```
+cd docker && docker compose down            # no -v: that would delete the containers' volumes
+                                            # (name --profile allstar, dmr, winlink and time as well if you started them)
+sudo systemctl enable --now moreopenrepeater   # moreopenrepeater-core if that was the one you ran
+```
+
+The native version ignores `state.json` fields it does not know (it drops them when it loads, `src/api/service/snapshot.py`), and it
+reads its own folder, not the container's, so the container's newer fields cannot hurt it. What you change in the container's
+dashboard stays in the container's data folder and does not appear in the native install. To carry a change back, use the
+dashboard's backup export in the container install and restore it in the native one (the backup format works across both).
+Keep the native install until the container one has run for a while.
+
+**What the script does not and can not check.** It never keys a transmitter or hears the radio. After `--apply`, on the air,
+yourself: the dashboard answers and shows the right callsign; `ls -l /dev/moreopenrepeater-ptt` exists; keying from a radio keys,
+repeats and drops, with the courtesy tone and hang time you expect; the identification comes on time and sounds right; the audio
+levels match what you had; and the time-out timer, GPIO or serial lines, a link radio, AllStar and DMR if you use them. The tests
+for the script (`tests/container_migrate/`) run it against a fake native install with Docker, systemd and sudo stood in by shims.
+They prove what it does with files and commands. They do not prove anything about a Pi, real Docker, hardware or the air.
 
 ## Updating
 

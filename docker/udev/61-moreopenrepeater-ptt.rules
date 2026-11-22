@@ -17,10 +17,16 @@
 # 60-moreopenrepeater-link.rules, which names the link radio's interface /dev/moreopenrepeater-link and marks it, and the
 # line below then leaves the marked interface out, so this name stays the repeater's.
 #
+# The same goes for the Winlink packet radio's interface, if it is a CM108 or an AIOC (even one whose PTT is not used, or that
+# is only its sound card): `./setup.sh --packet-radio SERIAL` installs 60-moreopenrepeater-packet.rules, which names it
+# /dev/moreopenrepeater-packet and marks it, and the lines below leave it out as well. Without that, the packet radio's
+# interface can win this name after a reboot or a replug and the core would key the wrong radio.
+#
 # The permission lines match the ones in packaging/99-cm108.rules, so this file stands alone on a host that
 # has not installed the native service's rules.
 
 ENV{MOREOPENREPEATER_LINK}=="1", GOTO="moreopenrepeater_ptt_end"
+ENV{MOREOPENREPEATER_PACKET}=="1", GOTO="moreopenrepeater_ptt_end"
 
 # The All-In-One-Cable (AIOC)
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="7388", GROUP="audio", MODE="0660", SYMLINK+="moreopenrepeater-ptt"

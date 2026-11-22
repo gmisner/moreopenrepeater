@@ -61,9 +61,14 @@ def test_json_logging_is_on_for_all_three():
 
 
 def test_the_collector_image_installs_only_what_it_imports():
-    lines = (DOCKER / "logd-requirements.txt").read_text().splitlines()
-    requirements = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
-    assert requirements == ["pydantic>=2"]  # no numpy, audio or web framework
+    import re
+
+    wanted = [line.strip() for line in (DOCKER / "pins" / "logd.in").read_text().splitlines() if line.strip() and not line.startswith("#")]
+    assert wanted == ["pydantic>=2"]  # no numpy, audio or web framework
+    # the image installs the pinned file (exact versions and hashes, tests/container_updates/test_pinned_requirements.py): pydantic and
+    # what pydantic needs, and nothing else
+    pinned = {line.split("==")[0] for line in (DOCKER / "logd-requirements.txt").read_text().splitlines() if re.match(r"[A-Za-z]", line)}
+    assert pinned == {"annotated-types", "pydantic", "pydantic-core", "typing-extensions", "typing-inspection"}
 
 
 def test_every_file_a_dockerfile_copies_is_in_the_build_context():

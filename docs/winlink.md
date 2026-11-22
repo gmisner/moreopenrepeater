@@ -27,15 +27,39 @@ real Dire Wolf output from test audio. They have not seen a real station or the 
 ```
 cd docker
 cp winlink.env.example winlink.env && chmod 600 winlink.env     # set the callsign, locator, an admin password
+sh ./split-winlink-env.sh                                        # the modem's own settings file, direwolf.env, made from it
 ```
+
+There are two settings files on purpose. `winlink.env` is for the gateway and holds its two passwords. The modem (Dire Wolf) decodes
+whatever it hears on the air and holds an audio device, so it is given `direwolf.env` instead: the callsign, SSID and PTT settings
+and nothing secret (`direwolf.env.example` lists them). `split-winlink-env.sh` makes `direwolf.env` from the callsign, SSID and PTT
+lines of `winlink.env`, only if there is no `direwolf.env` yet, and `./setup.sh` and `./update.sh` run it too, so an install that
+already has a `winlink.env` keeps working after an update. It is a copy: if you later change the callsign, SSID or PTT lines in
+`winlink.env`, change them in `direwolf.env` as well. Never put a password in `direwolf.env`.
 
 In `.env` give the packet radio's sound card (its number from `cat /proc/asound/cards`, which must not be the repeater's) and, if it has one,
 the PTT device:
 
 ```
 MOR_PACKET_CARD=1
-MOR_PACKET_PTT_HIDRAW=/dev/hidraw1     # then MOR_PACKET_PTT=cm108 in winlink.env
+MOR_PACKET_PTT_HIDRAW=/dev/moreopenrepeater-packet     # then MOR_PACKET_PTT=cm108 in direwolf.env
 ```
+
+**If the packet radio's interface is a CM108 or an AIOC, name it, even if you only use it for sound.** The repeater's PTT rule gives
+the name `/dev/moreopenrepeater-ptt` to every CM108 and AIOC interface it is not told to leave out, and two cannot share it. After a
+reboot or a replug the packet radio's interface can win that name, and the core would key the packet radio instead of the repeater.
+Plug both interfaces in and run:
+
+```
+./setup.sh --list-interfaces                 # shows each one's ID
+./setup.sh --packet-radio D4E5F6             # the packet radio's ID (or port:1-1.4 for one with no serial number)
+```
+
+That installs a udev rule (with sudo) that names the packet radio's interface `/dev/moreopenrepeater-packet`, which does not move when
+`/dev/hidrawN` does, and leaves it out of the repeater's name; the repeater's own interface stays `/dev/moreopenrepeater-ptt`
+(`docs/docker.md`, GPIO, serial ports and a link radio). An install with no packet radio, or one that uses a serial or GPIO PTT for
+it, does not need this. If `MOR_PACKET_PTT=cm108` is set and `MOR_PACKET_PTT_HIDRAW` is not (or names a device that is missing), the
+modem refuses to start and says so, because the container would otherwise be given an empty device and never key.
 
 Give the card a fixed number so it is the same after a reboot (for a USB card, `options snd-usb-audio index=...` in the host's modprobe
 configuration), or the next start would find the repeater's card where the packet radio was. Only that one card's device files are put in the
@@ -55,10 +79,38 @@ gateway on Winlink, which publishes your station: leave it off until the gateway
 - The gateway answers as `CALL-10` (`MOR_WINLINK_SSID`) on the modem's 1200 baud AX.25 port and hands connections to Winlink's CMS. LinBPQ's
   node answers as the plain `CALL`, a separate call on purpose: with both on one call a station that connects gets the node and never
   reaches Winlink. Its admin page (user `sysop`) and telnet port are on the private network only: nothing is published to the host or the
-  LAN. To open the page, give the `winlink` service a published port in a `compose.override.yaml` bound to the loopback, for as long as you
-  need it.
-- It keeps nothing but its running state and logs in memory (a tmpfs), so there is no message store to back up or to wear the SD card.
-  Message text is not logged by MOR.
+  LAN. To open the page, give the `winlink` service a published port bound to the loopback, in a file of its own that you list in
+  `COMPOSE_FILE` in `.env` for as long as you need it, for example `compose.winlink-admin.yaml`:
+
+  ```
+  services:
+    winlink:
+      ports:
+        - "127.0.0.1:8080:8080"
+  ```
+
+  and `COMPOSE_FILE=compose.yaml:compose.winlink-admin.yaml` in `.env` (append `:compose.winlink-admin.yaml` to the line that is
+  there if there is one), then `docker compose --profile winlink up -d`. Take it out of the line again when you are done. A
+  `compose.override.yaml` is not a way to do this on a machine where `setup.sh` has set `COMPOSE_FILE` (for `--gpio` and the others):
+  Compose reads that file on its own only while `COMPOSE_FILE` is not set. Do not use `-f` either; it also ignores `COMPOSE_FILE`
+  (`docs/docker.md`, Compose files and the `-f` option).
+- It keeps no message store, and its own logs and running state are in memory (a tmpfs), so there is nothing to back up. **The modem's
+  output is the exception, and it does reach the SD card.** Dire Wolf prints every frame it decodes, the text of the frames included
+  (every station it hears, not only ones for the gateway), and that goes to Docker's log for the `direwolf` container, which Docker
+  keeps on the host's disk: the `local` log driver, up to 3 files of 10 MB each (about 30 MB) in `/var/lib/docker/containers`. MOR
+  itself writes none of it: the reporter counts frames and passes the output on unchanged, and nothing else of MOR's logs it. To keep
+  frame text off the card, give the modem no Docker log, in a file of its own listed in `COMPOSE_FILE` like the one above:
+
+  ```
+  services:
+    direwolf:
+      logging: !override
+        driver: none
+  ```
+
+  With it, `docker compose logs direwolf` is empty, so you lose the modem's own messages when something is wrong; take it out
+  of `COMPOSE_FILE` to see them again. A smaller `max-size` in `compose.yaml` shortens how long text stays but still writes it.
+  The gateway's own Docker log is a separate question: this section covers only what is known of Dire Wolf's.
 - The core and the repeater do not know it exists. If it stops, the repeater is unaffected; a restart policy brings it back.
 - Not built yet: start and stop from the dashboard, VARA FM, 9600 baud, several ports, a shared radio (designed in
   `docs/adr/0007-shared-radio-lease.md`, not built), and off-grid delivery. The modem's PTT and audio path and a full message exchange

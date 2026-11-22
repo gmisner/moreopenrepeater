@@ -392,8 +392,11 @@ services:
       - ${MOR_PACKET_PTT_HIDRAW:-/dev/null}:/dev/packet-ptt
     group_add:
       - audio
+    # Its own settings file, not winlink.env: Dire Wolf decodes whatever it hears on the air and holds an audio device, so it
+    # is given the call, SSID and PTT settings it uses and none of the gateway's passwords (docker/direwolf.env.example).
+    # setup.sh and update.sh make direwolf.env from an existing winlink.env (docker/split-winlink-env.sh).
     env_file:
-      - path: winlink.env
+      - path: direwolf.env
         required: false
     environment:
       MOR_PACKET_CARD: ${MOR_PACKET_CARD:-9}
@@ -431,12 +434,16 @@ services:
     networks:
       - services
     environment:
-      MOR_WINLINK_KISS_HOST: ${MOR_DIREWOLF_IP:-172.28.0.40}  # winlink.env can name another modem (a hardware TNC)
+      # The modem's address, which the gateway's entrypoint uses unless winlink.env sets MOR_WINLINK_KISS_HOST (a hardware TNC).
+      # It is not set as MOR_WINLINK_KISS_HOST here: a value under `environment:` beats the env_file, so winlink.env could not
+      # change it.
+      MOR_DIREWOLF_IP: ${MOR_DIREWOLF_IP:-172.28.0.40}
       MOR_WINLINK_STATUS_DIR: /winlink-status  # where it writes its sessions and counters for the dashboard
     volumes:
       - winlink-status:/winlink-status  # in memory; the API reads it and the modem writes its own file beside this one
     # No port is published: its admin page (8080) and telnet port (8010) answer on the private network only, and it reaches
-    # Winlink by an outbound connection. The callsign, locator, passwords and the Winlink gateway password are in winlink.env.
+    # Winlink by an outbound connection. The callsign, locator, passwords and the Winlink gateway password are in winlink.env,
+    # which only this service reads.
     env_file:
       - path: winlink.env
         required: false

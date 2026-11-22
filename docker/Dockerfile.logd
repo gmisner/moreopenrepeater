@@ -21,7 +21,7 @@ RUN groupadd --system --gid 999 moreopenrepeater \
     && chmod 750 /run/logd
 
 COPY docker/logd-requirements.txt /tmp/logd-requirements.txt
-RUN pip install -r /tmp/logd-requirements.txt
+RUN pip install --require-hashes --only-binary=:all: -r /tmp/logd-requirements.txt
 
 COPY pyproject.toml /app/pyproject.toml
 COPY src /app/src

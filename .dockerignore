@@ -1,6 +1,8 @@
 *
 !docker/core-requirements.txt
+!docker/core-piper-requirements.txt
 !docker/logd-requirements.txt
+!docker/api-requirements.txt
 !pyproject.toml
 !src
 !web

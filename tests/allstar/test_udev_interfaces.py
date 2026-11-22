@@ -101,3 +101,49 @@ def test_the_repeaters_rule_still_names_both_kinds_of_interface():
     text = PTT_RULE.read_text()
     assert 'ATTRS{idVendor}=="1209", ATTRS{idProduct}=="7388"' in text and 'ATTRS{idVendor}=="0d8c"' in text
     assert "moreopenrepeater-link" not in text.replace("60-moreopenrepeater-link.rules", "").replace("/dev/moreopenrepeater-link", "")
+
+
+# -- the Winlink packet radio's interface (docs/winlink.md) ----------------------------------------------------------------
+
+
+def test_the_listing_offers_each_interface_for_the_packet_radio_too(tmp_path):
+    add_hidraw(tmp_path, "hidraw0", "1209", "7388", "A1B2C3", "1-1.2")
+    add_hidraw(tmp_path, "hidraw2", "0d8c", "0012", None, "1-1.4")
+    out = interfaces("list", sys_root=tmp_path).stdout
+    assert "--link-radio A1B2C3  (or --packet-radio A1B2C3)" in out
+    assert "--link-radio port:1-1.4  (or --packet-radio port:1-1.4)" in out
+
+
+def test_the_packet_rule_names_that_interface_for_the_packet_radio_and_marks_it_for_the_repeaters_rule(tmp_path):
+    rule = interfaces("rule", "D4E5F6", "packet", sys_root=tmp_path).stdout
+    lines = [line for line in rule.splitlines() if line.startswith("SUBSYSTEM")]
+    assert len(lines) == 2
+    for line in lines:
+        assert 'ATTRS{serial}=="D4E5F6"' in line and 'SYMLINK+="moreopenrepeater-packet"' in line
+        assert 'ENV{MOREOPENREPEATER_PACKET}="1"' in line and 'GROUP="audio"' in line and 'MODE="0660"' in line
+        assert "moreopenrepeater-ptt" not in line and "moreopenrepeater-link" not in line and "MOREOPENREPEATER_LINK" not in line
+    assert interfaces("rule", "port:1-1.4", "packet", sys_root=tmp_path).stdout.count('KERNELS=="1-1.4"') == 2
+
+
+def test_the_link_rule_is_what_it_was_when_no_kind_is_given(tmp_path):
+    assert interfaces("rule", "D4E5F6", sys_root=tmp_path).stdout == interfaces("rule", "D4E5F6", "link", sys_root=tmp_path).stdout
+    assert "moreopenrepeater-packet" not in interfaces("rule", "D4E5F6", sys_root=tmp_path).stdout
+
+
+def test_an_unknown_kind_and_text_that_could_break_out_of_the_packet_rule_make_no_rule(tmp_path):
+    bad = interfaces("rule", "D4E5F6", "ptt", sys_root=tmp_path)
+    assert bad.returncode == 2 and bad.stdout == "" and "link or packet" in bad.stderr
+    for text in ('AB"CD', "a b", "x,SYMLINK+=evil", "port:1-1.4;", "port:abc"):
+        result = interfaces("rule", text, "packet", sys_root=tmp_path)
+        assert result.returncode == 2 and result.stdout == "", text
+
+
+def test_the_repeaters_rule_skips_the_packet_radios_interface_too_and_names_the_repeaters_exactly_as_before():
+    lines = PTT_RULE.read_text().splitlines()
+    label = lines.index('LABEL="moreopenrepeater_ptt_end"')
+    guards = [lines.index(f'ENV{{{mark}}}=="1", GOTO="moreopenrepeater_ptt_end"') for mark in ("MOREOPENREPEATER_LINK", "MOREOPENREPEATER_PACKET")]
+    names = [i for i, line in enumerate(lines) if 'SYMLINK+="moreopenrepeater-ptt"' in line]
+    assert len(names) == 2 and all(max(guards) < i < label for i in names)
+    # the repeater's own interface: the same two lines it always had
+    assert 'SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="7388", GROUP="audio", MODE="0660", SYMLINK+="moreopenrepeater-ptt"' in lines
+    assert 'SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0d8c", GROUP="audio", MODE="0660", SYMLINK+="moreopenrepeater-ptt"' in lines

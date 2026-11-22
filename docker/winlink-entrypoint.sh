@@ -64,7 +64,9 @@ ok "$LOCATOR" '[A-R]{2}[0-9]{2}([A-X]{2})?' || fail "MOR_WINLINK_LOCATOR is not 
 
 # --- the modem, and the admin login ----------------------------------------------------------------------------------
 
-KISS_HOST="${MOR_WINLINK_KISS_HOST:-direwolf}"  # compose.yaml sets the modem container's fixed address
+# winlink.env's MOR_WINLINK_KISS_HOST (a hardware TNC) wins; else the modem container's fixed address, which compose.yaml passes
+# as MOR_DIREWOLF_IP; else its name, which is looked up below.
+KISS_HOST="${MOR_WINLINK_KISS_HOST:-${MOR_DIREWOLF_IP:-direwolf}}"
 KISS_PORT="${MOR_WINLINK_KISS_PORT:-8001}"
 ok "$KISS_HOST" '[A-Za-z0-9._-]{1,253}' || fail "MOR_WINLINK_KISS_HOST is not a host name or address"
 ok "$KISS_PORT" '[0-9]{1,5}' && [ "$KISS_PORT" -ge 1 ] && [ "$KISS_PORT" -le 65535 ] || fail "MOR_WINLINK_KISS_PORT is not a port"

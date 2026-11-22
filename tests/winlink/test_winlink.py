@@ -215,10 +215,10 @@ def test_the_modem_is_given_one_sound_card_never_all_of_dev_snd():
 
 
 def test_the_modem_has_a_fixed_address_and_the_gateway_is_told_it():
-    modem = COMPOSE["services"]["direwolf"]["networks"]["services"]["ipv4_address"]
-    gateway = COMPOSE["services"]["winlink"]["environment"]["MOR_WINLINK_KISS_HOST"].split("#")[0].strip()
-    assert modem.split("#")[0].strip() == "${MOR_DIREWOLF_IP:-172.28.0.40}" == gateway.replace("MOR_WINLINK_KISS_HOST: ", "")
-    assert default_of(gateway) == "172.28.0.40"  # inside the services subnet, apart from the core, the node and the bridge
+    modem = COMPOSE["services"]["direwolf"]["networks"]["services"]["ipv4_address"].split("#")[0].strip()
+    told = str(COMPOSE["services"]["winlink"]["environment"]["MOR_DIREWOLF_IP"]).split("#")[0].strip()
+    assert modem == "${MOR_DIREWOLF_IP:-172.28.0.40}" == told
+    assert default_of(told) == "172.28.0.40"  # inside the services subnet, apart from the core, the node and the bridge
 
 
 def test_the_api_is_told_where_the_gateway_and_the_modem_are_and_still_has_no_docker_socket():
@@ -240,13 +240,13 @@ def test_the_gateway_has_no_device_and_the_core_is_not_involved():
 
 
 def test_the_passwords_come_from_an_env_file_that_is_not_in_the_repository():
-    for name in ("direwolf", "winlink"):
-        files = COMPOSE["services"][name]["env_file"]
-        assert files == [{"path": "winlink.env", "required": False}]
+    assert COMPOSE["services"]["winlink"]["env_file"] == [{"path": "winlink.env", "required": False}]
+    assert COMPOSE["services"]["direwolf"]["env_file"] == [{"path": "direwolf.env", "required": False}]  # the modem never reads winlink.env
     ignore = (Path(__file__).resolve().parents[2] / ".gitignore").read_text()
-    assert "/docker/winlink.env" in ignore
-    example = (DOCKER / "winlink.env.example").read_text()
-    assert not [line for line in example.splitlines() if re.match(r"[A-Z_]+=\S", line)]  # every value is commented out: no default login
+    assert "/docker/winlink.env" in ignore and "/docker/direwolf.env" in ignore
+    for name in ("winlink.env.example", "direwolf.env.example"):
+        example = (DOCKER / name).read_text()
+        assert not [line for line in example.splitlines() if re.match(r"[A-Z_]+=\S", line)], name  # every value is commented out: no default login
 
 
 # -- the images ----------------------------------------------------------------------------------------------------------

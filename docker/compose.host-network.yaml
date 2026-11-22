@@ -1,6 +1,11 @@
 # The old layout: the core and the API on the host's network (docs/docker.md, The private network).
 #
-#   docker compose -f compose.yaml -f compose.host-network.yaml up -d
+#   ./setup.sh --host-network        (and ./setup.sh --no-host-network to go back to the private network)
+#
+# That adds this file to COMPOSE_FILE in .env, which is where Compose and ./update.sh read the list of files from, and restarts the
+# stack. Do not start Compose with `-f compose.yaml -f compose.host-network.yaml`: -f ignores COMPOSE_FILE, so it would leave out the
+# GPIO chip, serial adapters or link radio's interface that setup.sh added there (the core would start without them), and
+# ./update.sh would not know about this file.
 #
 # For an install that still has an Asterisk or a DMR bridge on the host, which the core reaches on 127.0.0.1, until
 # those are containers. It is the layout before the private network, and the way back if the private one does not
@@ -22,6 +27,10 @@ services:
       MOREOPENREPEATER_USRP_ADDRESS: 127.0.0.1
       MOREOPENREPEATER_AUDIOSOCKET_LISTEN: 127.0.0.1:9092
       MOREOPENREPEATER_AUDIOSOCKET_ADDRESS: 127.0.0.1:9092
+      # The DMR bridge's audio port. compose.yaml listens on every address, which is the container's own network there; on the
+      # host's network that would be every interface, the LAN included (filtered only by the sender's address), so it is the
+      # loopback here too.
+      MOREOPENREPEATER_DMR_USRP_LISTEN: 127.0.0.1:34011
 
   # Not used in this layout (the core has its own Piper again), so it is not started.
   piper:
@@ -38,3 +47,4 @@ services:
       MOREOPENREPEATER_USRP_ADDRESS: 127.0.0.1
       MOREOPENREPEATER_AUDIOSOCKET_LISTEN: 127.0.0.1:9092
       MOREOPENREPEATER_AUDIOSOCKET_ADDRESS: 127.0.0.1:9092
+      MOREOPENREPEATER_DMR_USRP_LISTEN: 127.0.0.1:34011

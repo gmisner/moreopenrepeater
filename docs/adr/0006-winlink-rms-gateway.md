@@ -32,7 +32,8 @@ it neither owns nor leases anything for packet, and nothing about its radio, sou
 - **Credentials.** The callsign, locator, the admin login and the Winlink gateway password are in `winlink.env` (readable by the
   owner only, ignored by git), never defaults, never printed, and written only into the gateway's in-memory configuration
   (a tmpfs). The configuration is made from the environment at every start and checked first; a value that could add lines to it
-  or break it stops the start.
+  or break it stops the start. Only the gateway reads `winlink.env`. The packet modem decodes untrusted radio traffic and holds an
+  audio device, so it gets `direwolf.env` (call, SSID and PTT settings, no passwords).
 - **Sessions and counters come from LinBPQ's own session record and Dire Wolf's output, through a small reporter in each container
   and an in-memory volume.** LinBPQ writes one record per session that reached Winlink (its ADIF log, `ENABLEADIFLOG=1`: callsign, end
   time, length, messages and message sizes each way, how it ended) and one line per accepted connection (`LogAllConnects=1`), in its

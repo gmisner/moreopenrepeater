@@ -32,8 +32,10 @@ RUN groupadd --system --gid 999 moreopenrepeater \
     && chown 999:999 /data /run/moreopenrepeater /run/logd \
     && chmod 750 /run/moreopenrepeater
 
+# Exact versions with hashes (docker/pins/update.sh writes them): a rebuild installs these files or fails, so ./update.sh cannot
+# bring in a new major of numpy, pydantic or sounddevice by itself (docs/docker.md, Updating the pinned Python packages).
 COPY docker/core-requirements.txt /tmp/core-requirements.txt
-RUN pip install -r /tmp/core-requirements.txt
+RUN pip install --require-hashes --only-binary=:all: -r /tmp/core-requirements.txt
 
 # Piper (the baseline voice) keeps its ONNX model warm in piper.http_server. Set
 # WITH_PIPER=0 for a smaller image that uses espeak-ng only.
@@ -42,8 +44,9 @@ ARG PIPER_VOICE=en_US-amy-low
 # The default voice is baked in at /opt/piper, so the first start works offline and the
 # server never races a download. To use another voice, set PIPER_DATA_DIR=/data/piper in
 # core.env (the data volume is writable) and it is downloaded there when first needed.
+COPY docker/core-piper-requirements.txt /tmp/core-piper-requirements.txt
 RUN if [ "$WITH_PIPER" = "1" ]; then \
-        pip install "piper-tts[http]>=1.2" \
+        pip install --require-hashes --only-binary=:all: -r /tmp/core-piper-requirements.txt \
         && python -m piper.download_voices --data-dir /opt/piper "$PIPER_VOICE"; \
     fi
 

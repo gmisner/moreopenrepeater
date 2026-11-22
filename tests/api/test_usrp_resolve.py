@@ -16,7 +16,7 @@ from api.allstar_audio import AllStarAudio, UsrpSettings
 from api.dmr_audio import DmrAudio, DmrUsrpSettings
 from api.service import RepeaterService
 from controller.state_machine import RepeaterConfig
-from link.usrp import FRAME_SAMPLES, decode
+from link.usrp import decode
 
 STALL = 0.6
 

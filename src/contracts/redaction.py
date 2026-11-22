@@ -63,11 +63,12 @@ _GRID_WORDS = frozenset({"grid", "gridsquare", "maidenhead"})
 _SPLIT = re.compile(r"[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])")
 _BEARER = re.compile(r"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{6,}", re.IGNORECASE)
 _URL_USERINFO = re.compile(r"(://)[^/\s:@]+:[^/\s@]+@")
+# The lookbehind keeps a long run of word characters from being tried again from every position in it (that was
+# quadratic: 45 ms for 2000 characters, and this runs on the thread that logs).
 # `name=value`, `name: value`, `"name": "value"`, `'name': 'value'`: the name is judged by the same rules as a
 # context key, so `password=x` and `X-Auth-Token: x` are masked and `rx_gpio_pin=17` is not.
-_KEY_VALUE = re.compile(
-    r"""(?P<name>[A-Za-z0-9_.-]+)(?P<sep>["']?\s*[=:]\s*)(?P<value>"[^"]*"|'[^']*'|\[redacted\]|[^\s,;&}\]"']+)"""
-)
+_KEY_START = re.compile(r"""(?<![A-Za-z0-9_.-])(?P<name>[A-Za-z0-9_.-]+)(?P<sep>["']?\s*[=:]\s*)""")
+_VALUE = re.compile(r"""\"[^"]*\"|'[^']*'|\[redacted\]|[^\s,;&}\]"']+""")
 
 
 def _words(key: str) -> list[str]:
@@ -111,20 +112,22 @@ def mask_text(value: str) -> str:
         out: list[str] = []
         position = 0
         while True:
-            match = _KEY_VALUE.search(value, position)
+            match = _KEY_START.search(value, position)
             if match is None:
                 out.append(value[position:])
                 return "".join(out)
-            secret = match.group("value")
-            if secret != REDACTED and _is_secret(_words(match.group("name"))):
-                quote = secret[0] if secret[0] in "\"'" else ""
-                out.append(value[position:match.end("sep")] + quote + REDACTED + quote)
-                position = match.end()
-            else:
-                # Not a secret: carry on from the value, because it may itself be the name of one
-                # (`failed: token=abc` is a `failed` pair whose value starts a `token` pair).
-                out.append(value[position:match.end("sep")])
-                position = match.end("sep")
+            out.append(value[position:match.end()])
+            position = match.end()
+            # Only a secret's value is looked at, so the scan stays linear. A name that is not a secret is
+            # passed over and the search goes on from its value, which may itself start a pair
+            # (`failed: token=abc` is a `failed` pair whose value starts a `token` pair).
+            if _is_secret(_words(match.group("name"))):
+                secret = _VALUE.match(value, position)
+                if secret is not None and secret.group(0) != REDACTED:
+                    text = secret.group(0)
+                    quote = text[0] if text[0] in "\"'" else ""
+                    out.append(quote + REDACTED + quote)
+                    position = secret.end()
     except Exception:  # noqa: BLE001 - a line that cannot be checked is dropped, not passed on
         return TRUNCATED
 

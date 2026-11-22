@@ -111,3 +111,15 @@ def test_secrets_in_free_text_are_masked_like_bearer_is():
 
 def test_free_text_masking_applies_to_string_values_too():
     assert "hunter2" not in redact({"detail": "retry with password=hunter2"})["detail"]
+
+
+def test_masking_free_text_stays_fast_on_long_and_odd_strings():
+    """It runs on the thread that logs. These took 40 to 450 ms each when the scan was quadratic."""
+    import time
+
+    from contracts.redaction import mask_text
+
+    started = time.perf_counter()
+    for text in ["x" * 20000, "a:" * 10000, "k=" * 10000, "a=b" * 5000, "word " * 4000]:
+        mask_text(text)
+    assert time.perf_counter() - started < 0.5

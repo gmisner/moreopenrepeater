@@ -39,7 +39,8 @@ it neither owns nor leases anything for packet, and nothing about its radio, sou
   time, length, messages and message sizes each way, how it ended) and one line per accepted connection (`LogAllConnects=1`), in its
   tmpfs log folder. The reporter (`docker/winlink-reporter.py`, standard library only) reads those two files, nothing else in the folder,
   and writes a short whitelist of facts to `/winlink-status/gateway.json`; in the modem container it runs Dire Wolf as a child, passes its
-  output through unchanged and counts lines that start like a frame heard or a frame sent. The API mounts the volume read-only,
+  output on, replacing the block it prints for each frame (the sender's call and the frame's text) with one line that has the audio level and
+  no text, and counts lines that start like a frame heard or a frame sent. The API mounts the volume read-only,
   checks every field again, caches for 15 seconds like the status probes, and logs `winlink.session_ended` with facts and no callsign.
   Nothing is written to disk: the volume is a tmpfs and the counts start again with the container. Dire Wolf does not log each time
   it keys the transmitter, so frames sent stands in for it, and the page says so.

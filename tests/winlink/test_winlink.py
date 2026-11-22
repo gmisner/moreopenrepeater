@@ -323,7 +323,7 @@ def test_the_reporter_stops_when_the_program_it_watches_stops(tmp_path):
     assert result.returncode == 0 and time.monotonic() - started < 10
 
 
-def test_the_modem_runs_through_the_reporter_with_its_output_intact_and_its_exit_code(tmp_path):
+def test_the_modem_runs_through_the_reporter_with_its_exit_code_and_without_frame_text_in_its_output(tmp_path):
     fake = tmp_path / "direwolf"
     fake.write_text(f"#!/bin/sh\ncat {FIXTURES}/direwolf_stdout.txt\nexit 5\n")
     fake.chmod(0o755)
@@ -332,7 +332,11 @@ def test_the_modem_runs_through_the_reporter_with_its_output_intact_and_its_exit
     result = launch("direwolf-entrypoint.sh", tmp_path, {
         "MOR_WINLINK_CALL": "W1AW", "MOR_PACKET_CARD": "2", "MOR_DIREWOLF_BIN": str(fake), "MOR_WINLINK_STATUS_DIR": str(status)})
     assert result.returncode == 5, result.stderr
-    assert "[0L] W1AW-10>CQ:beacon from the gateway" in result.stdout  # as `docker compose logs direwolf` shows it today
+    # Docker keeps this output on the SD card, so what Dire Wolf prints about a frame (who sent it, its text) is not passed on
+    for text in ("N0CALL-1", "K1ABC", "the quick brown fox", "hello from a test station", "test beacon", "beacon from the gateway", "W1AW-10>"):
+        assert text not in result.stdout
+    assert result.stdout.count("frame heard, audio level") == 3 and result.stdout.count("frame sent") == 1
+    assert "Ready to accept KISS TCP client application 0 on port 8001" in result.stdout  # its own messages still pass
     counters = json.loads((status / "modem.json").read_text())["counters"]
     assert counters["frames_heard"] == 3 and counters["frames_sent"] == 1
 

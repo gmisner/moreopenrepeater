@@ -7,6 +7,7 @@ import {
   Select,
   SimpleGrid,
   Stack,
+  Stepper,
   Switch,
   Text,
   TextInput,
@@ -26,6 +27,7 @@ import { api } from "../api";
 import { notifyError, notifySuccess, useConfig, type Config } from "../config";
 import { soundAssignments, soundDeviceOptions } from "../deviceUsage";
 import { useSession } from "../session";
+import "./wizard.css";
 
 const BY_HAND = "";
 const POLL_MS = 400;
@@ -57,12 +59,13 @@ type MixerApplyResult = {
 
 type StepId = "station" | "board" | "devices" | "test" | "account";
 
-const STEPS: { id: StepId; title: string; adminOnly?: boolean }[] = [
-  { id: "station", title: "Welcome to moreopenrepeater" },
-  { id: "board", title: "Radio interface" },
-  { id: "devices", title: "Sound devices" },
-  { id: "test", title: "Test the transmitter" },
-  { id: "account", title: "Your admin account", adminOnly: true },
+/** `title` is the heading on the step. `label` is the short name in the Stepper above it. */
+const STEPS: { id: StepId; title: string; label: string; adminOnly?: boolean }[] = [
+  { id: "station", title: "Welcome to moreopenrepeater", label: "Station" },
+  { id: "board", title: "Radio interface", label: "Radio" },
+  { id: "devices", title: "Sound devices", label: "Sound" },
+  { id: "test", title: "Test the transmitter", label: "Test" },
+  { id: "account", title: "Your admin account", label: "Account", adminOnly: true },
 ];
 
 type WizardContextValue = {
@@ -366,6 +369,24 @@ export function SetupWizardProvider({ children }: { children: ReactNode }) {
         closeOnClickOutside={false}
       >
         <Stack gap="md">
+          <Stepper
+            active={stepIndex}
+            size="xs"
+            allowNextStepsSelect={false}
+            aria-label="Setup progress"
+            classNames={{ stepBody: "mor-wizard-step-body" }}
+          >
+            {visibleSteps.map((step, index) => (
+              <Stepper.Step
+                key={step.id}
+                label={step.label}
+                allowStepClick={false}
+                // The label text is hidden on a phone, so name each step here.
+                aria-label={`${step.label}, ${index < stepIndex ? "done" : index === stepIndex ? "current step" : "to do"}`}
+                aria-current={index === stepIndex ? "step" : undefined}
+              />
+            ))}
+          </Stepper>
           <Title order={2} className="mor-title-plain">
             {current?.title}
           </Title>

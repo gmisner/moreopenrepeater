@@ -1,0 +1,7 @@
+/* On a phone the five step names do not fit across the modal, so only the numbered circles stay.
+   The heading below and the "Step N of M" line in the modal title still say where you are. */
+@media (max-width: 48em) {
+  .mor-wizard-step-body {
+    display: none;
+  }
+}

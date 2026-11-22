@@ -317,7 +317,7 @@ def test_it_refuses_when_docker_is_missing(site, tmp_path):
     for folder in ("/bin", "/usr/bin"):
         for entry in Path(folder).iterdir():
             link = limited / entry.name
-            if entry.name != "docker" and not link.exists():
+            if entry.name != "docker" and not os.path.lexists(link):
                 link.symlink_to(entry)
     result = site.run("--apply", PATH=f"{site.bin}-nothing:{limited}")
     assert result.returncode == 2 and "docker is not installed" in result.stderr

@@ -4,6 +4,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { ErrorCard, LoadingBlock } from "../components/StateCards";
 import { useConfig } from "../config";
 import { PAGE_TITLES } from "../nav";
+import { PageLoading } from "./NavProgress";
 
 /** Pages that are a form over the saved settings. Without those settings they would show made-up defaults. */
 const NEEDS_CONFIG = new Set([
@@ -78,7 +79,7 @@ export function RouteBoundary() {
   const { pathname } = useLocation();
   const view = pathname.replace(/^\//, "").split("/")[0] || "dashboard";
   const page = (
-    <Suspense fallback={<LoadingBlock label="Loading page" />}>
+    <Suspense fallback={<PageLoading />}>
       <Outlet />
     </Suspense>
   );

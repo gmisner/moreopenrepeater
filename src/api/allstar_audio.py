@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import socket
 from typing import NamedTuple, Optional
 
 import numpy as np
@@ -28,6 +27,7 @@ from observability import log_event
 from .service.core_handle import CoreHandle
 from .service import LINK_AUDIO_NODE
 from .supervise import LoopGuard
+from .usrp_resolve import resolve_ipv4
 
 _logger = logging.getLogger("moreopenrepeater.allstar_audio")
 
@@ -105,7 +105,7 @@ class AllStarAudio(asyncio.DatagramProtocol):
             return
         loop = asyncio.get_running_loop()
         try:
-            self._node_ip = socket.gethostbyname(s.node_host)
+            self._node_ip = await resolve_ipv4(s.node_host)
             self._transport, _ = await loop.create_datagram_endpoint(lambda: self, local_addr=(s.listen_host, s.listen_port))
         except OSError as error:
             self.error = f"couldn't set up USRP on {s.listen_host}:{s.listen_port} for the node at {s.node_host}: {error}"
@@ -163,7 +163,7 @@ class AllStarAudio(asyncio.DatagramProtocol):
                     pending = np.concatenate([pending, self._to_node.process(block)])
                 while len(pending) >= FRAME_SAMPLES:
                     self._seq += 1
-                    self._transport.sendto(encode_voice(self._seq, _to_pcm(pending[:FRAME_SAMPLES])), (s.node_host, s.node_port))
+                    self._transport.sendto(encode_voice(self._seq, _to_pcm(pending[:FRAME_SAMPLES])), (self._node_ip, s.node_port))
                     pending = pending[FRAME_SAMPLES:]
             except Exception as error:  # noqa: BLE001
                 guard.failed(error)

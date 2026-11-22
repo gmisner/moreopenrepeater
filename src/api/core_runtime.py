@@ -39,10 +39,12 @@ from .watchdog import Watchdog, ping_interval, sd_notify
 TICK_INTERVAL_SECONDS = 0.05
 ANNOUNCEMENT_POLL_SECONDS = 1.0
 LONG_ID_WARM_SECONDS = 20.0
-EXTERNAL_PIPER_WAIT_SECONDS = 60.0  # how long the core waits for Piper's container at start; then it starts anyway
+INTEGRATION_STOP_SECONDS = 2.0  # at shutdown, how long each integration gets to stop before the next one is tried
+PIPER_RETRY_MAX_SECONDS = 30.0  # while Piper's container is down, the core looks again this often at most
 
 _tts_logger = logging.getLogger("moreopenrepeater.tts")
 _announce_logger = logging.getLogger("moreopenrepeater.announcements")
+_core_logger = logging.getLogger("moreopenrepeater.core")
 
 
 class AnnouncementQueueFull(Exception):
@@ -114,6 +116,7 @@ class CoreRuntime:
         self.usrp_endpoints = usrp_endpoints
         self.kokoro_service: Optional[KokoroService] = None
         self.piper_service: Optional[PiperService] = None
+        self._piper_watch: Optional[asyncio.Task] = None
         #: When the controller tick last ran; the watchdog watches it.
         self.last_tick: list[Optional[float]] = [None]
 
@@ -166,8 +169,8 @@ class CoreRuntime:
         )
 
     async def start_tts(self) -> None:
-        """Start the Kokoro or Piper server and wait for it. Audio and PTT are
-        not live until this returns (inventory finding F10)."""
+        """Start the Kokoro or Piper server this process owns and wait for it, so audio and PTT are not live until it is
+        ready (inventory finding F10). Piper in its own container is not waited for: it is followed in the background."""
         loop = asyncio.get_running_loop()
         kokoro_service = kokoro_service_for(self.renderer)
         if kokoro_service is not None:
@@ -181,7 +184,7 @@ class CoreRuntime:
                     error_code="tts.service", engine="kokoro", exc_info=True, facts_in_text=False,
                 )
                 await loop.run_in_executor(None, kokoro_service.stop)
-        await self._wait_for_external_piper(loop)
+        self._watch_external_piper(loop)
         piper_service = piper_service_for(self.renderer, voice=self.service.config.tts_voice)
         if piper_service is not None:
             try:
@@ -195,22 +198,33 @@ class CoreRuntime:
                 )
                 await loop.run_in_executor(None, piper_service.stop)
 
-    async def _wait_for_external_piper(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Piper in its own container: give it a bounded time to be up before audio goes live, so the first long ID is not
-        spoken by the fallback voice. If it is not up in time the repeater starts anyway (voice IDs fall back until it is).
-        Nothing is started or stopped here: it is not this process's."""
-        from playout.tts import piper_service_external, piper_service_url
+    def _watch_external_piper(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Piper in its own container: never wait for it. Audio starts at once, and a task looks for Piper in the
+        background (see `_follow_external_piper`). Until it answers, a clip that needs speech uses the fallback voice.
+        Nothing is started or stopped here: Piper is not this process's."""
+        from playout.tts import piper_service_external
 
         tts = getattr(self.renderer, "tts", None)
         if tts is None or getattr(tts, "name", None) != "piper" or not piper_service_external():
             return
-        seconds = EXTERNAL_PIPER_WAIT_SECONDS
-        if await loop.run_in_executor(None, wait_until_ready, piper_service_url(), seconds):
-            log_event(_tts_logger, logging.INFO, "tts.service_ready", "the Piper service is ready", engine="piper", facts_in_text=False)
-        else:
-            _tts_logger.warning(
-                "the Piper service did not answer in %gs; voice IDs use the fallback voice until it does", seconds
-            )
+        self._piper_watch = asyncio.create_task(self._follow_external_piper(loop))
+
+    async def _follow_external_piper(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Look for the Piper container until it answers, then stop. If it was not up at the first look, clips that
+        were spoken by the fallback voice in the meantime are cached, so drop them and render them again."""
+        from playout.tts import piper_service_url
+
+        delay, was_down = min(1.0, PIPER_RETRY_MAX_SECONDS), False
+        while not await loop.run_in_executor(None, wait_until_ready, piper_service_url(), 0):
+            if not was_down:
+                was_down = True
+                _tts_logger.warning("the Piper service is not answering; voice IDs use the fallback voice until it does")
+            await asyncio.sleep(delay)
+            delay = min(2 * delay, PIPER_RETRY_MAX_SECONDS)
+        log_event(_tts_logger, logging.INFO, "tts.service_ready", "the Piper service is ready", engine="piper", facts_in_text=False)
+        if was_down:
+            self.renderer.clear_cache()
+            await loop.run_in_executor(None, self.renderer.warm, self.service.config)
 
     def warm_renderer(self, loop: asyncio.AbstractEventLoop) -> None:
         loop.run_in_executor(None, self.renderer.warm, self.service.config)
@@ -285,18 +299,61 @@ class CoreRuntime:
         sd_notify("STOPPING=1")
         self.watchdog.stop()
 
+    def release_ptt(self) -> None:
+        """Unkey the transmitters. Idempotent, quick, and the first thing shutdown does: Docker sends SIGKILL about
+        10 s after SIGTERM, and a stop that hangs behind an integration must not leave the line keyed. Each radio
+        is tried even if the other one's release fails."""
+        for name, release in (("live", self.live_audio.release_ptt), ("link_radio", self.link_radio.release_ptt)):
+            try:
+                release()
+            except Exception:  # noqa: BLE001 - the other radio and the rest of shutdown still go ahead
+                log_event(
+                    _core_logger, logging.ERROR, "core.shutdown_step_failed", "couldn't release PTT at shutdown",
+                    target=f"ptt_{name}", error_code="core.shutdown", exc_info=True, facts_in_text=False,
+                )
+
     async def stop_devices(self) -> None:
-        await self.gpio.stop()
-        await self.tx_fan.stop()
-        await self.allstar_node.stop()
-        await self.dmr_audio.stop()
-        await self.autopatch.stop()
-        self.live_audio.shutdown()
-        self.monitor_receiver.shutdown()
-        self.link_radio.shutdown()
+        """PTT first, then each integration on its own timeout, then the audio engines close."""
+        self.release_ptt()
+        for name, stop in (
+            ("gpio", self.gpio.stop),
+            ("tx_fan", self.tx_fan.stop),
+            ("allstar", self.allstar_node.stop),
+            ("dmr", self.dmr_audio.stop),
+            ("autopatch", self.autopatch.stop),
+        ):
+            await self._stop_step(name, stop())
+        for name, shutdown in (
+            ("live_audio", self.live_audio.shutdown),
+            ("monitor_receiver", self.monitor_receiver.shutdown),
+            ("link_radio", self.link_radio.shutdown),
+        ):
+            try:
+                shutdown()
+            except Exception:  # noqa: BLE001
+                self._shutdown_failed(name, "failed")
+
+    async def _stop_step(self, name: str, work) -> None:
+        """One integration's stop: bounded, and whatever goes wrong is logged and does not reach the next one."""
+        try:
+            await asyncio.wait_for(work, INTEGRATION_STOP_SECONDS)
+        except asyncio.TimeoutError:
+            self._shutdown_failed(name, "timed_out")
+        except Exception:  # noqa: BLE001
+            self._shutdown_failed(name, "failed")
+
+    @staticmethod
+    def _shutdown_failed(name: str, reason: str) -> None:
+        log_event(
+            _core_logger, logging.ERROR, "core.shutdown_step_failed", f"{name} did not stop cleanly ({reason})",
+            target=name, reason=reason, error_code="core.shutdown", exc_info=reason == "failed", facts_in_text=False,
+        )
 
     async def stop_tts(self) -> None:
         loop = asyncio.get_running_loop()
+        if self._piper_watch is not None:
+            self._piper_watch.cancel()
+            self._piper_watch = None
         if self.kokoro_service is not None:
             await loop.run_in_executor(None, self.kokoro_service.stop)
             self.kokoro_service = None

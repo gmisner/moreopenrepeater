@@ -307,28 +307,39 @@ class CommandTTS:
     fallback: Optional["CommandTTS"] = None
     # Serialize neural speaks so a cold load does not get stampeded.
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+    # One lock per Piper voice being fetched from the server (see `_voice_lock`).
+    _voice_locks: dict = field(default_factory=dict, repr=False, compare=False)
+    _voice_locks_guard: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
+    def _voice_lock(self, voice: str) -> threading.Lock:
+        with self._voice_locks_guard:
+            return self._voice_locks.setdefault(voice, threading.Lock())
 
     def synthesize(
         self, text: str, voice: str = "", speed: float = DEFAULT_TTS_SPEED
     ) -> tuple[np.ndarray, int]:
         if self.name == "piper":
             voice = sanitize_piper_voice(voice)
-            with self._lock:
-                if piper_service_external():
-                    try:
+            if piper_service_external():
+                # Before the speak lock, and under a lock of its own for this voice: a download can take up to 180 s, and
+                # it must not hold up a station ID that is spoken in a voice the server already has.
+                try:
+                    with self._voice_lock(voice):
                         ensure_piper_voice_remote(voice, urlopen=self.urlopen)
-                    except TTSError as error:
-                        # The service is down or cannot get the voice: speak with the fallback, as for any other failure.
-                        if self.fallback is None:
-                            raise
-                        log_event(
-                            _logger, logging.WARNING, "tts.fallback_used", f"{self.name} failed ({error}); falling back to {self.fallback.name}",
-                            error_code="tts.fallback", engine=self.name, fallback=self.fallback.name,
-                            exception=type(error).__name__, facts_in_text=False,
-                        )
-                        return self.fallback.synthesize(text, "", speed=speed)
-                else:
-                    ensure_piper_voice(voice, run=self.run)
+                except TTSError as error:
+                    # The service is down or cannot get the voice: speak with the fallback, as for any other failure.
+                    if self.fallback is None:
+                        raise
+                    log_event(
+                        _logger, logging.WARNING, "tts.fallback_used", f"{self.name} failed ({error}); falling back to {self.fallback.name}",
+                        error_code="tts.fallback", engine=self.name, fallback=self.fallback.name,
+                        exception=type(error).__name__, facts_in_text=False,
+                    )
+                    return self.fallback.synthesize(text, "", speed=speed)
+                with self._lock:
+                    return self._synthesize_neural(text, voice, speed)
+            with self._lock:
+                ensure_piper_voice(voice, run=self.run)
                 return self._synthesize_neural(text, voice, speed)
         if self.name == "kokoro":
             voice = sanitize_kokoro_voice(voice)

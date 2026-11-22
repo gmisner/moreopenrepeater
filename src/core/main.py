@@ -12,6 +12,7 @@ from typing import Mapping, Optional
 
 from api.activity import FLUSH_SECONDS as ACTIVITY_FLUSH_SECONDS
 from api.activity import RETENTION_DAYS
+from api.core_runtime import INTEGRATION_STOP_SECONDS
 
 from .build import CoreApp, build_core
 from .config_boundary import CoreConfigError
@@ -42,39 +43,54 @@ async def serve(
     loop = asyncio.get_running_loop()
     tasks: list[asyncio.Task] = []
     latency = LatencyWatch() if watch_latency else None
-    if latency is not None:
-        latency.start(loop)
-    core.start_fan()
-    core.start_tick(tasks)
-    core.start_announcements(tasks)
-    await core.start_tts()
-    core.warm_renderer(loop)
-    core.start_long_id(tasks)
-    await core.start_audio_and_links(loop, tasks)
-    core.notify_ready()
-    core.start_io()
-    tasks.append(asyncio.create_task(_keep_activity(app.activity_store)))
     control: Optional[ControlServer] = None
-    if control_socket is not None:
-        # Last, after the radio is up: if it cannot start the core simply runs without it.
-        control = ControlServer(
-            control_socket, service=app.service, runtime=core, allow_simulate=allow_simulate,
-            assets_have=app.assets_store.has, log_hub=app.log_hub, activity_store=app.activity_store,
-            capture_dir=app.state_path.parent / "captures",
-        )
-        await control.start()
-    _logger.info("core running alone (no web app); state is %s", app.state_path)
-    await stop.wait()
-    core.announce_stopping()
+    try:
+        if latency is not None:
+            latency.start(loop)
+        core.start_fan()
+        core.start_tick(tasks)
+        core.start_announcements(tasks)
+        await core.start_tts()
+        core.warm_renderer(loop)
+        core.start_long_id(tasks)
+        await core.start_audio_and_links(loop, tasks)
+        core.notify_ready()
+        core.start_io()
+        tasks.append(asyncio.create_task(_keep_activity(app.activity_store)))
+        if control_socket is not None:
+            # Last, after the radio is up: if it cannot start the core simply runs without it.
+            control = ControlServer(
+                control_socket, service=app.service, runtime=core, allow_simulate=allow_simulate,
+                assets_have=app.assets_store.has, log_hub=app.log_hub, activity_store=app.activity_store,
+                capture_dir=app.state_path.parent / "captures",
+            )
+            await control.start()
+        _logger.info("core running alone (no web app); state is %s", app.state_path)
+        await stop.wait()
+    finally:
+        # Every way out of here, a clean stop or an exception anywhere above, unkeys the transmitter before
+        # anything else is stopped: Docker sends SIGKILL about 10 s after SIGTERM.
+        core.release_ptt()
+        await _shut_down(app, core, control, tasks, latency)
+
+
+async def _shut_down(app: CoreApp, core, control: Optional[ControlServer], tasks: list[asyncio.Task], latency) -> None:
+    """The rest of shutdown, after PTT is released. A step that fails is logged and the next one still runs."""
+    steps = [("announce_stopping", core.announce_stopping)]
     if control is not None:
-        await control.stop()
-    for task in tasks:
-        task.cancel()
-    await core.stop_devices()
+        steps.append(("control_server", lambda: asyncio.wait_for(control.stop(), INTEGRATION_STOP_SECONDS)))
+    steps.append(("cancel_tasks", lambda: [task.cancel() for task in tasks]))
+    steps.append(("devices", core.stop_devices))
     if latency is not None:
-        latency.stop()
-    app.activity_store.flush()
-    await core.stop_tts()
+        steps.append(("latency", latency.stop))
+    steps += [("activity_store", app.activity_store.flush), ("tts", core.stop_tts)]
+    for name, step in steps:
+        try:
+            result = step()
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception:  # noqa: BLE001 - one failing step must not skip the next
+            _logger.exception("shutdown step %s failed", name)
 
 
 async def _keep_activity(store) -> None:

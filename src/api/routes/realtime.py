@@ -26,6 +26,10 @@ from playout.renderer import ClipRenderer
 PUBLIC_LISTENERS_PER_ADDRESS = 3
 ACCESS_CHECK_SECONDS = 0.25
 SEND_TIMEOUT_SECONDS = 5.0
+# The dashboard treats a status socket that has sent nothing for 10 s as dead and reconnects (frontend/src/status.tsx,
+# STATUS_STALE_MS), blanking the callsign while it does. Status frames go out when something changes, and an idle repeater
+# changes nothing for minutes, so the same frame is repeated this often (well inside that 10 s) while nothing has changed.
+STATUS_KEEPALIVE_SECONDS = 4.0
 
 
 async def stream(
@@ -231,8 +235,11 @@ def register(
 
         async def status_frames() -> AsyncIterator[dict]:
             while True:
-                snapshot = await queue.get()
-                queue.task_done()
+                try:
+                    snapshot = await asyncio.wait_for(queue.get(), STATUS_KEEPALIVE_SECONDS)
+                    queue.task_done()
+                except asyncio.TimeoutError:
+                    snapshot = service.snapshot()  # nothing changed: say so, so the dashboard knows the socket is alive
                 yield status_response(snapshot).model_dump()
 
         try:

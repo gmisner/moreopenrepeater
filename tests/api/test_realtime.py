@@ -82,6 +82,32 @@ def test_idle_status_socket_unsubscribes_on_disconnect(tmp_path):
     asyncio.run(run())
 
 
+def test_an_idle_status_socket_still_gets_a_frame_often_enough_that_the_dashboard_does_not_reconnect(tmp_path, monkeypatch):
+    """The dashboard drops a status socket that is silent for 10 s. An idle repeater changes nothing, so the server must repeat
+    the status on its own (this was a reconnect every 12 s, with the callsign blanked each time, on a quiet install)."""
+    from api.routes import realtime
+
+    monkeypatch.setattr(realtime, "STATUS_KEEPALIVE_SECONDS", 0.05)
+    assert realtime.STATUS_KEEPALIVE_SECONDS < 10 and 4.0 < 10  # the real value is inside the dashboard's limit
+
+    async def run():
+        app, service = make_app(tmp_path)
+        async with http_client(app) as client:
+            token = await login(client)
+            async with open_socket(app, "/ws/status", token=token) as (receive, _incoming, _task):
+                frames = [json.loads((await receive())["text"]) for _ in range(3)]  # nothing changes between them
+                assert [f["callsign"] for f in frames] == [service.saved_config.callsign] * 3
+                assert all(f["state"] == "idle" for f in frames)
+
+    asyncio.run(run())
+
+
+def test_the_real_keepalive_is_well_inside_the_dashboards_stale_limit():
+    from api.routes import realtime
+
+    assert realtime.STATUS_KEEPALIVE_SECONDS <= 5.0  # frontend/src/status.tsx drops a socket silent for 10 s
+
+
 def test_status_includes_only_the_latest_snapshot_when_accepting(tmp_path):
     async def run():
         app, service = make_app(tmp_path)

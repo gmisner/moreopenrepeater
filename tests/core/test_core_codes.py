@@ -201,11 +201,11 @@ def test_the_core_names_its_lockout_without_a_code_or_a_secret(setup, structured
 
 def test_one_bad_secret_does_not_stop_the_others_or_make_check_raise(setup):
     clock, secrets_path, replay_path, secret = setup
-    write_secrets(secrets_path, {
-        "broken": {"secret": "this is !! not base32"},
-        "oddstep": {"secret": new_secret(), "last_step": "never"},
-        "alice": {"secret": secret},
-    })
+    # Add two bad entries beside the good one the fixture wrote.
+    enrolled = json.loads(secrets_path.read_text())
+    enrolled["users"]["broken"] = {"secret": "this is !! not base32"}
+    enrolled["users"]["oddstep"] = {"secret": "JBSWY3DPEHPK3PXP", "last_step": "never"}
+    secrets_path.write_text(json.dumps(enrolled))
     checker = CoreCodeChecker(secrets_path, replay_path, clock)
     assert checker.check("000000") is None  # no exception, and it counts as a wrong code
     assert len(checker._failures) == 1

@@ -341,6 +341,33 @@ describe("Dmr plain wording", () => {
     expect(screen.getByRole("link", { name: "Read the guide", hidden: true })).toHaveAttribute("href", expect.stringMatching(/docs\/dmr\.md$/));
   });
 
+  it("walks through setup as steps that follow what is really done, and goes away once DMR is connected", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api).mockResolvedValue(notInstalled);
+    const first = renderDmr();
+    expect(await screen.findByText("Get DMR running")).toBeInTheDocument();
+    expect(screen.getByText(/0 of 2 done/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Install DMR on this machine, to do/ })).toHaveAttribute("aria-current", "step");
+    // Nothing to run yet, so there is no "Set up DMR" button until it is installed.
+    expect(screen.queryByRole("button", { name: "Set up DMR" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show the steps" }));
+    first.unmount();
+
+    vi.mocked(api).mockResolvedValue({ ...notInstalled, available: true, error: null, restart });
+    const second = renderDmr();
+    expect(await screen.findByText(/1 of 2 done/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Install DMR on this machine, done/ })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("button", { name: /Enter your callsign and DMR details, to do/ })).toHaveAttribute("aria-current", "step");
+    expect(screen.getByRole("button", { name: "Set up DMR" })).toBeInTheDocument();
+    second.unmount();
+
+    vi.mocked(api).mockResolvedValue(running);
+    renderDmr();
+    await waitFor(() => expect(screen.getByText("DMR bridge")).toBeInTheDocument());
+    await waitFor(() => expect(api).toHaveBeenCalled());
+    expect(screen.queryByText("Get DMR running")).not.toBeInTheDocument();
+  });
+
   it("says which kind of trouble it is when part of the bridge is down, and keeps the program names in Details", async () => {
     vi.mocked(api).mockResolvedValue({ ...running, services: { analog_bridge: true, mmdvm_bridge: false, md380_emu: true } });
     renderDmr();

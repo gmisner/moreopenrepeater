@@ -4,6 +4,7 @@ import { api } from "../api";
 import { EmptyState } from "../components/EmptyState";
 import { labeled } from "../components/FieldHint";
 import { revealSetup, SetupSection } from "../components/SetupSection";
+import { SetupSteps } from "../components/SetupSteps";
 import { ErrorCard, LoadingBlock } from "../components/StateCards";
 import { formatAirtime, formatBytes } from "../format";
 import { Page } from "../layout/AppShell";
@@ -308,6 +309,7 @@ export function Winlink() {
   }, [refresh]);
 
   const view = status ? summary(status) : null;
+  const allAnswering = Boolean(status && status.checks.length > 0 && status.checks.every((check) => check.ok));
 
   return (
     <Page title="Winlink">
@@ -358,21 +360,36 @@ export function Winlink() {
           </Card>
         ) : null}
 
-        {status && !status.enabled ? (
-          <Card withBorder padding="lg" radius="md" component="section" aria-label="Turn Winlink on">
-            <Stack gap="sm">
-              <h2 className="mor-card-title">Turn it on</h2>
-              <EmptyState
-                action={
-                  <Button size="xs" variant="default" onClick={() => revealSetup(setSetupOpen)}>
-                    Show the steps
-                  </Button>
-                }
-              >
-                Winlink lets stations on the air send and receive email through this repeater. It is off now, and it needs a packet radio of
-                its own.
-              </EmptyState>
-            </Stack>
+        {status && !(status.enabled && allAnswering) ? (
+          <Card withBorder padding="lg" radius="md" component="section" aria-label="Setup">
+            <SetupSteps
+              title="Get Winlink running"
+              intro="Winlink lets stations on the air send and receive email through this repeater. It needs a packet radio of its own."
+              steps={[
+                {
+                  id: "enable",
+                  title: "Turn Winlink on",
+                  detail: "It is off now. This page cannot start it. The steps are in How to set this up below.",
+                  done: status.enabled,
+                  actions: (
+                    <Button size="xs" onClick={() => revealSetup(setSetupOpen)}>
+                      Show the steps
+                    </Button>
+                  ),
+                },
+                {
+                  id: "answering",
+                  title: "Check that it is answering",
+                  detail: "The gateway and the packet modem should both answer. The checks below say which one does not.",
+                  done: status.enabled && allAnswering,
+                  actions: (
+                    <Button size="xs" variant="default" onClick={() => revealSetup(setSetupOpen)}>
+                      Show the steps
+                    </Button>
+                  ),
+                },
+              ]}
+            />
           </Card>
         ) : null}
 

@@ -129,7 +129,7 @@ describe("Winlink", () => {
     expect(screen.getByText("W1AW")).toBeInTheDocument();
     expect(screen.getAllByText("Answering")).toHaveLength(3);
     expect(screen.queryByText("Not answering")).not.toBeInTheDocument();
-    expect(screen.queryByText("Turn it on")).not.toBeInTheDocument();
+    expect(screen.queryByText("Get Winlink running")).not.toBeInTheDocument();
     expect(api).toHaveBeenCalledWith("/api/winlink");
   });
 
@@ -137,7 +137,9 @@ describe("Winlink", () => {
     vi.mocked(api).mockResolvedValue(off);
     renderWinlink();
     expect(await screen.findByText("Not running")).toBeInTheDocument();
-    expect(screen.getByText("Turn it on")).toBeInTheDocument();
+    expect(screen.getByText("Get Winlink running")).toBeInTheDocument();
+    expect(screen.getByText(/0 of 2 done/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Turn Winlink on, to do/ })).toHaveAttribute("aria-current", "step");
     expect(screen.getByText(/docker compose --profile winlink up -d --build/)).toBeInTheDocument();
     expect(screen.getByText(/cp winlink\.env\.example winlink\.env && chmod 600 winlink\.env/)).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -152,7 +154,10 @@ describe("Winlink", () => {
     expect(screen.getByText("Not answering")).toBeInTheDocument(); // a word, not only a color
     expect(screen.getByText("Not running (the connection was refused).")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("see How to set this up below");
-    expect(screen.queryByText("Turn it on")).not.toBeInTheDocument();
+    // Turned on, but not answering yet: the second step is the current one.
+    expect(screen.getByText(/1 of 2 done/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Turn Winlink on, done/ })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("button", { name: /Check that it is answering, to do/ })).toHaveAttribute("aria-current", "step");
   });
 
   it("always says it is amateur radio only, not for GMRS, and offers no start or stop", async () => {

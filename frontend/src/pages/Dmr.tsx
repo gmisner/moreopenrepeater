@@ -21,6 +21,7 @@ import { ConfigEditDrawer } from "../components/ConfigEditDrawer";
 import { ConfigSummaryCard } from "../components/ConfigSummaryCard";
 import { EmptyState } from "../components/EmptyState";
 import { revealSetup, SetupSection } from "../components/SetupSection";
+import { SetupSteps } from "../components/SetupSteps";
 import { ErrorCard, LoadingBlock } from "../components/StateCards";
 import { labeled } from "../components/FieldHint";
 import { notifyError, notifySuccess, useConfig } from "../config";
@@ -514,6 +515,49 @@ export function Dmr() {
           </Text>
         ) : null}
 
+        {status && (!status.available || !status.enabled) ? (
+          <Card withBorder padding="lg" radius="md" component="section" aria-label="Setup">
+            <SetupSteps
+              title="Get DMR running"
+              intro="Last heard and talkgroup favorites show up here once it is connected."
+              steps={[
+                {
+                  id: "install",
+                  title: "Install DMR on this machine",
+                  detail: status.restart.available
+                    ? "DMR connects this repeater to the DMR network. Install it to get started."
+                    : "DMR is not installed yet. The steps are in How to set this up below.",
+                  done: status.available,
+                  actions: (
+                    <>
+                      {isAdmin && status.restart.available ? (
+                        <Button size="xs" loading={installBusy || restartBusy || dmrBusy} disabled={dmrBusy} onClick={() => void onInstall()}>
+                          Install DMR
+                        </Button>
+                      ) : null}
+                      <Button size="xs" variant="default" onClick={() => revealSetup(setSetupOpen)}>
+                        Show the steps
+                      </Button>
+                    </>
+                  ),
+                },
+                {
+                  id: "connect",
+                  title: "Enter your callsign and DMR details",
+                  detail: "Enter your callsign, DMR ID, network password and talkgroup.",
+                  done: status.enabled,
+                  actions:
+                    isAdmin && status.available ? (
+                      <Button size="xs" onClick={() => setDrawerOpen(true)}>
+                        Set up DMR
+                      </Button>
+                    ) : null,
+                },
+              ]}
+            />
+          </Card>
+        ) : null}
+
         {status?.available && status.enabled ? (
           <Card withBorder padding="lg" radius="md" component="section" aria-label="Last heard">
             <h2 className="mor-card-title">
@@ -618,28 +662,7 @@ export function Dmr() {
               </Badge>
             ) : null}
           </Card>
-        ) : (
-          <EmptyState
-            action={
-              <Group gap="xs" justify="center">
-                {isAdmin && status?.restart.available ? (
-                  <Button loading={installBusy || restartBusy || dmrBusy} disabled={dmrBusy} onClick={() => void onInstall()}>
-                    Install DMR
-                  </Button>
-                ) : null}
-                {status ? (
-                  <Button variant="default" onClick={() => revealSetup(setSetupOpen)}>
-                    Show the steps
-                  </Button>
-                ) : null}
-              </Group>
-            }
-          >
-            {status?.restart.available
-              ? "DMR connects this repeater to the DMR network. Install it to get started."
-              : "DMR connects this repeater to the DMR network. It is not installed yet, and the steps are in How to set this up below."}
-          </EmptyState>
-        )}
+        ) : null}
 
         {status?.available ? (
           <div data-details>

@@ -85,6 +85,12 @@ HARDWARE_STALE_SECONDS = 10.0  # older than this, a hardware page says the core 
 LOG_POLL_SECONDS = 1.0  # how often the core's log is read when nothing is waiting
 MAX_LINE_BYTES = 64 * 1024
 REQUEST_TIMEOUT_SECONDS = 5.0  # a write must not hang the dashboard
+# A command that has the core prepare speech (`queue_clip`) takes as long as the speech does: a long METAR or weather report
+# took about 10 s to render on a Pi 3B+. The core gives up on its own after its render deadline (30 s, core.control), so
+# the API waits a little longer than that. With the short timeout the API reported "could not queue a spoken clip" for a
+# clip the core went on to play.
+RENDER_REQUEST_TIMEOUT_SECONDS = 35.0
+RENDER_COMMANDS = frozenset({"queue_clip"})
 MAX_DEFERRED = 20  # announcements held for a net; a long net does not grow this without bound
 MAX_LINK_OUTBOX = 200  # link events waiting to go to the core; past this a whole picture replaces them
 MAX_CONFIG_BYTES = 1024 * 1024  # what we will read back from the core
@@ -667,8 +673,9 @@ class RemoteCore:
 
     # -- the configuration ---------------------------------------------------------------------
 
-    def _client(self) -> httpx.AsyncClient:
-        return self._socket_client(httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS))
+    def _client(self, timeout: Optional[float] = None) -> httpx.AsyncClient:
+        seconds = REQUEST_TIMEOUT_SECONDS if timeout is None else timeout
+        return self._socket_client(httpx.Timeout(seconds, connect=CONNECT_TIMEOUT_SECONDS))
 
     def _socket_client(self, timeout: httpx.Timeout) -> httpx.AsyncClient:
         """A client for the core's socket. It is plain HTTP over a Unix socket, so `verify=False`: httpx
@@ -918,11 +925,11 @@ class RemoteCore:
             source=Source(module="api", version="0.1.0"),
         )
 
-    async def _exchange(self, path: str, body: str) -> httpx.Response:
+    async def _exchange(self, path: str, body: str, timeout: Optional[float] = None) -> httpx.Response:
         """POST to the core. Raises `CoreUnavailable` for anything that is not an answer,
         and says whether the request may have been applied."""
         try:
-            async with self._client() as client:
+            async with self._client(timeout) as client:
                 return await client.post(path, content=body, headers={"Content-Type": "application/json"})
         except httpx.ConnectError:
             raise CoreUnavailable("the core is not reachable; nothing was changed") from None
@@ -953,7 +960,10 @@ class RemoteCore:
             request = CoreCommand(header=self._header(), command=name, params=dict(params))
         except ValueError:
             raise CommandRefused("command.invalid", f"not a valid {name} command") from None
-        response = await self._exchange("/command", request.model_dump_json())
+        response = await self._exchange(
+            "/command", request.model_dump_json(),
+            RENDER_REQUEST_TIMEOUT_SECONDS if name in RENDER_COMMANDS else None,
+        )
         if response.status_code != 200:
             raise CommandRefused("command.invalid", "the core did not accept the request")
         if name == "set_net_active" and isinstance(params.get("active"), bool):

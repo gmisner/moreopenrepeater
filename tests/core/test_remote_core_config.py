@@ -198,6 +198,28 @@ def test_a_core_that_does_not_answer_raises_and_says_the_outcome_is_unknown(core
     run(core, sock_dir, scenario)
 
 
+def test_a_command_that_has_the_core_prepare_speech_waits_longer_than_an_ordinary_one(core, sock_dir, monkeypatch):
+    """A long METAR took about 10 s to render on a Pi, so the 5 s write timeout reported "could not queue a spoken
+    clip" for a clip the core then played. Speech commands wait for the core's own deadline; the rest keep the short one."""
+    monkeypatch.setattr(remote_module, "REQUEST_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(remote_module, "RENDER_REQUEST_TIMEOUT_SECONDS", 3.0)
+
+    async def scenario(remote, server):
+        real = server._post["/command"]
+
+        async def slow(body):
+            await asyncio.sleep(0.7)  # longer than the ordinary timeout, shorter than the speech one
+            return await real(body)
+
+        server._post["/command"] = slow
+        await remote.command("queue_clip", clip="id", on_linked_radio=False)  # answered: no error
+        with pytest.raises(CoreUnavailable) as caught:
+            await remote.command("clear_lockout")
+        assert "may or may not" in str(caught.value)
+
+    run(core, sock_dir, scenario)
+
+
 def test_an_answer_that_does_not_match_the_request_is_not_believed(core, sock_dir):
     async def scenario(remote, server):
         real = server._post["/config"]

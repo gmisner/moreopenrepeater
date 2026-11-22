@@ -43,6 +43,11 @@ curl -fsSL https://raw.githubusercontent.com/gmisner/moreopenrepeater/main/scrip
 
 The rest of this page is the same procedure by hand.
 
+This page describes the native install. To move an installed native repeater to the container install
+(`docker/`), do not install fresh: use `docker/migrate-from-native.sh`, which begins with a dry run and
+leaves this install's data as it is, so you can go back. See
+[Moving from the native install](docker.md#moving-from-the-native-install).
+
 ## 1. System packages
 
 ```

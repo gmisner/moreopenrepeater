@@ -89,8 +89,20 @@ def test_settings_saved_during_a_net_are_kept_after_it():
 
 
 def test_check_ins_and_csv():
-    net, _, clock, _ = make_net(RepeaterConfig(net_name="Tuesday Net"))
+    net, _, clock, _ = make_net(
+        RepeaterConfig(
+            net_name="Tuesday Net",
+            net_club_name="YCARS",
+            net_frequency="146.640",
+            net_control_callsign="w1aw",
+            net_control_name="Hiram",
+            net_logger_callsign="kd2abc",
+            net_logger_name="Ann",
+        )
+    )
     run(net.start("ann"))
+    assert net.current["control_callsign"] == "W1AW"
+    assert net.current["club_name"] == "YCARS"
     first = net.add_checkin(
         " kd2abc ",
         "mobile",
@@ -117,6 +129,10 @@ def test_check_ins_and_csv():
     rows = list(csv.reader(io.StringIO(net.csv(finished["id"]))))
     assert rows[0] == [
         "Net",
+        "Club",
+        "Frequency",
+        "Net control",
+        "Logger",
         "Callsign",
         "Time",
         "Name",
@@ -125,11 +141,19 @@ def test_check_ins_and_csv():
         "Staying for comments",
         "Notes",
     ]
-    assert [r[1] for r in rows[1:]] == ["KD2ABC", "W1AW"]
-    assert rows[1][0] == "Tuesday Net"
-    assert rows[1][3:8] == ["Ann", "Newington, CT", "Extra", "no", "mobile, short time"]
-    assert rows[2][3:8] == ["", "", "", "no", ""]
+    assert [r[5] for r in rows[1:]] == ["KD2ABC", "W1AW"]
+    assert rows[1][0:5] == ["Tuesday Net", "YCARS", "146.640", "W1AW Hiram", "KD2ABC Ann"]
+    assert rows[1][7:12] == ["Ann", "Newington, CT", "Extra", "no", "mobile, short time"]
+    assert rows[2][7:12] == ["", "", "", "no", ""]
     assert net.status()["past"][0]["checkin_count"] == 2
+
+
+def test_start_overrides_net_control_defaults():
+    net, _, _, _ = make_net(RepeaterConfig(net_control_callsign="W1AW", net_control_name="Hiram"))
+    run(net.start("ann", control_callsign="kd2abc", control_name="Ann", logger_callsign="n0call"))
+    assert net.current["control_callsign"] == "KD2ABC"
+    assert net.current["control_name"] == "Ann"
+    assert net.current["logger_callsign"] == "N0CALL"
 
 
 def test_a_formula_in_the_csv_is_defused():
@@ -137,8 +161,8 @@ def test_a_formula_in_the_csv_is_defused():
     run(net.start("ann", name="=cmd"))
     net.add_checkin("W1AW", "@SUM(A1)", name="=cmd", location="+1")
     rows = list(csv.reader(io.StringIO(net.csv(net.current["id"]))))
-    assert rows[1][0] == "'=cmd" and rows[1][3] == "'=cmd" and rows[1][4] == "'+1"
-    assert rows[1][7] == "'@SUM(A1)"
+    assert rows[1][0] == "'=cmd" and rows[1][7] == "'=cmd" and rows[1][8] == "'+1"
+    assert rows[1][11] == "'@SUM(A1)"
 
 
 def test_old_checkins_without_the_new_fields_still_export():
@@ -146,7 +170,7 @@ def test_old_checkins_without_the_new_fields_still_export():
     run(net.start("ann"))
     net.current["checkins"].append({"id": "old", "callsign": "W1AW", "at": 1_000_000.0, "notes": "legacy"})
     rows = list(csv.reader(io.StringIO(net.csv(net.current["id"]))))
-    assert rows[1][1] == "W1AW" and rows[1][6] == "no" and rows[1][7] == "legacy"
+    assert rows[1][5] == "W1AW" and rows[1][10] == "no" and rows[1][11] == "legacy"
 
 
 def test_announcements_wait_for_the_end_of_the_net():

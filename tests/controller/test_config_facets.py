@@ -31,7 +31,7 @@ def test_facet_counts_match_inventory():
         "monitor": 9,
         "autopatch": 12,
         "mailbox": 7,
-        "net": 13,
+        "net": 19,
         "gpio_fan": 8,
         "homeassistant": 2,
         "linking": 4,
@@ -40,7 +40,7 @@ def test_facet_counts_match_inventory():
         "public_page": 4,
         "sensors": 3,
     }
-    assert sum(counts.values()) == 204
+    assert sum(counts.values()) == 210
 
 
 def test_flat_dict_round_trip_preserves_values():

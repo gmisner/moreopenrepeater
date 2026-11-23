@@ -36,7 +36,14 @@ def register(
     @app.post("/api/net/start", response_model=NetStatusResponse, dependencies=transmit_dependencies)
     async def start_net(body: NetStartRequest, request: Request) -> dict:
         try:
-            net = await nets.start(actor_of(request), body.name)
+            net = await nets.start(
+                actor_of(request),
+                body.name,
+                control_callsign=body.control_callsign,
+                control_name=body.control_name,
+                logger_callsign=body.logger_callsign,
+                logger_name=body.logger_name,
+            )
         except NetError as error:
             raise HTTPException(status_code=409, detail=str(error)) from None
         request.state.audit_detail = net["name"]

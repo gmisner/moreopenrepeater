@@ -10,6 +10,13 @@ from controller.config.types import CourtesyVariant
 class NetConfig:
     # Net mode: these apply while a net is running (see controller.modes).
     net_name: str = 'Net'
+    # Desk defaults: pre-fill Start Net and stamp onto each started net.
+    net_club_name: str = ''
+    net_frequency: str = ''
+    net_control_callsign: str = ''
+    net_control_name: str = ''
+    net_logger_callsign: str = ''
+    net_logger_name: str = ''
     net_tot_duration: float = 600.0
     net_hang_time: float = 1.0
     net_courtesy_tone_style: CourtesyVariant = 'same'

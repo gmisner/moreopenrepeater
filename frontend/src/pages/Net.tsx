@@ -46,6 +46,12 @@ type CurrentNet = {
   ends_at: number;
   linked_node?: string | null;
   link_error?: string | null;
+  club_name?: string;
+  frequency?: string;
+  control_callsign?: string;
+  control_name?: string;
+  logger_callsign?: string;
+  logger_name?: string;
   checkins: Checkin[];
 };
 
@@ -87,6 +93,12 @@ type CallsignLookup = {
 
 type NetValues = {
   net_name: string;
+  net_club_name: string;
+  net_frequency: string;
+  net_control_callsign: string;
+  net_control_name: string;
+  net_logger_callsign: string;
+  net_logger_name: string;
   net_max_minutes: number;
   net_tot_duration: number;
   net_hang_time: number;
@@ -125,6 +137,12 @@ const TONE_STYLES = [
 
 const NET_KEYS = [
   "net_name",
+  "net_club_name",
+  "net_frequency",
+  "net_control_callsign",
+  "net_control_name",
+  "net_logger_callsign",
+  "net_logger_name",
   "net_max_minutes",
   "net_tot_duration",
   "net_hang_time",
@@ -140,6 +158,12 @@ const NET_KEYS = [
 
 const NET_DEFAULTS: NetValues = {
   net_name: "Net",
+  net_club_name: "",
+  net_frequency: "",
+  net_control_callsign: "",
+  net_control_name: "",
+  net_logger_callsign: "",
+  net_logger_name: "",
   net_max_minutes: 120,
   net_tot_duration: 300,
   net_hang_time: 3,
@@ -171,9 +195,19 @@ function minutesLabel(seconds: number) {
   return total < 60 ? `${total} min` : `${Math.floor(total / 60)} h ${total % 60} min`;
 }
 
+function personLabel(callsign?: string, name?: string) {
+  return [callsign, name].filter(Boolean).join(" ").trim();
+}
+
 function runningText(current: CurrentNet) {
   const parts = [`Started ${clock(current.started_at)} by ${current.started_by}`, `ends by itself at ${clock(current.ends_at)}`];
   if (current.linked_node) parts.push(`linked to node ${current.linked_node} for the net`);
+  const control = personLabel(current.control_callsign, current.control_name);
+  if (control) parts.push(`net control ${control}`);
+  const logger = personLabel(current.logger_callsign, current.logger_name);
+  if (logger) parts.push(`logger ${logger}`);
+  if (current.club_name) parts.push(current.club_name);
+  if (current.frequency) parts.push(current.frequency);
   return `${parts.join(", ")}.`;
 }
 
@@ -211,6 +245,10 @@ export function Net() {
 
   const [net, setNet] = useState<NetStatus | null>(null);
   const [startName, setStartName] = useState("");
+  const [startControlCallsign, setStartControlCallsign] = useState("");
+  const [startControlName, setStartControlName] = useState("");
+  const [startLoggerCallsign, setStartLoggerCallsign] = useState("");
+  const [startLoggerName, setStartLoggerName] = useState("");
   const [checkinCallsign, setCheckinCallsign] = useState("");
   const [checkinName, setCheckinName] = useState("");
   const [checkinLocation, setCheckinLocation] = useState("");
@@ -259,6 +297,22 @@ export function Net() {
   }, [config]);
 
   useEffect(() => {
+    if (net?.current) return;
+    setStartName((current) => current || settings.values.net_name || "");
+    setStartControlCallsign((current) => current || settings.values.net_control_callsign || "");
+    setStartControlName((current) => current || settings.values.net_control_name || "");
+    setStartLoggerCallsign((current) => current || settings.values.net_logger_callsign || "");
+    setStartLoggerName((current) => current || settings.values.net_logger_name || "");
+  }, [
+    net?.current,
+    settings.values.net_name,
+    settings.values.net_control_callsign,
+    settings.values.net_control_name,
+    settings.values.net_logger_callsign,
+    settings.values.net_logger_name,
+  ]);
+
+  useEffect(() => {
     const id = window.setInterval(() => {
       if (!document.hidden) refresh().catch(() => {});
     }, POLL_MS);
@@ -298,8 +352,27 @@ export function Net() {
     event.preventDefault();
     setBusy(true);
     try {
-      if (await call("/api/net/start", { method: "POST", json: { name: startName } }, "Net started")) {
-        setStartName("");
+      if (
+        await call(
+          "/api/net/start",
+          {
+            method: "POST",
+            json: {
+              name: startName,
+              control_callsign: startControlCallsign,
+              control_name: startControlName,
+              logger_callsign: startLoggerCallsign,
+              logger_name: startLoggerName,
+            },
+          },
+          "Net started",
+        )
+      ) {
+        setStartName(settings.values.net_name || "");
+        setStartControlCallsign(settings.values.net_control_callsign || "");
+        setStartControlName(settings.values.net_control_name || "");
+        setStartLoggerCallsign(settings.values.net_logger_callsign || "");
+        setStartLoggerName(settings.values.net_logger_name || "");
         callsignRef.current?.focus();
       }
     } finally {
@@ -468,19 +541,61 @@ export function Net() {
           </Group>
         ) : (
           <form onSubmit={(event) => void startNet(event)}>
-            <Group align="flex-end" mt="md" wrap="wrap">
-              <TextInput
-                label={labeled("Name", "Optional · blank uses the default name")}
-                style={{ flex: 1, minWidth: 180 }}
-                maxLength={60}
-                placeholder=""
-                value={startName}
-                onChange={(event) => setStartName(event.currentTarget.value)}
-              />
-              <Button type="submit" loading={busy}>
-                Start net
-              </Button>
-            </Group>
+            <Stack gap="sm" mt="md">
+              <Group align="flex-end" wrap="wrap">
+                <TextInput
+                  label={labeled("Name", "Optional · blank uses the default name")}
+                  style={{ flex: 1, minWidth: 180 }}
+                  maxLength={60}
+                  value={startName}
+                  onChange={(event) => setStartName(event.currentTarget.value)}
+                />
+                {settings.values.net_club_name || settings.values.net_frequency ? (
+                  <Text c="dimmed" size="sm" mb={6}>
+                    {[settings.values.net_club_name, settings.values.net_frequency].filter(Boolean).join(" · ")}
+                  </Text>
+                ) : null}
+              </Group>
+              <Group align="flex-end" wrap="wrap">
+                <TextInput
+                  label={labeled("Net control", "Callsign · optional")}
+                  pattern="[A-Za-z0-9/\-]{0,15}"
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  spellCheck={false}
+                  style={{ width: 140 }}
+                  value={startControlCallsign}
+                  onChange={(event) => setStartControlCallsign(event.currentTarget.value)}
+                />
+                <TextInput
+                  label="Name"
+                  style={{ flex: 1, minWidth: 140 }}
+                  maxLength={80}
+                  value={startControlName}
+                  onChange={(event) => setStartControlName(event.currentTarget.value)}
+                />
+                <TextInput
+                  label={labeled("Logger", "Callsign · optional")}
+                  pattern="[A-Za-z0-9/\-]{0,15}"
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  spellCheck={false}
+                  style={{ width: 140 }}
+                  value={startLoggerCallsign}
+                  onChange={(event) => setStartLoggerCallsign(event.currentTarget.value)}
+                />
+                <TextInput
+                  label="Name"
+                  style={{ flex: 1, minWidth: 140 }}
+                  maxLength={80}
+                  value={startLoggerName}
+                  onChange={(event) => setStartLoggerName(event.currentTarget.value)}
+                />
+                <Button type="submit" loading={busy}>
+                  Start net
+                </Button>
+              </Group>
+            </Stack>
           </form>
         )}
       </Card>
@@ -791,10 +906,20 @@ export function Net() {
       <ConfigSummaryCard
         title="Net settings"
         dirty={settings.dirty}
-        hint="Defaults when a net starts: timeouts, holds, and what to say."
+        hint="Defaults when a net starts: desk info, timeouts, holds, and what to say."
         onEdit={() => setEditingSettings(true)}
         rows={[
           { label: "Default name", value: settings.values.net_name || "—" },
+          { label: "Club", value: settings.values.net_club_name || "—" },
+          { label: "Frequency", value: settings.values.net_frequency || "—" },
+          {
+            label: "Net control",
+            value: personLabel(settings.values.net_control_callsign, settings.values.net_control_name) || "—",
+          },
+          {
+            label: "Logger",
+            value: personLabel(settings.values.net_logger_callsign, settings.values.net_logger_name) || "—",
+          },
           { label: "Ends after", value: `${settings.values.net_max_minutes} min` },
           { label: "TOT", value: `${settings.values.net_tot_duration} s` },
           { label: "Courtesy tone", value: toneLabel(settings.values.net_courtesy_tone_style) },
@@ -833,6 +958,50 @@ export function Net() {
                 required
                 value={settings.values.net_name}
                 onChange={(event) => settings.setField("net_name", event.currentTarget.value)}
+              />
+              <TextInput
+                label={labeled("Club", "Optional · stamped on each started net")}
+                maxLength={80}
+                value={settings.values.net_club_name}
+                onChange={(event) => settings.setField("net_club_name", event.currentTarget.value)}
+              />
+              <TextInput
+                label={labeled("Frequency", "Optional · e.g. 146.640")}
+                maxLength={40}
+                value={settings.values.net_frequency}
+                onChange={(event) => settings.setField("net_frequency", event.currentTarget.value)}
+              />
+              <TextInput
+                label={labeled("Default net control", "Callsign · pre-fills Start Net")}
+                pattern="[A-Za-z0-9/\-]{0,15}"
+                autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={15}
+                value={settings.values.net_control_callsign}
+                onChange={(event) => settings.setField("net_control_callsign", event.currentTarget.value)}
+              />
+              <TextInput
+                label="Net control name"
+                maxLength={80}
+                value={settings.values.net_control_name}
+                onChange={(event) => settings.setField("net_control_name", event.currentTarget.value)}
+              />
+              <TextInput
+                label={labeled("Default logger", "Callsign · optional")}
+                pattern="[A-Za-z0-9/\-]{0,15}"
+                autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={15}
+                value={settings.values.net_logger_callsign}
+                onChange={(event) => settings.setField("net_logger_callsign", event.currentTarget.value)}
+              />
+              <TextInput
+                label="Logger name"
+                maxLength={80}
+                value={settings.values.net_logger_name}
+                onChange={(event) => settings.setField("net_logger_name", event.currentTarget.value)}
               />
               <NumberInput
                 label={labeled("End by itself after", "In case nobody ends it")}

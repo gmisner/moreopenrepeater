@@ -21,6 +21,10 @@ x-link-addresses: &link_addresses
   MOREOPENREPEATER_AUDIOSOCKET_ADDRESS: ${MOR_CORE_IP:-172.28.0.10}:9092
   MOREOPENREPEATER_DMR_USRP_LISTEN: 0.0.0.0:34011  # where the DMR bridge's audio is heard (the core), and the port the bridge is told to send to (the API)
 
+# Image names. By default they are built here and named moreopenrepeater-<service>:local. `./setup.sh --registry` or
+# `./update.sh --registry` sets MOR_REGISTRY (ghcr.io/<owner>/) and MOR_TAG (sha-<12 characters of the commit>) in .env, and then
+# core, api, logd, piper and chrony are pulled ready-made instead (docs/docker.md, Prebuilt images). The other services are
+# always built here.
 services:
   core:
     build:
@@ -28,7 +32,7 @@ services:
       dockerfile: docker/Dockerfile.core
       args:
         WITH_PIPER: "0"  # Piper runs in its own container (the `piper` service); the core keeps only espeak-ng as the fallback
-    image: moreopenrepeater-core:local
+    image: ${MOR_REGISTRY:-}moreopenrepeater-core:${MOR_TAG:-local}
     restart: unless-stopped
     init: true               # reaps any child it starts
     stop_grace_period: 30s   # time to unkey and close the devices
@@ -126,7 +130,7 @@ services:
         MOR_COMMIT_DATE: ${MOR_COMMIT_DATE:-}
         MOR_BRANCH: ${MOR_BRANCH:-}
         MOR_REPO: ${MOR_REPO:-}
-    image: moreopenrepeater-api:local
+    image: ${MOR_REGISTRY:-}moreopenrepeater-api:${MOR_TAG:-local}
     restart: unless-stopped
     init: true
     user: "999:999"
@@ -172,6 +176,9 @@ services:
       - ${MOR_ALLSTAR_IMPORT_DIR:-./empty}:/import/asterisk:ro
     environment:
       TZ: ${MOR_TZ:-UTC}  # as the core's
+      # The channel (the checkout's branch), read when the container starts rather than baked into the image: a prebuilt image
+      # is built once and moves from beta to stable, so it cannot know. A local build bakes the same value.
+      MOREOPENREPEATER_BRANCH: ${MOR_BRANCH:-}
       # One JSON event per line on stdout, which Docker's log driver keeps and rotates. The text log in
       # the data folder is unchanged, and the dashboard's Logs page still reads it.
       MOREOPENREPEATER_LOG_FORMAT: json
@@ -224,7 +231,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.logd
-    image: moreopenrepeater-logd:local
+    image: ${MOR_REGISTRY:-}moreopenrepeater-logd:${MOR_TAG:-local}
     restart: unless-stopped
     init: true
     user: "999:999"
@@ -260,7 +267,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.piper
-    image: moreopenrepeater-piper:local
+    image: ${MOR_REGISTRY:-}moreopenrepeater-piper:${MOR_TAG:-local}
     restart: unless-stopped
     init: true
     user: "999:999"
@@ -491,7 +498,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.chrony
-    image: moreopenrepeater-chrony:local
+    image: ${MOR_REGISTRY:-}moreopenrepeater-chrony:${MOR_TAG:-local}
     restart: unless-stopped
     init: true
     user: "0:0"  # see above: root, with one capability

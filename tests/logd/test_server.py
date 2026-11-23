@@ -114,10 +114,12 @@ def test_batches_are_written_together_and_soon(run_dir):
         async with Running(run_dir, batch_size=50, flush_seconds=10) as r:  # the timer is far off: size must trigger
             for i in range(120):
                 send(r.events, make_event(i))
-            await until(lambda: r.store.stats()["events"] >= 100)
-            return r.collector.stats()["written"]
+            # The store has the events a moment before the collector's own count says so, so wait on the count that is asserted.
+            await until(lambda: r.collector.stats()["written"] >= 100)
+            return r.collector.stats()["written"], r.store.stats()["events"]
 
-    assert asyncio.run(go()) >= 100
+    written, stored = asyncio.run(go())
+    assert written >= 100 and stored >= 100
 
 
 def test_garbage_is_counted_and_the_rest_carries_on(run_dir):

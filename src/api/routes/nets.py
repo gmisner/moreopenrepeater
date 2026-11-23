@@ -1,23 +1,34 @@
-"""Net control: start/end, check-ins, CSV export, history delete, QRZ lookup."""
+"""Net control: start/end, check-ins, calendar, PDF/CSV, QRZ lookup."""
 from __future__ import annotations
 
 import asyncio
 import re
-from datetime import datetime
-from typing import Callable, Sequence
+from datetime import datetime, timedelta
+from typing import Callable, Optional, Sequence
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 
 from ..models import (
     CallsignLookupResponse,
+    NetAttendanceResponse,
+    NetCalendarResponse,
     NetCheckInRequest,
+    NetPlanRequest,
+    NetReportSummary,
     NetStartRequest,
     NetStatusResponse,
     QrzSettingsRequest,
     QrzSettingsResponse,
+    RunningNet,
 )
 from ..net import NetError, NetMode
 from ..qrz import QrzBook
+
+
+def _slug_day(net: dict) -> tuple[str, str]:
+    day = datetime.fromtimestamp(net["started_at"]).strftime("%Y-%m-%d")
+    slug = "".join(c if c.isalnum() else "-" for c in net["name"].lower()).strip("-") or "net"
+    return slug, day
 
 
 def register(
@@ -102,18 +113,118 @@ def register(
             raise HTTPException(status_code=404, detail="No such check-in") from None
         return nets.status()
 
+    @app.get("/api/nets/calendar", response_model=NetCalendarResponse, dependencies=auth_dependencies)
+    def net_calendar(
+        from_: Optional[datetime] = Query(default=None, alias="from"),
+        to: Optional[datetime] = Query(default=None),
+    ) -> dict:
+        now = datetime.now()
+        begin = from_ or (now.replace(day=1, hour=0, minute=0, second=0, microsecond=0))
+        end = to or (begin + timedelta(days=40))
+        if end <= begin:
+            raise HTTPException(status_code=422, detail="to must be after from")
+        return {"events": nets.calendar(begin, end)}
+
+    @app.get("/api/nets/attendance", response_model=NetAttendanceResponse, dependencies=auth_dependencies)
+    def net_attendance(name: str = "") -> dict:
+        rows = nets.attendance(name)
+        label = name.strip() or (nets.current["name"] if nets.current else "")
+        return {"name": label, "rows": rows}
+
+    @app.get("/api/nets/summary", response_model=NetReportSummary, dependencies=auth_dependencies)
+    def net_summary(
+        from_: float = Query(alias="from"),
+        to: float = Query(),
+    ) -> dict:
+        if to <= from_:
+            raise HTTPException(status_code=422, detail="to must be after from")
+        return nets.summary(from_, to)
+
+    @app.post("/api/nets/plan", response_model=NetStatusResponse, dependencies=auth_dependencies)
+    def plan_net(body: NetPlanRequest, request: Request) -> dict:
+        try:
+            plan = nets.plan(
+                name=body.name,
+                starts_at=body.starts_at,
+                minutes=body.minutes,
+                control_callsign=body.control_callsign,
+                control_name=body.control_name,
+                logger_callsign=body.logger_callsign,
+                logger_name=body.logger_name,
+            )
+        except NetError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from None
+        request.state.audit_detail = f"{plan['name']} @ {plan['starts_at']}"
+        return nets.status()
+
+    @app.delete("/api/nets/plan/{plan_id}", response_model=NetStatusResponse, dependencies=auth_dependencies)
+    def cancel_plan(plan_id: str) -> dict:
+        try:
+            nets.cancel_plan(plan_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such planned net") from None
+        return nets.status()
+
+    @app.get("/api/nets/{net_id}", response_model=RunningNet, dependencies=auth_dependencies)
+    def get_net_detail(net_id: str) -> dict:
+        try:
+            return nets.find(net_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such net") from None
+
+    @app.put("/api/nets/{net_id}/checkins/{checkin_id}", response_model=RunningNet, dependencies=auth_dependencies)
+    def update_net_checkin(net_id: str, checkin_id: str, body: NetCheckInRequest) -> dict:
+        try:
+            nets.update_checkin(
+                checkin_id,
+                body.callsign,
+                body.notes,
+                name=body.name,
+                location=body.location,
+                license_class=body.license_class,
+                staying_for_comments=body.staying_for_comments,
+                net_id=net_id,
+            )
+            return nets.find(net_id)
+        except NetError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from None
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such check-in") from None
+
+    @app.delete("/api/nets/{net_id}/checkins/{checkin_id}", response_model=RunningNet, dependencies=auth_dependencies)
+    def delete_net_checkin(net_id: str, checkin_id: str) -> dict:
+        try:
+            nets.delete_checkin(checkin_id, net_id=net_id)
+            return nets.find(net_id)
+        except NetError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from None
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such check-in") from None
+
     @app.get("/api/nets/{net_id}/checkins.csv", dependencies=auth_dependencies)
     def net_csv(net_id: str) -> Response:
         try:
             net = nets.find(net_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="No such net") from None
-        day = datetime.fromtimestamp(net["started_at"]).strftime("%Y-%m-%d")
-        slug = "".join(c if c.isalnum() else "-" for c in net["name"].lower()).strip("-") or "net"
+        slug, day = _slug_day(net)
         return Response(
             nets.csv(net_id),
             media_type="text/csv",
             headers={"Content-Disposition": f'attachment; filename="{slug}-{day}.csv"'},
+        )
+
+    @app.get("/api/nets/{net_id}/checkins.pdf", dependencies=auth_dependencies)
+    def net_pdf_export(net_id: str) -> Response:
+        try:
+            net = nets.find(net_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="No such net") from None
+        slug, day = _slug_day(net)
+        return Response(
+            nets.pdf(net_id),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{slug}-{day}.pdf"'},
         )
 
     @app.delete("/api/nets/{net_id}", response_model=NetStatusResponse, dependencies=auth_dependencies)

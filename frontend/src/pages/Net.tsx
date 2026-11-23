@@ -63,9 +63,21 @@ type PastNet = {
   checkin_count: number;
 };
 
+type PlannedNet = {
+  id: string;
+  name: string;
+  starts_at: string;
+  minutes: number;
+  control_callsign?: string;
+  control_name?: string;
+  logger_callsign?: string;
+  logger_name?: string;
+};
+
 type NetStatus = {
   current: CurrentNet | null;
   past: PastNet[];
+  planned?: PlannedNet[];
   next_scheduled?: number | null;
 };
 
@@ -74,6 +86,30 @@ type NetSchedule = {
   minutes: number;
   days: number[];
   enabled: boolean;
+  name?: string;
+  every?: "weekly" | "biweekly" | "monthly";
+  biweek_parity?: number;
+  month_day?: number;
+  control_callsign?: string;
+  control_name?: string;
+  logger_callsign?: string;
+  logger_name?: string;
+};
+
+type CalendarEvent = {
+  kind: "past" | "current" | "planned" | "schedule";
+  id: string;
+  name: string;
+  starts_at: string;
+  checkin_count?: number;
+  minutes?: number;
+  every?: string;
+};
+
+type NetDetail = CurrentNet & {
+  id: string;
+  ended_at?: number;
+  ended_by?: string;
 };
 
 type QrzSettings = {
@@ -212,7 +248,30 @@ function runningText(current: CurrentNet) {
 }
 
 function emptySchedule(): NetSchedule {
-  return { days: [], time: "", minutes: 60, enabled: true };
+  return {
+    days: [],
+    time: "19:00",
+    minutes: 60,
+    enabled: true,
+    name: "",
+    every: "weekly",
+    biweek_parity: 0,
+    month_day: 1,
+    control_callsign: "",
+    control_name: "",
+    logger_callsign: "",
+    logger_name: "",
+  };
+}
+
+function monthRange(anchor: Date) {
+  const from = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const to = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1);
+  const iso = (value: Date) => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T00:00:00`;
+  };
+  return { from: iso(from), to: iso(to) };
 }
 
 function toneLabel(style: string) {
@@ -236,6 +295,15 @@ function daysLabel(days: number[]) {
   if (days.length === 7) return "Every day";
   if (days.length === 0) return "No days";
   return days.map((d) => DAY_NAMES[d]).join(", ");
+}
+
+function scheduleRecurrenceLabel(schedule: NetSchedule) {
+  const every = schedule.every || "weekly";
+  if (every === "monthly") return `Monthly on day ${schedule.month_day || 1}`;
+  if (every === "biweekly") {
+    return `Every other week (${schedule.biweek_parity ? "odd" : "even"} ISO weeks) · ${daysLabel(schedule.days)}`;
+  }
+  return daysLabel(schedule.days);
 }
 
 export function Net() {
@@ -273,6 +341,17 @@ export function Net() {
   const [qrzPassword, setQrzPassword] = useState("");
   const [qrzSaving, setQrzSaving] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
+  const [detail, setDetail] = useState<NetDetail | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [planName, setPlanName] = useState("");
+  const [planWhen, setPlanWhen] = useState("");
+  const [planMinutes, setPlanMinutes] = useState(60);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [attendanceName, setAttendanceName] = useState("");
+  const [attendanceRows, setAttendanceRows] = useState<{ callsign: string; count: number }[]>([]);
+  const [reportSummary, setReportSummary] = useState<{ net_count: number; checkin_count: number; by_name: { name: string; nets: number; checkins: number }[] } | null>(null);
   const wasActive = useRef<boolean | null>(null);
   const callsignRef = useRef<HTMLInputElement>(null);
 
@@ -286,10 +365,22 @@ export function Net() {
     setQrzUsername(status.username);
   }, []);
 
+  const refreshCalendar = useCallback(async () => {
+    const range = monthRange(calendarMonth);
+    const body = await api<{ events: CalendarEvent[] }>(
+      `/api/nets/calendar?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`,
+    );
+    setCalendarEvents(body.events);
+  }, [calendarMonth]);
+
   useEffect(() => {
     refresh().catch(notifyError);
     refreshQrz().catch(notifyError);
   }, [refresh, refreshQrz]);
+
+  useEffect(() => {
+    refreshCalendar().catch(notifyError);
+  }, [refreshCalendar]);
 
   useEffect(() => {
     const schedulesFromConfig = (config?.net_schedules as NetSchedule[] | undefined) ?? [];
@@ -484,14 +575,15 @@ export function Net() {
 
   const saveSchedules = async (event: FormEvent) => {
     event.preventDefault();
-    if (schedules.some((schedule) => schedule.days.length === 0)) {
-      notifyError(new Error("Pick at least one day for each schedule."));
+    if (schedules.some((schedule) => (schedule.every || "weekly") !== "monthly" && schedule.days.length === 0)) {
+      notifyError(new Error("Pick at least one day for each weekly or biweekly schedule."));
       return;
     }
     setSchedulesSaving(true);
     try {
       await saveConfig({ net_schedules: schedules });
       await refresh();
+      await refreshCalendar();
       notifySuccess("Schedules saved");
       setEditingSchedules(false);
     } catch (error) {
@@ -501,14 +593,123 @@ export function Net() {
     }
   };
 
+  const openPast = async (row: PastNet) => {
+    try {
+      setDetail(await api<NetDetail>(`/api/nets/${encodeURIComponent(row.id)}`));
+    } catch (error) {
+      notifyError(error);
+    }
+  };
+
+  const saveDetailCheckin = async (id: string) => {
+    if (!detail || !editCallsign.trim()) return;
+    setDetailBusy(true);
+    try {
+      const updated = await api<NetDetail>(`/api/nets/${encodeURIComponent(detail.id)}/checkins/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        json: {
+          callsign: editCallsign.trim(),
+          name: editName.trim(),
+          location: editLocation.trim(),
+          license_class: editLicenseClass.trim(),
+          staying_for_comments: editStaying,
+          notes: editNotes.trim(),
+        },
+      });
+      setDetail(updated);
+      setEditingCheckin(null);
+      await refresh();
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setDetailBusy(false);
+    }
+  };
+
+  const deleteDetailCheckin = async (checkin: Checkin) => {
+    if (!detail || !window.confirm(`Remove ${checkin.callsign}?`)) return;
+    setDetailBusy(true);
+    try {
+      const updated = await api<NetDetail>(
+        `/api/nets/${encodeURIComponent(detail.id)}/checkins/${encodeURIComponent(checkin.id)}`,
+        { method: "DELETE" },
+      );
+      setDetail(updated);
+      await refresh();
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setDetailBusy(false);
+    }
+  };
+
+  const savePlan = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!planWhen) {
+      notifyError(new Error("Pick a start time."));
+      return;
+    }
+    setPlanBusy(true);
+    try {
+      setNet(
+        await api<NetStatus>("/api/nets/plan", {
+          method: "POST",
+          json: { name: planName, starts_at: planWhen, minutes: planMinutes },
+        }),
+      );
+      setPlanName("");
+      setPlanWhen("");
+      notifySuccess("Net planned");
+      await refreshCalendar();
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setPlanBusy(false);
+    }
+  };
+
+  const cancelPlan = async (plan: PlannedNet) => {
+    if (!window.confirm(`Cancel ${plan.name}?`)) return;
+    try {
+      setNet(await api<NetStatus>(`/api/nets/plan/${encodeURIComponent(plan.id)}`, { method: "DELETE" }));
+      await refreshCalendar();
+    } catch (error) {
+      notifyError(error);
+    }
+  };
+
+  const loadAttendance = async () => {
+    try {
+      const body = await api<{ name: string; rows: { callsign: string; count: number }[] }>(
+        `/api/nets/attendance?name=${encodeURIComponent(attendanceName.trim())}`,
+      );
+      setAttendanceRows(body.rows);
+      if (body.name) setAttendanceName(body.name);
+    } catch (error) {
+      notifyError(error);
+    }
+  };
+
+  const loadSummary = async () => {
+    try {
+      const range = monthRange(calendarMonth);
+      const from = Math.floor(new Date(range.from).getTime() / 1000);
+      const to = Math.floor(new Date(range.to).getTime() / 1000);
+      setReportSummary(await api(`/api/nets/summary?from=${from}&to=${to}`));
+    } catch (error) {
+      notifyError(error);
+    }
+  };
+
   const current = net?.current ?? null;
   const past = net?.past ?? [];
-  let detail = "";
+  const planned = net?.planned ?? [];
+  let runningDetail = "";
   if (current) {
-    detail = runningText(current);
-    if (current.link_error) detail += ` Links: ${current.link_error}`;
+    runningDetail = runningText(current);
+    if (current.link_error) runningDetail += ` Links: ${current.link_error}`;
   } else if (net?.next_scheduled) {
-    detail = `Next scheduled net: ${shortTime(net.next_scheduled * 1000)}.`;
+    runningDetail = `Next scheduled net: ${shortTime(net.next_scheduled * 1000)}.`;
   }
 
   const linkNodeNeeded = settings.values.net_links === "connect";
@@ -526,9 +727,9 @@ export function Net() {
                 </Badge>
               ) : null}
             </Group>
-            {detail ? (
+            {runningDetail ? (
               <Text c="dimmed" size="sm" mt={4}>
-                {detail}
+                {runningDetail}
               </Text>
             ) : null}
           </div>
@@ -824,6 +1025,9 @@ export function Net() {
                   <Table.Td>{row.checkin_count}</Table.Td>
                   <Table.Td>
                     <Group gap="xs" justify="flex-end" wrap="nowrap">
+                      <Button size="compact-sm" variant="subtle" onClick={() => void openPast(row)}>
+                        Open
+                      </Button>
                       <Button
                         component="a"
                         size="compact-sm"
@@ -832,6 +1036,15 @@ export function Net() {
                         download
                       >
                         CSV
+                      </Button>
+                      <Button
+                        component="a"
+                        size="compact-sm"
+                        variant="subtle"
+                        href={`/api/nets/${encodeURIComponent(row.id)}/checkins.pdf`}
+                        download
+                      >
+                        PDF
                       </Button>
                       <Button size="compact-sm" color="red" variant="subtle" onClick={() => void deletePast(row)}>
                         Delete
@@ -846,6 +1059,270 @@ export function Net() {
         {past.length === 0 ? (
           <EmptyState>No nets yet.</EmptyState>
         ) : null}
+      </Card>
+
+      <ConfigEditDrawer
+        opened={Boolean(detail)}
+        onClose={() => {
+          setDetail(null);
+          setEditingCheckin(null);
+        }}
+        title={detail?.name || "Past net"}
+        subtitle={
+          detail
+            ? [
+                personLabel(detail.control_callsign, detail.control_name)
+                  ? `Net control ${personLabel(detail.control_callsign, detail.control_name)}`
+                  : null,
+                detail.club_name,
+                detail.frequency,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "Check-ins from this net."
+            : undefined
+        }
+      >
+        {detail ? (
+          <Stack gap="md">
+            <Table.ScrollContainer minWidth={640}>
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>#</Table.Th>
+                    <Table.Th>Callsign</Table.Th>
+                    <Table.Th>Name</Table.Th>
+                    <Table.Th>Location</Table.Th>
+                    <Table.Th>Class</Table.Th>
+                    <Table.Th>Comments</Table.Th>
+                    <Table.Th>Notes</Table.Th>
+                    <ActionsHeader />
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {detail.checkins.map((checkin, index) => (
+                    <Table.Tr key={checkin.id}>
+                      <Table.Td>{index + 1}</Table.Td>
+                      {editingCheckin === checkin.id ? (
+                        <>
+                          <Table.Td>
+                            <TextInput value={editCallsign} onChange={(e) => setEditCallsign(e.currentTarget.value)} />
+                          </Table.Td>
+                          <Table.Td>
+                            <TextInput value={editName} onChange={(e) => setEditName(e.currentTarget.value)} />
+                          </Table.Td>
+                          <Table.Td>
+                            <TextInput value={editLocation} onChange={(e) => setEditLocation(e.currentTarget.value)} />
+                          </Table.Td>
+                          <Table.Td>
+                            <TextInput value={editLicenseClass} onChange={(e) => setEditLicenseClass(e.currentTarget.value)} />
+                          </Table.Td>
+                          <Table.Td>
+                            <Checkbox checked={editStaying} onChange={(e) => setEditStaying(e.currentTarget.checked)} />
+                          </Table.Td>
+                          <Table.Td>
+                            <TextInput value={editNotes} onChange={(e) => setEditNotes(e.currentTarget.value)} />
+                          </Table.Td>
+                          <Table.Td>
+                            <Group gap="xs" justify="flex-end" wrap="nowrap">
+                              <Button size="compact-sm" loading={detailBusy} onClick={() => void saveDetailCheckin(checkin.id)}>
+                                Save
+                              </Button>
+                              <Button size="compact-sm" variant="subtle" onClick={() => setEditingCheckin(null)}>
+                                Cancel
+                              </Button>
+                            </Group>
+                          </Table.Td>
+                        </>
+                      ) : (
+                        <>
+                          <Table.Td>
+                            <Text fw={700}>{checkin.callsign}</Text>
+                          </Table.Td>
+                          <Table.Td>{checkin.name || "—"}</Table.Td>
+                          <Table.Td>{checkin.location || "—"}</Table.Td>
+                          <Table.Td>{checkin.license_class || "—"}</Table.Td>
+                          <Table.Td>{checkin.staying_for_comments ? "Yes" : "—"}</Table.Td>
+                          <Table.Td>{checkin.notes || "—"}</Table.Td>
+                          <Table.Td>
+                            <Group gap="xs" justify="flex-end" wrap="nowrap">
+                              <Button size="compact-sm" variant="subtle" onClick={() => beginEditCheckin(checkin)}>
+                                Edit
+                              </Button>
+                              <Button
+                                size="compact-sm"
+                                color="red"
+                                variant="subtle"
+                                onClick={() => void deleteDetailCheckin(checkin)}
+                              >
+                                Remove
+                              </Button>
+                            </Group>
+                          </Table.Td>
+                        </>
+                      )}
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+            {detail.checkins.length === 0 ? <EmptyState>No check-ins.</EmptyState> : null}
+          </Stack>
+        ) : null}
+      </ConfigEditDrawer>
+
+      <Card withBorder padding="lg" radius="md">
+        <Group justify="space-between" mb="md" wrap="wrap">
+          <Title order={2}>Calendar</Title>
+          <Group gap="xs">
+            <Button
+              size="compact-sm"
+              variant="subtle"
+              onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}
+            >
+              Prev
+            </Button>
+            <Text size="sm">
+              {calendarMonth.toLocaleString(undefined, { month: "long", year: "numeric" })}
+            </Text>
+            <Button
+              size="compact-sm"
+              variant="subtle"
+              onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}
+            >
+              Next
+            </Button>
+          </Group>
+        </Group>
+        <Stack gap="xs" mb="lg">
+          {calendarEvents.length === 0 ? <EmptyState>Nothing on the calendar this month.</EmptyState> : null}
+          {calendarEvents.map((event) => (
+            <Group key={event.id} justify="space-between" wrap="wrap">
+              <div>
+                <Text fw={600}>
+                  {event.name}{" "}
+                  <Badge size="sm" variant="light">
+                    {event.kind}
+                  </Badge>
+                </Text>
+                <Text size="sm" c="dimmed">
+                  {shortTime(event.starts_at)}
+                  {event.checkin_count != null ? ` · ${event.checkin_count} check-ins` : ""}
+                  {event.minutes != null ? ` · ${event.minutes} min` : ""}
+                </Text>
+              </div>
+            </Group>
+          ))}
+        </Stack>
+        <Title order={3} mb="sm">
+          Plan a net
+        </Title>
+        <form onSubmit={(event) => void savePlan(event)}>
+          <Group align="flex-end" wrap="wrap" mb="md">
+            <TextInput
+              label="Name"
+              value={planName}
+              onChange={(event) => setPlanName(event.currentTarget.value)}
+              style={{ flex: 1, minWidth: 160 }}
+            />
+            <TextInput
+              label="Starts"
+              type="datetime-local"
+              required
+              value={planWhen}
+              onChange={(event) => setPlanWhen(event.currentTarget.value)}
+            />
+            <NumberInput
+              label="Minutes"
+              min={0}
+              max={720}
+              value={planMinutes}
+              onChange={(value) => setPlanMinutes(Number(value) || 0)}
+            />
+            <Button type="submit" loading={planBusy}>
+              Plan
+            </Button>
+          </Group>
+        </form>
+        {planned.length > 0 ? (
+          <Table.ScrollContainer minWidth={480}>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Name</Table.Th>
+                  <Table.Th>Starts</Table.Th>
+                  <Table.Th>Length</Table.Th>
+                  <ActionsHeader />
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {planned.map((plan) => (
+                  <Table.Tr key={plan.id}>
+                    <Table.Td>{plan.name}</Table.Td>
+                    <Table.Td>{shortTime(plan.starts_at)}</Table.Td>
+                    <Table.Td>{plan.minutes ? `${plan.minutes} min` : "Until ended"}</Table.Td>
+                    <Table.Td>
+                      <Button size="compact-sm" color="red" variant="subtle" onClick={() => void cancelPlan(plan)}>
+                        Cancel
+                      </Button>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        ) : null}
+      </Card>
+
+      <Card withBorder padding="lg" radius="md">
+        <Title order={2} mb="md">
+          Reports
+        </Title>
+        <Stack gap="md">
+          <Group align="flex-end" wrap="wrap">
+            <TextInput
+              label={labeled("Attendance for net name", "Counts check-ins across nets with this name")}
+              value={attendanceName}
+              onChange={(event) => setAttendanceName(event.currentTarget.value)}
+              style={{ flex: 1, minWidth: 180 }}
+            />
+            <Button variant="default" onClick={() => void loadAttendance()}>
+              Count
+            </Button>
+          </Group>
+          {attendanceRows.length > 0 ? (
+            <Table.ScrollContainer minWidth={280}>
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Callsign</Table.Th>
+                    <Table.Th>Nets</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {attendanceRows.map((row) => (
+                    <Table.Tr key={row.callsign}>
+                      <Table.Td>{row.callsign}</Table.Td>
+                      <Table.Td>{row.count}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          ) : null}
+          <Group>
+            <Button variant="default" onClick={() => void loadSummary()}>
+              Summary for {calendarMonth.toLocaleString(undefined, { month: "long", year: "numeric" })}
+            </Button>
+          </Group>
+          {reportSummary ? (
+            <Text size="sm">
+              {reportSummary.net_count} nets · {reportSummary.checkin_count} check-ins
+              {reportSummary.by_name.length
+                ? ` · ${reportSummary.by_name.map((row) => `${row.name} (${row.nets})`).join(", ")}`
+                : ""}
+            </Text>
+          ) : null}
+        </Stack>
       </Card>
 
       <ConfigSummaryCard
@@ -1111,7 +1588,7 @@ export function Net() {
 
       <ConfigSummaryCard
         title="Scheduled nets"
-        hint="Start net mode at a set time each week."
+        hint="Start net mode on a weekly, biweekly, or monthly schedule."
         onEdit={() => setEditingSchedules(true)}
         rows={[
           { label: "Schedules", value: scheduleSummary(schedules) },
@@ -1119,8 +1596,10 @@ export function Net() {
             ? [{ label: "Next", value: shortTime(net.next_scheduled * 1000) }]
             : []),
           ...schedules.slice(0, 3).map((schedule, index) => ({
-            label: schedule.enabled ? `Entry ${index + 1}` : `Entry ${index + 1} (off)`,
-            value: `${schedule.time || "—"} · ${daysLabel(schedule.days)} · ${schedule.minutes || "until ended"} min`,
+            label: schedule.enabled
+              ? schedule.name || `Entry ${index + 1}`
+              : `${schedule.name || `Entry ${index + 1}`} (off)`,
+            value: `${schedule.time || "—"} · ${scheduleRecurrenceLabel(schedule)} · ${schedule.minutes || "until ended"} min`,
           })),
         ]}
       />
@@ -1129,80 +1608,117 @@ export function Net() {
         opened={editingSchedules}
         onClose={() => setEditingSchedules(false)}
         title="Scheduled nets"
-        subtitle="0 minutes runs until someone ends it, or the default limit."
+        subtitle="Weekly, every other week, or monthly. 0 minutes runs until someone ends it, or the default limit."
       >
         <form onSubmit={(event) => void saveSchedules(event)}>
           <Stack gap="md">
-            {schedules.map((schedule, index) => (
-              <Card key={index} withBorder padding="md" radius="sm" bg="var(--mantine-color-default)">
-                <Stack gap="sm">
-                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                    <TextInput
-                      label="Start"
-                      type="time"
-                      required
-                      value={schedule.time}
-                      onChange={(event) => {
-                        const next = [...schedules];
-                        next[index] = { ...schedule, time: event.currentTarget.value };
-                        setSchedules(next);
-                      }}
-                    />
-                    <NumberInput
-                      label={labeled("Minutes", "0 = until ended manually")}
-                      min={0}
-                      max={720}
-                      required
-                      value={schedule.minutes}
-                      onChange={(value) => {
-                        const next = [...schedules];
-                        next[index] = { ...schedule, minutes: Number(value) || 0 };
-                        setSchedules(next);
-                      }}
-                    />
-                  </SimpleGrid>
-                  <Text size="sm" fw={600}>
-                    Days
-                  </Text>
-                  <Group gap="sm">
-                    {DAY_NAMES.map((day, dayIndex) => (
-                      <Checkbox
-                        key={day}
-                        label={day}
-                        checked={schedule.days.includes(dayIndex)}
-                        onChange={(event) => {
-                          const days = event.currentTarget.checked
-                            ? [...schedule.days, dayIndex].sort((a, b) => a - b)
-                            : schedule.days.filter((d) => d !== dayIndex);
-                          const next = [...schedules];
-                          next[index] = { ...schedule, days };
-                          setSchedules(next);
-                        }}
+            {schedules.map((schedule, index) => {
+              const every = schedule.every || "weekly";
+              const patch = (partial: Partial<NetSchedule>) => {
+                const next = [...schedules];
+                next[index] = { ...schedule, ...partial };
+                setSchedules(next);
+              };
+              return (
+                <Card key={index} withBorder padding="md" radius="sm" bg="var(--mantine-color-default)">
+                  <Stack gap="sm">
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                      <TextInput
+                        label={labeled("Name", "Optional · stamped when the schedule starts a net")}
+                        value={schedule.name || ""}
+                        onChange={(event) => patch({ name: event.currentTarget.value })}
                       />
-                    ))}
-                  </Group>
-                  <Group justify="space-between">
-                    <Checkbox
-                      label="On"
-                      checked={schedule.enabled}
-                      onChange={(event) => {
-                        const next = [...schedules];
-                        next[index] = { ...schedule, enabled: event.currentTarget.checked };
-                        setSchedules(next);
-                      }}
-                    />
-                    <Button
-                      size="compact-sm"
-                      color="red"
-                      variant="subtle"
-                      onClick={() => setSchedules(schedules.filter((_, i) => i !== index))}
-                    >
-                      Remove
-                    </Button>
-                  </Group>
-                </Stack>
-              </Card>
-            ))}
+                      <Select
+                        label="Repeats"
+                        data={[
+                          { value: "weekly", label: "Weekly" },
+                          { value: "biweekly", label: "Every other week" },
+                          { value: "monthly", label: "Monthly" },
+                        ]}
+                        value={every}
+                        onChange={(value) =>
+                          patch({ every: (value as NetSchedule["every"]) || "weekly" })
+                        }
+                        allowDeselect={false}
+                      />
+                      <TextInput
+                        label="Start"
+                        type="time"
+                        required
+                        value={schedule.time}
+                        onChange={(event) => patch({ time: event.currentTarget.value })}
+                      />
+                      <NumberInput
+                        label={labeled("Minutes", "0 = until ended manually")}
+                        min={0}
+                        max={720}
+                        required
+                        value={schedule.minutes}
+                        onChange={(value) => patch({ minutes: Number(value) || 0 })}
+                      />
+                      {every === "monthly" ? (
+                        <NumberInput
+                          label={labeled("Day of month", "1–28")}
+                          min={1}
+                          max={28}
+                          value={schedule.month_day ?? 1}
+                          onChange={(value) => patch({ month_day: Number(value) || 1 })}
+                        />
+                      ) : null}
+                      {every === "biweekly" ? (
+                        <Select
+                          label={labeled("ISO week parity", "Even or odd ISO week number")}
+                          data={[
+                            { value: "0", label: "Even weeks" },
+                            { value: "1", label: "Odd weeks" },
+                          ]}
+                          value={String(schedule.biweek_parity ?? 0)}
+                          onChange={(value) => patch({ biweek_parity: Number(value) || 0 })}
+                          allowDeselect={false}
+                        />
+                      ) : null}
+                    </SimpleGrid>
+                    {every !== "monthly" ? (
+                      <>
+                        <Text size="sm" fw={600}>
+                          Days
+                        </Text>
+                        <Group gap="sm">
+                          {DAY_NAMES.map((day, dayIndex) => (
+                            <Checkbox
+                              key={day}
+                              label={day}
+                              checked={schedule.days.includes(dayIndex)}
+                              onChange={(event) => {
+                                const days = event.currentTarget.checked
+                                  ? [...schedule.days, dayIndex].sort((a, b) => a - b)
+                                  : schedule.days.filter((d) => d !== dayIndex);
+                                patch({ days });
+                              }}
+                            />
+                          ))}
+                        </Group>
+                      </>
+                    ) : null}
+                    <Group justify="space-between">
+                      <Checkbox
+                        label="On"
+                        checked={schedule.enabled}
+                        onChange={(event) => patch({ enabled: event.currentTarget.checked })}
+                      />
+                      <Button
+                        size="compact-sm"
+                        color="red"
+                        variant="subtle"
+                        onClick={() => setSchedules(schedules.filter((_, i) => i !== index))}
+                      >
+                        Remove
+                      </Button>
+                    </Group>
+                  </Stack>
+                </Card>
+              );
+            })}
             {schedules.length === 0 ? (
               <Text c="dimmed" size="sm">
                 No scheduled nets.

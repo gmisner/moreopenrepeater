@@ -1,19 +1,30 @@
-"""Net control: start/end, check-ins, CSV export, history delete."""
+"""Net control: start/end, check-ins, CSV export, history delete, QRZ lookup."""
 from __future__ import annotations
 
+import asyncio
+import re
 from datetime import datetime
 from typing import Callable, Sequence
 
 from fastapi import FastAPI, HTTPException, Request, Response
 
-from ..models import NetCheckInRequest, NetStartRequest, NetStatusResponse
+from ..models import (
+    CallsignLookupResponse,
+    NetCheckInRequest,
+    NetStartRequest,
+    NetStatusResponse,
+    QrzSettingsRequest,
+    QrzSettingsResponse,
+)
 from ..net import NetError, NetMode
+from ..qrz import QrzBook
 
 
 def register(
     app: FastAPI,
     *,
     nets: NetMode,
+    qrz: QrzBook,
     actor_of: Callable[[Request], str],
     auth_dependencies: Sequence,
     transmit_dependencies: Sequence,
@@ -107,3 +118,25 @@ def register(
         except KeyError:
             raise HTTPException(status_code=404, detail="No such net") from None
         return nets.status()
+
+    @app.get("/api/net/qrz", response_model=QrzSettingsResponse, dependencies=auth_dependencies)
+    def get_qrz() -> dict:
+        return qrz.status()
+
+    @app.put("/api/net/qrz", response_model=QrzSettingsResponse, dependencies=auth_dependencies)
+    def put_qrz(body: QrzSettingsRequest) -> dict:
+        return qrz.update(username=body.username, password=body.password)
+
+    @app.get("/api/net/lookup/{callsign}", response_model=CallsignLookupResponse, dependencies=auth_dependencies)
+    async def lookup_callsign(callsign: str) -> CallsignLookupResponse:
+        if not re.fullmatch(r"[A-Za-z0-9/-]{1,15}", callsign or ""):
+            raise HTTPException(status_code=422, detail="Callsign looks wrong")
+        result = await asyncio.to_thread(qrz.lookup, callsign)
+        return CallsignLookupResponse(
+            callsign=result.callsign,
+            found=result.found,
+            configured=result.configured,
+            name=result.name,
+            location=result.location,
+            license_class=result.license_class,
+        )

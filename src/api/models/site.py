@@ -74,6 +74,26 @@ class NetCheckInRequest(BaseModel):
     staying_for_comments: bool = False
 
 
+class QrzSettingsResponse(BaseModel):
+    username: str
+    password_set: bool
+    configured: bool
+
+
+class QrzSettingsRequest(BaseModel):
+    username: Optional[str] = Field(default=None, max_length=40)
+    password: Optional[str] = Field(default=None, max_length=200)  # None keeps the saved one
+
+
+class CallsignLookupResponse(BaseModel):
+    callsign: str
+    found: bool
+    configured: bool
+    name: str = ""
+    location: str = ""
+    license_class: str = ""
+
+
 class ControlCodeStatus(BaseModel):
     enrolled: bool
     since: Optional[float] = None

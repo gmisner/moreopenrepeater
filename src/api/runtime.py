@@ -76,6 +76,7 @@ from .net import POLL_SECONDS as NET_POLL_SECONDS
 from .net import NetMode
 from .node_directory import NodeDirectory
 from .notify import Notifier
+from .qrz import QrzBook
 from .service.core_handle import CoreUnavailable
 from .split import CoreHardware, Unavailable
 from .core_runtime import ANNOUNCEMENT_POLL_SECONDS, AnnouncementQueueFull, CoreRuntime, SplitCoreRuntime
@@ -140,6 +141,7 @@ DEFAULT_SENSORS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "sensors
 DEFAULT_LOG_SHIPPING_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "log-shipping.json"
 DEFAULT_RUN_MARKER_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "run-state.json"
 DEFAULT_NETS_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "nets.json"
+DEFAULT_QRZ_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "qrz.json"
 DEFAULT_AUTO_UPDATE_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "auto-update.json"
 DEFAULT_CONTROL_CODES_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "control-codes.json"
 DEFAULT_STREAM_PATH = _resolve_data_root(os.environ, _REPO_DATA_DIR) / "stream.json"
@@ -307,6 +309,8 @@ class SiteOpsBundle:
     hub_sites: Optional[HubSiteStore] = None
     hub_poller: Optional[HubPoller] = None
     net_store: Optional[StateStore] = None
+    qrz_store: Optional[StateStore] = None
+    qrz: Optional[QrzBook] = None
 
 
 @dataclass
@@ -378,6 +382,8 @@ class RuntimeBuilder:
     system_probe: Optional[SystemProbe] = None
     watchdog: Optional[Watchdog] = None
     net_store: Optional[StateStore] = None
+    qrz_store: Optional[StateStore] = None
+    qrz: Optional[QrzBook] = None
     auto_update_store: Optional[StateStore] = None
     control_codes: Optional[ControlCodes] = None
     homeassistant: Optional[HomeAssistant] = None
@@ -456,6 +462,8 @@ class RuntimeBuilder:
                 hub_sites=self.hub_sites,
                 hub_poller=self.hub_poller,
                 net_store=self.net_store,
+                qrz_store=self.qrz_store,
+                qrz=self.qrz,
             ),
             AdminOpsBundle(
                 backups=self.backups,
@@ -560,6 +568,8 @@ class AppRuntime:
         hub_sites = site_ops.hub_sites
         hub_poller = site_ops.hub_poller
         net_store = site_ops.net_store
+        qrz_store = site_ops.qrz_store
+        qrz = site_ops.qrz
 
         backups = admin.backups
         updater = admin.updater
@@ -664,6 +674,7 @@ class AppRuntime:
         )
         link_scheduler = LinkScheduler(links, lambda: service.config.link_schedules)
         nets = NetMode(service, links, net_store)
+        qrz = qrz or QrzBook(qrz_store)
         try:
             gmrs_mode = [service.saved_config.gmrs_mode]
         except CoreUnavailable:  # the core has not been reached yet; the first read is not a change
@@ -1240,6 +1251,7 @@ class AppRuntime:
         self.links = links
         self.link_scheduler = link_scheduler
         self.nets = nets
+        self.qrz = qrz
         self.auth_settings = auth_settings
         self.sessions = sessions
         self.users = users

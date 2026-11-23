@@ -288,6 +288,10 @@ registry as `ghcr.io/gmisner/moreopenrepeater-<service>`.
 
 - Each commit's images are tagged `sha-` and the first 12 characters of the commit. A moving tag (`beta`, `stable`) or a release tag is added to
   those same images, never to a rebuild, so what reaches `stable` is what ran on `beta`.
+- **Promoting publishes them.** The **promote** workflow (`.github/workflows/promote.yml`) publishes the commit's images before it
+  moves `beta` or `stable`, so a channel never points at a commit with no images. Moving to `beta` builds them and tags them
+  `beta`. Moving to `stable` finds them already built and adds `stable` and the release tag (`v2026.11.23`). If the images fail,
+  the channel has not moved: run it again.
 - A pull request builds the images and publishes nothing, so a broken Dockerfile shows up before a change is promoted.
 - Only commits on `main` whose tests passed can be published.
 - **Published:** `core`, `api`, `logd`, `piper` and `chrony`. **Not published:** `winlink` (upstream LinBPQ has no license file,

@@ -5,7 +5,7 @@ name: images
 #
 #   pull request    builds every image and pushes nothing, so a broken Dockerfile shows up before it is promoted
 #   run by hand     publishes a commit: gh workflow run images.yml -f commit=<sha> -f tags=beta
-#   workflow_call   the promote workflow, once it publishes on a channel move
+#   workflow_call   the promote workflow, before it moves beta or stable
 #
 # Each image is built once per commit and tagged sha-<12 characters>. A moving tag (beta, stable) or a release tag is
 # added to that same image, never to a rebuild, so what reaches stable is what was tested on beta. A commit that is

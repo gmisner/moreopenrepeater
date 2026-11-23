@@ -50,6 +50,8 @@ def weekdays(days: list[int]) -> list[int]:
 MAX_ANNOUNCEMENT_LENGTH = 2000
 
 UpdateChannel = Literal["stable", "beta", "dev"]
+# What a container install can be on: the three above, and docker (a channel only containers follow).
+ContainerUpdateChannel = Literal["stable", "beta", "dev", "docker"]
 
 _URL_OR_EMPTY = r"^$|^https?://[^\s]+$"
 _ONE_LINE = r"^[^\r\n]*$"  # these go into email headers

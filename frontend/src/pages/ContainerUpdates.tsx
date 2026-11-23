@@ -25,7 +25,7 @@ type Check = {
   error?: string | null;
 };
 
-const CHANNEL_LABELS: Record<string, string> = { stable: "Stable", beta: "Beta", dev: "Dev" };
+const CHANNEL_LABELS: Record<string, string> = { stable: "Stable", beta: "Beta", dev: "Dev", docker: "Docker" };
 
 export const UPDATE_COMMANDS = "cd moreopenrepeater/docker\n./update.sh";
 export const SWITCH_COMMANDS = "git checkout stable && ./update.sh";
@@ -200,8 +200,8 @@ export function ContainerUpdates({ info }: { info: ContainerInfo }) {
             the core restarts. Reload this page afterward.
           </Text>
           <Text size="sm" maw="75ch">
-            To follow another channel, switch the checkout&apos;s branch first. Use <Code>beta</Code> or <Code>main</Code> (the dev
-            channel) in place of <Code>stable</Code>:
+            To follow another channel, switch the checkout&apos;s branch first. Use <Code>docker</Code> (the channel for the container
+            install), <Code>beta</Code> or <Code>main</Code> (the dev channel) in place of <Code>stable</Code>:
           </Text>
           <CopyBlock text={SWITCH_COMMANDS} label="Copy the channel switch command" />
         </Stack>

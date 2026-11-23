@@ -6,7 +6,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .types import UpdateChannel, _ONE_LINE, _URL_OR_EMPTY, hh_mm, weekdays
+from .types import ContainerUpdateChannel, UpdateChannel, _ONE_LINE, _URL_OR_EMPTY, hh_mm, weekdays
 
 class SavedBackupResponse(BaseModel):
     name: str
@@ -79,13 +79,13 @@ class AutoUpdateStatus(AutoUpdateSettings):
 
 class ContainerUpdateInfo(BaseModel):
     branch: Optional[str]  # the host checkout's branch (what an update follows); None: not recorded
-    channel: Optional[UpdateChannel]  # None when the branch isn't main, beta or stable
+    channel: Optional[ContainerUpdateChannel]  # None when the branch isn't main, beta, stable or docker
     repo: Optional[str]
 
 
 class UpdatesResponse(BaseModel):
     available: bool  # installed with install-pi.sh, so the updater units exist
-    channel: Optional[UpdateChannel]  # None only in a container install whose branch isn't a channel
+    channel: Optional[ContainerUpdateChannel]  # None only in a container install whose branch isn't a channel
     version: Optional[CommitSummary]
     status: Optional[UpdateRunStatus]
     auto: AutoUpdateStatus

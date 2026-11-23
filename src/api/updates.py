@@ -30,6 +30,8 @@ from pathlib import Path
 from typing import Callable, Optional
 
 CHANNEL_BRANCHES = {"stable": "stable", "beta": "beta", "dev": "main"}
+# A channel only the container install follows. Not in CHANNEL_BRANCHES, which is what a native install may ask the updater for.
+CONTAINER_CHANNEL_BRANCHES = {"docker": "docker"}
 DEFAULT_CHANNEL = "stable"
 CHECK_CACHE_SECONDS = 300
 MAX_LISTED_COMMITS = 30
@@ -116,7 +118,7 @@ class ContainerInstall:
     @property
     def channel(self) -> Optional[str]:
         """The release channel the branch is, or None for any other branch."""
-        for name, branch in CHANNEL_BRANCHES.items():
+        for name, branch in {**CHANNEL_BRANCHES, **CONTAINER_CHANNEL_BRANCHES}.items():
             if branch == self.branch:
                 return name
         return None

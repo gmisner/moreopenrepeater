@@ -18,7 +18,7 @@
 #      time) of whichever of those containers you have, so they are rebuilt with the rest. The repeater is off the air while
 #      the core restarts.
 #
-# To follow another channel, switch the checkout's branch first (main is dev, beta, stable) and run this:
+# To follow another channel, switch the checkout's branch first (main is dev, then beta, stable, docker) and run this:
 #   git checkout stable && ./update.sh
 #
 #   --record-only   only write step 3's lines into .env (setup.sh does this on a first install). Pulls and builds nothing.

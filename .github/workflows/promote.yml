@@ -5,6 +5,11 @@ name: promote
 # promoted, and only as a fast-forward, so a channel never jumps backwards.
 # Promoting to stable also publishes a GitHub release with notes from the
 # pull requests merged since the last one.
+#
+# The container images (images.yml, "Prebuilt images" in docs/docker.md) are published before the channel moves, in three
+# jobs: check the commit, publish its images, then move the channel. So a channel never points at a commit that has no
+# images, and if the images fail nothing has moved: run it again. Beta builds the images and tags them beta. Stable finds
+# them already built (what ran on beta) and only adds the stable and release tags.
 on:
   workflow_dispatch:
     inputs:
@@ -22,13 +27,19 @@ permissions:
   actions: read
 
 jobs:
-  promote:
+  check:
     runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.check.outputs.sha }}
+      before: ${{ steps.check.outputs.before }}
+      release: ${{ steps.check.outputs.release }}
+      tags: ${{ steps.check.outputs.tags }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Promote
+      - name: Check
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ inputs.channel }}
@@ -46,24 +57,62 @@ jobs:
             exit 1
           fi
           before="$(git rev-parse --verify -q "origin/$CHANNEL" || echo none)"
-          git push origin "$sha:refs/heads/$CHANNEL"
-          {
-            echo "### $CHANNEL is now $(git log -1 --format='%h %s' "$sha")"
-            if [ "$before" != none ]; then
-              echo
-              echo "New on $CHANNEL:"
-              git log --format='- %h %s' "$before..$sha"
-            fi
-          } >>"$GITHUB_STEP_SUMMARY"
-          # Each stable release also gets a GitHub release, tagged by date.
+          # Each stable release also gets a GitHub release, tagged by date. The images get the same tag.
+          release=""
           if [ "$CHANNEL" = stable ] && [ "$before" != "$sha" ]; then
             base="v$(date -u +%Y.%m.%d)"
-            tag="$base"
+            release="$base"
             n=2
-            while git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; do
-              tag="$base.$n"
+            while git ls-remote --exit-code --tags origin "refs/tags/$release" >/dev/null; do
+              release="$base.$n"
               n=$((n + 1))
             done
-            gh release create "$tag" --target "$sha" --title "$tag" --generate-notes --latest
-            echo "Released as [$tag]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$tag)." >>"$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo "sha=$sha"
+            echo "before=$before"
+            echo "release=$release"
+            echo "tags=$CHANNEL${release:+,$release}"
+          } >>"$GITHUB_OUTPUT"
+
+  images:
+    needs: check
+    uses: ./.github/workflows/images.yml
+    # The most this workflow's jobs may use: images.yml asks for packages: write where it pushes.
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    with:
+      commit: ${{ needs.check.outputs.sha }}
+      tags: ${{ needs.check.outputs.tags }}
+
+  move:
+    needs: [check, images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Move the channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel }}
+          SHA: ${{ needs.check.outputs.sha }}
+          BEFORE: ${{ needs.check.outputs.before }}
+          RELEASE: ${{ needs.check.outputs.release }}
+        run: |
+          # A fast-forward only: this fails, and moves nothing, if the channel has moved on since the check.
+          git push origin "$SHA:refs/heads/$CHANNEL"
+          {
+            echo "### $CHANNEL is now $(git log -1 --format='%h %s' "$SHA")"
+            if [ "$BEFORE" != none ]; then
+              echo
+              echo "New on $CHANNEL:"
+              git log --format='- %h %s' "$BEFORE..$SHA"
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"
+          if [ -n "$RELEASE" ]; then
+            gh release create "$RELEASE" --target "$SHA" --title "$RELEASE" --generate-notes --latest
+            echo "Released as [$RELEASE]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE)." >>"$GITHUB_STEP_SUMMARY"
           fi

@@ -20,7 +20,13 @@ RUN groupadd --system --gid 999 moreopenrepeater \
        --shell /usr/sbin/nologin moreopenrepeater \
     && mkdir -p /voices && chown 999:999 /voices \
     && pip install "piper-tts[http]==$PIPER_VERSION" \
-    && python -m piper.download_voices --data-dir /voices "$PIPER_VOICE" \
+    # The voice comes from Hugging Face, which now and then answers 502. Try a few times before failing the build, so one
+    # bad answer does not fail a release.
+    && for attempt in 1 2 3 4 5; do \
+         python -m piper.download_voices --data-dir /voices "$PIPER_VOICE" && break; \
+         [ "$attempt" = 5 ] && exit 1; \
+         echo "voice download failed (try $attempt of 5), waiting"; sleep $((attempt * 10)); \
+       done \
     && chown -R 999:999 /voices
 
 USER 999:999

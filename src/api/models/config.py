@@ -405,6 +405,12 @@ class ConfigUpdateRequest(BaseModel):
     gmrs_mode: Optional[bool] = None
     # --- facet: net ---
     net_name: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    net_club_name: Optional[str] = Field(default=None, max_length=80)
+    net_frequency: Optional[str] = Field(default=None, max_length=40)
+    net_control_callsign: Optional[str] = Field(default=None, max_length=15, pattern=r"^$|^[A-Za-z0-9/-]{1,15}$")
+    net_control_name: Optional[str] = Field(default=None, max_length=80)
+    net_logger_callsign: Optional[str] = Field(default=None, max_length=15, pattern=r"^$|^[A-Za-z0-9/-]{1,15}$")
+    net_logger_name: Optional[str] = Field(default=None, max_length=80)
     net_tot_duration: Optional[float] = Field(default=None, ge=30, le=3600)
     net_hang_time: Optional[float] = Field(default=None, gt=0, le=30)
     net_courtesy_tone_style: Optional[CourtesyToneVariant] = None

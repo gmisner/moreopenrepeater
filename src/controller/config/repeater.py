@@ -45,7 +45,13 @@ FACET_FIELD_NAMES: dict[str, tuple[str, ...]] = {
     'monitor': ('monitor_enabled', 'monitor_name', 'monitor_input_device', 'monitor_squelch', 'monitor_vox_threshold_db', 'monitor_gpio_pin', 'monitor_gpio_polarity', 'monitor_gain_db', 'monitor_record'),
     'autopatch': ('autopatch_enabled', 'autopatch_access_code', 'autopatch_hangup_code', 'autopatch_dial_string', 'autopatch_ten_digit_prefix', 'autopatch_caller_id', 'autopatch_allowed', 'autopatch_blocked', 'autopatch_max_call_seconds', 'autopatch_ring_seconds', 'autopatch_incoming_enabled', 'autopatch_incoming_pin'),
     'mailbox': ('mailbox_enabled', 'mailbox_leave_code', 'mailbox_play_code', 'mailbox_delete_code', 'mailbox_max_seconds', 'mailbox_retention_days', 'mailbox_reminder_minutes'),
-    'net': ('net_name', 'net_tot_duration', 'net_hang_time', 'net_courtesy_tone_style', 'net_courtesy_tone_asset_id', 'net_hold_autopatch', 'net_hold_announcements', 'net_links', 'net_link_node', 'net_start_say', 'net_end_say', 'net_max_minutes', 'net_schedules'),
+    'net': (
+        'net_name', 'net_club_name', 'net_frequency', 'net_control_callsign', 'net_control_name',
+        'net_logger_callsign', 'net_logger_name', 'net_tot_duration', 'net_hang_time',
+        'net_courtesy_tone_style', 'net_courtesy_tone_asset_id', 'net_hold_autopatch',
+        'net_hold_announcements', 'net_links', 'net_link_node', 'net_start_say', 'net_end_say',
+        'net_max_minutes', 'net_schedules',
+    ),
     'gpio_fan': ('gpio_pins', 'gpio_schedules', 'fan_output', 'fan_cm108_pin', 'fan_gpio_pin', 'fan_polarity', 'fan_run_on_minutes', 'fan_temp_c'),
     'homeassistant': ('homeassistant_url', 'homeassistant_say_result'),
     'linking': ('link_favorites', 'link_schedules', 'dmr_talkgroup_favorites', 'gmrs_mode'),
@@ -237,6 +243,12 @@ class RepeaterConfig:
     mailbox_reminder_minutes: float = 60.0
     # --- net ---
     net_name: str = 'Net'
+    net_club_name: str = ''
+    net_frequency: str = ''
+    net_control_callsign: str = ''
+    net_control_name: str = ''
+    net_logger_callsign: str = ''
+    net_logger_name: str = ''
     net_tot_duration: float = 600.0
     net_hang_time: float = 1.0
     net_courtesy_tone_style: CourtesyVariant = 'same'
@@ -340,7 +352,27 @@ class RepeaterConfig:
 
     @property
     def net(self) -> NetConfig:
-        return NetConfig(net_name=self.net_name, net_tot_duration=self.net_tot_duration, net_hang_time=self.net_hang_time, net_courtesy_tone_style=self.net_courtesy_tone_style, net_courtesy_tone_asset_id=self.net_courtesy_tone_asset_id, net_hold_autopatch=self.net_hold_autopatch, net_hold_announcements=self.net_hold_announcements, net_links=self.net_links, net_link_node=self.net_link_node, net_start_say=self.net_start_say, net_end_say=self.net_end_say, net_max_minutes=self.net_max_minutes, net_schedules=self.net_schedules)
+        return NetConfig(
+            net_name=self.net_name,
+            net_club_name=self.net_club_name,
+            net_frequency=self.net_frequency,
+            net_control_callsign=self.net_control_callsign,
+            net_control_name=self.net_control_name,
+            net_logger_callsign=self.net_logger_callsign,
+            net_logger_name=self.net_logger_name,
+            net_tot_duration=self.net_tot_duration,
+            net_hang_time=self.net_hang_time,
+            net_courtesy_tone_style=self.net_courtesy_tone_style,
+            net_courtesy_tone_asset_id=self.net_courtesy_tone_asset_id,
+            net_hold_autopatch=self.net_hold_autopatch,
+            net_hold_announcements=self.net_hold_announcements,
+            net_links=self.net_links,
+            net_link_node=self.net_link_node,
+            net_start_say=self.net_start_say,
+            net_end_say=self.net_end_say,
+            net_max_minutes=self.net_max_minutes,
+            net_schedules=self.net_schedules,
+        )
 
     @property
     def gpio_fan(self) -> GpioFanConfig:

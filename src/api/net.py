@@ -91,7 +91,18 @@ class NetMode:
 
     # -- starting and ending --------------------------------------------------
 
-    async def start(self, actor: str, name: str = "", ends_at: Optional[float] = None, scheduled_for: Optional[datetime] = None) -> dict:
+    async def start(
+        self,
+        actor: str,
+        name: str = "",
+        ends_at: Optional[float] = None,
+        scheduled_for: Optional[datetime] = None,
+        *,
+        control_callsign: str = "",
+        control_name: str = "",
+        logger_callsign: str = "",
+        logger_name: str = "",
+    ) -> dict:
         if self.current is not None:
             raise NetError("A net is already running.")
         config = self._service.saved_config
@@ -106,6 +117,12 @@ class NetMode:
             "scheduled_for": scheduled_for.isoformat() if scheduled_for else None,
             "linked_node": None,
             "link_error": None,
+            "club_name": (config.net_club_name or "").strip(),
+            "frequency": (config.net_frequency or "").strip(),
+            "control_callsign": (control_callsign.strip() or config.net_control_callsign or "").strip().upper(),
+            "control_name": (control_name.strip() or config.net_control_name or "").strip(),
+            "logger_callsign": (logger_callsign.strip() or config.net_logger_callsign or "").strip().upper(),
+            "logger_name": (logger_name.strip() or config.net_logger_name or "").strip(),
             "checkins": [],
         }
         self._save()
@@ -286,13 +303,36 @@ class NetMode:
         out = io.StringIO()
         writer = csv.writer(out)
         writer.writerow(
-            ["Net", "Callsign", "Time", "Name", "Location", "License class", "Staying for comments", "Notes"]
+            [
+                "Net",
+                "Club",
+                "Frequency",
+                "Net control",
+                "Logger",
+                "Callsign",
+                "Time",
+                "Name",
+                "Location",
+                "License class",
+                "Staying for comments",
+                "Notes",
+            ]
         )
+        control = " ".join(
+            part for part in (net.get("control_callsign", ""), net.get("control_name", "")) if part
+        ).strip()
+        logger = " ".join(
+            part for part in (net.get("logger_callsign", ""), net.get("logger_name", "")) if part
+        ).strip()
         for checkin in net["checkins"]:
             at = datetime.fromtimestamp(checkin["at"]).strftime("%Y-%m-%d %H:%M:%S")
             writer.writerow(
                 [
                     _cell(net["name"]),
+                    _cell(net.get("club_name", "")),
+                    _cell(net.get("frequency", "")),
+                    _cell(control),
+                    _cell(logger),
                     checkin["callsign"],
                     at,
                     _cell(checkin.get("name", "")),

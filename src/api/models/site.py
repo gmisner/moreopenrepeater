@@ -45,6 +45,12 @@ class NetSummary(BaseModel):
     link_error: Optional[str]
     ended_at: Optional[float] = None
     ended_by: Optional[str] = None
+    club_name: str = ""
+    frequency: str = ""
+    control_callsign: str = ""
+    control_name: str = ""
+    logger_callsign: str = ""
+    logger_name: str = ""
 
 
 class RunningNet(NetSummary):
@@ -63,6 +69,10 @@ class NetStatusResponse(BaseModel):
 
 class NetStartRequest(BaseModel):
     name: str = Field(default="", max_length=60)
+    control_callsign: str = Field(default="", max_length=15, pattern=r"^$|^[A-Za-z0-9/-]{1,15}$")
+    control_name: str = Field(default="", max_length=80)
+    logger_callsign: str = Field(default="", max_length=15, pattern=r"^$|^[A-Za-z0-9/-]{1,15}$")
+    logger_name: str = Field(default="", max_length=80)
 
 
 class NetCheckInRequest(BaseModel):

@@ -57,6 +57,10 @@ jobs:
 
   pytest:
     runs-on: ubuntu-latest
+    # A run takes about 8 minutes. The 3.11 job has sometimes hung until GitHub's six hour limit, and the log of a cancelled job
+    # says nothing about where. So a hung job ends after 25 minutes, and a test stuck for 4 minutes prints what every thread
+    # is doing (faulthandler_timeout, below), which is what finding the cause takes.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -74,7 +78,7 @@ jobs:
       - name: Install package
         run: pip install -e ".[dev]"
       - name: Run tests
-        run: pytest -q
+        run: pytest -q -o faulthandler_timeout=240
 
   installer:
     # Runs scripts/install-pi.sh for real (the runner has systemd), then

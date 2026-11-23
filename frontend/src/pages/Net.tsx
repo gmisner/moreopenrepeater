@@ -6,6 +6,7 @@ import {
   Checkbox,
   Group,
   NumberInput,
+  PasswordInput,
   Select,
   SimpleGrid,
   Stack,
@@ -67,6 +68,21 @@ type NetSchedule = {
   minutes: number;
   days: number[];
   enabled: boolean;
+};
+
+type QrzSettings = {
+  username: string;
+  password_set: boolean;
+  configured: boolean;
+};
+
+type CallsignLookup = {
+  callsign: string;
+  found: boolean;
+  configured: boolean;
+  name: string;
+  location: string;
+  license_class: string;
 };
 
 type NetValues = {
@@ -213,6 +229,12 @@ export function Net() {
   const [schedulesSaving, setSchedulesSaving] = useState(false);
   const [editingSettings, setEditingSettings] = useState(false);
   const [editingSchedules, setEditingSchedules] = useState(false);
+  const [qrz, setQrz] = useState<QrzSettings | null>(null);
+  const [editingQrz, setEditingQrz] = useState(false);
+  const [qrzUsername, setQrzUsername] = useState("");
+  const [qrzPassword, setQrzPassword] = useState("");
+  const [qrzSaving, setQrzSaving] = useState(false);
+  const [lookingUp, setLookingUp] = useState(false);
   const wasActive = useRef<boolean | null>(null);
   const callsignRef = useRef<HTMLInputElement>(null);
 
@@ -220,9 +242,16 @@ export function Net() {
     setNet(await api<NetStatus>("/api/net"));
   }, []);
 
+  const refreshQrz = useCallback(async () => {
+    const status = await api<QrzSettings>("/api/net/qrz");
+    setQrz(status);
+    setQrzUsername(status.username);
+  }, []);
+
   useEffect(() => {
     refresh().catch(notifyError);
-  }, [refresh]);
+    refreshQrz().catch(notifyError);
+  }, [refresh, refreshQrz]);
 
   useEffect(() => {
     const schedulesFromConfig = (config?.net_schedules as NetSchedule[] | undefined) ?? [];
@@ -275,6 +304,42 @@ export function Net() {
       }
     } finally {
       setBusy(false);
+    }
+  };
+
+  const lookupCallsign = async () => {
+    const callsign = checkinCallsign.trim();
+    if (!callsign || !qrz?.configured) return;
+    setLookingUp(true);
+    try {
+      const result = await api<CallsignLookup>(`/api/net/lookup/${encodeURIComponent(callsign)}`);
+      if (!result.found) return;
+      if (!checkinName.trim() && result.name) setCheckinName(result.name);
+      if (!checkinLocation.trim() && result.location) setCheckinLocation(result.location);
+      if (!checkinLicenseClass.trim() && result.license_class) setCheckinLicenseClass(result.license_class);
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setLookingUp(false);
+    }
+  };
+
+  const saveQrz = async (event: FormEvent) => {
+    event.preventDefault();
+    setQrzSaving(true);
+    try {
+      const body: { username: string; password?: string } = { username: qrzUsername.trim() };
+      if (qrzPassword) body.password = qrzPassword;
+      const status = await api<QrzSettings>("/api/net/qrz", { method: "PUT", json: body });
+      setQrz(status);
+      setQrzUsername(status.username);
+      setQrzPassword("");
+      setEditingQrz(false);
+      notifySuccess(status.configured ? "QRZ lookup saved" : "QRZ username saved");
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setQrzSaving(false);
     }
   };
 
@@ -444,9 +509,15 @@ export function Net() {
                   placeholder="e.g. W1AW"
                   value={checkinCallsign}
                   onChange={(event) => setCheckinCallsign(event.currentTarget.value)}
+                  onBlur={() => void lookupCallsign()}
                 />
+                {qrz?.configured ? (
+                  <Button type="button" variant="subtle" loading={lookingUp} onClick={() => void lookupCallsign()}>
+                    Look up
+                  </Button>
+                ) : null}
                 <TextInput
-                  label={labeled("Name", "Optional")}
+                  label={labeled("Name", "Optional · filled from QRZ when configured")}
                   style={{ flex: 1, minWidth: 140 }}
                   maxLength={80}
                   value={checkinName}
@@ -661,6 +732,61 @@ export function Net() {
           <EmptyState>No nets yet.</EmptyState>
         ) : null}
       </Card>
+
+      <ConfigSummaryCard
+        title="Callsign lookup"
+        dirty={false}
+        hint="Optional QRZ.com XML credentials. Kept on this controller, out of backups."
+        onEdit={() => {
+          setQrzUsername(qrz?.username ?? "");
+          setQrzPassword("");
+          setEditingQrz(true);
+        }}
+        rows={[
+          { label: "Username", value: qrz?.username || "—" },
+          {
+            label: "Password",
+            value: qrz?.password_set ? "Saved" : "Not set",
+          },
+          { label: "Lookup", value: qrz?.configured ? "Ready" : "Off" },
+        ]}
+      />
+
+      <ConfigEditDrawer
+        opened={editingQrz}
+        onClose={() => setEditingQrz(false)}
+        title="Callsign lookup"
+        subtitle="QRZ XML Data subscription credentials. Leave the password blank to keep the saved one."
+      >
+        <form onSubmit={(event) => void saveQrz(event)}>
+          <Stack gap="md">
+            <TextInput
+              label={labeled("QRZ username", "Usually your callsign on QRZ.com")}
+              maxLength={40}
+              autoComplete="username"
+              value={qrzUsername}
+              onChange={(event) => setQrzUsername(event.currentTarget.value)}
+            />
+            <PasswordInput
+              label={labeled(
+                "QRZ password",
+                qrz?.password_set ? "Leave blank to keep the saved password" : "Required for lookup",
+              )}
+              autoComplete="new-password"
+              value={qrzPassword}
+              onChange={(event) => setQrzPassword(event.currentTarget.value)}
+            />
+            <Group justify="flex-end">
+              <Button variant="subtle" onClick={() => setEditingQrz(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={qrzSaving}>
+                Save
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </ConfigEditDrawer>
 
       <ConfigSummaryCard
         title="Net settings"

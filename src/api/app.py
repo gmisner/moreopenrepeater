@@ -70,6 +70,7 @@ from .runtime import (
     DEFAULT_MAILBOX_DIR,
     DEFAULT_MONITOR_RECORDINGS_DIR,
     DEFAULT_NETS_PATH,
+    DEFAULT_QRZ_PATH,
     DEFAULT_NODE_LIST_PATH,
     DEFAULT_RECORDINGS_DIR,
     DEFAULT_RUN_MARKER_PATH,
@@ -325,6 +326,7 @@ def create_app(
     nets_routes.register(
         app,
         nets=runtime.nets,
+        qrz=runtime.qrz,
         actor_of=actor_of,
         auth_dependencies=runtime.auth_dependencies,
         transmit_dependencies=runtime.transmit_dependencies,
@@ -556,6 +558,7 @@ app = create_app(
         sensor_history=SensorHistoryStore(DEFAULT_SENSORS_PATH),
         hub_sites=HubSiteStore(hub_sites_state_store(DEFAULT_HUB_SITES_PATH)),
         net_store=StateStore(DEFAULT_NETS_PATH),
+        qrz_store=StateStore(DEFAULT_QRZ_PATH),
     ),
     admin=AdminOpsBundle(
         backups=BackupFolder(DEFAULT_BACKUP_DIR),

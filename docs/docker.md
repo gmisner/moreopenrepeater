@@ -276,6 +276,24 @@ time the script ran, so if you update with plain `git pull` and `docker compose 
 the older commit until you run `./update.sh` once. An image built with nothing recorded shows the version as unknown
 and says to run `./update.sh`.
 
+## Prebuilt images
+
+Building the images on the repeater's own computer is slow on a Pi, so the project can publish them ready-made
+([#367](https://github.com/gmisner/moreopenrepeater/issues/367)). The **images** workflow
+(`.github/workflows/images.yml`) builds each one for amd64 and arm64 on GitHub's servers and puts it in GitHub's container
+registry as `ghcr.io/gmisner/moreopenrepeater-<service>`.
+
+- Each commit's images are tagged `sha-` and the first 12 characters of the commit. A moving tag (`beta`, `stable`) or a release tag is added to
+  those same images, never to a rebuild, so what reaches `stable` is what ran on `beta`.
+- A pull request builds the images and publishes nothing, so a broken Dockerfile shows up before a change is promoted.
+- Only commits on `main` whose tests passed can be published.
+- **Published:** `core`, `api`, `logd`, `piper` and `chrony`. **Not published:** `winlink` (upstream LinBPQ has no license file,
+  [#344](https://github.com/gmisner/moreopenrepeater/issues/344)), and `dmr`, `allstar` and `direwolf` until their packages'
+  licenses have been checked. Those keep building on the machine that runs them.
+
+Nothing pulls these images yet: `docker compose` still builds, and `setup.sh` and `update.sh` are unchanged. Using them comes next
+(#367).
+
 ## What the container is allowed to do
 
 - Runs as uid 999 (the uid of `install-pi.sh`'s `moreopenrepeater` user on a Pi), with a

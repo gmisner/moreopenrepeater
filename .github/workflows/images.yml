@@ -1,0 +1,243 @@
+name: images
+
+# Builds the container images for amd64 and arm64 and publishes them to GitHub's container registry (GHCR) as
+# ghcr.io/<owner>/moreopenrepeater-<service>. See "Prebuilt images" in docs/docker.md.
+#
+#   pull request    builds every image and pushes nothing, so a broken Dockerfile shows up before it is promoted
+#   run by hand     publishes a commit: gh workflow run images.yml -f commit=<sha> -f tags=beta
+#   workflow_call   the promote workflow, once it publishes on a channel move
+#
+# Each image is built once per commit and tagged sha-<12 characters>. A moving tag (beta, stable) or a release tag is
+# added to that same image, never to a rebuild, so what reaches stable is what was tested on beta. A commit that is
+# already published is not built again.
+#
+# Only these are published. winlink is not: upstream LinBPQ has no license file (#344). dmr (md380-emu, DVSwitch
+# binaries), allstar and direwolf (third-party packages and source) have not had that review. They keep building on
+# the machine that runs them. Add one here only after its license is checked.
+on:
+  pull_request:
+    paths:
+      - docker/**
+      - src/**
+      - web/dist/**
+      - pyproject.toml
+      - .github/workflows/images.yml
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Commit to publish (default the newest on main)
+        required: false
+      tags:
+        description: Extra tags for it, comma separated (for example beta, or stable,v2026.11.22)
+        required: false
+  workflow_call:
+    inputs:
+      commit:
+        type: string
+        required: false
+      tags:
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      tag: ${{ steps.plan.outputs.tag }}
+      extra: ${{ steps.plan.outputs.extra }}
+      push: ${{ steps.plan.outputs.push }}
+      registry: ${{ steps.plan.outputs.registry }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Plan
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          COMMIT: ${{ inputs.commit }}
+          TAGS: ${{ inputs.tags }}
+        run: |
+          set -eu
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          registry="ghcr.io/$owner"
+          if [ "$EVENT" = pull_request ]; then
+            sha="$PR_SHA"
+            push=false
+            extra=""
+          else
+            sha="$(git rev-parse --verify "${COMMIT:-origin/main}^{commit}")"
+            push=true
+            # Only code that is on main (so reviewed and merged) goes into the registry, never a branch someone pushed.
+            if ! git merge-base --is-ancestor "$sha" origin/main; then
+              echo "::error::$sha isn't on main, so it won't be published."
+              exit 1
+            fi
+            passed="$(gh run list --workflow tests.yml --commit "$sha" --status success --limit 1 --json databaseId --jq length)"
+            if [ "$passed" != 1 ]; then
+              echo "::error::The tests haven't passed on $sha."
+              exit 1
+            fi
+            extra="$(printf '%s' "$TAGS" | tr -d ' ' | tr ',' ' ')"
+            for t in $extra; do
+              case "$t" in
+                sha-* | latest) echo "::error::'$t' is not a tag to add: sha- tags are made here, and latest would mean nothing."; exit 1 ;;
+              esac
+              printf '%s' "$t" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' || { echo "::error::'$t' is not a valid tag."; exit 1; }
+            done
+          fi
+          {
+            echo "sha=$sha"
+            echo "tag=sha-${sha:0:12}"
+            echo "extra=$extra"
+            echo "push=$push"
+            echo "registry=$registry"
+          } >>"$GITHUB_OUTPUT"
+          echo "### Images for ${sha:0:12} ($([ "$push" = true ] && echo publishing || echo 'build only'))" >>"$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: plan
+    name: build ${{ matrix.image }} ${{ matrix.arch.name }}
+    runs-on: ${{ matrix.arch.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [core, api, logd, piper, chrony]
+        arch:
+          - { name: amd64, platform: linux/amd64, runner: ubuntu-24.04 }
+          - { name: arm64, platform: linux/arm64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Log in to GHCR
+        if: needs.plan.outputs.push == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Is it published already?
+        id: have
+        env:
+          IMAGE: ${{ needs.plan.outputs.registry }}/moreopenrepeater-${{ matrix.image }}:${{ needs.plan.outputs.tag }}
+          PUSH: ${{ needs.plan.outputs.push }}
+        run: |
+          if [ "$PUSH" = true ] && docker buildx imagetools inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "$IMAGE is already published; not building it again."
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >>"$GITHUB_OUTPUT"
+          fi
+      - name: Build arguments
+        id: args
+        if: steps.have.outputs.skip != 'true'
+        env:
+          IMAGE: ${{ matrix.image }}
+          SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          # The same arguments compose.yaml gives a local build. The API image is told its commit, so the dashboard's
+          # Updates page can say what is running. Its channel is not baked in: one image is promoted from beta to stable,
+          # so the install says which channel it follows (MOR_BRANCH in .env, read at run time).
+          {
+            echo 'list<<EOF'
+            case "$IMAGE" in
+              core) echo 'WITH_PIPER=0' ;;
+              api)
+                echo "MOR_COMMIT=$SHA"
+                echo "MOR_COMMIT_DATE=$(git log -1 --format=%cI "$SHA")"
+                echo "MOR_REPO=$GITHUB_REPOSITORY"
+                ;;
+            esac
+            echo 'EOF'
+          } >>"$GITHUB_OUTPUT"
+      - name: Build
+        id: build
+        if: steps.have.outputs.skip != 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.${{ matrix.image }}
+          platforms: ${{ matrix.arch.platform }}
+          build-args: ${{ steps.args.outputs.list }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.plan.outputs.sha }}
+            org.opencontainers.image.title=moreopenrepeater-${{ matrix.image }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch.name }}
+          outputs: ${{ needs.plan.outputs.push == 'true' && format('type=image,name={0}/moreopenrepeater-{1},push-by-digest=true,name-canonical=true,push=true', needs.plan.outputs.registry, matrix.image) || 'type=cacheonly' }}
+      - name: Keep the digest for the merge
+        if: steps.have.outputs.skip != 'true' && needs.plan.outputs.push == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - name: Upload the digest
+        if: steps.have.outputs.skip != 'true' && needs.plan.outputs.push == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.image }}-${{ matrix.arch.name }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    # One manifest per image that names both architectures, tagged sha-<12>, then the extra tags added to that manifest.
+    needs: [plan, build]
+    if: needs.plan.outputs.push == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [core, api, logd, piper, chrony]
+    steps:
+      - uses: actions/download-artifact@v8
+        # An image that was already published has no digests to download.
+        continue-on-error: true
+        with:
+          pattern: digests-${{ matrix.image }}-*
+          path: /tmp/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish
+        env:
+          REPO: ${{ needs.plan.outputs.registry }}/moreopenrepeater-${{ matrix.image }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          EXTRA: ${{ needs.plan.outputs.extra }}
+        run: |
+          set -eu
+          if [ -d /tmp/digests ] && [ -n "$(find /tmp/digests -type f)" ]; then
+            [ "$(find /tmp/digests -type f | wc -l)" = 2 ] || { echo "::error::Expected one digest per architecture for ${REPO}."; find /tmp/digests -type f; exit 1; }
+            # shellcheck disable=SC2046
+            docker buildx imagetools create -t "$REPO:$TAG" $(for d in /tmp/digests/*; do printf '%s@sha256:%s ' "$REPO" "$(basename "$d")"; done)
+          fi
+          docker buildx imagetools inspect "$REPO:$TAG"
+          for t in $EXTRA; do
+            docker buildx imagetools create -t "$REPO:$t" "$REPO:$TAG"
+          done
+          {
+            echo "- $REPO:$TAG${EXTRA:+, also $EXTRA}"
+          } >>"$GITHUB_STEP_SUMMARY"

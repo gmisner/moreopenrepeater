@@ -61,9 +61,21 @@ class PastNet(NetSummary):
     checkin_count: int
 
 
+class PlannedNet(BaseModel):
+    id: str
+    name: str
+    starts_at: str
+    minutes: int = 60
+    control_callsign: str = ""
+    control_name: str = ""
+    logger_callsign: str = ""
+    logger_name: str = ""
+
+
 class NetStatusResponse(BaseModel):
     current: Optional[RunningNet]
     past: list[PastNet]
+    planned: list[PlannedNet] = []
     next_scheduled: Optional[datetime]
 
 
@@ -73,6 +85,56 @@ class NetStartRequest(BaseModel):
     control_name: str = Field(default="", max_length=80)
     logger_callsign: str = Field(default="", max_length=15, pattern=r"^$|^[A-Za-z0-9/-]{1,15}$")
     logger_name: str = Field(default="", max_length=80)
+
+
+class NetPlanRequest(BaseModel):
+    name: str = Field(default="", max_length=60)
+    starts_at: datetime
+    minutes: int = Field(default=60, ge=0, le=12 * 60)
+    control_callsign: str = Field(default="", max_length=15, pattern=r"^$|^[A-Za-z0-9/-]{1,15}$")
+    control_name: str = Field(default="", max_length=80)
+    logger_callsign: str = Field(default="", max_length=15, pattern=r"^$|^[A-Za-z0-9/-]{1,15}$")
+    logger_name: str = Field(default="", max_length=80)
+
+
+class NetCalendarEvent(BaseModel):
+    kind: Literal["past", "current", "planned", "schedule"]
+    id: str
+    name: str
+    starts_at: str
+    checkin_count: Optional[int] = None
+    minutes: Optional[int] = None
+    every: Optional[str] = None
+
+
+class NetCalendarResponse(BaseModel):
+    events: list[NetCalendarEvent]
+
+
+class NetAttendanceRow(BaseModel):
+    callsign: str
+    count: int
+
+
+class NetAttendanceResponse(BaseModel):
+    name: str
+    rows: list[NetAttendanceRow]
+
+
+class NetSummaryByName(BaseModel):
+    name: str
+    nets: int
+    checkins: int
+
+
+class NetReportSummary(BaseModel):
+    from_: float = Field(alias="from")
+    to: float
+    net_count: int
+    checkin_count: int
+    by_name: list[NetSummaryByName]
+
+    model_config = {"populate_by_name": True}
 
 
 class NetCheckInRequest(BaseModel):

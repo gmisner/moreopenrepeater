@@ -145,10 +145,18 @@ class LinkSchedule(BaseModel):
 
 
 class NetSchedule(BaseModel):
-    days: list[int] = Field(min_length=1)
+    days: list[int] = Field(default_factory=list)  # weekdays; unused when every=monthly
     time: str
     minutes: int = Field(default=60, ge=0, le=12 * 60)  # 0 = until ended (or net_max_minutes)
     enabled: bool = True
+    name: str = Field(default="", max_length=60)
+    every: Literal["weekly", "biweekly", "monthly"] = "weekly"
+    biweek_parity: int = Field(default=0, ge=0, le=1)  # ISO week % 2 when every=biweekly
+    month_day: int = Field(default=1, ge=1, le=28)  # when every=monthly
+    control_callsign: str = Field(default="", max_length=15, pattern=r"^$|^[A-Za-z0-9/-]{1,15}$")
+    control_name: str = Field(default="", max_length=80)
+    logger_callsign: str = Field(default="", max_length=15, pattern=r"^$|^[A-Za-z0-9/-]{1,15}$")
+    logger_name: str = Field(default="", max_length=80)
 
     @field_validator("time")
     @classmethod
@@ -158,7 +166,15 @@ class NetSchedule(BaseModel):
     @field_validator("days")
     @classmethod
     def _valid_days(cls, days: list[int]) -> list[int]:
-        return weekdays(days)
+        return weekdays(days) if days else []
+
+    @model_validator(mode="after")
+    def _days_or_month(self) -> "NetSchedule":
+        if self.every == "monthly":
+            return self
+        if not self.days:
+            raise ValueError("pick at least one weekday for weekly or biweekly nets")
+        return self
 
 
 class GpioSchedule(BaseModel):

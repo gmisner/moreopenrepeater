@@ -29,7 +29,7 @@ def test_every_published_image_has_a_dockerfile_and_a_compose_service_that_names
         assert (ROOT / "docker" / f"Dockerfile.{name}").is_file(), name
         service = COMPOSE["services"][name]
         assert service["build"]["dockerfile"] == f"docker/Dockerfile.{name}", name
-        assert service["image"].split(":")[0].endswith(f"moreopenrepeater-{name}"), name
+        assert service["image"] == f"${{MOR_REGISTRY:-}}moreopenrepeater-{name}:${{MOR_TAG:-local}}", name
 
 
 def test_it_builds_both_architectures_on_native_runners():

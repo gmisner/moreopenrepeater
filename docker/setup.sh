@@ -36,6 +36,8 @@
 #   --no-host-network turn that off again
 #   --usb-speed       Raspberry Pi 3 Model B+ only: hold USB to full speed (dwc_otg.speed=1 in cmdline.txt, backed up first),
 #                     which stops the AIOC's audio glitches under load. Needs sudo and a reboot, which it does not do.
+#   --registry        use the project's prebuilt images (docs/docker.md, Prebuilt images) instead of building them here. Much faster on
+#                     a Pi. Needs a GitHub clone of the project whose commit has published images.
 #   --no-start        write the settings, start nothing
 #
 # Later updates are ./update.sh (pull, rebuild, restart).
@@ -43,8 +45,11 @@ set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
+# shellcheck source=docker/images.sh
+. "$HERE/images.sh"
 
 CALLSIGN=""
+REGISTRY=0
 LOCALHOST=0
 ALLSTAR=0
 IMPORT_ALLSTAR=""
@@ -80,6 +85,7 @@ while [ $# -gt 0 ]; do
     --host-network) HOST_NETWORK=on ;;
     --no-host-network) HOST_NETWORK=off ;;
     --list-interfaces) LIST_INTERFACES=1 ;;
+    --registry) REGISTRY=1 ;;
     --no-start) START=0 ;;
     -h|--help) sed -n '2,41p' "$HERE/setup.sh" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "setup: unknown option $1 (see --help)" >&2; exit 2 ;;
@@ -633,6 +639,10 @@ sh ./split-winlink-env.sh
 
 # The API image has no git, so the commit goes in as a build argument from .env (docker/update.sh does the same on every
 # update). The dashboard's Updates page shows it. Not a git checkout (a downloaded copy): it says "unknown" there.
+if [ "$REGISTRY" = 1 ]; then
+  sh ./update.sh --registry >/dev/null || { echo "setup: couldn't switch to prebuilt images (is this a git clone of the project on GitHub?)" >&2; exit 2; }
+  say "  using the project's prebuilt images ($(value .env MOR_REGISTRY), tag $(value .env MOR_TAG))"
+fi
 sh ./update.sh --record-only 2>/dev/null || say "  (couldn't note which version this is; the Updates page will say unknown until ./update.sh runs in a git checkout)"
 
 # --- start -------------------------------------------------------------------------------------------------------
@@ -642,9 +652,18 @@ if [ "$START" = 1 ]; then
   [ "$ALLSTAR" = 0 ] || PROFILE="--profile allstar"
   [ "$DMR" = 0 ] || PROFILE="$PROFILE --profile dmr"
   [ "$TIME" = 0 ] || PROFILE="$PROFILE --profile time"
-  say "  starting the containers (the first build takes a few minutes)"
-  # shellcheck disable=SC2086
-  docker compose $PROFILE up -d --build
+  if registry_mode; then
+    say "  pulling the prebuilt images and starting the containers"
+  else
+    say "  starting the containers (the first build takes a few minutes)"
+  fi
+  rc=0
+  start_stack "$PROFILE" || rc=$?
+  if [ "$rc" = 3 ]; then
+    echo "setup: couldn't pull the prebuilt images for this commit. They may not be published yet, or this machine can't reach ghcr.io. Run ./setup.sh again without --registry to build them here, or after ./update.sh --no-registry if you already ran it with the flag." >&2
+    exit 2
+  fi
+  [ "$rc" = 0 ] || exit "$rc"
   waited=0
   while :; do
     # shellcheck disable=SC2086

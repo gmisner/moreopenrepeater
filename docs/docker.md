@@ -238,6 +238,9 @@ the air for a minute or two while the core restarts). It stops with a plain mess
 It also rebuilds the optional containers you have (AllStar, DMR, Winlink, the time container), which a plain `docker compose up` would leave
 on their old image.
 
+With [prebuilt images](#prebuilt-images) on, it pulls the images instead of building them (same stop-before-touching-anything rule if they
+are not there), and `./update.sh --rollback` goes back to the previous ones.
+
 **Channels.** The container install follows the branch its checkout is on: `main` is the dev channel, `beta` is beta,
 `stable` is stable (the same three as the native install, see `docs/raspberry-pi.md`). To change channel, switch the
 branch and update: `git checkout stable && ./update.sh`.
@@ -291,8 +294,27 @@ registry as `ghcr.io/gmisner/moreopenrepeater-<service>`.
   [#344](https://github.com/gmisner/moreopenrepeater/issues/344)), and `dmr`, `allstar` and `direwolf` until their packages'
   licenses have been checked. Those keep building on the machine that runs them.
 
-Nothing pulls these images yet: `docker compose` still builds, and `setup.sh` and `update.sh` are unchanged. Using them comes next
-(#367).
+### Using them
+
+On a new install: `./setup.sh --registry` (with your other flags). On an install that exists: `./update.sh --registry`, then
+`./update.sh`. This needs a git clone of the project from GitHub, because the compose files and scripts still come from it.
+
+- It writes `MOR_REGISTRY` (`ghcr.io/<owner>/`) and `MOR_TAG` to `.env`. The tag is `sha-` and the first 12 characters of the
+  checkout's commit, so the images always match the compose files next to them. `MOR_PREVIOUS_TAG` is the tag the last update
+  replaced.
+- `./update.sh` then pulls the code as before, pulls the images for that commit, builds only the containers that are not
+  published (AllStar, DMR, Winlink, Dire Wolf), and starts everything. It never runs `up --build`, which would build the
+  published ones here as well.
+- **A commit with no images:** the project publishes the commits it promotes to beta and stable, not every commit on `main`. If
+  the images for your commit are not there (or this machine cannot reach `ghcr.io`), the update stops before it touches a
+  container, puts the tag back, and says so. The code has been pulled. Wait for the next promotion, or build here
+  with `./update.sh --no-registry && ./update.sh`.
+- **Going back:** `./update.sh --rollback` restarts the containers on the images they ran before the last update. The checkout
+  stays where it is, so the next `./update.sh` goes forward again, and running `--rollback` twice swaps back. It is for a release
+  that starts badly. If the compose files changed in the same release, a rollback may not suit the older images.
+- **The channel:** the dashboard's Updates page shows the commit baked into the image and the channel from `.env`
+  (the branch the checkout follows). One image goes from beta to stable, so the channel is not part of it.
+- `./update.sh --no-registry` goes back to building here.
 
 ## What the container is allowed to do
 

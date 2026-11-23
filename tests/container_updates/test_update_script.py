@@ -177,6 +177,7 @@ def test_a_folder_that_is_not_a_git_checkout_is_said_plainly(tmp_path, checkout)
     bare = tmp_path / "unpacked"
     bare.mkdir()
     (bare / "update.sh").write_text((DOCKER / "update.sh").read_text())
+    (bare / "images.sh").write_text((DOCKER / "images.sh").read_text())
     result = subprocess.run(
         ["sh", str(bare / "update.sh")], cwd=bare, env={**checkout.env, "PATH": f"{checkout.bin}:/usr/bin:/bin"}, capture_output=True, text=True, stdin=subprocess.DEVNULL
     )

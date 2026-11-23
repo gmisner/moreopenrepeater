@@ -67,6 +67,9 @@ class Checkout:
         hits = [i for i, line in enumerate(self.log()) if line.startswith(prefix)]
         return hits[0] if hits else None
 
+    def compose_calls(self):
+        return [line for line in self.log() if line.startswith("docker compose")]
+
     def builds(self):
         return [line for line in self.log() if line.startswith("docker compose") and "up -d --build" in line]
 
@@ -129,6 +132,13 @@ case "$*" in
 esac
 case "$1" in
   ps) cat {c.ps_services} 2>/dev/null || true ;;
+esac
+case "$*" in
+  *"config --services"*)
+    printf 'core\\napi\\nlogd\\npiper\\n'
+    case "$*" in *"--profile allstar"*) echo allstar ;; esac
+    case "$*" in *"--profile time"*) echo chrony ;; esac ;;
+  *" pull"*) [ ! -e {c.root}/pull-fails ] || {{ echo "manifest unknown" >&2; exit 1; }} ;;
 esac
 case "$*" in
   *"ps --format"*) printf 'moreopenrepeater-core-1 Up 5 seconds (healthy)\\nmoreopenrepeater-api-1 Up 5 seconds (healthy)\\n' ;;

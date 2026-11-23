@@ -54,3 +54,13 @@ def test_the_check_keeps_the_rules_a_channel_always_had():
     # A fast-forward only: a plain push, never forced.
     move = scripts("move")
     assert "--force" not in move and "git push -f" not in move
+
+
+def test_docker_is_a_channel_that_moves_on_its_own_from_main():
+    options = PROMOTE[True]["workflow_dispatch"]["inputs"]["channel"]["options"]  # PyYAML reads the key `on` as True
+    assert options == ["beta", "stable", "docker"]
+    check = scripts("check")
+    # Only stable comes from beta. Beta and docker both come from main, so docker never needs beta to have moved.
+    assert 'if [ "$CHANNEL" = stable ]; then source=beta; else source=main; fi' in check
+    # Only stable makes a GitHub release.
+    assert 'if [ "$CHANNEL" = stable ] && [ "$before" != "$sha" ]' in check

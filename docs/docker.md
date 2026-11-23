@@ -242,8 +242,14 @@ With [prebuilt images](#prebuilt-images) on, it pulls the images instead of buil
 are not there), and `./update.sh --rollback` goes back to the previous ones.
 
 **Channels.** The container install follows the branch its checkout is on: `main` is the dev channel, `beta` is beta,
-`stable` is stable (the same three as the native install, see `docs/raspberry-pi.md`). To change channel, switch the
-branch and update: `git checkout stable && ./update.sh`.
+`stable` is stable (the same three as the native install, see `docs/raspberry-pi.md`), and `docker` is a fourth that only the
+container install follows. To change channel, switch the branch and update: `git checkout docker && ./update.sh`.
+
+`docker` is the one to follow with [prebuilt images](#prebuilt-images) for now. The native install follows `beta` and `stable`,
+which stay where they are until the container work is ready for them, so a container install can move ahead without moving
+anyone's native repeater. `docker` is not a second line of code: it only ever moves forward, to a commit that is already on
+`main` and whose tests passed, and its images are published before it moves. When the native install is ready for the same
+code, `beta` and `stable` are promoted to that commit.
 
 **Updating the pinned Python packages.** The core, the log collector and the dashboard images install exact versions of
 every Python package, with a hash for each file, from `docker/core-requirements.txt`, `core-piper-requirements.txt` (Piper

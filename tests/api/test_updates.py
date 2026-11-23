@@ -490,6 +490,21 @@ def test_container_updates_route_reports_the_baked_version_and_no_way_to_update_
     assert body["status"] is None
 
 
+def test_container_install_can_be_on_the_docker_channel(tmp_path):
+    client = make_container_client(tmp_path, container_install_from_env({**BAKED, "MOREOPENREPEATER_BRANCH": "docker"}))
+    body = client.get("/api/updates", headers=basic("admin", "hunter2")).json()
+    assert body["channel"] == "docker"
+    assert body["container"] == {"branch": "docker", "channel": "docker", "repo": "gmisner/moreopenrepeater"}
+
+
+def test_a_native_install_cannot_ask_the_updater_for_the_docker_channel(tmp_path):
+    # docker is a channel only the container install follows: the native updater knows stable, beta and dev.
+    updater, _settings, _now = make_updater(tmp_path)
+    with pytest.raises(ValueError):
+        updater.request("docker")
+    assert channel_from_env({"MOREOPENREPEATER_UPDATE_CHANNEL": "docker"}) == "stable"
+
+
 def test_container_updates_route_with_an_unknown_version(tmp_path):
     client = make_container_client(tmp_path, ContainerInstall(None, None, None, None))
     body = client.get("/api/updates", headers=basic("admin", "hunter2")).json()

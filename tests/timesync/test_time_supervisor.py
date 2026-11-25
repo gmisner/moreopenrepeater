@@ -409,7 +409,7 @@ def test_the_status_file_is_readable_by_the_dashboard_and_written_whole_each_tim
     assert stat.S_IMODE(path.stat().st_mode) == 0o644  # the API is another user and only reads it
     for _ in range(200):  # while it is being rewritten, a reader never sees a part of it
         assert isinstance(json.loads(path.read_text()), dict)
-    time.sleep(0.5)
+    rig.stop()  # a write in flight keeps a temporary file beside it for a moment, so look only once nothing is writing
     assert os.listdir(rig.status) == ["status.json"]  # the temporary file it writes beside it is renamed over it, not left
 
 

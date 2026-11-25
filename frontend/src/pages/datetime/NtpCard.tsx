@@ -284,8 +284,12 @@ export function NtpCard() {
         ) : null}
         <Divider />
         <ClockCheck status={status} />
-        <Divider />
-        <ContainerSection status={status} />
+        {status.install === "container" ? (
+          <>
+            <Divider />
+            <ContainerSection status={status} />
+          </>
+        ) : null}
         {failed ? (
           <Text size="sm" c="dimmed">
             Couldn&apos;t refresh just now, so this is the last reading. {failed}

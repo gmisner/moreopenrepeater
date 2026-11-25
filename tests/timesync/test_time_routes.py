@@ -19,7 +19,7 @@ from api.users import UserStore
 ADMIN = AuthSettings(username="admin", password="hunter2hunter2")
 FIELDS = {
     "server", "configured_server", "default_server", "state", "reachable", "offset_ms", "round_trip_ms", "stratum", "limit_ms",
-    "checked_at", "error", "error_text", "container",
+    "checked_at", "error", "error_text", "container", "install",
 }
 
 
@@ -479,6 +479,13 @@ def test_the_status_folder_is_never_written_by_the_api(tmp_path):
     client.get("/api/time", headers=basic())
     client.put("/api/time/ntp", json={"server": "time.example.org"}, headers=basic())
     assert not status.exists() and os.listdir(config) == ["ntp.json"]
+
+
+def test_the_status_says_whether_this_is_a_container_or_a_native_install(tmp_path):
+    native = ts.TimeSync.from_env({}, tmp_path / "a")
+    container = ts.TimeSync.from_env({"MOREOPENREPEATER_INSTALL": "container"}, tmp_path / "b")
+    assert native._describe(None)["install"] == "native"
+    assert container._describe(None)["install"] == "container"
 
 
 def test_from_env_reads_its_folders_from_the_environment_and_defaults_to_one_folder(tmp_path):

@@ -32,6 +32,7 @@ class TimeStatusResponse(BaseModel):
     error: Optional[str]  # why there was no reading: resolve, timeout, network, kiss, unsynchronized, bad_reply
     error_text: Optional[str]
     container: TimeContainerStatus
+    install: Literal["native", "container"]  # a native install has no time container, so the page leaves that card out
 
 
 class TimeServerRequest(BaseModel):

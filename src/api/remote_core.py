@@ -209,9 +209,13 @@ class RemoteCore:
             task, current = getattr(self, name), None
             setattr(self, name, current)
             if task is not None:
-                task.cancel()
+                # Ask again until it ends. On 3.11 wait_for can swallow a cancel that arrives with a line from the core,
+                # and a live stream never ends by itself, so waiting on one cancel could wait forever.
+                while not task.done():
+                    task.cancel()
+                    await asyncio.wait({task}, timeout=1.0)
                 try:
-                    await task
+                    task.result()
                 except asyncio.CancelledError:
                     pass
         self._connected = False

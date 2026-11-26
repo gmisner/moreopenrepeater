@@ -83,6 +83,14 @@ def test_what_to_do_depends_on_whether_the_time_container_is_running():
     assert "./setup.sh --time" in not_running and "timedatectl set-ntp true" in not_running
 
 
+def test_a_native_install_is_not_told_to_turn_on_a_time_container_it_does_not_have():
+    machine, _ = alerts()
+    machine.observe(reading(50.0), container_install=False)
+    message = machine.observe(reading(50.0), container_install=False)[0].message
+    assert "timedatectl set-ntp true" in message
+    assert "time container" not in message and "setup.sh" not in message and "docker" not in message
+
+
 # -- hysteresis and repeats ----------------------------------------------------------------------------------------------------
 
 

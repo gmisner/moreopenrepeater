@@ -477,7 +477,9 @@ class ClockAlerts:
         self._bad_checks = 0
         self._alerted_at = 0.0
 
-    def observe(self, reading: Optional[ClockReading], *, container_running: bool = False) -> list[Alert]:
+    def observe(
+        self, reading: Optional[ClockReading], *, container_running: bool = False, container_install: bool = True,
+    ) -> list[Alert]:
         if reading is None or not reading.result.ok:
             return []
         offset = reading.result.offset or 0.0
@@ -486,10 +488,10 @@ class ClockAlerts:
             self._bad_checks += 1
             if not self._off and self._bad_checks >= ALERT_CONFIRM_CHECKS:
                 self._off, self._alerted_at = True, now
-                return [self._wrong(offset, container_running)]
+                return [self._wrong(offset, container_running, container_install)]
             if self._off and now - self._alerted_at >= ALERT_REPEAT_SECONDS:
                 self._alerted_at = now
-                return [self._wrong(offset, container_running)]
+                return [self._wrong(offset, container_running, container_install)]
             return []
         if abs(offset) < OFFSET_CLEAR_SECONDS:
             self._bad_checks = 0
@@ -503,13 +505,14 @@ class ClockAlerts:
             self._bad_checks = 0  # between the limits and never confirmed: not a streak
         return []
 
-    def _wrong(self, offset: float, container_running: bool) -> Alert:
+    def _wrong(self, offset: float, container_running: bool, container_install: bool = True) -> Alert:
         how = "behind" if offset > 0 else "ahead of"
-        fix = (
-            "The time container is running and should correct it by itself within a few minutes."
-            if container_running
-            else "Turn on the time container (./setup.sh --time in the docker folder), or set the clock on the Pi (timedatectl set-ntp true)."
-        )
+        if container_running:
+            fix = "The time container is running and should correct it by itself within a few minutes."
+        elif container_install:
+            fix = "Turn on the time container (./setup.sh --time in the docker folder), or set the clock on the Pi (timedatectl set-ntp true)."
+        else:
+            fix = "Set the clock on the Pi (timedatectl set-ntp true)."
         return Alert(
             "clock", "The Pi's clock is wrong",
             f"The Pi's clock is {abs(offset):.0f} seconds {how} the time server. {WHAT_A_WRONG_CLOCK_BREAKS} {fix}",
@@ -531,7 +534,9 @@ class TimeSync:
         *,
         alerts: Optional[ClockAlerts] = None,
         wall: Callable[[], float] = time.time,
+        container_install: bool = True,
     ) -> None:
+        self.container_install = container_install  # false on a native install, which has no time container to turn on
         self.setting = setting
         self._check = check
         self._status_dir = status_dir
@@ -550,7 +555,7 @@ class TimeSync:
         directory = Path(env.get("MOREOPENREPEATER_TIME_CONFIG_DIR") or default_dir)
         status_dir = Path(env.get("MOREOPENREPEATER_TIME_STATUS_DIR") or directory)
         setting = NtpSetting(directory)
-        return cls(setting, ClockCheck(setting), status_dir)
+        return cls(setting, ClockCheck(setting), status_dir, container_install=env.get("MOREOPENREPEATER_INSTALL") == "container")
 
     async def status(self) -> dict:
         reading = await self._check.current()
@@ -571,7 +576,7 @@ class TimeSync:
         reading = await self._check.current()
         self._note(reading)
         running = read_container_status(self._status_dir, self._wall())["running"]
-        return self._alerts.observe(reading, container_running=running)
+        return self._alerts.observe(reading, container_running=running, container_install=self.container_install)
 
     def _describe(self, reading: Optional[ClockReading]) -> dict:
         configured = self.setting.get()
@@ -591,6 +596,7 @@ class TimeSync:
             "error": sntp.error if sntp is not None and not sntp.ok else None,
             "error_text": ERROR_TEXT.get(sntp.error or "") if sntp is not None and not sntp.ok else None,
             "container": read_container_status(self._status_dir, self._wall()),
+            "install": "container" if self.container_install else "native",
         }
 
     def _note(self, reading: Optional[ClockReading]) -> None:

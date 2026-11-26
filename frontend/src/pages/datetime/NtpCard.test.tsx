@@ -66,6 +66,7 @@ function status(over: Partial<TimeStatus> = {}): TimeStatus {
     error: null,
     error_text: null,
     container: NO_CONTAINER,
+    install: "container",
     ...over,
   };
 }
@@ -249,6 +250,14 @@ describe("NTP card", () => {
   });
 
   describe("the time container", () => {
+    it("is left out on a native install, which has no time container to start", async () => {
+      serve(status({ install: "native" }));
+      renderCard();
+      await field();
+      expect(screen.queryByRole("group", { name: "Time container" })).not.toBeInTheDocument();
+      expect(screen.queryByText("./setup.sh --time")).not.toBeInTheDocument();
+    });
+
     it("says what it is and how to start it when it is not running", async () => {
       serve(status());
       renderCard();

@@ -31,6 +31,8 @@ export type TimeStatus = {
   error: string | null;
   error_text: string | null;
   container: TimeContainer;
+  /** A native install has no time container, so the page leaves that card out. */
+  install: "native" | "container";
 };
 
 function oneDecimal(value: number): string {
